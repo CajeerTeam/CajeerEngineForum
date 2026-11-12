@@ -1,0 +1,22 @@
+[Unit]
+Description=CajeerEngine Queue Worker
+After=network.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+WorkingDirectory=/var/www/cajeerengine
+ExecStart=/usr/bin/php /var/www/cajeerengine/bin/cajeer queue:work --limit=10
+TimeoutStopSec=150
+KillSignal=SIGTERM
+Restart=always
+RestartSec=5
+User=www-data
+Group=www-data
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ReadWritePaths=/var/www/cajeerengine/storage /var/www/cajeerengine/bootstrap/cache /var/www/cajeerengine/public/uploads
+
+[Install]
+WantedBy=multi-user.target

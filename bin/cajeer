@@ -1,0 +1,278 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+use CajeerEngine\Console\Command\AdminAssetsCommand;
+use CajeerEngine\Console\Command\ApiTokenCreateCommand;
+use CajeerEngine\Console\Command\ApiTokenRevokeCommand;
+use CajeerEngine\Console\Command\CacheCheckCommand;
+use CajeerEngine\Console\Command\CmsBootstrapCommand;
+use CajeerEngine\Console\Command\CmsSitemapCommand;
+use CajeerEngine\Console\Command\TemplateAuditCommand;
+use CajeerEngine\Console\Command\SecurityAuditCommand;
+use CajeerEngine\Console\Command\ReleaseVerifyCommand;
+use CajeerEngine\Console\Command\RcDoctorCommand;
+use CajeerEngine\Console\Command\MigrationVerifyCommand;
+use CajeerEngine\Console\Command\DocsVerifyCommand;
+use CajeerEngine\Console\Command\ApiLintCommand;
+use CajeerEngine\Console\Command\ConfigGetCommand;
+use CajeerEngine\Console\Command\ContentListCommand;
+use CajeerEngine\Console\Command\ContentSyncDatabaseCommand;
+use CajeerEngine\Console\Command\ContentValidateCommand;
+use CajeerEngine\Console\Command\DatabaseSeedCommand;
+use CajeerEngine\Console\Command\DatabaseStatusCommand;
+use CajeerEngine\Console\Command\ExportCreateCommand;
+use CajeerEngine\Console\Command\ExportListCommand;
+use CajeerEngine\Console\Command\ImportRunCommand;
+use CajeerEngine\Console\Command\ImportDiffCommand;
+use CajeerEngine\Console\Command\GenerateExtensionCommand;
+use CajeerEngine\Console\Command\ExtensionConfigCommand;
+use CajeerEngine\Console\Command\ExtensionAssetsCommand;
+use CajeerEngine\Console\Command\ExtensionMigrateCommand;
+use CajeerEngine\Console\Command\ExtensionRuntimeCommand;
+use CajeerEngine\Console\Command\ExtensionDisableCommand;
+use CajeerEngine\Console\Command\ExtensionDoctorCommand;
+use CajeerEngine\Console\Command\ExtensionEnableCommand;
+use CajeerEngine\Console\Command\ExtensionEventDispatchCommand;
+use CajeerEngine\Console\Command\ExtensionEventsCommand;
+use CajeerEngine\Console\Command\ExtensionInstallCommand;
+use CajeerEngine\Console\Command\ExtensionListCommand;
+use CajeerEngine\Console\Command\ExtensionPermissionsCommand;
+use CajeerEngine\Console\Command\ExtensionUninstallCommand;
+use CajeerEngine\Console\Command\DoctorCommand;
+use CajeerEngine\Console\Command\FixCommand;
+use CajeerEngine\Console\Command\FixActionCommand;
+use CajeerEngine\Console\Command\NginxConfigCommand;
+use CajeerEngine\Console\Command\SystemdInstallCommand;
+use CajeerEngine\Console\Command\PostInstallReportCommand;
+use CajeerEngine\Console\Command\BackupCreateCommand;
+use CajeerEngine\Console\Command\InstallCheckCommand;
+use CajeerEngine\Console\Command\InstallCommand;
+use CajeerEngine\Console\Command\MigrateCommand;
+use CajeerEngine\Console\Command\MigrationStatusCommand;
+use CajeerEngine\Console\Command\TemplateRenderCommand;
+use CajeerEngine\Console\Command\UpdateCheckCommand;
+use CajeerEngine\Console\Command\UpdateCommand;
+use CajeerEngine\Console\Command\UpdatePrepareCommand;
+use CajeerEngine\Console\Command\UpdateApplyCommand;
+use CajeerEngine\Console\Command\UpdateRollbackCommand;
+use CajeerEngine\Console\Command\MaintenanceCommand;
+use CajeerEngine\Console\Command\ReleaseArtifactsCommand;
+use CajeerEngine\Console\Command\ReleaseChecksumsCommand;
+use CajeerEngine\Console\Command\StorageDoctorCommand;
+use CajeerEngine\Console\Command\MediaListCommand;
+use CajeerEngine\Console\Command\QueueFailedCommand;
+use CajeerEngine\Console\Command\QueuePushCommand;
+use CajeerEngine\Console\Command\QueueRetryCommand;
+use CajeerEngine\Console\Command\ReleaseBuildCommand;
+use CajeerEngine\Console\Command\SchedulerDueCommand;
+use CajeerEngine\Console\Command\SearchIndexCommand;
+use CajeerEngine\Console\Command\SearchQueryCommand;
+use CajeerEngine\Console\Command\WebhookCreateCommand;
+use CajeerEngine\Console\Command\WebhookDeliveriesCommand;
+use CajeerEngine\Console\Command\WebhookDispatchCommand;
+use CajeerEngine\Console\Command\WebhookListCommand;
+use CajeerEngine\Console\Command\QueueWorkCommand;
+use CajeerEngine\Console\Command\RoleListCommand;
+use CajeerEngine\Console\Command\RuntimeRoutesCommand;
+use CajeerEngine\Console\Command\SchedulerRunCommand;
+use CajeerEngine\Console\Command\SecurityDoctorCommand;
+use CajeerEngine\Console\Command\SecurityHardenCommand;
+use CajeerEngine\Console\Command\MigrationRepairCommand;
+use CajeerEngine\Console\Command\ServeCommand;
+use CajeerEngine\Console\Command\StableStatusCommand;
+use CajeerEngine\Console\Command\StableSmokeTestCommand;
+use CajeerEngine\Console\Command\StableLockCommand;
+use CajeerEngine\Console\Command\StableBackupCommand;
+use CajeerEngine\Console\Command\StableSupportBundleCommand;
+use CajeerEngine\Console\Command\StaticExportCommand;
+use CajeerEngine\Console\Command\SystemReportCommand;
+use CajeerEngine\Console\Command\UserCreateCommand;
+use CajeerEngine\Console\Command\UserListCommand;
+use CajeerEngine\Console\Command\ValidateExtensionCommand;
+use Symfony\Component\Console\Application;
+use Symfony\Component\Dotenv\Dotenv;
+
+$root = dirname(__DIR__);
+$autoload = $root . '/vendor/autoload.php';
+require_once $root . '/core/Update/OperationFiles.php';
+require_once $root . '/core/Update/OperationLock.php';
+require_once $root . '/core/Console/OperationsCli.php';
+if (in_array($argv[1]??'', ['ops:check','ops:report','ops:metrics','ops:traces:flush'],true)) {
+    if (is_file($autoload)) require_once $autoload; else require_once $root.'/core/Console/NativeCli.php';
+    CajeerEngine\Console\OperationsCli::loadEnv($root);
+    try { $monitor=new CajeerEngine\Observability\OperationsMonitor($root); $cmd=$argv[1];
+        if($cmd==='ops:metrics'){echo $monitor->prometheus();exit(0);}
+        if($cmd==='ops:traces:flush'){$result=(new CajeerEngine\Observability\TraceExporter($root))->flush();echo json_encode($result,JSON_THROW_ON_ERROR).PHP_EOL;exit($result['ok']?0:1);}
+        $result=$cmd==='ops:check'?$monitor->readiness():$monitor->report();
+        echo json_encode($result,JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR).PHP_EOL;exit($result['ok']?0:1);
+    }catch(Throwable){fwrite(STDERR,'Operations diagnostic failed'.PHP_EOL);exit(1);}
+}
+if (in_array($argv[1]??'', ['media:list','media:check','media:migrate','media:variants','media:repair','media:recover','media:usage','media:s3-sync','media:gc'],true)) {
+    if (is_file($autoload)) require_once $autoload; else require_once $root.'/core/Console/NativeCli.php';
+    exit(\CajeerEngine\Media\MediaOperations::run($root,$argv));
+}
+if (CajeerEngine\Console\OperationsCli::handles($argv)) {
+    if (is_file($autoload)) require_once $autoload;
+    else require_once $root . '/core/Console/NativeCli.php';
+    exit(CajeerEngine\Console\OperationsCli::run($root, $argv));
+}
+if (in_array($argv[1]??'', ['extension:sign','extension:package:install','extension:package:upgrade','extension:package:recover','extension:package:uninstall','extension:package:enable','extension:enable'],true)) {
+    if (is_file($autoload)) require_once $autoload; else require_once $root.'/core/Console/NativeCli.php';
+    exit(\CajeerEngine\Extension\ExtensionOperations::run($root,$argv));
+}
+try {
+    $activityLease = CajeerEngine\Update\OperationLock::acquire($root, in_array($argv[1]??'', ['queue:redis-migrate','routing:rebuild','static:export','import:run','import:diff','export:create','extension:install','extension:uninstall','extension:enable','extension:disable','extension:migrate','extension:assets','extension:config'],true));
+    if ((CajeerEngine\Update\OperationLock::active($root)||is_file($root.'/storage/app/backup-restore.json')) && !in_array($argv[1]??'', ['list','--version'],true)) throw new RuntimeException('Recovery required; use operational CLI.');
+    if (CajeerEngine\Update\OperationLock::maintenance($root) && !in_array($argv[1] ?? '', ['list','--version','doctor','rc:doctor','system:report','stable:status','update:check','update:prepare','update','api:lint','release:verify','admin:assets','migrate:status','migrate:verify'], true)) {
+        throw new RuntimeException('Maintenance active; CLI writes disabled.');
+    }
+} catch (Throwable $e) { fwrite(STDERR, '[FAIL] '.$e->getMessage().PHP_EOL); exit(1); }
+
+// Queue operations use bounded batches and share the update/backup activity lock.
+require_once $root.'/core/Console/QueueCli.php';
+if (in_array($argv[1]??'', \CajeerEngine\Console\QueueCli::COMMANDS,true)) {
+    if (is_file($autoload)) require_once $autoload; else require_once $root.'/core/Console/NativeCli.php';
+    exit(\CajeerEngine\Console\QueueCli::run($root,$argv));
+}
+
+if (($argv[1] ?? '') === 'install:web-token') {
+    require_once $root . '/core/Installer/SetupToken.php';
+    try { echo CajeerEngine\Installer\SetupToken::issue($root) . PHP_EOL; exit(0); }
+    catch (Throwable $e) { fwrite(STDERR, $e->getMessage() . PHP_EOL); exit(1); }
+}
+
+if (in_array($argv[1]??'', ['extension:install','extension:uninstall','extension:migrate','extension:assets'],true)) {
+    if (is_file($autoload)) require_once $autoload; else require_once $root.'/core/Console/NativeCli.php';
+    CajeerEngine\Console\OperationsCli::loadEnv($root);
+    if (!in_array(getenv('APP_ENV'),['local','dev','testing'],true)) { fwrite(STDERR,"Use signed package operations in production.\n"); exit(1); }
+}
+if (in_array($argv[1]??'', ['search:index','search:query','search:check'],true)||!is_file($autoload)) {
+    require_once $root . '/core/Console/NativeCli.php';
+    exit(CajeerEngine\Console\NativeCli::run($root, $argv));
+}
+
+require_once $autoload;
+
+if (is_file($root . '/.env')) {
+    (new Dotenv())->usePutenv()->loadEnv($root . '/.env');
+}
+
+$cli = new Application('CajeerEngine CLI', trim((string) @file_get_contents($root . '/VERSION')) ?: '1.3.0');
+
+/** @var list<Symfony\Component\Console\Command\Command> $commands */
+$commands = [
+    new DoctorCommand($root),
+    new FixCommand($root),
+    new FixActionCommand($root, 'fix:permissions', 'permissions', 'Создать runtime-директории и выставить безопасные права.'),
+    new FixActionCommand($root, 'fix:env', 'env', 'Создать/исправить .env без изменения БД.'),
+    new FixActionCommand($root, 'fix:security', 'security', 'Включить production security hardening.'),
+    new FixActionCommand($root, 'fix:admin-assets', 'admin-assets', 'Проверить и восстановить fallback Admin assets.'),
+    new FixActionCommand($root, 'fix:storage', 'storage', 'Создать storage/bootstrap/public runtime-директории.'),
+    new NginxConfigCommand($root),
+    new SystemdInstallCommand($root, 'scheduler:install', 'scheduler', 'Сгенерировать или записать systemd unit/timer для scheduler.'),
+    new SystemdInstallCommand($root, 'worker:install', 'worker', 'Сгенерировать или записать systemd unit для queue worker.'),
+    new PostInstallReportCommand($root),
+    new BackupCreateCommand($root),
+    new InstallCheckCommand($root),
+    new RcDoctorCommand($root),
+    new StableStatusCommand($root),
+    new StableSmokeTestCommand($root),
+    new StableLockCommand($root),
+    new StableBackupCommand($root),
+    new StableSupportBundleCommand($root),
+    new ApiLintCommand($root),
+    new SecurityAuditCommand($root),
+    new ReleaseVerifyCommand($root),
+    new MigrationVerifyCommand($root),
+    new DocsVerifyCommand($root),
+    new TemplateAuditCommand($root),
+    new AdminAssetsCommand($root),
+    new InstallCommand($root),
+    new MigrateCommand($root),
+    new MigrationStatusCommand($root),
+    new MigrationRepairCommand($root),
+    new DatabaseStatusCommand($root),
+    new DatabaseSeedCommand($root),
+    new ExportCreateCommand($root),
+    new ExportListCommand($root),
+    new ImportDiffCommand($root),
+    new ImportRunCommand($root),
+    new UpdateCheckCommand($root),
+    new UpdateCommand($root),
+    new UpdatePrepareCommand($root),
+    new UpdateApplyCommand($root),
+    new UpdateRollbackCommand($root),
+    new MaintenanceCommand($root),
+    new ReleaseBuildCommand($root),
+    new ReleaseArtifactsCommand($root),
+    new ReleaseChecksumsCommand($root),
+    new SecurityDoctorCommand($root),
+    new SecurityHardenCommand($root),
+    new UserCreateCommand($root),
+    new UserListCommand($root),
+    new RoleListCommand($root),
+    new ApiTokenCreateCommand($root),
+    new ApiTokenRevokeCommand($root),
+    new QueueWorkCommand($root),
+    new QueuePushCommand($root),
+    new QueueFailedCommand($root),
+    new QueueRetryCommand($root),
+    new SchedulerDueCommand($root),
+    new SearchIndexCommand($root),
+    new SearchQueryCommand($root),
+    new WebhookListCommand($root),
+    new WebhookCreateCommand($root),
+    new WebhookDispatchCommand($root),
+    new WebhookDeliveriesCommand($root),
+    new SchedulerRunCommand($root),
+    new SystemReportCommand($root),
+    new CacheCheckCommand($root),
+    new StaticExportCommand($root),
+    new CmsBootstrapCommand($root),
+    new CmsSitemapCommand($root),
+    new \CajeerEngine\Console\Command\RoutingCommand($root,'routing:rebuild'),
+    new \CajeerEngine\Console\Command\RoutingCommand($root,'routing:check'),
+    new MediaListCommand($root),
+    new StorageDoctorCommand($root),
+    new TemplateRenderCommand($root),
+    new ContentListCommand($root),
+    new ContentValidateCommand($root),
+    new ContentSyncDatabaseCommand($root),
+    new ConfigGetCommand($root),
+    new RuntimeRoutesCommand($root),
+    new GenerateExtensionCommand($root),
+    new ValidateExtensionCommand($root),
+    new ExtensionListCommand($root),
+    new ExtensionDoctorCommand($root),
+    new ExtensionInstallCommand($root),
+    new ExtensionEnableCommand($root),
+    new ExtensionDisableCommand($root),
+    new ExtensionUninstallCommand($root),
+    new ExtensionConfigCommand($root),
+    new ExtensionPermissionsCommand($root),
+    new ExtensionEventsCommand($root),
+    new ExtensionEventDispatchCommand($root),
+    new ExtensionRuntimeCommand($root),
+    new ExtensionAssetsCommand($root),
+    new ExtensionMigrateCommand($root),
+    new ServeCommand($root),
+];
+
+foreach ($commands as $command) {
+    if (method_exists($cli, 'addCommand')) {
+        $cli->addCommand($command);
+        continue;
+    }
+
+    if (method_exists($cli, 'add')) {
+        $cli->add($command);
+        continue;
+    }
+
+    fwrite(STDERR, "Текущая версия Symfony Console не поддерживает регистрацию команд через addCommand()/add().\n");
+    exit(1);
+}
+
+$cli->run();

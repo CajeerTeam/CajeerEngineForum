@@ -1,0 +1,27 @@
+name: Forum Edition CI
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: mbstring, pdo_sqlite, sodium, zip, dom, xml, xmlwriter, curl, openssl
+          tools: composer:v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: composer validate --no-check-publish
+      - run: composer install --prefer-dist --no-interaction
+      - run: php tools/generate-api-sdk.php --check
+      - run: php bin/cajeer api:lint --strict --json
+      - run: node --check public/forum-assets/forum.js
+      - run: php tools/forum-regression.php
+      - run: php tools/build-release.php --dry-run --all --json

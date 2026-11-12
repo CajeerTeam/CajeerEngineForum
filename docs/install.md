@@ -1,0 +1,265 @@
+# Установка CajeerEngine 1.1.5
+
+## Web Installer
+
+Основной путь для обычного пользователя:
+
+1. Скачать `cajeerengine-1.1.5-dist.zip`.
+2. Загрузить архив на сервер.
+3. Распаковать проект так, чтобы web root указывал на `public/`.
+4. В каталоге проекта под пользователем PHP-FPM выполнить `php bin/cajeer install:web-token` (токен действует 30 минут). Открыть `https://site.ru/install`.
+5. Выбрать SQLite, PostgreSQL или MySQL/MariaDB.
+6. Заполнить данные первого администратора и вставить одноразовый setup token.
+7. Нажать «Установить».
+
+После успешной установки создаётся `storage/app/installed.lock`. Пока этот файл существует, `/install` возвращает запрет доступа.
+
+## CLI Installer
+
+Интерактивный режим:
+
+```bash
+php bin/cajeer install --interactive
+```
+
+Быстрый SQLite-режим:
+
+```bash
+php bin/cajeer install \
+  --sqlite \
+  --domain=site.ru \
+  --admin-email=admin@site.ru \
+  --admin-password='StrongPassword123'
+```
+
+Production PostgreSQL:
+
+```bash
+php bin/cajeer install \
+  --preset=production \
+  --db=pgsql \
+  --db-host=127.0.0.1 \
+  --db-port=5432 \
+  --db-name=cajeerengine \
+  --db-user=cajeerengine \
+  --db-password='secret' \
+  --domain=site.ru \
+  --admin-email=admin@site.ru \
+  --admin-password='StrongPassword123' \
+  --production
+```
+
+## aaPanel preset
+
+```bash
+php bin/cajeer install --preset=aapanel --interactive
+```
+
+Ожидаемые частые пути aaPanel:
+
+- PHP: `/www/server/php/84/bin/php`
+- Web root: `/www/wwwroot/<domain>`
+- Nginx vhost: `/www/server/panel/vhost/nginx/<domain>.conf`
+
+## SQLite vs PostgreSQL
+
+SQLite создаётся в `storage/database/cajeer.sqlite` и подходит для локального теста, демо и маленьких установок.
+
+PostgreSQL 17+/18+ рекомендуется для production.
+
+## Что делает installer
+
+- создаёт runtime-директории;
+- создаёт `.env` из `.env.example`;
+- генерирует `APP_KEY`, `JWT_SECRET`, `API_TOKEN_SECRET`, `WEBHOOK_SIGNING_SECRET`;
+- проверяет DB connection;
+- запускает SQL-миграции;
+- создаёт роли, базовые настройки и первого администратора;
+- выполняет финальную проверку;
+- создаёт `storage/app/installed.lock`.
+
+
+## Admin UI 1.1.5
+
+После установки откройте:
+
+```text
+https://site.ru/admin/
+```
+
+Войдите под первым администратором, созданным installer-ом. Static Admin SPA уже лежит в `public/admin/assets/` и не требует Node.js на production-сервере. В админке доступны:
+
+- dashboard;
+- типы контента с JSON field builder;
+- записи контента с publish/unpublish/archive/revisions;
+- media library upload/delete;
+- CMS theme/navigation/redirects/preview controls;
+- пользователи, роли и API tokens;
+- extension runtime diagnostics, assets, migrations и event dispatch;
+- updates, maintenance и rollback controls;
+- search diagnostics/reindex;
+- import/export export/diff/run;
+- system/runtime/database/security diagnostics.
+
+Проверка production assets:
+
+```bash
+php bin/cajeer admin:assets --check --json
+node admin/scripts/publish-admin-assets.mjs --check
+```
+
+## Server automation 1.1.5
+
+После установки или переноса на другой сервер проверь окружение одной командой:
+
+```bash
+php bin/cajeer doctor
+php bin/cajeer doctor --json
+```
+
+`doctor` проверяет PHP/extensions, права runtime-директорий, `.env`, `installed.lock`, подключение к БД, миграции, Admin assets, security hardening, документацию, шаблоны, stable/update metadata, Nginx hints и systemd hints. Подробный отчёт сохраняется в `storage/app/reports/doctor-latest.json`.
+
+Безопасные автоисправления по умолчанию работают в dry-run режиме:
+
+```bash
+php bin/cajeer fix
+php bin/cajeer fix --yes
+php bin/cajeer fix:permissions --yes
+php bin/cajeer fix:env --yes
+php bin/cajeer fix:security --yes
+php bin/cajeer fix:admin-assets --yes
+php bin/cajeer fix:storage --yes
+```
+
+Команды `fix` не удаляют данные, не меняют схему БД, не правят Nginx config и не перезапускают сервисы.
+
+## Nginx config generator
+
+Обычный Nginx:
+
+```bash
+php bin/cajeer nginx:config --domain=site.ru
+```
+
+aaPanel:
+
+```bash
+php bin/cajeer nginx:config --preset=aapanel --domain=site.ru
+```
+
+Записать конфиг в файл можно явно:
+
+```bash
+php bin/cajeer nginx:config --domain=site.ru --output=/etc/nginx/sites-available/site.ru.conf --write
+```
+
+Для aaPanel suggested path будет `/www/server/panel/vhost/nginx/<domain>.conf`.
+
+## Systemd scheduler/worker
+
+Сначала выведи unit-файлы без записи:
+
+```bash
+php bin/cajeer scheduler:install --print
+php bin/cajeer worker:install --print
+```
+
+Безопасная запись в проект:
+
+```bash
+php bin/cajeer scheduler:install --write
+php bin/cajeer worker:install --write
+```
+
+Запись в `/etc/systemd/system` требует прав root:
+
+```bash
+sudo php bin/cajeer scheduler:install --system --write
+sudo php bin/cajeer worker:install --system --write
+sudo systemctl daemon-reload
+sudo systemctl enable --now cajeerengine-scheduler.timer
+sudo systemctl enable --now cajeerengine-worker.service
+```
+
+## Post-install report и backup
+
+```bash
+php bin/cajeer post-install:report
+php bin/cajeer backup:create
+```
+
+Post-install отчёт сохраняется в `storage/app/reports/post-install-latest.json`.
+
+## Release UX 1.1.5
+
+Сборка source artifact:
+
+```bash
+php bin/cajeer release:build --source
+```
+
+Сборка dist artifact:
+
+```bash
+php bin/cajeer release:build --dist
+```
+
+Сборка полного набора для GitHub Release:
+
+```bash
+php bin/cajeer release:artifacts
+```
+
+Проверка checksum-файлов:
+
+```bash
+php bin/cajeer release:checksums
+```
+
+Release builder создаёт ZIP, `release-manifest.json` внутри архива, внешний `.sha256` файл и artifact index:
+
+```text
+storage/releases/cajeerengine-1.1.5-source.zip
+storage/releases/cajeerengine-1.1.5-source.zip.sha256
+storage/releases/cajeerengine-1.1.5-dist.zip
+storage/releases/cajeerengine-1.1.5-dist.zip.sha256
+storage/releases/cajeerengine-1.1.5-artifacts.json
+```
+
+Source artifact предназначен для разработчиков и не содержит `vendor/`. Dist artifact предназначен для установки на сервер и должен содержать `vendor/autoload.php`, `composer.lock` и готовые `public/admin/assets/`.
+
+## Upgrade Wizard 1.1.5
+
+Используйте подписанный dist и отдельного CLI-оператора. `/upgrade` показывает подготовленный релиз и принимает подтверждённый запрос через административный API. Сам PHP-FPM не заменяет код и не восстанавливает БД. Полный порядок подготовки ключей, staging, backup, update и recovery описан в [Production Updater & Backup](update-backup.md).
+
+## После установки: CMS bootstrap
+
+Для готового публичного слоя CMS после миграций можно выполнить:
+
+```bash
+php bin/cajeer cms:bootstrap --demo-home
+```
+
+Команда создаёт тип контента `pages`, базовую главную страницу, theme config и меню `primary`. После этого доступны `/`, `/sitemap.xml`, `/robots.txt` и CMS-раздел в Admin UI.
+
+
+## Import/export
+
+```bash
+php bin/cajeer export:create --json
+php bin/cajeer import:diff site.zip --strategy=update --json
+# Скопируйте digest plan из предыдущего вывода.
+php bin/cajeer import:run site.zip --strategy=update --plan=<plan-digest> --json
+```
+
+Export не заменяет disaster-recovery backup. Применение требует ключа backup, актуального подтверждённого плана и доступной БД. Удаление отсутствующих записей и перенос прав пользователей запрещены. Подробнее: [Import/Export](import-export.md).
+
+## 1.1.5 — сборка и проверка дистрибутива
+
+Публикация admin и проверка — разные операции: `node admin/scripts/publish-admin-assets.mjs` копирует канонический Static SPA из `admin/static`, `--check` только проверяет и не восстанавливает файлы. В dist нет исходников админки: при повреждении восстановите файлы из проверенного release ZIP, не генерируйте fallback.
+
+На release host закоммитьте настоящий `composer.lock` (первичное разрешение зависимостей: `composer update --no-install`). `bash tools/release-pipeline.sh /tmp/cajeer-release` собирает чистый Git snapshot с `composer install --no-dev`; отсутствие lock, несовпадение vendor или повреждённые assets блокируют сборку. `php bin/cajeer release:verify --dist --strict` проверяет prerequisites, `--artifact=/path/to/cajeerengine-1.1.5-dist.zip` проверяет физический ZIP и оба sidecar. Для source используйте `--source`.
+
+`bash tools/release-smoke.sh /path/to/dist.zip sqlite` распаковывает dist во временную директорию, проверяет отказ установки с повреждённой админкой, устанавливает CMS, авторизуется через HTTP API и публикует страницу. Для PostgreSQL используйте `pgsql` и отдельную пустую тестовую БД (`CE_DB_HOST`, `CE_DB_PORT`, `CE_DB_NAME`, `CE_DB_USER`, `CE_DB_PASSWORD`). Не запускайте smoke на рабочей БД.
+
+Если installer сообщает ошибку финальной проверки, `installed.lock` не создаётся. Проверьте `storage/app/install-state.json`, исправьте причину и повторите с тем же подключением к БД и тем же администратором/паролем. Частично применённые миграции и данные не удаляются автоматически. Не удаляйте вручную lock установленной CMS. Доступ к `/install` до первой установки ограничьте локальной сетью или IP администратора на уровне web-сервера.

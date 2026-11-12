@@ -1,0 +1,227 @@
+name: Release verification and publication
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+permissions:
+  contents: read
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: cajeer
+          POSTGRES_PASSWORD: release-smoke
+          POSTGRES_DB: cajeer_smoke
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U cajeer -d cajeer_smoke"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7.4
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: mbstring, pdo_sqlite, pdo_pgsql, sodium, zip, dom, xml, xmlwriter, curl, openssl, gd, redis, pcntl
+          tools: composer:v2
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          package-manager-cache: false
+      - name: Deployment safety regression (real Nginx TLS)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nginx
+          sudo python3 deploy/test_production.py
+      - name: Concurrent rate limiter and certification regressions
+        run: |
+          php tools/rate-limit-concurrency.php
+          python3 tools/certification-regression.py
+      - run: php tools/security-regression.php
+      - run: php tools/generate-api-sdk.php --check
+      - run: php bin/cajeer api:lint --strict --json
+      - run: php tools/github-release-regression.php
+      - run: python3 tools/github-publish-regression.py
+      - run: php tools/release-regression.php
+      - run: php tools/update-regression.php
+      - run: php tools/disaster-recovery-regression.php
+      - run: php tools/import-regression.php
+      - run: php tools/extension-regression.php
+      - run: php tools/routing-regression.php
+      - run: php tools/routing-regression.php --database
+      - run: php tools/media-regression.php
+      - run: php tools/media-regression.php --database
+      - run: php tools/rendering-regression.php
+      - run: php tools/rendering-regression.php --database
+      - run: php tools/import-regression.php --database
+      - run: php tools/search-regression.php
+      - run: php tools/search-regression.php --database
+      - run: php tools/performance-regression.php
+      - run: php tools/queue-regression.php
+      - run: php tools/observability-regression.php
+      - run: php tools/observability-regression.php --database
+      - run: php tools/queue-regression.php --redis
+        env:
+          CE_QUEUE_REDIS_HOST: 127.0.0.1
+      - name: PostgreSQL queue and scheduler integration
+        run: php tools/queue-regression.php --pgsql
+        env:
+          CE_QUEUE_PG_DSN: pgsql:host=127.0.0.1;port=5432;dbname=cajeer_smoke
+          CE_QUEUE_PG_USER: cajeer
+          CE_QUEUE_PG_PASSWORD: release-smoke
+      - run: php tools/performance-regression.php --database
+      - run: python3 tools/database-benchmark.py
+      - name: Install matching PostgreSQL 17 client
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/ce-pgdg.list
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client-17
+          echo /usr/lib/postgresql/17/bin >> "$GITHUB_PATH"
+      - name: PostgreSQL backup restore round-trip
+        env:
+          PGPASSWORD: release-smoke
+          CE_BACKUP_DB_TEST: '1'
+          DB_DRIVER: pgsql
+          DB_HOST: 127.0.0.1
+          DB_PORT: '5432'
+          DB_DATABASE: cajeer_backup_test
+          DB_USERNAME: cajeer
+          DB_PASSWORD: release-smoke
+        run: |
+          createdb -h 127.0.0.1 -U cajeer cajeer_backup_test
+          php tools/backup-db-regression.php
+          php tools/disaster-recovery-regression.php --pgsql
+      - name: PostgreSQL CMS search integration
+        env:
+          PGPASSWORD: release-smoke
+          CE_SEARCH_PG_TEST: '1'
+          DB_DRIVER: pgsql
+          DB_HOST: 127.0.0.1
+          DB_PORT: '5432'
+          DB_DATABASE: cajeer_search_test
+          DB_USERNAME: cajeer
+          DB_PASSWORD: release-smoke
+        run: |
+          createdb -h 127.0.0.1 -U cajeer cajeer_search_test
+          php tools/search-regression.php --pgsql
+      - name: PostgreSQL database performance integration
+        env:
+          PGPASSWORD: release-smoke
+          CE_PERFORMANCE_PG_TEST: '1'
+          DB_DRIVER: pgsql
+          DB_HOST: 127.0.0.1
+          DB_PORT: '5432'
+          DB_DATABASE: cajeer_performance_test
+          DB_USERNAME: cajeer
+          DB_PASSWORD: release-smoke
+        run: |
+          createdb -h 127.0.0.1 -U cajeer cajeer_performance_test
+          php tools/performance-regression.php --pgsql
+      - name: Audit locked runtime dependencies (fail closed)
+        run: |
+          mkdir -p "$RUNNER_TEMP/release"
+          test -s composer.lock
+          composer audit --locked --no-dev --format=json --abandoned=fail > "$RUNNER_TEMP/release/dependency-audit.json"
+      - run: bash tools/release-pipeline.sh "$RUNNER_TEMP/release"
+      - run: bash tools/release-smoke.sh "$RUNNER_TEMP/release/cajeerengine-$(cat VERSION)-dist.zip" sqlite
+      - run: bash tools/release-smoke.sh "$RUNNER_TEMP/release/cajeerengine-$(cat VERSION)-dist.zip" pgsql
+        env:
+          CE_DB_NAME: cajeer_smoke
+          CE_DB_USER: cajeer
+          CE_DB_PASSWORD: release-smoke
+      - run: bash tools/disaster-recovery-dist-smoke.sh "$RUNNER_TEMP/release/cajeerengine-$(cat VERSION)-dist.zip"
+      - run: bash tools/update-dist-smoke.sh "$RUNNER_TEMP/release/cajeerengine-$(cat VERSION)-dist.zip"
+      - name: Production deployment on real Linux services
+        env:
+          CE_DB_USER: cajeer
+          CE_DB_PASSWORD: release-smoke
+          CE_DEPLOY_DISPOSABLE: 'yes'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y software-properties-common ca-certificates
+          sudo add-apt-repository -y ppa:ondrej/php
+          sudo apt-get update
+          candidate="$(apt-cache policy php8.4-fpm | awk '/Candidate:/ {print $2}')"
+          test -n "$candidate" && test "$candidate" != "(none)"
+          sudo apt-get install -y php8.4-fpm php8.4-pgsql php8.4-mbstring php8.4-gd php8.4-curl php8.4-xml php8.4-zip
+          /usr/bin/php8.4 --version
+          /usr/sbin/php-fpm8.4 --version
+          sudo python3 deploy/test_production.py Safety.test_fpm_journal_socket_startup
+          export CE_CERT_REPORT="$RUNNER_TEMP/release/production-acceptance.json"
+          sudo --preserve-env=CE_DB_USER,CE_DB_PASSWORD,CE_DEPLOY_DISPOSABLE,CE_CERT_REPORT bash deploy/host-smoke.sh "$RUNNER_TEMP/release/cajeerengine-$(cat VERSION)-dist.zip"
+      - name: Seal production certification for exact release bytes
+        run: python3 tools/certification-evidence.py seal "$RUNNER_TEMP/release"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: cajeerengine-verified-release
+          path: |
+            ${{ runner.temp }}/release/*.zip
+            ${{ runner.temp }}/release/*.sha256
+            ${{ runner.temp }}/release/*.sig
+            ${{ runner.temp }}/release/*.manifest.json
+            ${{ runner.temp }}/release/*-artifacts.json
+            ${{ runner.temp }}/release/certification.json
+            ${{ runner.temp }}/release/production-acceptance.json
+            ${{ runner.temp }}/release/dependency-audit.json
+          if-no-files-found: error
+
+  publish:
+    needs: release
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    environment: release
+    permissions:
+      contents: write
+    concurrency:
+      group: publish-${{ github.ref }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: sodium, zip, mbstring
+      - uses: actions/download-artifact@v7
+        with:
+          name: cajeerengine-verified-release
+          path: ${{ runner.temp }}/verified-release
+      - name: Verify production certification before accessing signing key
+        run: python3 tools/certification-evidence.py verify "$RUNNER_TEMP/verified-release"
+      - name: Sign verified artifacts
+        env:
+          RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
+          RELEASE_DIR: ${{ runner.temp }}/verified-release
+        run: |
+          set -euo pipefail
+          version=$(cat VERSION)
+          [[ "$GITHUB_REF_NAME" == "v$version" ]]
+          [[ "${GITHUB_REPOSITORY,,}" == cajeerteam/cajeerengine ]]
+          [[ -n "$RELEASE_SIGNING_KEY" ]]
+          key=$(mktemp)
+          trap 'rm -f "$key"' EXIT
+          chmod 600 "$key"
+          printf '%s\n' "$RELEASE_SIGNING_KEY" > "$key"
+          unset RELEASE_SIGNING_KEY
+          for mode in source dist; do
+            name="cajeerengine-$version-$mode.zip"
+            (cd "$RELEASE_DIR" && sha256sum --strict --check "$name.sha256")
+            php bin/cajeer release:verify --"$mode" --strict --artifact="$RELEASE_DIR/$name" --json
+            php bin/cajeer release:sign --package="$RELEASE_DIR/$name" --secret-key="$key"
+          done
+      - name: Publish signed GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_DIR: ${{ runner.temp }}/verified-release
+        run: bash tools/github-publish-release.sh "$RELEASE_DIR" "$GITHUB_REF_NAME" "$GITHUB_REPOSITORY"
