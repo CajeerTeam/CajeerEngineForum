@@ -1,5 +1,14 @@
 # Changelog
 
+## Forum Edition 0.1.1 — Forum Core Refactoring
+
+- Move live forum SQL and business workflows into repositories and transactional services. Preserve API v1 and all existing migrations.
+- Serialize thread mutations, validate request/domain input, enforce actor scopes and audit state changes atomically.
+- Make report resolution and engagement operations idempotent; return explicit validation, not-found and contention errors.
+- Use the independent Forum Edition version for release artifacts and update comparisons; keep upstream 1.3.0 and engine API 1.1 unchanged.
+- Add real database/concurrency/rollback regressions and extend release/updater tests.
+- First transition from 0.1.0 requires manual overlay because the old updater compares engine versions.
+
 ## 1.3.0 — Integration Certification / Production Stable
 
 - Real TLS production HTTP security, CMS lifecycle and concurrent mixed workload acceptance with per-route latency and throughput budgets.

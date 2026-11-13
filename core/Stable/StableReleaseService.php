@@ -34,7 +34,7 @@ final readonly class StableReleaseService
         $admin = (new AdminAssetPublisher($this->rootPath))->manifest(false);
         $security = (new SecurityHardener($this->rootPath, $this->config))->diagnose();
         $dbStatus = $this->databaseStatus();
-        $update = (new UpdateResolver($this->config->get('updates', []), $this->rootPath))->diagnostics($version);
+        $update = (new UpdateResolver($this->config->get('updates', []), $this->rootPath))->diagnostics($this->config->string('app.edition_version', $version));
         $lockValid = $this->lockValid($lock, $version);
 
         $checks = [
@@ -58,6 +58,7 @@ final readonly class StableReleaseService
 
         return [
             'version' => $version,
+            'edition_version' => $this->config->string('app.edition_version', $version),
             'stable' => !in_array(false, $checks, true),
             'production_admission' => ['status' => 'not_evaluated', 'scope' => 'local diagnostics only', 'evidence' => 'Release CI certification.json plus operator acceptance for the actual environment'],
             'checks' => $checks,
@@ -95,7 +96,7 @@ final readonly class StableReleaseService
         $checks[] = $this->check('security_hardened', (bool) ($security['ok'] ?? false), 'Security production hardening включён.');
         $db = $this->databaseStatus();
         $checks[] = $this->check('database_schema', (bool) ($db['ready_or_unconfigured'] ?? false), 'База данных готова или явно не настроена в source-окружении.');
-        $updates = (new UpdateResolver($this->config->get('updates', []), $this->rootPath))->check($this->version());
+        $updates = (new UpdateResolver($this->config->get('updates', []), $this->rootPath))->check($this->config->string('app.edition_version', $this->version()));
         $checks[] = $this->check('updates_metadata', (($updates['metadata_source'] ?? 'empty') !== 'empty'), 'Update metadata доступна из GitHub Releases API или bundled metadata.');
         $checks[] = $this->check('storage_write', $this->writeProbe($this->rootPath . '/storage/app/stable'), 'storage/app/stable доступен на запись.');
         $checks[] = $this->check('support_write', $this->writeProbe($this->rootPath . '/storage/app/support'), 'support directory доступен на запись.');

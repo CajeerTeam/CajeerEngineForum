@@ -17,6 +17,7 @@ final class ConfigRepository
             'booted_at' => (new \DateTimeImmutable())->format(DATE_ATOM),
         ];
         $this->items['app']['version'] = $this->readVersion();
+        $this->items['app']['edition_version'] = ($this->release()['edition'] ?? null) === 'forum' ? (new \CajeerEngine\Forum\ForumVersion($rootPath))->current() : $this->items['app']['version'];
         $this->items['app']['engine_api_version'] = (string) ($this->release()['engine_api_version'] ?? $this->get('app.engine_api_version', '1.0'));
     }
 

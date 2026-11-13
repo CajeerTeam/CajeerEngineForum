@@ -20,7 +20,7 @@ try {
     $health=$db->health(); if (!($health['ok']??false)||!($health['schema_ready']??false)) throw new RuntimeException('DB schema not ready');
     // Public readiness deliberately skips DB access while maintenance or an
     // exclusive operation lease blocks traffic. Verify the schema independently.
-    foreach (['ce_content_entries','ce_users','ce_public_routes','ce_cms_search','ce_migrations'] as $table) {
+    foreach (['ce_content_entries','ce_users','ce_public_routes','ce_cms_search','ce_migrations','ce_forum_categories','ce_forum_boards','ce_forum_threads','ce_forum_posts','ce_forum_reactions','ce_forum_watches','ce_forum_reports'] as $table) {
         $db->connection()->query('SELECT 1 FROM '.$table.' WHERE 1=0');
     }
     (new CajeerEngine\Public\RouteIndex($root,$db))->rebuild();
@@ -42,6 +42,7 @@ try {
     $response=$app->handle(Symfony\Component\HttpFoundation\Request::create('/api/v1/health','GET'));
     $payload=json_decode((string)$response->getContent(),true,512,JSON_THROW_ON_ERROR);
     $checks=$payload['checks']??null;
+    if (($payload['edition_version'] ?? null) !== $config->string('app.edition_version')) throw new RuntimeException('Forum release version mismatch');
     $expectedCode=$protected?503:200;
     if ($response->getStatusCode()!==$expectedCode||($payload['status']??null)!==($protected?'degraded':'ok')||!is_array($checks)) {
         throw new RuntimeException('HTTP health smoke failed: expected '.$expectedCode.', got '.$response->getStatusCode());

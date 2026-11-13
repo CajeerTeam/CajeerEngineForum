@@ -1,6 +1,6 @@
 # CajeerEngine Forum Edition
 
-**Forum Edition 0.1.0 — development preview**, built on CajeerEngine 1.3.0.
+**Forum Edition 0.1.1 — development preview**, built on CajeerEngine 1.3.0.
 
 Self-hosted forum platform by CajeerTeam. PHP 8.4.1+, CajeerEngine kernel, Symfony Components, REST API, Apache-2.0.
 
@@ -39,7 +39,7 @@ php tools/forum-regression.php
 node --check public/forum-assets/forum.js
 ```
 
-CI: `.github/workflows/forum-ci.yml`. Полный интеграционный тест требует Composer vendor, PDO SQLite и mbstring. Исходники поставляются без vendor и секретов; это не сертифицированный production dist. Унаследованные утилиты релиза сохраняют формат ядра, но подписанные пакеты обычной CMS не могут применяться к Forum Edition. Для обновлений используйте только выпуски своего репозитория с `edition: forum` в manifest. Номер `VERSION` — версия ядра 1.3.0; версия редакции записана в `release.json`.
+CI: `.github/workflows/forum-ci.yml`. Полный интеграционный тест требует Composer vendor, PDO SQLite и mbstring. Исходники поставляются без vendor и секретов; это не сертифицированный production dist. Унаследованные утилиты релиза сохраняют формат ядра, но подписанные пакеты обычной CMS не могут применяться к Forum Edition. Для обновлений используйте только выпуски своего репозитория с `edition: forum` в manifest. Номер `VERSION` — версия ядра 1.3.0; независимая версия форума (`edition_version` в `release.json`) используется сборщиком релизов и updater. Для перехода с 0.1.0 примените изменённые файлы вручную; старый updater ещё сравнивает номера ядра.
 
 ## Roadmap
 

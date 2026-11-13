@@ -23,17 +23,23 @@ try {
         check($res->getStatusCode()===$expect,"$method $path expected $expect, got ".$res->getStatusCode().' '.substr((string)$res->getContent(),0,300));return json_decode((string)$res->getContent(),true,512,JSON_THROW_ON_ERROR)['data']??[];
     };
     $board=$call('GET','/forum')['boards'][0]['id'];
+    $call('GET','/forum/latest?page%5B%5D=1',null,null,400);
+    $call('GET','/forum/search?q=x',null,null,422);
+    $call('GET','/forum/threads/not-a-uuid',null,null,422);
     $call('POST',"/forum/boards/$board/threads",['title'=>'Test topic','body'=>'First'],null,401);
     $member=$call('POST','/forum/register',['name'=>'Member','email'=>'member@example.test','password'=>'MemberPass12345'],null,201)['id'];
     $other=$call('POST','/forum/register',['name'=>'Other','email'=>'other@example.test','password'=>'OtherPass12345'],null,201)['id'];
     $login=fn($email,$password)=>$call('POST','/auth/login',['email'=>$email,'password'=>$password],null,201)['access_token'];
+    $call('POST','/forum/register',['name'=>'Member','email'=>'member@example.test','password'=>'MemberPass12345'],null,409);
     $m=$login('member@example.test','MemberPass12345');$a=$login('admin@example.test','AdminPass12345');$o=$login('other@example.test','OtherPass12345');
     $t=$call('POST',"/forum/boards/$board/threads",['title'=>'Test topic','body'=>'First <script>not HTML</script>'],$m,201)['id'];
     $post=$call('GET',"/forum/threads/$t")['posts'][0]['id'];
+    $call('POST',"/forum/threads/$t/posts",['body'=>''], $o,422);
     $call('POST',"/forum/threads/$t/posts",['body'=>'Second'],$o,201);
     $posts=$call('GET',"/forum/threads/$t")['posts'];check($posts[0]['id']===$post&&count($posts)===2,'post ordering');
     $call('PATCH',"/forum/posts/$post",['body'=>'Unauthorized'],$o,403);
     $call('PATCH',"/forum/posts/$post",['body'=>'Edited'],$m);
+    $call('PUT',"/forum/posts/$post/reaction",['enabled'=>'true'],$o,422);
     $call('PUT',"/forum/posts/$post/reaction",['enabled'=>true],$o);$call('PUT',"/forum/posts/$post/reaction",['enabled'=>true],$o);
     check((int)$call('GET',"/forum/threads/$t")['posts'][0]['likes']===1,'reaction idempotency');
     $call('PUT',"/forum/threads/$t/watch",['enabled'=>true],$m);check(count($call('GET','/forum/watches',null,$m))===1,'subscription stored');
@@ -47,5 +53,6 @@ try {
     $call('POST',"/forum/threads/$t/moderate",['action'=>'delete'],$a);$call('GET',"/forum/threads/$t",null,null,404);
     check((int)$db->connection()->query('SELECT COUNT(*) FROM ce_forum_posts')->fetchColumn()===0,'cascade removal');
     check($app->handle(Request::create('https://forum.test/'))->getStatusCode()===200,'forum home');
+    check($app->handle(Request::create('https://forum.test/'))->headers->get('X-CajeerEngine-Forum-Version')==='0.1.1','forum version header');
     echo "Forum integration passed\n";
 } finally {foreach(glob($tmp.'/*')?:[] as $f)unlink($f);rmdir($tmp);}

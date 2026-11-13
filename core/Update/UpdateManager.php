@@ -46,7 +46,7 @@ final class UpdateManager
             $zip=new \PharData($packagePath); $name='cajeerengine/release-manifest.json';
             if (!isset($zip[$name])||$zip[$name]->getSize()>16*1024*1024) throw new \RuntimeException('Missing manifest');
             $m=json_decode($zip[$name]->getContent(),true,512,JSON_THROW_ON_ERROR);
-            if (($m['edition'] ?? '') !== 'forum') throw new \RuntimeException('Forum Edition release required; CMS packages cannot be applied.');
+            if (($m['edition'] ?? '') !== 'forum' || !isset($m['upstream_version'])) throw new \RuntimeException('Forum Edition release required; CMS packages cannot be applied.');
             $version=$m['version']??''; $mode=$m['mode']??'';
             if (!is_string($version)||!preg_match('/^\d+\.\d+\.\d+(?:-[a-zA-Z0-9.-]+)?$/D',$version)||!in_array($mode,['source','dist'],true)) throw new \RuntimeException('Invalid release identity');
             $m=(new ReleaseArtifactVerifier())->verify($packagePath,$mode,$version);
@@ -286,6 +286,6 @@ final class UpdateManager
     private function trustedKey(): string { $p=(string)getenv('UPDATE_TRUSTED_PUBLIC_KEY_FILE'); if ($p===''||!str_starts_with($p,'/')||!is_file($p)||is_link($p)||(fileperms($p)&0022)!==0||str_starts_with(realpath($p)?:$p,rtrim($this->rootPath,'/').'/')) throw new \RuntimeException('Provision UPDATE_TRUSTED_PUBLIC_KEY_FILE'); return $p; }
     private function option(array $o,string $k): ?string { $v=$o[$k]??null; return is_string($v)&&trim($v)!==''?trim($v):null; }
     private function resolvePackage(string $p): string { if (str_contains($p,'://')||str_contains($p,"\0")) throw new \RuntimeException('Use local ZIP'); return str_starts_with($p,'/')?$p:$this->rootPath.'/'.$p; }
-    private function currentVersion(): string { return trim((string)file_get_contents($this->rootPath.'/VERSION')); }
+    private function currentVersion(): string { return (new \CajeerEngine\Forum\ForumVersion($this->rootPath))->current(); }
     private function cliOnly(): void { if (PHP_SAPI!=='cli') throw new \RuntimeException('Use dedicated CLI updater'); }
 }

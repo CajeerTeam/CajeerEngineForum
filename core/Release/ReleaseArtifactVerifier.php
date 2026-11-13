@@ -62,10 +62,17 @@ final class ReleaseArtifactVerifier
             unset($actual[$prefix . $file]);
         }
         if ($actual !== []) throw new \RuntimeException('Unlisted ZIP entries: ' . implode(', ', array_keys($actual)));
+        $upstream = $version;
+        if (($manifest['edition'] ?? null) === 'forum' && isset($manifest['upstream_version'])) {
+            $upstream = \CajeerEngine\Forum\ForumVersion::validate($manifest['upstream_version']);
+            $release = json_decode($zip[$prefix . 'release.json']->getContent(), true, 512, JSON_THROW_ON_ERROR);
+            if (($release['edition'] ?? null) !== 'forum' || ($release['edition_version'] ?? null) !== $version || ($release['upstream_version'] ?? null) !== $upstream || ($release['version'] ?? null) !== $upstream) throw new \RuntimeException('Forum release identity mismatch');
+        }
         $required = array_merge(['VERSION', 'release.json', 'composer.json', '.env.example', 'bin/cajeer', 'public/index.php', 'public/install/index.php', 'public/upgrade/index.php', 'public/upgrade/upgrade.js', 'tools/update-postcheck.php', 'tools/update-recovery.php', 'core/Backup/BackupManager.php', 'core/Update/UpdateManager.php', 'public/admin/index.html', 'public/admin/assets/admin-app.js', 'public/admin/assets/admin-app.css', 'public/admin/assets/admin-manifest.json'], ReleaseFilePolicy::KEEP);
+        if (($manifest['edition'] ?? null) === 'forum' && isset($manifest['upstream_version'])) $required = array_merge($required, ['core/Forum/ForumVersion.php','core/Forum/ForumController.php','core/Forum/Service/DiscussionService.php','core/Forum/Service/ForumTransaction.php','public/forum-assets/index.html','public/forum-assets/forum.js','public/forum-assets/forum.css']);
         if ($mode === 'dist') $required = array_merge($required, ['composer.lock'], ReleaseDependencyInventory::AUTOLOAD_FILES);
-        elseif (version_compare($version,'1.2.5','>=')) $required = array_merge($required, ['deploy/production.py','deploy/install.php','deploy/verify.php','deploy/host-smoke.sh','deploy/test_production.py','deploy/site.example.json','docs/production-deployment.md']);
-        if ($mode === 'source' && version_compare($version, '1.3.0', '>=')) $required = array_merge($required, ['tools/production-acceptance.py','tools/certification-evidence.py','tools/certification-regression.py','tools/rate-limit-concurrency.php','docs/production-certification.md']);
+        elseif (version_compare($upstream,'1.2.5','>=')) $required = array_merge($required, ['deploy/production.py','deploy/install.php','deploy/verify.php','deploy/host-smoke.sh','deploy/test_production.py','deploy/site.example.json','docs/production-deployment.md']);
+        if ($mode === 'source' && version_compare($upstream, '1.3.0', '>=')) $required = array_merge($required, ['tools/production-acceptance.py','tools/certification-evidence.py','tools/certification-regression.py','tools/rate-limit-concurrency.php','docs/production-certification.md']);
         foreach ($required as $file) if (!in_array($file, $files, true)) throw new \RuntimeException('Required ZIP entry missing: ' . $file);
         foreach (['pgsql', 'mysql', 'sqlite'] as $driver) {
             if (!array_filter($files, static fn ($file) => str_starts_with($file, 'migrations/' . $driver . '/') && str_ends_with($file, '.sql'))) throw new \RuntimeException('Missing migrations: ' . $driver);
@@ -74,9 +81,9 @@ final class ReleaseArtifactVerifier
             $packages = ReleaseDependencyInventory::validate($zip[$prefix . 'composer.lock']->getContent(), $zip[$prefix . 'vendor/composer/installed.json']->getContent());
             foreach ($packages as $package) if (!isset($checksums['vendor/' . $package . '/composer.json'])) throw new \RuntimeException('Missing locked package: ' . $package);
         }
-        if (trim($zip[$prefix . 'VERSION']->getContent()) !== $version) throw new \RuntimeException('Archive VERSION mismatch');
+        if (trim($zip[$prefix . 'VERSION']->getContent()) !== $upstream) throw new \RuntimeException('Archive VERSION mismatch');
         $admin = json_decode($zip[$prefix . 'public/admin/assets/admin-manifest.json']->getContent(), true, 512, JSON_THROW_ON_ERROR);
-        if (($admin['ready'] ?? false) !== true || ($admin['version'] ?? '') !== $version) throw new \RuntimeException('Invalid admin manifest');
+        if (($admin['ready'] ?? false) !== true || ($admin['version'] ?? '') !== $upstream) throw new \RuntimeException('Invalid admin manifest');
         foreach (['index.html', 'assets/admin-app.js', 'assets/admin-app.css', 'assets/admin-preview.js', 'assets/admin-preview.css'] as $asset) {
             $hash = $checksums['public/admin/' . $asset] ?? null;
             if ($hash === null || ($admin['files'][$asset]['sha256'] ?? null) !== $hash) throw new \RuntimeException('Admin asset mismatch: ' . $asset);

@@ -155,6 +155,7 @@ final class Application
         $response->headers->set('X-Runtime-Ms',(string)round($duration*1000));
         $this->container->get(RuntimeLogger::class)->info('HTTP request handled',$trace->fields()+['request_id'=>(string)$request->attributes->get('request_id',''),'method'=>$request->getMethod(),'route'=>$route,'status'=>$response->getStatusCode(),'duration_ms'=>round($duration*1000,3)]);
         $response->headers->set('X-CajeerEngine-Version', $this->config->string('app.version', '1.3.0'));
+        $response->headers->set('X-CajeerEngine-Forum-Version', $this->config->string('app.edition_version'));
         $response->headers->set('X-CajeerEngine-Database', $this->config->string('database.default', 'pgsql'));
         $this->events->dispatch(new RuntimeEvent('kernel.request_handled', [
             'request_id' => (string) $request->attributes->get('request_id', ''),
@@ -436,7 +437,18 @@ final class Application
         /** @var PublicController $public */
         $public = $container->get('controller.public');
 
-        $forum = new \CajeerEngine\Forum\ForumController($container->get(DatabaseManager::class), $container->get(UserRepository::class), $container->get(PasswordHasher::class), $container->get('root_path'));
+        $forumDb = $container->get(DatabaseManager::class);
+        $forumTx = new \CajeerEngine\Forum\Service\ForumTransaction($forumDb, new \CajeerEngine\Database\Repository\AuditLogRepository($forumDb));
+        $forumThreads = new \CajeerEngine\Forum\Repository\ThreadRepository($forumDb);
+        $forum = new \CajeerEngine\Forum\ForumController(
+            new \CajeerEngine\Forum\Service\DiscussionService($forumDb, $forumTx,
+                new \CajeerEngine\Forum\Repository\BoardRepository($forumDb), $forumThreads,
+                new \CajeerEngine\Forum\Repository\PostRepository($forumDb), new \CajeerEngine\Forum\Repository\MemberRepository($forumDb)),
+            new \CajeerEngine\Forum\Service\EngagementService($forumTx, new \CajeerEngine\Forum\Repository\EngagementRepository($forumDb), $forumThreads),
+            new \CajeerEngine\Forum\Service\ModerationService($forumTx, new \CajeerEngine\Forum\Repository\ReportRepository($forumDb), $forumThreads),
+            new \CajeerEngine\Forum\Service\RegistrationService($forumTx, $container->get(UserRepository::class), $container->get(PasswordHasher::class)),
+            $container->get('root_path')
+        );
         $controllers = compact('forum', 'health', 'system', 'contentTypes', 'entries', 'runtime', 'search', 'queue', 'scheduler', 'webhooks', 'extensions', 'installer', 'importExport', 'updates', 'rc', 'stable', 'admin', 'media', 'public', 'cms', 'database', 'auth', 'users', 'roles', 'apiTokens', 'security');
         foreach (\CajeerEngine\Http\RouteRegistry::all() as [$method, $path, $name, $controller, $action, $scopes]) {
             $router->add([$method], $path, $name, [$controllers[$controller], $action], $scopes);

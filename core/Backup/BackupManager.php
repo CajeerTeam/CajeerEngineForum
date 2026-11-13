@@ -34,7 +34,7 @@ final class BackupManager
         $this->privateBase();
         $id=gmdate('Ymd-His').'-'.bin2hex(random_bytes(8));
         $dir=$this->base.'/'.$id; F::dir($dir); chmod($dir,0700);
-        $manifest=['format'=>'cajeerengine.backup.v2','id'=>$id,'version'=>$this->version(),'created_at'=>gmdate(DATE_ATOM),'database'=>$this->db->identity(),'database_permissions'=>$this->db->permissions(),'files'=>[],'dirs'=>[],'env'=>null,'env_permissions'=>null];
+        $manifest=['format'=>'cajeerengine.backup.v2','id'=>$id,'version'=>$this->version(),'edition_version'=>(new \CajeerEngine\Support\ProjectInfo($this->root))->editionVersion(),'created_at'=>gmdate(DATE_ATOM),'database'=>$this->db->identity(),'database_permissions'=>$this->db->permissions(),'files'=>[],'dirs'=>[],'env'=>null,'env_permissions'=>null];
         try {
             $this->db->create($dir.'/database.dump');
             $manifest['database_sha256']=F::hash($dir.'/database.dump');

@@ -38,6 +38,7 @@ final readonly class AdminController
                 'app' => [
                     'name' => $this->config->string('app.name', 'CajeerEngine'),
                     'version' => $this->config->string('app.version', '1.3.0'),
+                    'edition_version' => $this->config->string('app.edition_version'),
                     'locale' => $this->config->string('app.locale', 'ru'),
                     'api_base' => '/api/v1',
                     'admin_base' => '/admin/',

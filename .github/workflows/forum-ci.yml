@@ -24,4 +24,7 @@ jobs:
       - run: php bin/cajeer api:lint --strict --json
       - run: node --check public/forum-assets/forum.js
       - run: php tools/forum-regression.php
+      - run: php tools/forum-core-regression.php
+      - run: php tools/release-regression.php
+      - run: php tools/update-regression.php
       - run: php tools/build-release.php --dry-run --all --json

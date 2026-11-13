@@ -243,7 +243,7 @@ final readonly class ReleaseBuilder
         $required = array_merge(['VERSION', 'release.json', 'README.md', 'CHANGELOG.md', 'composer.json', '.env.example', 'bin/cajeer', 'public/index.php', 'public/install/index.php', 'public/upgrade/index.php', 'public/upgrade/upgrade.js', 'tools/update-postcheck.php', 'tools/update-recovery.php', 'core/Backup/BackupManager.php', 'core/Update/UpdateManager.php', 'core/Console/NativeCli.php', 'public/admin/index.html', 'public/admin/assets/admin-app.js', 'public/admin/assets/admin-app.css', 'public/admin/assets/admin-manifest.json'], ReleaseFilePolicy::KEEP);
         if ($mode === 'dist') $required = array_merge($required, ['vendor/autoload.php', 'vendor/composer/installed.json', 'composer.lock']);
         else $required = array_merge($required, ['deploy/production.py', 'deploy/install.php', 'deploy/verify.php', 'deploy/host-smoke.sh', 'deploy/test_production.py', 'deploy/site.example.json', 'docs/production-deployment.md']);
-        if ($mode === 'source' && version_compare($this->version(), '1.3.0', '>=')) $required = array_merge($required, ['tools/production-acceptance.py','tools/certification-evidence.py','tools/certification-regression.py','tools/rate-limit-concurrency.php','docs/production-certification.md']);
+        if ($mode === 'source' && version_compare((new \CajeerEngine\Forum\ForumVersion($this->rootPath))->upstream(), '1.3.0', '>=')) $required = array_merge($required, ['tools/production-acceptance.py','tools/certification-evidence.py','tools/certification-regression.py','tools/rate-limit-concurrency.php','docs/production-certification.md']);
         $checks = [];
         foreach ($required as $file) $checks[$file] = is_file($this->rootPath . '/' . $file) && !is_link($this->rootPath . '/' . $file);
         foreach (['pgsql', 'mysql', 'sqlite'] as $driver) $checks['migrations/' . $driver] = count(glob($this->rootPath . '/migrations/' . $driver . '/*.sql') ?: []) > 0;
@@ -258,6 +258,7 @@ final readonly class ReleaseBuilder
             'format' => 'cajeerengine.release-manifest.v5',
             'project' => 'cajeerengine',
             'edition' => 'forum',
+            'upstream_version' => (new \CajeerEngine\Forum\ForumVersion($this->rootPath))->upstream(),
             'version' => $plan['version'],
             'mode' => $plan['mode'],
             'artifact' => $plan['artifact'],
@@ -351,9 +352,7 @@ final readonly class ReleaseBuilder
 
     private function version(): string
     {
-        $version = trim((string) @file_get_contents($this->rootPath . '/VERSION'));
-        if (!preg_match('/^[0-9]+\.[0-9]+\.[0-9]+(?:-[a-zA-Z0-9.]+)?$/D', $version)) throw new \RuntimeException('Invalid VERSION');
-        return $version;
+        return (new \CajeerEngine\Forum\ForumVersion($this->rootPath))->current();
     }
 
     private function buildEpoch(): int

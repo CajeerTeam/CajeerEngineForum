@@ -30,6 +30,7 @@ final readonly class HealthController
             'status' => $status,
             'engine' => $project->title(),
             'version' => $project->version(),
+            'edition_version' => $project->editionVersion(),
             'engine_api_version' => $project->engineApiVersion(),
             'environment' => $config->string('app.env', 'production'),
             'php' => PHP_VERSION,

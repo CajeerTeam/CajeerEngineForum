@@ -35,6 +35,11 @@ final readonly class ProjectInfo
         return (string) ($release['version'] ?? '0.0.0-dev');
     }
 
+    public function editionVersion(): string
+    {
+        return ($this->release()['edition'] ?? null) === 'forum' ? (new \CajeerEngine\Forum\ForumVersion($this->rootPath))->current() : $this->version();
+    }
+
     public function engineApiVersion(): string
     {
         $release = $this->release();
