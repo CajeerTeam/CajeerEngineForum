@@ -1,5 +1,13 @@
 # Changelog
 
+## Forum Edition 0.1.2 — Database & Installer
+
+- PostgreSQL 17+ / SQLite 3.40+ installation checks; SQLite foreign keys, WAL and persistent database path validation.
+- Atomic dotenv configuration, database preflight before replacement, protected installer lock and transactional first-admin/forum bootstrap. CLI and web support community name, initial category/board and registration policy.
+- New `0016_forum_lookup_indexes.sql` for discussion, member, subscription and foreign-key lookup paths; earlier migration checksums unchanged.
+- Migration status detects missing files and checksum changes; PostgreSQL board listing fixed. Real installer/upgrade regression suite and PostgreSQL 17/18 CI matrix.
+- Edition version 0.1.2; upstream engine and API unchanged.
+
 ## Forum Edition 0.1.1 — Forum Core Refactoring
 
 - Move live forum SQL and business workflows into repositories and transactional services. Preserve API v1 and all existing migrations.

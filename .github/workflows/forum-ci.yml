@@ -28,3 +28,47 @@ jobs:
       - run: php tools/release-regression.php
       - run: php tools/update-regression.php
       - run: php tools/build-release.php --dry-run --all --json
+      - run: php tools/forum-installer-regression.php
+  postgres:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        postgres: ['17', '18']
+    services:
+      postgres:
+        image: postgres:${{ matrix.postgres }}
+        env:
+          POSTGRES_USER: forum_ci
+          POSTGRES_PASSWORD: 'ForumCI-Disposable-123!'
+          POSTGRES_DB: forum_install
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U forum_ci -d forum_install"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      FORUM_TEST_DRIVER: pgsql
+      FORUM_TEST_INSTALL_DB: forum_install
+      FORUM_TEST_UPGRADE_DB: forum_upgrade
+      DB_HOST: 127.0.0.1
+      DB_PORT: '5432'
+      DB_USERNAME: forum_ci
+      DB_PASSWORD: 'ForumCI-Disposable-123!'
+      DB_SSLMODE: disable
+      DB_DATABASE: forum_http
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: mbstring, pdo_pgsql, pdo_sqlite, sodium, zip, dom, xml, xmlwriter, curl, openssl
+          tools: composer:v2
+      - run: composer install --prefer-dist --no-interaction
+      - name: Prepare isolated databases
+        run: |
+          php -r '$p=new PDO("pgsql:host=127.0.0.1;port=5432;dbname=forum_install",getenv("DB_USERNAME"),getenv("DB_PASSWORD")); $p->exec("CREATE DATABASE forum_upgrade"); $p->exec("CREATE DATABASE forum_http");'
+      - run: php tools/forum-installer-regression.php
+      - run: php tools/forum-regression.php

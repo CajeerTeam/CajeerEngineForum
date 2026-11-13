@@ -8,12 +8,13 @@ use CajeerEngine\Database\Repository\{RoleRepository,UserRepository};
 use CajeerEngine\Runtime\ConfigRepository;
 use CajeerEngine\Security\PasswordHasher;
 use Symfony\Component\HttpFoundation\Request;
-$root=dirname(__DIR__);require $root.'/vendor/autoload.php';
+$root=dirname(__DIR__);$driver=getenv('FORUM_TEST_DRIVER')==='pgsql'?'pgsql':'sqlite';require $root.'/vendor/autoload.php';
 $tmp=sys_get_temp_dir().'/forum-ci-'.bin2hex(random_bytes(6));mkdir($tmp,0700);
 function check(bool $condition,string $message): void {if(!$condition)throw new RuntimeException($message);echo "PASS $message\n";}
 try {
-    foreach(['APP_ENV=testing','APP_DEBUG=false','APP_URL=https://forum.test','DB_DRIVER=sqlite','SQLITE_DATABASE='.$tmp.'/forum.sqlite','CACHE_DRIVER=file','QUEUE_DRIVER=file','STORAGE_DRIVER=local','CONTENT_STORAGE=database','CMS_STORAGE=database','FORUM_REGISTRATION=true','RATE_LIMIT_GLOBAL=1000','RATE_LIMIT_AUTH=1000','PASSWORD_ARGON2_MEMORY=8192','PASSWORD_ARGON2_TIME=2'] as $v)putenv($v);
-    $cfg=new ConfigRepository($root);$db=new DatabaseManager($cfg);(new MigrationRunner($db->connection(),$root.'/migrations'))->run('sqlite');
+    foreach(['APP_NAME=Test <Forum>','APP_ENV=testing','APP_DEBUG=false','APP_URL=https://forum.test','DB_DRIVER='.$driver,'SQLITE_DATABASE='.$tmp.'/forum.sqlite','CACHE_DRIVER=file','QUEUE_DRIVER=file','STORAGE_DRIVER=local','CONTENT_STORAGE=database','CMS_STORAGE=database','FORUM_REGISTRATION=true','RATE_LIMIT_GLOBAL=1000','RATE_LIMIT_AUTH=1000','PASSWORD_ARGON2_MEMORY=8192','PASSWORD_ARGON2_TIME=2'] as $v)putenv($v);
+    $cfg=new ConfigRepository($root);$db=new DatabaseManager($cfg);(new MigrationRunner($db->connection(),$root.'/migrations'))->run($driver);
+    if ((int)$db->connection()->query('SELECT COUNT(*) FROM ce_users')->fetchColumn()!==0) throw new RuntimeException('Disposable forum database must be empty');
     $roles=new RoleRepository($db);$roles->seedDefaults();$users=new UserRepository($db,$roles,new PasswordHasher($cfg));$users->createAdmin('admin@example.test','Admin','AdminPass12345');
     $app=Application::boot($root);
     $call=function(string $method,string $path,?array $data=null,?string $token=null,int $expect=200,array $cookies=[],array $extra=[])use($app):array{
@@ -33,6 +34,7 @@ try {
     $call('POST','/forum/register',['name'=>'Member','email'=>'member@example.test','password'=>'MemberPass12345'],null,409);
     $m=$login('member@example.test','MemberPass12345');$a=$login('admin@example.test','AdminPass12345');$o=$login('other@example.test','OtherPass12345');
     $t=$call('POST',"/forum/boards/$board/threads",['title'=>'Test topic','body'=>'First <script>not HTML</script>'],$m,201)['id'];
+    check($call('GET',"/forum/boards/$board")['threads'][0]['id']===$t,'board listing with joined author');
     $post=$call('GET',"/forum/threads/$t")['posts'][0]['id'];
     $call('POST',"/forum/threads/$t/posts",['body'=>''], $o,422);
     $call('POST',"/forum/threads/$t/posts",['body'=>'Second'],$o,201);
@@ -53,6 +55,10 @@ try {
     $call('POST',"/forum/threads/$t/moderate",['action'=>'delete'],$a);$call('GET',"/forum/threads/$t",null,null,404);
     check((int)$db->connection()->query('SELECT COUNT(*) FROM ce_forum_posts')->fetchColumn()===0,'cascade removal');
     check($app->handle(Request::create('https://forum.test/'))->getStatusCode()===200,'forum home');
-    check($app->handle(Request::create('https://forum.test/'))->headers->get('X-CajeerEngine-Forum-Version')==='0.1.1','forum version header');
+    check(str_contains((string)$app->handle(Request::create('https://forum.test/'))->getContent(),'Test &lt;Forum&gt;'),'configured forum title safely escaped');
+    putenv('FORUM_REGISTRATION=false');
+    $call('POST','/forum/register',['name'=>'Closed','email'=>'closed@example.test','password'=>'MemberPass12345'],null,403);
+    check(str_contains((string)$app->handle(Request::create('https://forum.test/'))->getContent(),'data-registration="false"'),'closed registration UI');
+    check($app->handle(Request::create('https://forum.test/'))->headers->get('X-CajeerEngine-Forum-Version')==='0.1.2','forum version header');
     echo "Forum integration passed\n";
 } finally {foreach(glob($tmp.'/*')?:[] as $f)unlink($f);rmdir($tmp);}

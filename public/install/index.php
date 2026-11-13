@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+header('Cache-Control: no-store');
+header('Referrer-Policy: no-referrer');
 $root = dirname(__DIR__, 2);
 $lock = $root . '/storage/app/installed.lock';
 require_once $root . '/core/Update/OperationFiles.php';
@@ -68,7 +70,7 @@ $error = null;
 $result = null;
 
 $selectedDriver = (string) ($_POST['db_driver'] ?? $_GET['db'] ?? 'sqlite');
-$requirements = $service->requirements($selectedDriver);
+$requirements = $service->requirements($selectedDriver, false);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
@@ -80,6 +82,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $driver = (string) ($_POST['db_driver'] ?? 'sqlite');
         $options = [
             'source' => 'web-installer',
+            'setup_token' => (string)($_POST['setup_token'] ?? ''),
+            'app_name' => (string)($_POST['app_name'] ?? 'CajeerEngine Forum Edition'),
+            'category_name' => (string)($_POST['category_name'] ?? 'Сообщество'),
+            'board_name' => (string)($_POST['board_name'] ?? 'Общие обсуждения'),
+            'registration' => ($_POST['registration'] ?? 'open') === 'open',
+            'db_sslmode' => (string)($_POST['db_sslmode'] ?? 'prefer'),
             'preset' => $driver === 'sqlite' ? 'sqlite' : ((ce_bool($_POST['production'] ?? false) && $driver === 'pgsql') ? 'production' : $driver),
             'db' => $driver,
             'domain' => trim((string) ($_POST['domain'] ?? '')),
@@ -108,16 +116,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ce_json_response($result);
         }
     } catch (Throwable $e) {
-        $error = $e->getMessage();
+        $error = $e instanceof \PDOException || $e instanceof \CajeerEngine\Database\DatabaseUnavailable ? 'Ошибка подключения или операции БД. Проверьте параметры и журналы сервера.' : $e->getMessage();
         if (isset($_POST['json'])) {
             ce_json_response(['ok' => false, 'error' => $error], 422);
         }
     }
 
-    $requirements = $service->requirements($selectedDriver);
+    $requirements = $service->requirements($selectedDriver, false);
 }
 
 $defaults = [
+    'app_name' => $_POST['app_name'] ?? 'CajeerEngine Forum Edition',
+    'category_name' => $_POST['category_name'] ?? 'Сообщество',
+    'board_name' => $_POST['board_name'] ?? 'Общие обсуждения',
+    'registration' => $_POST['registration'] ?? 'open',
+    'db_sslmode' => $_POST['db_sslmode'] ?? 'prefer',
     'domain' => $_POST['domain'] ?? ($_SERVER['HTTP_HOST'] ?? '127.0.0.1:8080'),
     'db_driver' => $_POST['db_driver'] ?? 'sqlite',
     'db_host' => $_POST['db_host'] ?? '127.0.0.1',
@@ -137,7 +150,7 @@ header('Content-Type: text/html; charset=utf-8');
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>CajeerEngine Install UX 1.3.0</title>
+    <title>CajeerEngine Forum Installer 0.1.2</title>
     <style>
         :root{color-scheme:light;--bg:#f6f7fb;--card:#fff;--border:#d8dee9;--text:#111827;--muted:#64748b;--ok:#147a35;--fail:#b42318;--warn:#a15c00;--primary:#1f5eff}
         body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,sans-serif}
@@ -177,6 +190,9 @@ header('Content-Type: text/html; charset=utf-8');
         <input type="hidden" name="_csrf" value="<?= ce_h($csrf) ?>">
         <label>Одноразовый setup token (php bin/cajeer install:web-token)<input name="setup_token" type="password" required autocomplete="off"></label>
         <h2>2. Параметры установки</h2>
+        <label for="app_name">Название форума</label><input id="app_name" name="app_name" maxlength="120" value="<?= ce_h($defaults['app_name']) ?>" required>
+        <div class="row"><div><label for="category_name">Первая категория</label><input id="category_name" name="category_name" maxlength="120" value="<?= ce_h($defaults['category_name']) ?>" required></div><div><label for="board_name">Первый раздел</label><input id="board_name" name="board_name" maxlength="120" value="<?= ce_h($defaults['board_name']) ?>" required></div></div>
+        <label for="registration">Регистрация</label><select id="registration" name="registration"><option value="open" <?= $defaults['registration']==='open'?'selected':'' ?>>Открыта</option><option value="closed" <?= $defaults['registration']==='closed'?'selected':'' ?>>Отключена</option></select>
         <label for="domain">Домен / URL</label>
         <input id="domain" name="domain" value="<?= ce_h($defaults['domain']) ?>" placeholder="site.ru" required>
 
@@ -206,6 +222,7 @@ header('Content-Type: text/html; charset=utf-8');
             <div><label for="db_password">DB password</label><input id="db_password" name="db_password" type="password" value=""></div>
         </div>
 
+        <label for="db_sslmode">PostgreSQL SSL mode</label><select id="db_sslmode" name="db_sslmode"><?php foreach (['prefer','require','verify-ca','verify-full','disable'] as $mode): ?><option value="<?= ce_h($mode) ?>" <?= $defaults['db_sslmode']===$mode?'selected':'' ?>><?= ce_h($mode) ?></option><?php endforeach; ?></select>
         <h2>3. Первый администратор</h2>
         <div class="row">
             <div><label for="admin_name">Имя</label><input id="admin_name" name="admin_name" value="<?= ce_h($defaults['admin_name']) ?>" required></div>

@@ -9,6 +9,8 @@ use Symfony\Component\HttpFoundation\Request;
 
 $root = dirname(__DIR__);
 $installPath = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
+$initializing = is_file($root.'/storage/app/install-running.lock') && !is_file($root.'/storage/app/installed.lock');
+if ($initializing && $installPath === '/health/ready') { http_response_code(503); header('Cache-Control: no-store'); header('Content-Type: application/json'); echo '{"status":"installing"}'; exit; }
 require_once $root . '/core/Console/NativeCli.php';
 require_once $root . '/core/Console/OperationsCli.php';
 if (in_array($installPath,['/health/live','/health/ready','/metrics'],true)) {
@@ -47,6 +49,16 @@ if ($installPath === '/upgrade' || str_starts_with($installPath, '/upgrade/')) {
     exit;
 }
 
+// Do not accept public requests between migration and the first-admin commit.
+// Failed installation stays closed until the operator resumes the installer.
+if ($initializing) {
+    header('Cache-Control: no-store');
+    if (in_array($_SERVER['REQUEST_METHOD'] ?? 'GET',['GET','HEAD'],true) && !str_starts_with($installPath,'/api/')) {
+        header('Location: /install/',true,302); exit;
+    }
+    http_response_code(503); header('Content-Type: application/json; charset=utf-8');
+    echo '{"error":{"code":"installation_incomplete","message":"Complete installation first."}}'; exit;
+}
 $maintenancePath = $root . '/storage/app/maintenance.json';
 if (is_file($maintenancePath) && !in_array($installPath, ['/api/v1/health', '/api/v1/auth/login', '/api/v1/auth/me', '/api/v1/auth/logout', '/api/v1/updates/maintenance', '/api/v1/updates/maintenance/off'], true)) {
     $payload = json_decode((string) file_get_contents($maintenancePath), true);

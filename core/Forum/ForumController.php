@@ -14,7 +14,10 @@ final readonly class ForumController
 
     public function page(): Response
     {
-        return new Response((string) file_get_contents($this->root.'/public/forum-assets/index.html'), 200, ['Content-Type'=>'text/html; charset=UTF-8']);
+        $name = htmlspecialchars(getenv('APP_NAME') ?: 'CajeerEngine Forum Edition', ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+        $registration = filter_var(getenv('FORUM_REGISTRATION') === false ? 'true' : getenv('FORUM_REGISTRATION'), FILTER_VALIDATE_BOOLEAN);
+        $html = strtr((string)file_get_contents($this->root.'/public/forum-assets/index.html'), ['<!--FORUM_NAME-->'=>$name,'<!--FORUM_REGISTRATION-->'=>$registration?'true':'false']);
+        return new Response($html, 200, ['Content-Type'=>'text/html; charset=UTF-8']);
     }
     private function respond(callable $operation, int $status = 200): JsonResponse
     {

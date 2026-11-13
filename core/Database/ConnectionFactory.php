@@ -47,6 +47,7 @@ final readonly class ConnectionFactory
             PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
             PDO::ATTR_STRINGIFY_FETCHES => false,
         ];
+        if ($driver === 'pgsql') $options[PDO::ATTR_EMULATE_PREPARES] = false;
         if ($driver === 'mysql') {
             $options[PDO::ATTR_EMULATE_PREPARES] = false;
             $options[PDO::ATTR_TIMEOUT] = self::bounded($connection,'connect_timeout',5,1,60);
@@ -63,7 +64,8 @@ final readonly class ConnectionFactory
             $pdo->exec('PRAGMA busy_timeout = '.self::bounded($connection,'busy_timeout_ms',5000,0,60000));
             // WAL is opt-in: do not change journal mode on every connection by default.
             if(($connection['wal']??false)===true){
-                $mode=$pdo->query('PRAGMA journal_mode = WAL')->fetchColumn();
+                $mode=$pdo->query('PRAGMA journal_mode')->fetchColumn();
+                if($mode!=='wal' && $mode!=='memory') $mode=$pdo->query('PRAGMA journal_mode = WAL')->fetchColumn();
                 if($mode!=='wal'&&$mode!=='memory')throw new \RuntimeException('Cannot enable SQLite WAL');
             }
         }elseif($driver==='pgsql'){

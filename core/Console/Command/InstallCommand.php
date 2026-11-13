@@ -26,6 +26,11 @@ final class InstallCommand extends BaseCommand
             ->addOption('db-name', null, InputOption::VALUE_REQUIRED, 'DB database/name или путь к SQLite-файлу.')
             ->addOption('db-user', null, InputOption::VALUE_REQUIRED, 'DB user.')
             ->addOption('db-password', null, InputOption::VALUE_REQUIRED, 'DB password.')
+            ->addOption('app-name', null, InputOption::VALUE_REQUIRED, 'Название форума.')
+            ->addOption('category-name', null, InputOption::VALUE_REQUIRED, 'Название первой категории.')
+            ->addOption('board-name', null, InputOption::VALUE_REQUIRED, 'Название первого раздела.')
+            ->addOption('registration', null, InputOption::VALUE_REQUIRED, 'open или closed.')
+            ->addOption('db-sslmode', null, InputOption::VALUE_REQUIRED, 'PostgreSQL sslmode: prefer, require, verify-full.')
             ->addOption('domain', null, InputOption::VALUE_REQUIRED, 'Домен проекта, например site.ru.')
             ->addOption('admin-name', null, InputOption::VALUE_REQUIRED, 'Имя первого администратора.')
             ->addOption('admin-email', null, InputOption::VALUE_REQUIRED, 'Email первого администратора.')
@@ -35,7 +40,7 @@ final class InstallCommand extends BaseCommand
             ->addOption('no-migrate', null, InputOption::VALUE_NONE, 'Не запускать миграции.')
             ->addOption('no-admin', null, InputOption::VALUE_NONE, 'Не создавать первого администратора.')
             ->addOption('no-lock', null, InputOption::VALUE_NONE, 'Не создавать storage/app/installed.lock.')
-            ->addOption('force', null, InputOption::VALUE_NONE, 'Переустановить даже при наличии installed.lock.')
+            ->addOption('force', null, InputOption::VALUE_NONE, 'Устаревшая опция: установленный форум защищён от повторной установки.')
             ->addOption('json', null, InputOption::VALUE_NONE, 'Вывести JSON.');
     }
 
@@ -47,7 +52,7 @@ final class InstallCommand extends BaseCommand
 
         if ($input->getOption('json')) {
             $output->writeln(json_encode($result, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
-            return self::SUCCESS;
+            return ($result['ok'] ?? false) ? self::SUCCESS : self::FAILURE;
         }
 
         $io->success('CajeerEngine ' . ($result['database_driver'] ?? '') . ' установлен.');
@@ -83,6 +88,10 @@ final class InstallCommand extends BaseCommand
             'db_user' => $input->getOption('db-user'),
             'db_password' => $input->getOption('db-password'),
             'domain' => $input->getOption('domain'),
+            'app_name' => $input->getOption('app-name'),
+            'category_name' => $input->getOption('category-name'),
+            'board_name' => $input->getOption('board-name'),
+            'db_sslmode' => $input->getOption('db-sslmode'),
             'admin_name' => $input->getOption('admin-name'),
             'admin_email' => $input->getOption('admin-email'),
             'admin_password' => $input->getOption('admin-password'),
@@ -94,6 +103,9 @@ final class InstallCommand extends BaseCommand
             'force' => (bool) $input->getOption('force'),
         ];
 
+        $registration = $input->getOption('registration');
+        if ($registration !== null && !in_array($registration,['open','closed'],true)) throw new \InvalidArgumentException('--registration must be open or closed');
+        if ($registration !== null) $options['registration'] = $registration === 'open';
         if (!$input->getOption('interactive')) {
             return array_filter($options, static fn (mixed $value): bool => $value !== null && $value !== '');
         }
@@ -101,7 +113,11 @@ final class InstallCommand extends BaseCommand
         $io->title('CajeerEngine Install Wizard');
         $preset = (string) ($options['preset'] ?: $io->choice('Режим установки', ['sqlite', 'postgres', 'mysql', 'production', 'aapanel', 'custom'], 'sqlite'));
         $options['preset'] = $preset;
-        $options['domain'] = (string) ($options['domain'] ?: $io->ask('Домен', '127.0.0.1:8080'));
+        $options['app_name'] = (string) ($options['app_name'] ?: $io->ask('Название форума','CajeerEngine Forum Edition'));
+        $options['category_name'] = (string) ($options['category_name'] ?: $io->ask('Первая категория','Сообщество'));
+        $options['board_name'] = (string) ($options['board_name'] ?: $io->ask('Первый раздел','Общие обсуждения'));
+        $options['registration'] ??= $io->confirm('Разрешить публичную регистрацию?',true);
+        $options['domain'] = (string) ($options['domain'] ?: $io->ask('URL форума', 'http://127.0.0.1:8080'));
         $driverDefault = match ($preset) { 'sqlite' => 'sqlite', 'mysql' => 'mysql', default => 'pgsql' };
         $options['db'] = (string) ($options['db'] ?: $io->choice('Тип БД', ['sqlite', 'pgsql', 'mysql', 'mariadb'], $driverDefault));
         if ($options['db'] !== 'sqlite') {
@@ -110,6 +126,7 @@ final class InstallCommand extends BaseCommand
             $options['db_name'] = (string) ($options['db_name'] ?: $io->ask('DB database', 'cajeerengine'));
             $options['db_user'] = (string) ($options['db_user'] ?: $io->ask('DB user', 'cajeerengine'));
             $options['db_password'] = (string) ($options['db_password'] ?: $io->askHidden('DB password'));
+            if ($options['db']==='pgsql') $options['db_sslmode'] = (string) ($options['db_sslmode'] ?: $io->choice('PostgreSQL SSL mode',['prefer','require','verify-ca','verify-full','disable'],'prefer'));
         } else {
             $options['db_name'] = (string) ($options['db_name'] ?: $io->ask('SQLite path', 'storage/database/cajeer.sqlite'));
         }

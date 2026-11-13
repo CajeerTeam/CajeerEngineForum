@@ -24,7 +24,7 @@ final class MigrationStatusCommand extends BaseCommand
         $output->writeln('Applied: ' . count($status['applied']));
         foreach ($status['applied'] as $migration) {
             $checksum = ($migration['checksum_ok'] ?? true) ? 'checksum ok' : 'checksum changed';
-            $output->writeln(sprintf('  [OK] %s batch=%s %s', $migration['migration'], $migration['batch'] ?? '-', $checksum));
+            $output->writeln(sprintf('  [%s] %s batch=%s %s', ($migration['checksum_ok'] ?? true) ? 'OK' : 'FAIL', $migration['migration'], $migration['batch'] ?? '-', $checksum));
         }
 
         $output->writeln('Pending: ' . count($status['pending']));
@@ -37,6 +37,6 @@ final class MigrationStatusCommand extends BaseCommand
             $output->writeln('  [FAILED] ' . $migration['migration'] . ' ' . ($migration['error'] ?? ''));
         }
 
-        return count($status['failed']) > 0 ? self::FAILURE : self::SUCCESS;
+        return count($status['failed']) > 0 || in_array(false,array_column($status['applied'],'checksum_ok'),true) ? self::FAILURE : self::SUCCESS;
     }
 }
