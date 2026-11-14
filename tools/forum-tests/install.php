@@ -32,7 +32,7 @@ if (!$result['ok']) throw new RuntimeException('Fixture install failed');
     'APP_ENV'=>'testing','APP_DEBUG'=>'false','FORUM_REQUIRE_EMAIL_VERIFICATION'=>'true',
     'FORUM_SMTP_HOST'=>'127.0.0.1','FORUM_SMTP_PORT'=>'1025','FORUM_SMTP_SECURITY'=>'plain',
     'FORUM_SMTP_FROM'=>'forum@example.test','FORUM_SMTP_USERNAME'=>'','FORUM_SMTP_PASSWORD'=>'',
-    'RATE_LIMIT_AUTH'=>'80','RATE_LIMIT_GLOBAL'=>'1000','RATE_LIMIT_WINDOW_SECONDS'=>'600',
+    'RATE_LIMIT_AUTH'=>'160','RATE_LIMIT_GLOBAL'=>'1000','RATE_LIMIT_WINDOW_SECONDS'=>'600',
     'PASSWORD_ARGON2_MEMORY'=>'8192','PASSWORD_ARGON2_TIME'=>'2',
 ],$root.'/.env.example');
 echo "Fixture installed ($driver)\n";

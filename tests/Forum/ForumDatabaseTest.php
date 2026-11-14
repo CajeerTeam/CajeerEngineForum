@@ -143,6 +143,32 @@ final class ForumDatabaseTest extends TestCase
             self::assertSame(2,$discussion->thread($target,0,$reader)['read_state']['unread_posts']);
             self::assertTrue($integrity->check()['ok']);
 
+            // Private messages use the same real database and transaction runtime.
+            $conversations=$discussion->conversations();
+            $third=$users->create('conversation-third@example.test','Third','unused-test-hash',['forum-member']);
+            $thirdActor=new \CajeerEngine\Forum\Security\ForumAccessPolicy($third,['forum:write']);
+            $conv=$conversations->create($actor,['participant_ids'=>[$member],'title'=>'Private test','body'=>'First private message','kind'=>'group']);
+            $cid=$conv['id'];
+            self::assertSame(1,$conversations->inbox($reader,0,false,false,'')['unread']);
+            self::assertSame(0,$conversations->inbox($thirdActor,0,false,false,'')['unread']);
+            try {$conversations->view($thirdActor,$cid,0);self::fail('Outsider read private history');}
+            catch (\CajeerEngine\Forum\ForumException $e){self::assertSame(404,$e->status);}
+            $conversations->invite($actor,$cid,['participant_ids'=>[$third]]);
+            self::assertSame([],$conversations->view($thirdActor,$cid,0)['messages']);
+            $privateReply=$conversations->send($reader,$cid,['body'=>'Second private message']);
+            self::assertSame(1,$conversations->inbox($thirdActor,0,false,true,'')['notification_unread']);
+            self::assertSame(0,$conversations->mark($thirdActor,$cid,['message_id'=>$privateReply['id']])['unread']);
+            $report=$conversations->report($thirdActor,$cid,$privateReply['id'],['reason'=>'Report']);
+            $conversations->edit($reader,$cid,$privateReply['id'],['body'=>'Edited']);
+            self::assertSame('Second private message',$conversations->reportDetail($actor,$report['id'])['body_snapshot']);
+            $conversations->block($thirdActor,$member,['enabled'=>true]);
+            try {$conversations->send($reader,$cid,['body'=>'Blocked']);self::fail('Block bypass');}
+            catch (\CajeerEngine\Forum\ForumException $e){self::assertSame(403,$e->status);}
+            $conversations->leave($thirdActor,$cid);
+            try {$conversations->view($thirdActor,$cid,0);self::fail('Former participant read history');}
+            catch (\CajeerEngine\Forum\ForumException $e){self::assertSame(404,$e->status);}
+            self::assertTrue($integrity->check()['ok']);
+
             // Outbox rows commit/rollback with the actual publication, not external queue IO.
             $notifications=$discussion->notifications();
             $notified=$discussion->createThread($reader,$board,'Notify owner','First');

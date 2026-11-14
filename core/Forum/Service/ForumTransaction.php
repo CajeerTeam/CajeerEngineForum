@@ -30,6 +30,7 @@ final readonly class ForumTransaction
     }
 
     public function enqueueWatchNotification(string $actor,string $post,array $recipients): void { (new \CajeerEngine\Forum\Repository\NotificationRepository($this->db))->enqueue('reply',$actor,$post,$recipients,null,'board'); }
+    public function conversations(): ConversationService { return new ConversationService($this,new \CajeerEngine\Forum\Repository\ConversationRepository($this->db)); }
     public function watches(): WatchService { return new WatchService($this,new \CajeerEngine\Forum\Repository\WatchRepository($this->db),new \CajeerEngine\Forum\Repository\ThreadRepository($this->db)); }
 
     public function driver(): string { return $this->db->driver(); }

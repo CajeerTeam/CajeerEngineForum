@@ -43,6 +43,23 @@ final readonly class ForumController
         $term=V::text($q['q']??'','q',100,$tag===null?2:0);
         return $this->discussions->search($term,$this->offset($r),$this->reader($r),$tag);
     }); }
+    public function conversations(Request $r): JsonResponse { return $this->respond(fn()=> $this->discussions->conversations()->inbox($this->actor($r),$this->offset($r),($r->query->all()['archived']??null)==='1',($r->query->all()['notifications']??null)==='1',$r->query->all()['q']??'')); }
+    public function createConversation(Request $r): JsonResponse { return $this->respond(fn()=> $this->discussions->conversations()->create($this->actor($r),$this->body($r)),201); }
+    public function conversation(Request $r,array $p): JsonResponse { return $this->respond(fn()=> $this->discussions->conversations()->view($this->actor($r),$this->id($p),$this->offset($r))); }
+    public function sendConversation(Request $r,array $p): JsonResponse { return $this->respond(fn()=> $this->discussions->conversations()->send($this->actor($r),$this->id($p),$this->body($r)),201); }
+    public function editConversationMessage(Request $r,array $p): JsonResponse { return $this->respond(fn()=> $this->discussions->conversations()->edit($this->actor($r),$this->id($p),V::id($p['message_id']??null),$this->body($r))); }
+    public function inviteConversation(Request $r,array $p): JsonResponse { return $this->respond(fn()=> $this->discussions->conversations()->invite($this->actor($r),$this->id($p),$this->body($r))); }
+    public function removeConversationParticipant(Request $r,array $p): JsonResponse { return $this->respond(fn()=> $this->discussions->conversations()->removeParticipant($this->actor($r),$this->id($p),V::id($p['user_id']??null))); }
+    public function readConversation(Request $r,array $p): JsonResponse { return $this->respond(fn()=> $this->discussions->conversations()->mark($this->actor($r),$this->id($p),$this->body($r))); }
+    public function conversationFlags(Request $r,array $p): JsonResponse { return $this->respond(fn()=> $this->discussions->conversations()->flags($this->actor($r),$this->id($p),$this->body($r))); }
+    public function leaveConversation(Request $r,array $p): JsonResponse { return $this->respond(fn()=> $this->discussions->conversations()->leave($this->actor($r),$this->id($p))); }
+    public function conversationSettings(Request $r): JsonResponse { return $this->respond(fn()=> $this->discussions->conversations()->settings($this->actor($r))); }
+    public function saveConversationSettings(Request $r): JsonResponse { return $this->respond(fn()=> $this->discussions->conversations()->setSettings($this->actor($r),$this->body($r))); }
+    public function blockConversationUser(Request $r,array $p): JsonResponse { return $this->respond(fn()=> $this->discussions->conversations()->block($this->actor($r),$this->id($p),$this->body($r))); }
+    public function reportConversationMessage(Request $r,array $p): JsonResponse { return $this->respond(fn()=> $this->discussions->conversations()->report($this->actor($r),$this->id($p),V::id($p['message_id']??null),$this->body($r)),201); }
+    public function conversationReports(Request $r): JsonResponse { return $this->respond(fn()=> $this->discussions->conversations()->reports($this->actor($r),$this->offset($r))); }
+    public function conversationReport(Request $r,array $p): JsonResponse { return $this->respond(fn()=> $this->discussions->conversations()->reportDetail($this->actor($r),$this->id($p))); }
+    public function resolveConversationReport(Request $r,array $p): JsonResponse { return $this->respond(fn()=> $this->discussions->conversations()->resolve($this->actor($r),$this->id($p),$this->body($r))); }
     public function notifications(Request $r): JsonResponse { return $this->respond(fn()=> $this->discussions->notifications()->inbox($this->actor($r),$this->offset($r),($r->query->all()['count_only']??null)==='1')); }
     public function notificationTarget(Request $r,array $p): JsonResponse { return $this->respond(fn()=> $this->discussions->notifications()->target($this->actor($r),$this->id($p))); }
     public function markNotifications(Request $r): JsonResponse { return $this->respond(fn()=> $this->discussions->notifications()->mark($this->actor($r),$this->body($r))); }

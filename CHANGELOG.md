@@ -1,5 +1,11 @@
 # Changelog
 
+## Forum Edition 0.3.5 — Private Conversations
+
+- Private and group text conversations, membership-isolated history and invites, owner handoff, edit, unread watermarks, search and archive/mute.
+- Incoming-message preferences, bilateral blocks, transactional rate limits, reported-message snapshots and audited administrator review.
+- Conversation alerts in the notification center, profile entry points, API/SDK, migration 0026 and integration regressions.
+
 ## Forum Edition 0.3.4 — Watches & Email Delivery
 
 - Thread and direct-board watches with tracking-only, in-app, email, daily and weekly modes; automatic watches, account manager and signed unsubscribe.

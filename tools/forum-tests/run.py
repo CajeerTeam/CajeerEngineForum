@@ -766,13 +766,71 @@ class NetworkTests(unittest.TestCase):
         c.call('DELETE',f'/forum/boards/{board}',200,token=admin)
         c.call('DELETE',f'/forum/categories/{cat}',200,token=admin)
 
-    def test_11_rate_limit(self):
+    def test_11_conversations(self):
+        c=Client(self.base);admin=c.login(ADMIN,ADMIN_PASSWORD)[0]['data']['access_token']
+        ea,a,at=self.activated(c); eb,b,bt=self.activated(c); ec,third,ct=self.activated(c)
+        base='/forum/conversations'; settings='/forum/conversation-settings'
+        data={'participant_ids':[b],'title':'Private conversation regression','body':XSS,'kind':'group'}
+        c.call('POST',base,401,data)
+        browser=Client(self.base);browser.login(ea,browser=True);browser.call('POST',base,403,data)
+        made=c.call('POST',base,201,data,token=at);path=base+'/'+made['id']; first=made['message_id']
+        for token in (ct,admin):
+            c.call('GET',path,404,token=token);c.call('POST',path+'/messages',404,{'body':'Intrusion'},token=token)
+        self.assertEqual(1,c.call('GET',base,token=bt)['unread'])
+        self.assertEqual(0,c.call('GET',base+'?q=Private',token=ct)['unread'])
+        self.assertEqual([],c.call('GET',base+'?q=Private',token=ct)['items'])
+        self.assertEqual(XSS,c.call('GET',path,token=bt)['messages'][0]['body'])
+        c.call('PATCH',path+'/messages/'+first,403,{'body':'Intrusion'},token=bt)
+        c.call('PATCH',path+'/messages/'+first,200,{'body':'Original private history'},token=at)
+        c.call('POST',path+'/read',200,{'message_id':first},token=bt)
+        self.assertEqual(0,c.call('GET',base,token=bt)['unread'])
+        c.call('POST',path+'/invite',403,{'participant_ids':[third]},token=bt)
+        c.call('PUT',settings,200,{'incoming':'none'},token=ct)
+        c.call('POST',path+'/invite',403,{'participant_ids':[third]},token=at)
+        c.call('PUT',settings,200,{'incoming':'members'},token=ct)
+        c.call('POST',path+'/invite',200,{'participant_ids':[third]},token=at)
+        self.assertEqual([],c.call('GET',path,token=ct)['messages'])
+        self.assertEqual([],c.call('GET',base+'?q=Original+private+history',token=ct)['items'])
+        c.call('POST',path+'/read',404,{'message_id':first},token=ct)
+        c.call('POST',path+'/messages/'+first+'/report',404,{'reason':'Attempt'},token=ct)
+        c.call('PATCH',path+'/settings',200,{'muted':True,'archived':True},token=ct)
+        second=c.call('POST',path+'/messages',201,{'body':'New group message'},token=bt)['id']
+        self.assertEqual(1,c.call('GET',base,token=ct)['unread'])
+        self.assertEqual(0,c.call('GET',base+'?notifications=1',token=ct)['notification_unread'])
+        self.assertEqual([second],[m['id'] for m in c.call('GET',path,token=ct)['messages']])
+        c.call('PATCH',path+'/settings',200,{'muted':False},token=ct)
+        self.assertEqual(1,c.call('GET',base+'?notifications=1',token=ct)['notification_unread'])
+        self.assertEqual(1,c.call('GET','/forum/notifications?count_only=1',token=ct)['conversation_unread'])
+        self.assertEqual([],c.call('GET','/forum/notifications',token=admin)['conversations'])
+        report=c.call('POST',path+'/messages/'+second+'/report',201,{'reason':'Reported message'},token=ct)['id']
+        c.call('PATCH',path+'/messages/'+second,200,{'body':'Edited afterwards'},token=bt)
+        c.call('GET','/forum/conversation-reports/'+report,403,token=ct)
+        self.assertEqual('New group message',c.call('GET','/forum/conversation-reports/'+report,token=admin)['body_snapshot'])
+        c.call('PUT','/forum/conversation-reports/'+report,200,{'status':'resolved'},token=admin)
+        c.call('PUT','/forum/conversation-blocks/'+b,200,{'enabled':True},token=ct)
+        c.call('POST',path+'/messages',403,{'body':'Blocked'},token=bt)
+        c.call('POST',base,403,{'participant_ids':[third],'title':'Blocked','body':'Blocked'},token=bt)
+        c.call('PUT','/forum/conversation-blocks/'+b,200,{'enabled':False},token=ct)
+        c.call('DELETE',path+'/participants/'+third,403,token=bt)
+        c.call('DELETE',path+'/participants/'+third,200,token=at);c.call('GET',path,404,token=ct)
+        c.call('POST',path+'/invite',200,{'participant_ids':[third]},token=at)
+        self.assertEqual([],c.call('GET',path,token=ct)['messages'])
+        c.call('POST',path+'/leave',200,token=at);c.call('GET',path,404,token=at)
+        self.assertTrue(c.call('GET',path,token=bt)['can_invite'])
+        # Older-page watermark cannot regress or acknowledge future messages.
+        third_msg=c.call('POST',path+'/messages',201,{'body':'After reinvite'},token=bt)['id']
+        c.call('POST',path+'/read',200,{'message_id':third_msg},token=ct)
+        self.assertEqual(0,c.call('GET',base,token=ct)['unread'])
+        direct=c.call('POST',base,201,{'participant_ids':[b],'title':'Direct message','body':'Private direct','kind':'direct'},token=at)['id']
+        c.call('POST',base+'/'+direct+'/invite',403,{'participant_ids':[third]},token=at)
+
+    def test_12_rate_limit(self):
         # Run last: exhaust the real IP auth bucket without guessing credentials.
         c = Client(self.base)
         _, headers = c.request('GET', '/auth/me', 401)
         remaining = int(headers['X-RateLimit-Remaining'])
         self.assertGreaterEqual(remaining, 0)
-        self.assertLessEqual(remaining, 80)
+        self.assertLessEqual(remaining, 160)
         for _ in range(remaining):
             c.request('GET', '/auth/me', 401)
         _, headers = c.request('GET', '/auth/me', 429)
@@ -827,6 +885,20 @@ class BrowserTests(unittest.TestCase):
                 page.get_by_role('link',name='Browser member',exact=True).click()
                 expect(page.locator('.profile-text')).to_have_text(XSS)
                 self.assertEqual(0,page.locator('.profile-text img,.profile-text script').count())
+                writer=Client(self.base); admin_token=writer.login(ADMIN,ADMIN_PASSWORD)[0]['data']['access_token']
+                admin_id=writer.call('GET','/auth/me',token=admin_token)['user_id']
+                page.goto(self.base+'/forum/conversations?to='+admin_id); heading('Личные сообщения')
+                fill('title','Browser private conversation'); fill('body',XSS); click('Создать переписку'); heading('Browser private conversation')
+                expect(page.locator('.conversation-message .body')).to_have_text(XSS)
+                self.assertEqual(0,page.locator('.conversation-message img,.conversation-message script').count())
+                private_id=page.url.rsplit('/',1)[-1]
+                writer.call('POST','/forum/conversations/'+private_id+'/messages',201,{'body':'Private remote answer'},token=admin_token)
+                page.goto(self.base+'/forum/notifications'); heading('Уведомления')
+                page.get_by_role('link',name='Browser private conversation',exact=True).click()
+                expect(page.locator('.conversation-message .body').last).to_have_text('Private remote answer')
+                expect(page.locator('#conversations')).to_have_text('Переписки')
+                click('Архивировать'); page.goto(self.base+'/forum/conversations?archived=1')
+                expect(page.get_by_role('link',name='Browser private conversation',exact=True)).to_be_visible()
                 page.goto(self.base+'/forum'); heading('Разделы форума')
                 page.get_by_role('link', name='Test board', exact=True).click()
                 fill('title', 'Browser regression topic'); fill('body', XSS); click('Создать тему')

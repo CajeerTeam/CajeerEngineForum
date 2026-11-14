@@ -62,7 +62,7 @@ final readonly class NotificationService
     {
         return $this->tx->read(function()use($actor,$offset,$countOnly){
             $allowed=NodePermissionService::allowed($this->tx->permissions()->access($actor));
-            $result=['unread'=>$this->repo->countUnread($actor->userId,$allowed)];
+            $result=['unread'=>$this->repo->countUnread($actor->userId,$allowed)]+$this->tx->conversations()->alerts($actor,$countOnly);
             if(!$countOnly)$result+=['items'=>$this->repo->inbox($actor->userId,$allowed,$offset),'preferences'=>$this->repo->preferences($actor->userId)];
             return $result;
         });

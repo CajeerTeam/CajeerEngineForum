@@ -7,7 +7,7 @@ import uuid
 
 ROOT=Path(__file__).resolve().parents[2]
 uid=lambda: str(uuid.uuid4())
-files=sorted((ROOT/'migrations/sqlite').glob('*.sql'))
+files=sorted(f for f in (ROOT/'migrations/sqlite').glob('*.sql') if f.name[:4]<='0025')
 assert files[-1].name=='0025_forum_watches_delivery.sql'
 db=sqlite3.connect(':memory:'); db.execute('PRAGMA foreign_keys=ON')
 for file in files[:-1]: db.executescript(file.read_text())

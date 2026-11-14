@@ -20,3 +20,5 @@
 .read-controls [hidden],#unread[hidden]{display:none!important}
 
 .notification-entry{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:.75rem}.notification-unread{border-inline-start:3px solid currentColor;padding-inline-start:.75rem}.notification-entry .actions{flex-shrink:0}
+
+.conversation-message{padding:1rem 0;border-bottom:1px solid var(--border,#8884);overflow-wrap:anywhere}.conversation-picker{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center}.conversation-picker .actions{width:100%}.conversation-message .body{white-space:pre-wrap}

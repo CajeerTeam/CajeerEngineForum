@@ -43,6 +43,14 @@ final readonly class ForumDatabaseCheck
             'ce_forum_board_watches'=>['board_id','user_id','mode'],
             'ce_forum_watch_preferences'=>['user_id','auto_mode'],
             'ce_forum_mail_delivery'=>['id','user_id','post_id','board_id','source_kind','mode','state','attempts','due_at','lease_until','lease_token','sent_at','last_error'],
+            'ce_forum_conversation_lock'=>['id'],
+            'ce_forum_conversations'=>['id','owner_id','title','kind','last_sequence','created_at','updated_at'],
+            'ce_forum_conversation_participants'=>['conversation_id','user_id','joined_sequence','read_sequence','active','archived','muted'],
+            'ce_forum_conversation_messages'=>['id','conversation_id','author_id','message_sequence','body','created_at','edited_at'],
+            'ce_forum_conversation_preferences'=>['user_id','incoming'],
+            'ce_forum_user_blocks'=>['user_id','blocked_id'],
+            'ce_forum_conversation_reports'=>['id','message_id','user_id','reason','body_snapshot','status','created_at','resolved_by'],
+            'ce_forum_conversation_limits'=>['user_id','action','window_start','hits'],
             'ce_forum_reports'=>['id','post_id','user_id','reason','status','created_at','resolved_by'],
         ];
         $missing=[];
@@ -64,7 +72,8 @@ final readonly class ForumDatabaseCheck
             'sqlite' => $pdo->query("SELECT name FROM sqlite_master WHERE type='index'")->fetchAll(\PDO::FETCH_COLUMN),
             default => $pdo->query('SELECT DISTINCT index_name FROM information_schema.statistics WHERE table_schema=DATABASE()')->fetchAll(\PDO::FETCH_COLUMN),
         };
-        $missingIndexes = array_values(array_diff(['ce_forum_mail_sent','ce_forum_mail_due','ce_forum_mail_user','ce_forum_mail_post','ce_forum_board_watch_user','ce_forum_notify_pending','ce_forum_notify_inbox','ce_forum_notify_page','ce_forum_notify_post','ce_forum_notify_actor','ce_forum_post_read_sequence','ce_forum_read_thread','ce_forum_profile_field_lookup','ce_forum_tag_lookup','ce_forum_redirect_target','ce_forum_group_members','ce_forum_board_parent','ce_identity_expiry_idx','ce_forum_post_thread','ce_forum_thread_latest','ce_forum_thread_author','ce_forum_post_author','ce_forum_watch_user','ce_forum_reaction_user','ce_forum_report_post','ce_forum_report_user','ce_forum_report_resolver'],$indexes));
+        $missingIndexes = array_values(array_diff(['ce_forum_conv_member','ce_forum_conv_blocked','ce_forum_conv_report_queue','ce_forum_mail_sent','ce_forum_mail_due','ce_forum_mail_user','ce_forum_mail_post','ce_forum_board_watch_user','ce_forum_notify_pending','ce_forum_notify_inbox','ce_forum_notify_page','ce_forum_notify_post','ce_forum_notify_actor','ce_forum_post_read_sequence','ce_forum_read_thread','ce_forum_profile_field_lookup','ce_forum_tag_lookup','ce_forum_redirect_target','ce_forum_group_members','ce_forum_board_parent','ce_identity_expiry_idx','ce_forum_post_thread','ce_forum_thread_latest','ce_forum_thread_author','ce_forum_post_author','ce_forum_watch_user','ce_forum_reaction_user','ce_forum_report_post','ce_forum_report_user','ce_forum_report_resolver'],$indexes));
+        if ((int)$pdo->query('SELECT COUNT(*) FROM ce_forum_conversation_lock WHERE id=1')->fetchColumn()!==1) $missing[]='ce_forum_conversation_lock.id=1';
         try {
             if ((int)$pdo->query('SELECT COUNT(*) FROM ce_forum_tree_lock WHERE id=1')->fetchColumn()!==1) $missing[]='ce_forum_tree_lock.id=1';
             \CajeerEngine\Forum\Service\NodeService::validateTree($pdo->query('SELECT id,category_id,parent_id FROM ce_forum_boards')->fetchAll(\PDO::FETCH_ASSOC));

@@ -177,6 +177,27 @@ final class Operations {
     ),
     'bodyRequired' => false,
   ),
+  'delete_Forum_removeConversationParticipant' => 
+  array (
+    'method' => 'DELETE',
+    'path' => '/forum/conversations/{id}/participants/{user_id}',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+      1 => 
+      array (
+        'name' => 'user_id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
   'delete_MediaDelete' => 
   array (
     'method' => 'DELETE',
@@ -674,6 +695,99 @@ final class Operations {
         'name' => 'id',
         'in' => 'path',
         'required' => true,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
+  'get_Forum_conversation' => 
+  array (
+    'method' => 'GET',
+    'path' => '/forum/conversations/{id}',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+      1 => 
+      array (
+        'name' => 'page',
+        'in' => 'query',
+        'required' => false,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
+  'get_Forum_conversationReport' => 
+  array (
+    'method' => 'GET',
+    'path' => '/forum/conversation-reports/{id}',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
+  'get_Forum_conversationReports' => 
+  array (
+    'method' => 'GET',
+    'path' => '/forum/conversation-reports',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'page',
+        'in' => 'query',
+        'required' => false,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
+  'get_Forum_conversationSettings' => 
+  array (
+    'method' => 'GET',
+    'path' => '/forum/conversation-settings',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => false,
+  ),
+  'get_Forum_conversations' => 
+  array (
+    'method' => 'GET',
+    'path' => '/forum/conversations',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'page',
+        'in' => 'query',
+        'required' => false,
+      ),
+      1 => 
+      array (
+        'name' => 'archived',
+        'in' => 'query',
+        'required' => false,
+      ),
+      2 => 
+      array (
+        'name' => 'notifications',
+        'in' => 'query',
+        'required' => false,
+      ),
+      3 => 
+      array (
+        'name' => 'q',
+        'in' => 'query',
+        'required' => false,
       ),
     ),
     'bodyRequired' => false,
@@ -1626,6 +1740,21 @@ final class Operations {
     ),
     'bodyRequired' => true,
   ),
+  'patch_Forum_conversationFlags' => 
+  array (
+    'method' => 'PATCH',
+    'path' => '/forum/conversations/{id}/settings',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => true,
+  ),
   'patch_Forum_edit' => 
   array (
     'method' => 'PATCH',
@@ -1635,6 +1764,27 @@ final class Operations {
       0 => 
       array (
         'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => true,
+  ),
+  'patch_Forum_editConversationMessage' => 
+  array (
+    'method' => 'PATCH',
+    'path' => '/forum/conversations/{id}/messages/{message_id}',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+      1 => 
+      array (
+        'name' => 'message_id',
         'in' => 'path',
         'required' => true,
       ),
@@ -2169,6 +2319,15 @@ final class Operations {
     ),
     'bodyRequired' => true,
   ),
+  'post_Forum_createConversation' => 
+  array (
+    'method' => 'POST',
+    'path' => '/forum/conversations',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => true,
+  ),
   'post_Forum_createGroup' => 
   array (
     'method' => 'POST',
@@ -2201,6 +2360,36 @@ final class Operations {
       ),
     ),
     'bodyRequired' => true,
+  ),
+  'post_Forum_inviteConversation' => 
+  array (
+    'method' => 'POST',
+    'path' => '/forum/conversations/{id}/invite',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => true,
+  ),
+  'post_Forum_leaveConversation' => 
+  array (
+    'method' => 'POST',
+    'path' => '/forum/conversations/{id}/leave',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => false,
   ),
   'post_Forum_markNotifications' => 
   array (
@@ -2280,6 +2469,21 @@ final class Operations {
     ),
     'bodyRequired' => true,
   ),
+  'post_Forum_readConversation' => 
+  array (
+    'method' => 'POST',
+    'path' => '/forum/conversations/{id}/read',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => true,
+  ),
   'post_Forum_register' => 
   array (
     'method' => 'POST',
@@ -2328,6 +2532,27 @@ final class Operations {
     ),
     'bodyRequired' => true,
   ),
+  'post_Forum_reportConversationMessage' => 
+  array (
+    'method' => 'POST',
+    'path' => '/forum/conversations/{id}/messages/{message_id}/report',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+      1 => 
+      array (
+        'name' => 'message_id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => true,
+  ),
   'post_Forum_resolve' => 
   array (
     'method' => 'POST',
@@ -2342,6 +2567,21 @@ final class Operations {
       ),
     ),
     'bodyRequired' => false,
+  ),
+  'post_Forum_sendConversation' => 
+  array (
+    'method' => 'POST',
+    'path' => '/forum/conversations/{id}/messages',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => true,
   ),
   'post_Forum_transferPosts' => 
   array (
@@ -2709,6 +2949,21 @@ final class Operations {
     ),
     'bodyRequired' => false,
   ),
+  'put_Forum_blockConversationUser' => 
+  array (
+    'method' => 'PUT',
+    'path' => '/forum/conversation-blocks/{id}',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => true,
+  ),
   'put_Forum_boardWatch' => 
   array (
     'method' => 'PUT',
@@ -2745,6 +3000,30 @@ final class Operations {
         'in' => 'path',
         'required' => true,
       ),
+    ),
+    'bodyRequired' => true,
+  ),
+  'put_Forum_resolveConversationReport' => 
+  array (
+    'method' => 'PUT',
+    'path' => '/forum/conversation-reports/{id}',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => true,
+  ),
+  'put_Forum_saveConversationSettings' => 
+  array (
+    'method' => 'PUT',
+    'path' => '/forum/conversation-settings',
+    'parameters' => 
+    array (
     ),
     'bodyRequired' => true,
   ),
