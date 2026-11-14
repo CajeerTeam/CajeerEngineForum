@@ -49,6 +49,7 @@ final readonly class DiscussionService
             return ['member'=>$member,'threads'=>$this->threads->byAuthor($id,$offset,NodePermissionService::allowed($this->access($actor)))];
         });
     }
+    public function groups(): GroupService { return $this->tx->groups(); }
     public function permissions(): NodePermissionService { return $this->tx->permissions(); }
     public function createThread(ForumAccessPolicy $actor, string $board, string $title, string $body): string
     {

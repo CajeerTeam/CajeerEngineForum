@@ -51,6 +51,9 @@ final readonly class RoleRepository
     public function upsert(string $handle, string $name, array $permissions): string
     {
         $this->assertHandle($handle);
+        if (str_starts_with($handle,'forum-group-')) {
+            if (array_diff($permissions,['forum:write','forum:moderate'])!==[] || (in_array('forum:moderate',$permissions,true)&&!in_array('forum:write',$permissions,true))) throw new \InvalidArgumentException('Форумная группа может предоставлять только форумные права.');
+        }
         $id = $this->findIdByHandle($handle) ?: Uuid::v4();
         $permissions = $this->normalizePermissions($permissions);
         $json = json_encode($permissions, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);

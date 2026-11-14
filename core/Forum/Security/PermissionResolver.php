@@ -7,7 +7,7 @@ namespace CajeerEngine\Forum\Security;
 final class PermissionResolver
 {
     public const PERMISSIONS=['node:view','thread:read','thread:create','post:reply','post:edit_own','post:edit_any','reaction:use','watch:use','report:create','thread:moderate'];
-    public static function evaluate(ForumAccessPolicy $actor, array $roles, array $chain, array $rules): array
+    public static function evaluate(ForumAccessPolicy $actor, array $roles, array $chain, array $rules, bool $delegatedModeration=false): array
     {
         $result=array_fill_keys(self::PERMISSIONS,false);
         if ($actor->has('*')) return array_fill_keys(self::PERMISSIONS,true);
@@ -16,6 +16,7 @@ final class PermissionResolver
         $result['post:edit_any']=$actor->has('forum:write') && $actor->has('forum:moderate');
         $result['thread:moderate']=$actor->has('forum:moderate');
         $ceiling=$result; $never=[];
+        if ($delegatedModeration) $result['thread:moderate']=$result['post:edit_any']=false;
         foreach ($chain as $node) {
             if ($node['visibility']!=='public') $result['thread:read']=false;
             if ($node['visibility']==='hidden') $result['node:view']=false;

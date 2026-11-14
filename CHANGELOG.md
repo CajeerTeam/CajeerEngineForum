@@ -1,5 +1,11 @@
 # Changelog
 
+## Forum Edition 0.2.3 — User Groups
+
+- Role-backed custom groups, primary and secondary assignments, scoped forum rights and delegated moderation.
+- Transactional group administration, role membership audit and safe deletion; preserve unrelated core roles.
+- Migration 0020, six admin API operations, SDKs and forum UI; group access regressions.
+
 ## Forum Edition 0.2.2 — Node Permissions
 
 - Inherited category and board ACLs for guests, authenticated members, roles and individual users; private and hidden nodes.

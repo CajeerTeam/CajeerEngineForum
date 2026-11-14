@@ -101,6 +101,18 @@ export const operations = {
         ],
         "bodyRequired": false
     },
+    "delete_Forum_deleteGroup": {
+        "method": "DELETE",
+        "path": "/forum/groups/{id}",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": false
+    },
     "delete_MediaDelete": {
         "method": "DELETE",
         "path": "/media/{id}",
@@ -486,6 +498,24 @@ export const operations = {
                 "required": true
             }
         ],
+        "bodyRequired": false
+    },
+    "get_Forum_groupMembership": {
+        "method": "GET",
+        "path": "/forum/members/{id}/groups",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": false
+    },
+    "get_Forum_groups": {
+        "method": "GET",
+        "path": "/forum/groups",
+        "parameters": [],
         "bodyRequired": false
     },
     "get_Forum_index": {
@@ -1105,6 +1135,18 @@ export const operations = {
         ],
         "bodyRequired": true
     },
+    "patch_Forum_updateGroup": {
+        "method": "PATCH",
+        "path": "/forum/groups/{id}",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
+    },
     "patch_Update": {
         "method": "PATCH",
         "path": "/media/{id}",
@@ -1442,6 +1484,12 @@ export const operations = {
                 "required": true
             }
         ],
+        "bodyRequired": true
+    },
+    "post_Forum_createGroup": {
+        "method": "POST",
+        "path": "/forum/groups",
+        "parameters": [],
         "bodyRequired": true
     },
     "post_Forum_createThread": {
@@ -1793,6 +1841,18 @@ export const operations = {
     "put_Forum_setCategoryPermissions": {
         "method": "PUT",
         "path": "/forum/categories/{id}/permissions",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
+    },
+    "put_Forum_setGroupMembership": {
+        "method": "PUT",
+        "path": "/forum/members/{id}/groups",
         "parameters": [
             {
                 "name": "id",

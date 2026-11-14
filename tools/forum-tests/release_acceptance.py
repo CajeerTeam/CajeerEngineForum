@@ -124,17 +124,28 @@ def seed(base):
     c.call('POST',url+'/posts',201,{'body':'Original reply'},token=admin)
     c.call('PUT','/forum/posts/'+post+'/reaction',200,{'enabled':True},token=admin)
     c.call('PUT',url+'/watch',200,{'enabled':True},token=admin)
-    return admin, thread, post
+    member=c.call('POST','/users',201,{'email':unique_email(),'name':'Existing group member','password':PASSWORD,'roles':['viewer','forum-member','forum-moderator']},token=admin)['id']
+    return admin, thread, post, member
 
 
 def verify_data(base, state):
-    token, thread, post = state
+    token, thread, post, member = state
     c = Client(base)
     c.call('GET','/auth/me',token=token)
     posts = c.call('GET','/forum/threads/'+thread)['posts']
     require([p['body'] for p in posts]==['Original content','Original reply'] and posts[0]['id']==post and int(posts[0]['likes'])==1, 'Content or reactions lost')
     require(thread in [t['id'] for t in c.call('GET','/forum/watches',token=token)], 'Watch lost')
+    require(set(c.call('GET','/users/'+member,token=token)['roles'])=={'viewer','forum-member','forum-moderator'}, 'Existing roles lost')
     c.login(ADMIN, ADMIN_PASSWORD)
+
+
+def verify_groups(base,state):
+    token, _, _, member=state; c=Client(base)
+    groups=c.call('GET','/forum/groups',token=token)
+    ids={g['handle']:g['id'] for g in groups}
+    membership=c.call('GET',f'/forum/members/{member}/groups',token=token)
+    require(membership['primary_group_id']==ids['forum-member'] and membership['secondary_group_ids']==[ids['forum-moderator']], 'Group membership backfill failed')
+    print('PASS primary and secondary role assignments preserved',flush=True)
 
 
 def verify_identity(site, env, report, base):
@@ -175,7 +186,7 @@ def verify_readiness(site, env, report, base):
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--artifact',type=Path,required=True)
-    parser.add_argument('--previous',type=Path,help='Original 0.2.1 dist; enables real signed upgrade and rollback')
+    parser.add_argument('--previous',type=Path,help='Original 0.2.2 dist; enables real signed upgrade and rollback')
     parser.add_argument('--driver',choices=('sqlite','pgsql'),default='sqlite')
     parser.add_argument('--report',type=Path,required=True)
     args=parser.parse_args(); report=args.report.resolve(); report.mkdir(parents=True,exist_ok=True)
@@ -184,12 +195,13 @@ def main():
         work=Path(tmp); port=free_port()
         # With --previous use the authentic baseline for upgrade, not a relabelled current tree.
         previous=args.previous.resolve() if args.previous else None
-        initial='0.2.1' if previous else current
+        initial='0.2.2' if previous else current
         site=unpack(previous or artifact,work/'live',initial)
         install(site,env,report,'initial',port,args.driver)
         with http(site,env,report,'initial',port,initial) as base:
             state=seed(base); verify_data(base,state)
             if not previous:
+                verify_groups(base,state)
                 verify_identity(site,env,report,base)
                 verify_readiness(site,env,report,base)
         if previous:
@@ -205,7 +217,7 @@ def main():
             update=json.loads(run(site,env,report,'upgrade',['php','bin/cajeer','update:apply','--package='+str(package),'--json'],timeout=600))
             require(update['state']=='committed' and version(site)==current,'Update not committed')
             with http(site,env,report,'updated',port,current) as base:
-                verify_data(base,state); verify_identity(site,env,report,base)
+                verify_data(base,state); verify_groups(base,state); verify_identity(site,env,report,base)
             run(site,env,report,'rollback',['php','bin/cajeer','update:rollback','--yes','--json'],timeout=600)
             require(version(site)==initial,'Rollback did not restore release')
             with http(site,env,report,'rollback',port,initial) as base: verify_data(base,state)

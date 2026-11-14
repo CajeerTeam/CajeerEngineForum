@@ -73,6 +73,38 @@ final class ForumDatabaseTest extends TestCase
             self::assertSame($before+2,$audit->count());
             self::assertSame(0,(int)$pdo->query("SELECT COUNT(*) FROM ce_audit_log WHERE event='forum.test.inner'")->fetchColumn());
             self::assertFalse($pdo->inTransaction());
+            $users=new \CajeerEngine\Database\Repository\UserRepository($db,$roles);
+            $admin=$users->create('groups-admin@example.test','Admin','unused-test-hash',['admin']);
+            $member=$users->create('groups-member@example.test','Member','unused-test-hash',['forum-member','viewer']);
+            $actor=new \CajeerEngine\Forum\Security\ForumAccessPolicy($admin,['*']);
+            $groups=$tx->groups();$default=$roles->findIdByHandle('forum-member');
+            self::assertSame($default,$groups->membership($actor,$member)['primary_group_id']);
+            $vip=$groups->create($actor,'test-vip','VIP','Private access',['forum:write']);
+            $mod=$groups->create($actor,'test-mod','Moderation','',['forum:write','forum:moderate']);
+            self::assertSame($vip['id'],$groups->assign($actor,$member,$vip['id'],[$default,$mod['id']])['primary_group_id']);
+            self::assertContains('system:read',$users->permissionsForUser($member));
+            self::assertContains('forum:moderate',$users->permissionsForUser($member));
+            $users->syncRoles($member,['viewer','forum-member',$vip['handle'],$mod['handle']]);
+            self::assertSame($vip['id'],$groups->membership($actor,$member)['primary_group_id']);
+            $board='22222222-2222-4222-8222-222222222222';
+            $m=new \CajeerEngine\Forum\Security\ForumAccessPolicy($member,['forum:write','forum:moderate']);
+            self::assertFalse($tx->permissions()->access($m)['boards'][$board]['thread:moderate']);
+            $tx->permissions()->replace($actor,'board',$board,'private',[
+                ['subject_type'=>'role','subject_id'=>$vip['id'],'permission'=>'thread:read','effect'=>'allow'],
+                ['subject_type'=>'role','subject_id'=>$mod['id'],'permission'=>'thread:moderate','effect'=>'allow'],
+            ]);
+            self::assertTrue($tx->permissions()->access($m)['boards'][$board]['thread:moderate']);
+            $groups->assign($actor,$member,$default,[]);
+            self::assertFalse($tx->permissions()->access($m)['boards'][$board]['thread:read']);
+            self::assertNotContains('forum:moderate',$users->permissionsForUser($member));
+            self::assertContains('system:read',$users->permissionsForUser($member));
+            try { $groups->delete($actor,$vip['id']);self::fail('Referenced group deleted'); }
+            catch (\CajeerEngine\Forum\ForumException $e) {self::assertSame(409,$e->status);}
+            $tx->permissions()->replace($actor,'board',$board,'public',[]);
+            $groups->delete($actor,$vip['id']);$groups->delete($actor,$mod['id']);
+            self::assertNull($roles->find($vip['id']));
+            self::assertTrue($forum->check()['ok']);
+
         } finally {
             unset($runner,$pdo,$db,$audit,$tx);
             (new \CajeerEngine\Observability\Metrics($tmp))->flush();

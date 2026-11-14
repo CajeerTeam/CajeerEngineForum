@@ -132,6 +132,21 @@ final class Operations {
     ),
     'bodyRequired' => false,
   ),
+  'delete_Forum_deleteGroup' => 
+  array (
+    'method' => 'DELETE',
+    'path' => '/forum/groups/{id}',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
   'delete_MediaDelete' => 
   array (
     'method' => 'DELETE',
@@ -630,6 +645,30 @@ final class Operations {
         'in' => 'path',
         'required' => true,
       ),
+    ),
+    'bodyRequired' => false,
+  ),
+  'get_Forum_groupMembership' => 
+  array (
+    'method' => 'GET',
+    'path' => '/forum/members/{id}/groups',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
+  'get_Forum_groups' => 
+  array (
+    'method' => 'GET',
+    'path' => '/forum/groups',
+    'parameters' => 
+    array (
     ),
     'bodyRequired' => false,
   ),
@@ -1431,6 +1470,21 @@ final class Operations {
     ),
     'bodyRequired' => true,
   ),
+  'patch_Forum_updateGroup' => 
+  array (
+    'method' => 'PATCH',
+    'path' => '/forum/groups/{id}',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => true,
+  ),
   'patch_Update' => 
   array (
     'method' => 'PATCH',
@@ -1884,6 +1938,15 @@ final class Operations {
         'in' => 'path',
         'required' => true,
       ),
+    ),
+    'bodyRequired' => true,
+  ),
+  'post_Forum_createGroup' => 
+  array (
+    'method' => 'POST',
+    'path' => '/forum/groups',
+    'parameters' => 
+    array (
     ),
     'bodyRequired' => true,
   ),
@@ -2362,6 +2425,21 @@ final class Operations {
   array (
     'method' => 'PUT',
     'path' => '/forum/categories/{id}/permissions',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => true,
+  ),
+  'put_Forum_setGroupMembership' => 
+  array (
+    'method' => 'PUT',
+    'path' => '/forum/members/{id}/groups',
     'parameters' => 
     array (
       0 => 

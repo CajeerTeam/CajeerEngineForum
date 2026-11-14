@@ -166,16 +166,27 @@ final readonly class UserRepository
     /** @param list<string> $roleHandles */
     public function syncRoles(string $userId, array $roleHandles): void
     {
-        $this->database->transaction(function () use ($userId, $roleHandles): void {
-            $delete = $this->database->connection()->prepare('DELETE FROM ce_user_roles WHERE user_id = :user_id');
-            $delete->execute(['user_id' => $userId]);
-            $insert = $this->database->connection()->prepare('INSERT INTO ce_user_roles (user_id, role_id) VALUES (:user_id, :role_id)');
+        $this->locked($userId, function () use ($userId, $roleHandles): void {
+            $pdo=$this->database->connection();
+            $wanted=[];
             foreach (array_values(array_unique($roleHandles)) as $handle) {
-                $roleId = $this->roles->findIdByHandle((string) $handle);
-                if ($roleId === null) {
-                    throw new \InvalidArgumentException('Роль не найдена: ' . $handle);
+                $roleId=$this->roles->findIdByHandle((string)$handle);
+                if ($roleId===null) throw new \InvalidArgumentException('Роль не найдена: '.$handle);
+                $wanted[]=$roleId;
+            }
+            $stmt=$pdo->prepare('SELECT role_id FROM ce_user_roles WHERE user_id=?');$stmt->execute([$userId]);
+            $existing=$stmt->fetchAll(\PDO::FETCH_COLUMN);$stmt->closeCursor();
+            $delete=$pdo->prepare('DELETE FROM ce_user_roles WHERE user_id=? AND role_id=?');
+            foreach (array_diff($existing,$wanted) as $id) $delete->execute([$userId,$id]);
+            $insert=$pdo->prepare('INSERT INTO ce_user_roles(user_id,role_id) VALUES(?,?)');
+            foreach (array_diff($wanted,$existing) as $id) $insert->execute([$userId,$id]);
+            // During old-schema recovery the group table is not yet present.
+            if ($this->database->tableExists('ce_forum_primary_groups')) {
+                $stmt=$pdo->prepare('SELECT role_id FROM ce_forum_primary_groups WHERE user_id=?');$stmt->execute([$userId]);$primary=$stmt->fetchColumn();$stmt->closeCursor();
+                if ($primary===false) {
+                    $stmt=$pdo->prepare('SELECT ur.role_id FROM ce_user_roles ur JOIN ce_forum_groups g ON g.role_id=ur.role_id JOIN ce_roles r ON r.id=ur.role_id WHERE ur.user_id=? ORDER BY r.handle');$stmt->execute([$userId]);$first=$stmt->fetchColumn();$stmt->closeCursor();
+                    if ($first!==false) $pdo->prepare('INSERT INTO ce_forum_primary_groups(user_id,role_id) VALUES(?,?)')->execute([$userId,$first]);
                 }
-                $insert->execute(['user_id' => $userId, 'role_id' => $roleId]);
             }
         });
     }

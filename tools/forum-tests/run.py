@@ -379,7 +379,54 @@ class NetworkTests(unittest.TestCase):
         c.call('DELETE',f'/forum/boards/{root}',200,token=admin)
         c.call('DELETE',f'/forum/categories/{category}',200,token=admin)
 
-    def test_05_rate_limit(self):
+    def test_05_group_membership_and_delegation(self):
+        c=Client(self.base)
+        email,user,token=self.activated(c)
+        admin=c.login(ADMIN,ADMIN_PASSWORD)[0]['data']['access_token']
+        groups=c.call('GET','/forum/groups',token=admin)
+        default=next(g['id'] for g in groups if g['handle']=='forum-member')
+        path=f'/forum/members/{user}/groups'
+        self.assertEqual(default,c.call('GET',path,token=admin)['primary_group_id'])
+        c.call('GET','/forum/groups',403,token=token)
+        c.call('PUT',path,403,{'primary_group_id':default,'secondary_group_ids':[]},token=token)
+        payload={'handle':'network-vip','name':'Network VIP','description':'VIP access','permissions':['forum:write']}
+        c.call('POST','/forum/groups',422,{**payload,'permissions':['*']},token=admin)
+        vip=c.call('POST','/forum/groups',201,payload,token=admin)['id']
+        support=c.call('POST','/forum/groups',201,{**payload,'handle':'network-support','name':'Support','permissions':['forum:write','forum:moderate']},token=admin)['id']
+        core_admin=next(r['id'] for r in c.call('GET','/roles',token=admin) if r['handle']=='admin')
+        c.call('PUT',path,422,{'primary_group_id':core_admin,'secondary_group_ids':[]},token=admin)
+        c.call('PUT',path,422,{'primary_group_id':default,'secondary_group_ids':[default]},token=admin)
+        data=c.call('PUT',path,200,{'primary_group_id':vip,'secondary_group_ids':[default,support]},token=admin)
+        self.assertEqual(vip,data['primary_group_id']);self.assertEqual({default,support},set(data['secondary_group_ids']))
+        c.call('DELETE',f'/forum/groups/{vip}',409,token=admin)
+        c.call('PATCH',f'/forum/groups/{vip}',200,{'name':'Renamed VIP','description':'Updated','permissions':['forum:write']},token=admin)
+        c.call('POST','/roles',403,{'handle':'forum-group-network-vip','name':'Override','permissions':['*']},token=admin)
+        # A new scope requires a new token; old token still gains role-based private read access.
+        cat=c.call('POST','/forum/categories',201,{'name':'Groups category','description':''},token=admin)['id']
+        board=c.call('POST',f'/forum/categories/{cat}/boards',201,{'name':'Groups private','description':''},token=admin)['id']
+        thread=c.call('POST',f'/forum/boards/{board}/threads',201,{'title':'Groups secret','body':'Group content'},token=admin)['id']
+        public=c.call('POST',f'/forum/categories/{cat}/boards',201,{'name':'Groups public','description':''},token=admin)['id']
+        other=c.call('POST',f'/forum/boards/{public}/threads',201,{'title':'Public group topic','body':'Public'},token=admin)['id']
+        policy=f'/forum/boards/{board}/permissions'; url=f'/forum/threads/{thread}'
+        rule=lambda subject,permission: {'subject_type':'role','subject_id':subject,'permission':permission,'effect':'allow'}
+        c.call('PUT',policy,200,{'visibility':'private','rules':[rule(vip,'thread:read'),rule(support,'thread:moderate')]},token=admin)
+        c.call('GET',url,404);c.call('GET',url,200,token=token)
+        c.call('POST',url+'/moderate',403,{'action':'lock'},token=token)
+        fresh=c.login(email)[0]['data']['access_token']
+        c.call('POST',f'/forum/threads/{other}/moderate',403,{'action':'lock'},token=fresh)
+        c.call('POST',url+'/moderate',200,{'action':'lock'},token=fresh)
+        c.call('POST',url+'/moderate',200,{'action':'unlock'},token=fresh)
+        c.call('PUT',path,200,{'primary_group_id':default,'secondary_group_ids':[]},token=admin)
+        c.call('GET',url,404,token=fresh)
+        c.call('POST',url+'/moderate',403,{'action':'lock'},token=fresh)
+        c.call('DELETE',f'/forum/groups/{vip}',409,token=admin)
+        c.call('PUT',policy,200,{'visibility':'public','rules':[]},token=admin)
+        c.call('DELETE',f'/forum/groups/{vip}',200,token=admin)
+        c.call('DELETE',f'/forum/groups/{support}',200,token=admin)
+        c.call('DELETE',f'/forum/groups/{default}',403,token=admin)
+        self.assertNotIn(vip,[g['id'] for g in c.call('GET','/forum/groups',token=admin)])
+
+    def test_06_rate_limit(self):
         # Run last: exhaust the real IP auth bucket without guessing credentials.
         c = Client(self.base)
         _, headers = c.request('GET', '/auth/me', 401)
@@ -485,6 +532,18 @@ class BrowserTests(unittest.TestCase):
                     expect(admin_page.get_by_role('button', name='Отправить', exact=True)).to_be_visible()
                     # Use the actual node-management forms, then navigate the public tree.
                     admin_page.goto(self.base + '/forum/manage')
+                    group_form=admin_page.get_by_role('button',name='Создать группу',exact=True).locator('..')
+                    group_form.locator('[name=handle]').fill('browser-vip')
+                    group_form.locator('[name=name]').fill('Browser VIP')
+                    group_form.get_by_role('button',name='Создать группу',exact=True).click()
+                    expect(admin_page.get_by_role('heading',name='Browser VIP',exact=True)).to_be_visible()
+                    admin_page.locator('[name=member]').select_option(label='Browser member ('+email+')')
+                    primary=admin_page.locator('[name=primary_group_id]')
+                    expect(primary).to_be_visible()
+                    primary.select_option(label='Browser VIP')
+                    admin_page.get_by_role('button',name='Сохранить назначения',exact=True).click()
+                    expect(admin_page.locator('#notice')).to_contain_text('Назначения сохранены')
+                    expect(admin_page.locator('[name=primary_group_id] option:checked')).to_have_text('Browser VIP')
                     category_form = admin_page.get_by_role('button', name='Создать', exact=True).locator('..')
                     category_form.locator('[name=name]').fill('Browser node category')
                     category_form.locator('[name=description]').fill('Node integration')

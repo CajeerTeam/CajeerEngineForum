@@ -16,13 +16,21 @@ final readonly class NodePermissionService
     {
         $categories=array_column($this->repo->nodes('category'),null,'id');
         $boards=array_column($this->repo->nodes('board'),null,'id');
-        $roles=$actor->userId===''?[]:$this->repo->roles($actor->userId);
+        $records=$actor->userId===''?[]:$this->repo->roleRecords($actor->userId);
+        $roles=array_column($records,'id');$scopes=[];$globalModerator=false;
+        foreach ($records as $role) {
+            $p=json_decode((string)$role['permissions'],true,512,JSON_THROW_ON_ERROR);
+            $scopes=array_merge($scopes,$p);
+            if (($role['group_id']===null || $role['handle']==='forum-moderator') && (in_array('*',$p,true)||in_array('forum:moderate',$p,true))) $globalModerator=true;
+        }
+        $actor=$actor->restrict($scopes);
+        $delegated=$actor->has('forum:moderate')&&!$globalModerator;
         $rules=[];
         foreach (['category','board'] as $kind) foreach ($this->repo->rules($kind) as $r) $rules[$kind.':'.$r['node_id']][]=$r;
         $result=['categories'=>[],'boards'=>[]];
         foreach ($categories as $id=>$category) {
             $category['key']='category:'.$id;
-            $result['categories'][$id]=PermissionResolver::evaluate($actor,$roles,[$category],$rules);
+            $result['categories'][$id]=PermissionResolver::evaluate($actor,$roles,[$category],$rules,$delegated);
         }
         foreach ($boards as $id=>$board) {
             $chain=[];$seen=[];$cursor=$board;
@@ -35,7 +43,7 @@ final readonly class NodePermissionService
             }
             $category=$categories[$board['category_id']]??null;if ($category===null) continue;
             $category['key']='category:'.$category['id'];$chain[]=$category;
-            $result['boards'][$id]=PermissionResolver::evaluate($actor,$roles,array_reverse($chain),$rules);
+            $result['boards'][$id]=PermissionResolver::evaluate($actor,$roles,array_reverse($chain),$rules,$delegated);
         }
         return $result;
     }

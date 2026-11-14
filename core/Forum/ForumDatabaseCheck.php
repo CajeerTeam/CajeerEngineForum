@@ -20,6 +20,8 @@ final readonly class ForumDatabaseCheck
             'ce_roles'=>['id','handle','permissions'],
             'ce_user_roles'=>['user_id','role_id'],
             'ce_api_tokens'=>['id','user_id','name','token_hash','scopes','expires_at','revoked_at','last_used_at'],
+            'ce_forum_groups'=>['role_id','description'],
+            'ce_forum_primary_groups'=>['user_id','role_id'],
             'ce_forum_categories'=>['id','name','description','position','visibility'],
             'ce_forum_category_permissions'=>['node_id','subject_type','subject_id','permission','effect'],
             'ce_forum_board_permissions'=>['node_id','subject_type','subject_id','permission','effect'],
@@ -43,12 +45,13 @@ final readonly class ForumDatabaseCheck
             if ($role===null || array_diff($permissions,$role['permissions'] ?? [])!==[]) $invalidRoles[]=$handle;
         }
         $pdo=$this->db->connection();
+        if ((int)$pdo->query("SELECT COUNT(*) FROM ce_forum_groups g JOIN ce_roles r ON r.id=g.role_id WHERE r.handle IN ('forum-member','forum-moderator')")->fetchColumn()!==2) $missing[]='forum_system_groups';
         $indexes = match($this->db->driver()) {
             'pgsql' => $pdo->query('SELECT indexname FROM pg_indexes WHERE schemaname=current_schema()')->fetchAll(\PDO::FETCH_COLUMN),
             'sqlite' => $pdo->query("SELECT name FROM sqlite_master WHERE type='index'")->fetchAll(\PDO::FETCH_COLUMN),
             default => $pdo->query('SELECT DISTINCT index_name FROM information_schema.statistics WHERE table_schema=DATABASE()')->fetchAll(\PDO::FETCH_COLUMN),
         };
-        $missingIndexes = array_values(array_diff(['ce_forum_board_parent','ce_identity_expiry_idx','ce_forum_post_thread','ce_forum_thread_latest','ce_forum_thread_author','ce_forum_post_author','ce_forum_watch_user','ce_forum_reaction_user','ce_forum_report_post','ce_forum_report_user','ce_forum_report_resolver'],$indexes));
+        $missingIndexes = array_values(array_diff(['ce_forum_group_members','ce_forum_board_parent','ce_identity_expiry_idx','ce_forum_post_thread','ce_forum_thread_latest','ce_forum_thread_author','ce_forum_post_author','ce_forum_watch_user','ce_forum_reaction_user','ce_forum_report_post','ce_forum_report_user','ce_forum_report_resolver'],$indexes));
         try {
             if ((int)$pdo->query('SELECT COUNT(*) FROM ce_forum_tree_lock WHERE id=1')->fetchColumn()!==1) $missing[]='ce_forum_tree_lock.id=1';
             \CajeerEngine\Forum\Service\NodeService::validateTree($pdo->query('SELECT id,category_id,parent_id FROM ce_forum_boards')->fetchAll(\PDO::FETCH_ASSOC));

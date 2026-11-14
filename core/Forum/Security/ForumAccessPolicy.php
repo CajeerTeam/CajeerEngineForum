@@ -21,6 +21,8 @@ final readonly class ForumAccessPolicy
 
     public function has(string $scope): bool { return in_array("*", $this->scopes, true) || in_array($scope, $this->scopes, true); }
 
+    public function restrict(array $current): self { return new self($this->userId,\CajeerEngine\Security\AuthService::intersectScopes($this->scopes,$current)); }
+
     public function require(string $scope): void
     {
         if (!in_array('*', $this->scopes, true) && !in_array($scope, $this->scopes, true)) {

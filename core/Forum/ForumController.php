@@ -73,6 +73,12 @@ final readonly class ForumController
     public function categoryPermissions(Request $r,array $p): JsonResponse { return $this->respond(fn()=> $this->discussions->permissions()->get($this->actor($r),'category',$this->id($p))); }
     public function setBoardPermissions(Request $r,array $p): JsonResponse { return $this->respond(fn()=> $this->discussions->permissions()->replace($this->actor($r),'board',$this->id($p),$this->field($r,'visibility'),$this->field($r,'rules'))); }
     public function setCategoryPermissions(Request $r,array $p): JsonResponse { return $this->respond(fn()=> $this->discussions->permissions()->replace($this->actor($r),'category',$this->id($p),$this->field($r,'visibility'),$this->field($r,'rules'))); }
+    public function groups(Request $r): JsonResponse { return $this->respond(fn()=> $this->discussions->groups()->all($this->actor($r))); }
+    public function createGroup(Request $r): JsonResponse { return $this->respond(fn()=> $this->discussions->groups()->create($this->actor($r),$this->field($r,'handle'),$this->field($r,'name'),$this->field($r,'description')??'', $this->field($r,'permissions')),201); }
+    public function updateGroup(Request $r,array $p): JsonResponse { return $this->respond(fn()=> $this->discussions->groups()->update($this->actor($r),$this->id($p),$this->field($r,'name'),$this->field($r,'description')??'', $this->field($r,'permissions'))); }
+    public function deleteGroup(Request $r,array $p): JsonResponse { return $this->respond(fn()=> $this->discussions->groups()->delete($this->actor($r),$this->id($p))); }
+    public function groupMembership(Request $r,array $p): JsonResponse { return $this->respond(fn()=> $this->discussions->groups()->membership($this->actor($r),$this->id($p))); }
+    public function setGroupMembership(Request $r,array $p): JsonResponse { return $this->respond(fn()=> $this->discussions->groups()->assign($this->actor($r),$this->id($p),$this->field($r,'primary_group_id'),$this->field($r,'secondary_group_ids'))); }
     public function deleteBoard(Request $r,array $p): JsonResponse { return $this->respond(fn () => ['id'=>$this->discussions->nodes()->delete($this->actor($r),$this->id($p),false)]); }
     public function deleteCategory(Request $r,array $p): JsonResponse { return $this->respond(fn () => ['id'=>$this->discussions->nodes()->delete($this->actor($r),$this->id($p),true)]); }
 }

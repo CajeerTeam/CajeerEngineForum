@@ -40,4 +40,16 @@ final class ForumPermissionTest extends TestCase
         self::assertFalse(PermissionResolver::evaluate(new ForumAccessPolicy('',[]),[],$this->chain(),['parent'=>[$this->rule('post:reply','allow')]])['post:reply']);
         self::assertTrue(PermissionResolver::evaluate(new ForumAccessPolicy('admin',['*']),[],$this->chain('hidden'),['parent'=>[$this->rule('thread:read','never')]])['thread:moderate']);
     }
+    public function testDelegatedModerationNeedsAnExplicitGrant(): void
+    {
+        $actor=new ForumAccessPolicy('member',['forum:write','forum:moderate']);
+        self::assertFalse(PermissionResolver::evaluate($actor,['support'],$this->chain(),[],true)['thread:moderate']);
+        $grant=$this->rule('thread:moderate','allow','role','support');
+        $rules=['parent'=>[$grant]];
+        self::assertTrue(PermissionResolver::evaluate($actor,['support'],$this->chain(),$rules,true)['thread:moderate']);
+        self::assertFalse(PermissionResolver::evaluate($actor,['other'],$this->chain(),$rules,true)['thread:moderate']);
+        $rules['child']=[$this->rule('thread:moderate','never')];
+        self::assertFalse(PermissionResolver::evaluate($actor,['support'],$this->chain(),$rules,true)['thread:moderate']);
+        self::assertFalse(PermissionResolver::evaluate($actor->restrict(['forum:write']),['support'],$this->chain(),['parent'=>[$grant]],true)['thread:moderate']);
+    }
 }

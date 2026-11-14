@@ -24,6 +24,8 @@ final readonly class RoleController
     public function store(Request $request): JsonResponse
     {
         $payload = $this->json($request);
+        $handle=(string)($payload['handle']??'');
+        if (in_array($handle,['forum-member','forum-moderator'],true)||str_starts_with($handle,'forum-group-')) return new JsonResponse(['error'=>['code'=>'forum_group_managed','message'=>'Управляйте форумными группами через API форума.']],403);
         $permissions = isset($payload['permissions']) && is_array($payload['permissions']) ? array_values(array_map('strval', $payload['permissions'])) : [];
         $id = $this->roles->upsert((string) ($payload['handle'] ?? ''), (string) ($payload['name'] ?? ''), $permissions);
         return new JsonResponse(['data' => $this->roles->find($id)], Response::HTTP_CREATED);
