@@ -29,7 +29,11 @@ try {
     $zip=(new ReleaseBuilder($root))->build(false,'source',$tmp.'/release')['target'];
     (new PharData($zip))->extractTo($tmp.'/fresh');
     $site=$tmp.'/fresh/cajeerengine';
-    symlink($root.'/vendor',$site.'/vendor');
+    foreach (new RecursiveIteratorIterator(new RecursiveDirectoryIterator($root.'/vendor',FilesystemIterator::SKIP_DOTS),RecursiveIteratorIterator::SELF_FIRST) as $file) {
+        $dest=$site.'/vendor/'.substr($file->getPathname(),strlen($root.'/vendor/'));
+        if ($file->isDir()) { if (!is_dir($dest)) mkdir($dest,0700,true); }
+        elseif (!copy($file->getPathname(),$dest)) throw new RuntimeException('Cannot copy fixture vendor');
+    }
     $dbName=$driver==='sqlite'?$site.'/storage/database/forum.sqlite':(getenv('FORUM_TEST_INSTALL_DB')?:throw new RuntimeException('FORUM_TEST_INSTALL_DB required'));
     $upgradeName=$driver==='sqlite'?$tmp.'/upgrade.sqlite':(getenv('FORUM_TEST_UPGRADE_DB')?:throw new RuntimeException('FORUM_TEST_UPGRADE_DB required'));
     if($driver==='pgsql'&&$dbName===$upgradeName)throw new RuntimeException('Use separate disposable databases');

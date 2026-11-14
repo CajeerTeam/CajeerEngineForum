@@ -25,8 +25,17 @@ final readonly class OperationsMonitor
         $lock=null;try{$lock=OperationLock::acquire($this->root,false);$checks['activity_lock']=true;}catch(\Throwable){$checks['activity_lock']=false;}
         // During recovery never touch the database or partially replaced code.
         $checks['database']=false;
-        if($checks['maintenance']&&$checks['activity_lock']){
-            try{$this->assertDatabasePresent();$db=new DatabaseManager($this->config);$pdo=$db->connection();$pdo->query('SELECT 1')->fetchColumn();foreach(['ce_content_entries','ce_users','ce_public_routes','ce_cms_search','ce_migrations'] as $table)$pdo->query('SELECT 1 FROM '.$table.' WHERE 1=0');$applied=$pdo->query("SELECT migration FROM ce_migrations WHERE status='applied'")->fetchAll(\PDO::FETCH_COLUMN);foreach(glob($this->root.'/migrations/'.$db->driver().'/*.sql')?:[] as $migration)if(!in_array(basename($migration),$applied,true))throw new \RuntimeException('Pending migration');$checks['database']=true;}catch(\Throwable){}
+        if ($checks['installed'] && $checks['maintenance'] && $checks['activity_lock']) {
+            try {
+                $this->assertDatabasePresent();
+                $db = new DatabaseManager($this->config);
+                $pdo = $db->connection();
+                foreach (['ce_content_entries','ce_users','ce_public_routes','ce_cms_search'] as $table) {
+                    $pdo->query('SELECT 1 FROM '.$table.' WHERE 1=0');
+                }
+                $ledger = (new \CajeerEngine\Database\MigrationRunner($pdo, $this->root.'/migrations'))->verifyApplied($db->migrationDriver());
+                $checks['database'] = $ledger['ok'] && (new \CajeerEngine\Forum\ForumDatabaseCheck($db))->check()['ok'];
+            } catch (\Throwable) { /* Readiness exposes no credentials or SQL. */ }
         }
         OperationLock::release($lock);
         $free=@disk_free_space($this->root.'/storage');$checks['disk']=$free!==false&&$free>=$this->minFree();

@@ -172,17 +172,106 @@ jobs:
           path: storage/tmp/forum-ci/
           if-no-files-found: warn
           retention-days: 7
+  release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { driver: sqlite, postgres: '17', label: sqlite }
+          - { driver: pgsql, postgres: '17', label: pg17 }
+          - { driver: pgsql, postgres: '18', label: pg18 }
+    services:
+      mailpit:
+        image: axllent/mailpit:v1.27
+        ports: ['1025:1025', '8025:8025']
+      postgres:
+        image: postgres:${{ matrix.postgres }}
+        env:
+          POSTGRES_USER: forum_ci
+          POSTGRES_PASSWORD: 'ForumCI-Disposable-123!'
+          POSTGRES_DB: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U forum_ci -d postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    env:
+      DB_HOST: 127.0.0.1
+      DB_PORT: '5432'
+      DB_USERNAME: forum_ci
+      DB_PASSWORD: 'ForumCI-Disposable-123!'
+      FORUM_BASELINE_REF: ${{ vars.FORUM_BASELINE_REF || '47838a81a5f3122cde3bc2558c7e2212bdf2d723' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: mbstring, pdo_sqlite, pdo_pgsql, sodium, zip, dom, xml, xmlwriter, curl, openssl
+          tools: composer:v2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Prepare disposable PostgreSQL and matching backup clients
+        if: matrix.driver == 'pgsql'
+        run: |
+          php -r '$p=new PDO("pgsql:host=127.0.0.1;port=5432;dbname=postgres",getenv("DB_USERNAME"),getenv("DB_PASSWORD")); foreach (["forum_test_release_clean","forum_test_release_upgrade"] as $db) $p->exec("CREATE DATABASE ".$db);'
+          mkdir -p "$RUNNER_TEMP/pg-client"
+          cat > "$RUNNER_TEMP/pg-client/pg_dump" <<'SH'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          exec docker run --rm --network host --user "$(id -u):$(id -g)" --volume /tmp:/tmp --env PGHOST --env PGPORT --env PGUSER --env PGPASSWORD --env PGSSLMODE --env PGCONNECT_TIMEOUT "postgres:${{ matrix.postgres }}" "$(basename "$0")" "$@"
+          SH
+          chmod +x "$RUNNER_TEMP/pg-client/pg_dump"
+          ln -s pg_dump "$RUNNER_TEMP/pg-client/pg_restore"
+          ln -s pg_dump "$RUNNER_TEMP/pg-client/psql"
+          echo "$RUNNER_TEMP/pg-client" >> "$GITHUB_PATH"
+      - name: Build and verify physical 0.2.0 artifacts
+        run: |
+          composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader
+          mkdir -p storage/tmp/forum-ci/release
+          php tools/build-release.php --all --target-dir="$RUNNER_TEMP/forum-current" --json > storage/tmp/forum-ci/release/build.json
+          php bin/cajeer release:verify --dist --strict --artifact="$RUNNER_TEMP/forum-current/cajeerengine-0.2.0-dist.zip"
+          php bin/cajeer release:verify --strict --artifact="$RUNNER_TEMP/forum-current/cajeerengine-0.2.0-source.zip"
+      - name: Build original 0.1.4 baseline from repository history
+        run: |
+          mkdir -p "$RUNNER_TEMP/forum-previous"
+          git archive "$FORUM_BASELINE_REF" | tar -x -C "$RUNNER_TEMP/forum-previous"
+          cd "$RUNNER_TEMP/forum-previous"
+          php -r 'if (json_decode(file_get_contents("release.json"),true,512,JSON_THROW_ON_ERROR)["edition_version"]!=="0.1.4") exit(1);'
+          composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader
+          php tools/build-release.php --dist --target-dir="$RUNNER_TEMP/forum-previous-dist" --json
+      - name: Clean install, live HTTP, identity and corrupt-ledger rejection
+        env:
+          FORUM_TEST_RELEASE_DB: forum_test_release_clean
+        run: python tools/forum-tests/release_acceptance.py --driver ${{ matrix.driver }} --artifact "$RUNNER_TEMP/forum-current/cajeerengine-0.2.0-dist.zip" --report storage/tmp/forum-ci/release/clean
+      - name: Signed upgrade from 0.1.4, recovery and rollback
+        env:
+          FORUM_TEST_RELEASE_DB: forum_test_release_upgrade
+        run: python tools/forum-tests/release_acceptance.py --driver ${{ matrix.driver }} --artifact "$RUNNER_TEMP/forum-current/cajeerengine-0.2.0-dist.zip" --previous "$RUNNER_TEMP/forum-previous-dist/cajeerengine-0.1.4-dist.zip" --report storage/tmp/forum-ci/release/upgrade
+      - name: Upload release acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: forum-release-${{ matrix.label }}-evidence
+          path: storage/tmp/forum-ci/release/
+          if-no-files-found: warn
+          retention-days: 7
   forum-required:
     runs-on: ubuntu-24.04
     if: always()
-    needs: [test, postgres, browser]
+    needs: [test, postgres, browser, release]
     steps:
       - name: Require every test matrix to pass
         env:
           SQLITE: ${{ needs.test.result }}
           POSTGRES: ${{ needs.postgres.result }}
           BROWSER: ${{ needs.browser.result }}
+          RELEASE: ${{ needs.release.result }}
         run: |
           test "$SQLITE" = success
           test "$POSTGRES" = success
           test "$BROWSER" = success
+          test "$RELEASE" = success

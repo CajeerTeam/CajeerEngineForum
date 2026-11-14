@@ -1,5 +1,14 @@
 # Changelog
 
+## Forum Edition 0.2.0 — Forum Core Stable
+
+- Read-only migration ledger verification with missing, pending, failed and mismatched migration detection.
+- Check actual forum schema, identity columns, required indexes and system roles during installation, HTTP readiness and update acceptance. Reject damaged installs; rollback failed updates.
+- File cache by default; production installations default to closed registration unless explicitly enabled. Preserve existing configuration.
+- Protect forum system roles from deletion. Fix edition-version checks and isolate Composer autoload in test fixtures.
+- Test physical no-dev dist on SQLite and PostgreSQL 17/18: genuine 0.1.4 baseline, signed update, preservation of content and sessions, rollback, failing migration and corrupted ledger. Require release acceptance in CI.
+- No migration or public API changes. Keep upstream 1.3.0. Release admission requires successful CI evidence, not only a version label.
+
 ## Forum Edition 0.1.4 — Forum Test Infrastructure
 
 - Add executable PHPUnit validation, access, identity and database tests.

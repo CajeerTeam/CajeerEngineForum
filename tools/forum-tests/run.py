@@ -117,7 +117,8 @@ def server(report):
         # Reuse the production source distribution allowlist (no uploads,
         # installed extensions or local secrets, even in a dirty checkout).
         plan = json.loads(subprocess.check_output(['php', str(ROOT / 'tools/build-release.php'), '--dry-run', '--json'], cwd=ROOT, timeout=30))
-        if plan['version'] != '0.1.4' or not plan['release_requirements']['ready']:
+        version = json.loads((ROOT / 'release.json').read_text())['edition_version']
+        if plan['version'] != version or not plan['release_requirements']['ready']:
             raise RuntimeError('Source release prerequisites failed')
         for name in plan['files']:
             target = site / name
@@ -125,7 +126,7 @@ def server(report):
             shutil.copy2(ROOT / name, target)
         for name in ('storage/app', 'storage/database', 'storage/cache', 'storage/logs', 'storage/tmp', 'bootstrap/cache', 'public/uploads', 'public/extensions'):
             (site / name).mkdir(parents=True, exist_ok=True)
-        (site / 'vendor').symlink_to(ROOT / 'vendor', target_is_directory=True)
+        shutil.copytree(ROOT / 'vendor', site / 'vendor')
         (site / '.forum-test-fixture').touch()
         with socket.socket() as sock:
             sock.bind(('127.0.0.1', 0))
@@ -153,7 +154,7 @@ def server(report):
                         raise RuntimeError('PHP HTTP server terminated')
                     try:
                         with opener.open(base + '/forum', timeout=2) as res:
-                            if res.status == 200 and res.headers.get('X-CajeerEngine-Forum-Version') == '0.1.4':
+                            if res.status == 200 and res.headers.get('X-CajeerEngine-Forum-Version') == version:
                                 break
                     except (urllib.error.URLError, TimeoutError):
                         pass

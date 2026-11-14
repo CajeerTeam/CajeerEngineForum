@@ -16,7 +16,10 @@ final readonly class ForumDatabaseCheck
     {
         $required = [
             'ce_identity_challenges'=>['user_id','purpose','token_hash','secret','issued_at','expires_at'],
-            'ce_users'=>['email_verified_at','password_changed_at','two_factor_last_step'],
+            'ce_users'=>['id','email','password_hash','status','email_verified_at','password_changed_at','two_factor_enabled','two_factor_secret','two_factor_recovery_codes','two_factor_last_step'],
+            'ce_roles'=>['id','handle','permissions'],
+            'ce_user_roles'=>['user_id','role_id'],
+            'ce_api_tokens'=>['id','user_id','name','token_hash','scopes','expires_at','revoked_at','last_used_at'],
             'ce_forum_categories'=>['id','name','description','position'],
             'ce_forum_boards'=>['id','category_id','name','description','position'],
             'ce_forum_threads'=>['id','board_id','author_id','title','locked','pinned','created_at','updated_at'],
@@ -29,6 +32,7 @@ final readonly class ForumDatabaseCheck
             if (!$this->db->tableExists($table)) { $missing[]=$table; continue; }
             foreach ($columns as $column) if (!$this->db->columnExists($table,$column)) $missing[]=$table.'.'.$column;
         }
+        if ($missing !== []) return ['ok'=>false, 'missing'=>$missing, 'invalid_roles'=>[], 'missing_indexes'=>[]];
         $roles = new RoleRepository($this->db);
         $invalidRoles=[];
         foreach (['admin'=>['*'],'forum-member'=>['forum:write'],'forum-moderator'=>['forum:write','forum:moderate']] as $handle=>$permissions) {

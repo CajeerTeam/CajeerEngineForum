@@ -240,13 +240,14 @@ final readonly class ReleaseBuilder
     /** @return array<string, mixed> */
     private function releaseRequirements(string $mode): array
     {
-        $required = array_merge(['VERSION', 'release.json', 'README.md', 'CHANGELOG.md', 'composer.json', '.env.example', 'bin/cajeer', 'public/index.php', 'public/install/index.php', 'public/upgrade/index.php', 'public/upgrade/upgrade.js', 'tools/update-postcheck.php', 'tools/update-recovery.php', 'core/Backup/BackupManager.php', 'core/Update/UpdateManager.php', 'core/Console/NativeCli.php', 'public/admin/index.html', 'public/admin/assets/admin-app.js', 'public/admin/assets/admin-app.css', 'public/admin/assets/admin-manifest.json'], ReleaseFilePolicy::KEEP);
+        $required = array_merge(['VERSION', 'release.json', 'README.md', 'CHANGELOG.md', 'composer.json', '.env.example', 'bin/cajeer', 'public/index.php', 'public/install/index.php', 'public/upgrade/index.php', 'public/upgrade/upgrade.js', 'tools/update-postcheck.php', 'tools/update-recovery.php', 'core/Backup/BackupManager.php', 'core/Update/UpdateManager.php', 'core/Console/NativeCli.php', 'public/admin/index.html', 'public/admin/assets/admin-app.js', 'public/admin/assets/admin-app.css', 'public/admin/assets/admin-manifest.json', 'public/forum-assets/index.html', 'public/forum-assets/forum.js', 'public/forum-assets/forum.css', 'core/Forum/ForumDatabaseCheck.php'], ReleaseFilePolicy::KEEP);
         if ($mode === 'dist') $required = array_merge($required, ['vendor/autoload.php', 'vendor/composer/installed.json', 'composer.lock']);
         else $required = array_merge($required, ['deploy/production.py', 'deploy/install.php', 'deploy/verify.php', 'deploy/host-smoke.sh', 'deploy/test_production.py', 'deploy/site.example.json', 'docs/production-deployment.md']);
         if ($mode === 'source' && version_compare((new \CajeerEngine\Forum\ForumVersion($this->rootPath))->upstream(), '1.3.0', '>=')) $required = array_merge($required, ['tools/production-acceptance.py','tools/certification-evidence.py','tools/certification-regression.py','tools/rate-limit-concurrency.php','docs/production-certification.md']);
         $checks = [];
         foreach ($required as $file) $checks[$file] = is_file($this->rootPath . '/' . $file) && !is_link($this->rootPath . '/' . $file);
         foreach (['pgsql', 'mysql', 'sqlite'] as $driver) $checks['migrations/' . $driver] = count(glob($this->rootPath . '/migrations/' . $driver . '/*.sql') ?: []) > 0;
+        foreach (['index.html','forum.js','forum.css'] as $asset) $checks['forum.asset.'.$asset] = is_file($this->rootPath.'/public/forum-assets/'.$asset) && filesize($this->rootPath.'/public/forum-assets/'.$asset) > 0;
         $checks['admin.integrity'] = (new AdminAssetPublisher($this->rootPath))->manifest()['ready'];
         return ['required_files' => $checks, 'ready' => !in_array(false, $checks, true)];
     }

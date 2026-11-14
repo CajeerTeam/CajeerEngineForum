@@ -65,13 +65,16 @@ final readonly class InstallerService
         if ($inspectDatabase && is_file($this->rootPath . '/.env') && extension_loaded($this->pdoExtension($driver))) {
             try {
                 $config = new ConfigRepository($this->rootPath);
+                if ($driver === 'sqlite' && !is_file($this->absolutePath($config->string('database.connections.sqlite.database')))) {
+                    throw new \RuntimeException('SQLite database file is missing');
+                }
                 $databaseManager = new DatabaseManager($config);
                 $database = $databaseManager->health();
                 if (($database['ok'] ?? false) === true) $this->assertDatabaseSupported($databaseManager);
                 $migrations = $this->migrationStatus($databaseManager);
                 if (($database['schema_ready'] ?? false) === true) {
                     $database['forum'] = (new \CajeerEngine\Forum\ForumDatabaseCheck($databaseManager))->check();
-                    $database['schema_ready'] = $database['forum']['ok'];
+                    $database['schema_ready'] = $database['forum']['ok'] && ($databaseManager->driver() !== 'sqlite' || $databaseManager->connection()->query('PRAGMA foreign_key_check')->fetch() === false);
                 }
             } catch (\Throwable $e) {
                 $database = ['ok' => false, 'driver' => $driver, 'error' => ['message' => $e->getMessage(), 'class' => $e::class]];
@@ -253,7 +256,7 @@ final readonly class InstallerService
         $appName = $this->setupText($options['app_name'] ?? 'CajeerEngine Forum Edition', 'app_name', 120);
         $category = $this->setupText($options['category_name'] ?? 'Сообщество', 'category_name', 120);
         $board = $this->setupText($options['board_name'] ?? 'Общие обсуждения', 'board_name', 120);
-        $registration = filter_var($options['registration'] ?? true, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+        $registration = filter_var($options['registration'] ?? !$production, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
         if ($registration === null) throw new \InvalidArgumentException('Invalid registration mode');
         $url = parse_url($appUrl);
         if (!is_array($url) || !in_array($url['scheme'] ?? '', ['http','https'], true) || empty($url['host']) || isset($url['user'], $url['pass']) || isset($url['user']) || isset($url['query']) || isset($url['fragment']) || !empty($url['path']) || preg_match('/[\x00-\x20\x7f]/', $appUrl)) throw new \InvalidArgumentException('Укажите абсолютный URL форума без пути, параметров и credentials.');
@@ -291,7 +294,7 @@ final readonly class InstallerService
             'DB_PASSWORD' => $dbPassword,
             'DB_SSLMODE' => $sslmode,
             'SQLITE_DATABASE' => $dbDriver === 'sqlite' ? $dbName : 'storage/database/cajeer.sqlite',
-            'CACHE_DRIVER' => (string) ($options['cache_driver'] ?? ($production ? 'redis' : 'file')),
+            'CACHE_DRIVER' => (string) ($options['cache_driver'] ?? 'file'),
             'QUEUE_DRIVER' => (string) ($options['queue_driver'] ?? 'file'),
             'SEARCH_DRIVER' => (string) ($options['search_driver'] ?? 'file'),
             'STORAGE_DRIVER' => 'local',
@@ -526,16 +529,13 @@ final readonly class InstallerService
     {
         $config = new ConfigRepository($this->rootPath);
         $database = new DatabaseManager($config);
-        $runner = new MigrationRunner($database->connection(), $this->rootPath . '/migrations');
-        $migrationStatus = $runner->status($database->migrationDriver());
+        $migrationStatus = $this->migrationStatus($database);
         $security = (new SecurityHardener($this->rootPath, $config))->diagnose();
         $adminAssets = $this->adminAssetsReady();
         $databaseHealth = $database->health();
         $ok = ($databaseHealth['ok'] ?? false) === true
             && ($databaseHealth['schema_ready'] ?? false) === true
-            && count($migrationStatus['failed']) === 0
-            && count($migrationStatus['pending']) === 0
-            && !in_array(false, array_column($migrationStatus['applied'], 'checksum_ok'), true)
+            && ($migrationStatus['ok'] ?? false) === true
             && $this->appKeyReady()
             && (bool) ($security['ok'] ?? false)
             && $adminAssets && $this->forumAssetsReady();
@@ -553,12 +553,7 @@ final readonly class InstallerService
             'routing' => $routing,
             'forum' => $forum,
             'database' => $databaseHealth,
-            'migrations' => [
-                'driver' => $migrationStatus['driver'],
-                'applied' => count($migrationStatus['applied']),
-                'pending' => count($migrationStatus['pending']),
-                'failed' => count($migrationStatus['failed']),
-            ],
+            'migrations' => $migrationStatus,
             'security_doctor' => $security,
             'admin_assets' => ['ok' => $adminAssets],
         ];
@@ -665,13 +660,16 @@ final readonly class InstallerService
     {
         try {
             $runner = new MigrationRunner($database->connection(), $this->rootPath . '/migrations');
-            $status = $runner->status($database->migrationDriver());
+            $status = $runner->verifyApplied($database->migrationDriver());
+            $pending = count(array_filter($status['errors'], static fn(string $reason): bool => $reason === 'pending'));
+            $badKnown = count(array_filter($status['errors'], static fn(string $reason): bool => $reason !== 'missing'));
             return [
-                'ok' => count($status['failed']) === 0 && !in_array(false, array_column($status['applied'], 'checksum_ok'), true),
-                'driver' => $status['driver'],
-                'applied' => count($status['applied']),
-                'pending' => count($status['pending']),
-                'failed' => count($status['failed']),
+                'ok' => $status['ok'],
+                'driver' => $database->migrationDriver(),
+                'applied' => $status['expected'] - $badKnown,
+                'pending' => $pending,
+                'failed' => count($status['errors']) - $pending,
+                'errors' => $status['errors'],
             ];
         } catch (\Throwable $e) {
             return ['ok' => false, 'error' => $e->getMessage()];

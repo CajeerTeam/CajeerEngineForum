@@ -95,7 +95,7 @@ final class InstallCommand extends BaseCommand
             'admin_name' => $input->getOption('admin-name'),
             'admin_email' => $input->getOption('admin-email'),
             'admin_password' => $input->getOption('admin-password'),
-            'production' => (bool) $input->getOption('production'),
+            'production' => $input->getOption('production') ? true : null,
             'create_env' => !(bool) $input->getOption('no-env'),
             'run_migrations' => !(bool) $input->getOption('no-migrate'),
             'create_admin' => !(bool) $input->getOption('no-admin'),
@@ -116,7 +116,7 @@ final class InstallCommand extends BaseCommand
         $options['app_name'] = (string) ($options['app_name'] ?: $io->ask('Название форума','CajeerEngine Forum Edition'));
         $options['category_name'] = (string) ($options['category_name'] ?: $io->ask('Первая категория','Сообщество'));
         $options['board_name'] = (string) ($options['board_name'] ?: $io->ask('Первый раздел','Общие обсуждения'));
-        $options['registration'] ??= $io->confirm('Разрешить публичную регистрацию?',true);
+        $options['registration'] ??= $io->confirm('Разрешить публичную регистрацию (после настройки SMTP)?',false);
         $options['domain'] = (string) ($options['domain'] ?: $io->ask('URL форума', 'http://127.0.0.1:8080'));
         $driverDefault = match ($preset) { 'sqlite' => 'sqlite', 'mysql' => 'mysql', default => 'pgsql' };
         $options['db'] = (string) ($options['db'] ?: $io->choice('Тип БД', ['sqlite', 'pgsql', 'mysql', 'mariadb'], $driverDefault));

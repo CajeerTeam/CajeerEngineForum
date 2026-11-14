@@ -15,8 +15,10 @@ try {
     $config=new ConfigRepository($root); $db=new DatabaseManager($config);
     $runner=new MigrationRunner($db->connection(),$root.'/migrations');
     if (($argv[1]??'')==='migrate') $runner->run($db->migrationDriver());
-    $status=$runner->status($db->migrationDriver());
-    if ($status['pending']!==[]||$status['failed']!==[]||array_filter($status['applied'],static fn($r)=>!($r['checksum_ok']??false))) throw new RuntimeException('Migration verification failed');
+    if (!$runner->verifyApplied($db->migrationDriver())['ok']) throw new RuntimeException('Migration verification failed');
+    if (!(new CajeerEngine\Forum\ForumDatabaseCheck($db))->check()['ok']) throw new RuntimeException('Forum schema or roles not ready');
+    if ($db->driver()==='sqlite' && $db->connection()->query('PRAGMA foreign_key_check')->fetch()!==false) throw new RuntimeException('Forum database foreign key integrity failed');
+    foreach (['index.html','forum.js','forum.css'] as $asset) if (!is_file($root.'/public/forum-assets/'.$asset) || filesize($root.'/public/forum-assets/'.$asset)===0) throw new RuntimeException('Forum assets invalid');
     $health=$db->health(); if (!($health['ok']??false)||!($health['schema_ready']??false)) throw new RuntimeException('DB schema not ready');
     // Public readiness deliberately skips DB access while maintenance or an
     // exclusive operation lease blocks traffic. Verify the schema independently.

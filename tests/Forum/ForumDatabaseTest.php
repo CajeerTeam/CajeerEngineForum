@@ -32,6 +32,31 @@ final class ForumDatabaseTest extends TestCase
             $status=$runner->status($driver);
             self::assertSame([],$status['pending']); self::assertSame([],$status['failed']);
             foreach($status['applied'] as $migration) self::assertTrue($migration['checksum_ok']);
+            self::assertTrue($runner->verifyApplied($driver)['ok']);
+            $roles = new \CajeerEngine\Database\Repository\RoleRepository($db);
+            $roles->seedDefaults();
+            $forum = new \CajeerEngine\Forum\ForumDatabaseCheck($db);
+            self::assertTrue($forum->check()['ok']);
+            $name = $status['applied'][0]['migration'];
+            $pdo->beginTransaction();
+            try {
+                $stmt = $pdo->prepare('UPDATE ce_migrations SET checksum=:checksum WHERE migration=:name');
+                $stmt->execute(['checksum'=>str_repeat('0',64),'name'=>$name]);
+                self::assertSame('checksum',$runner->verifyApplied($driver)['errors'][$name]);
+                $stmt->execute(['checksum'=>'','name'=>$name]);
+                self::assertSame('checksum',$runner->verifyApplied($driver)['errors'][$name]);
+            } finally { $pdo->rollBack(); }
+            $pdo->beginTransaction();
+            try {
+                $pdo->exec("INSERT INTO ce_migrations (migration,checksum) VALUES ('9999_orphan.sql','orphan')");
+                self::assertSame('missing',$runner->verifyApplied($driver)['errors']['9999_orphan.sql']);
+                $pdo->exec('DROP INDEX ce_forum_post_thread');
+                self::assertContains('ce_forum_post_thread',$forum->check()['missing_indexes']);
+            } finally { $pdo->rollBack(); }
+            self::assertTrue($runner->verifyApplied($driver)['ok']);
+            self::assertTrue($forum->check()['ok']);
+            try { $roles->delete('forum-member'); self::fail('System role deletion allowed'); }
+            catch (\InvalidArgumentException) {}
             $audit=new AuditLogRepository($db); $tx=new ForumTransaction($db,$audit);
             $before=$audit->count();
             try {

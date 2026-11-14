@@ -93,6 +93,30 @@ final readonly class MigrationRunner
         return ['driver' => $driver, 'applied' => $count, 'batch' => $batch, 'migrations' => $executed];
     }
 
+    /** Read-only verification for readiness and update acceptance. Never creates or alters a ledger. */
+    public function verifyApplied(string $driver): array
+    {
+        $driver = $this->normalizeDriver($driver);
+        if ($driver !== $this->pdo->getAttribute(PDO::ATTR_DRIVER_NAME)) throw new \InvalidArgumentException('Migration driver does not match PDO connection');
+        $dir = $this->migrationsPath . '/' . $driver;
+        if (!is_dir($dir)) throw new \RuntimeException('Migration directory missing');
+        $files = $this->files($dir);
+        if ($files === []) throw new \RuntimeException('Migration directory empty');
+        $ledger = $this->applied();
+        $errors = [];
+        foreach ($files as $file) {
+            $name = basename($file);
+            $row = $ledger[$name] ?? null;
+            unset($ledger[$name]);
+            $checksum = hash_file('sha256', $file);
+            if ($row === null) $errors[$name] = 'pending';
+            elseif (($row['status'] ?? '') !== 'applied') $errors[$name] = 'failed';
+            elseif ($checksum === false || !hash_equals((string) ($row['checksum'] ?? ''), $checksum)) $errors[$name] = 'checksum';
+        }
+        foreach ($ledger as $name => $row) $errors[$name] = 'missing';
+        return ['ok' => $errors === [], 'errors' => $errors, 'expected' => count($files)];
+    }
+
     /** @return array{driver:string,applied:list<array<string,mixed>>,pending:list<array<string,mixed>>,failed:list<array<string,mixed>>} */
     public function status(string $driver): array
     {
