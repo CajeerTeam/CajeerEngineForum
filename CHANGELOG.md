@@ -1,5 +1,11 @@
 # Changelog
 
+## Forum Edition 0.3.3 — Notification Engine
+
+- Transactional database outbox for replies, explicit UUID mentions and quotes, reactions and moderation state changes; worker dispatch is atomic and repeatable.
+- Personal inbox, unread counter, per-type preferences, mark read and ACL-checked current post links.
+- Migration 0024, OpenAPI/SDK, HTTP and physical upgrade regression coverage.
+
 ## Forum Edition 0.3.2 — Read Tracking
 
 - Durable per-account read watermarks, unread threads and subtree counters, first-unread navigation and explicit thread/board/all acknowledgements.

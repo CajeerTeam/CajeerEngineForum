@@ -143,6 +143,30 @@ final class ForumDatabaseTest extends TestCase
             self::assertSame(2,$discussion->thread($target,0,$reader)['read_state']['unread_posts']);
             self::assertTrue($integrity->check()['ok']);
 
+            // Outbox rows commit/rollback with the actual publication, not external queue IO.
+            $notifications=$discussion->notifications();
+            $notified=$discussion->createThread($reader,$board,'Notify owner','First');
+            $first=$discussion->thread($notified,0,$reader)['first_post_id'];
+            try {
+                $tx->write(function()use($discussion,$actor,$notified,$member){$discussion->reply($actor,$notified,'@{'.$member.'}');throw new \DomainException('rollback notification');});
+                self::fail('Expected publication rollback');
+            }catch(\DomainException $e){self::assertSame('rollback notification',$e->getMessage());}
+            self::assertSame(0,(int)$pdo->query('SELECT COUNT(*) FROM ce_forum_notifications')->fetchColumn());
+            $sent=$discussion->reply($actor,$notified,'@{'.$member.'} @{'.$member.'} >>{'.$first.'}');
+            self::assertSame(0,$notifications->inbox($reader,0)['unread']);
+            self::assertSame(3,$notifications->dispatch());
+            self::assertSame(0,$notifications->dispatch());
+            $inbox=$notifications->inbox($reader,0);
+            self::assertSame(3,$inbox['unread']);
+            self::assertEqualsCanonicalizing(['reply','mention','quote'],array_column($inbox['items'],'kind'));
+            self::assertSame($sent,$notifications->target($reader,$inbox['items'][0]['id'])['post_id']);
+            self::assertSame(2,$notifications->mark($reader,['id'=>$inbox['items'][0]['id']])['unread']);
+            $tx->permissions()->replace($actor,'board',$board,'hidden',[]);
+            self::assertSame(0,$notifications->inbox($reader,0)['unread']);
+            $tx->permissions()->replace($actor,'board',$board,'public',[]);
+            self::assertSame(2,$notifications->inbox($reader,0)['unread']);
+            self::assertSame(0,$notifications->mark($reader,['all'=>true])['unread']);
+
             // Simulate a request authenticated before its role was removed. Services
             // must recheck the DB, not trust the stale wildcard from middleware.
             $oldAdmin=$users->create('stale-admin@example.test','Stale admin','unused-test-hash',['admin']);

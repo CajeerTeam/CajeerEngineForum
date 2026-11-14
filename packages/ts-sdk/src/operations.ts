@@ -582,6 +582,35 @@ export const operations = {
         ],
         "bodyRequired": false
     },
+    "get_Forum_notificationTarget": {
+        "method": "GET",
+        "path": "/forum/notifications/{id}",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": false
+    },
+    "get_Forum_notifications": {
+        "method": "GET",
+        "path": "/forum/notifications",
+        "parameters": [
+            {
+                "name": "page",
+                "in": "query",
+                "required": false
+            },
+            {
+                "name": "count_only",
+                "in": "query",
+                "required": false
+            }
+        ],
+        "bodyRequired": false
+    },
     "get_Forum_ownProfile": {
         "method": "GET",
         "path": "/forum/account/profile",
@@ -1647,6 +1676,12 @@ export const operations = {
         ],
         "bodyRequired": true
     },
+    "post_Forum_markNotifications": {
+        "method": "POST",
+        "path": "/forum/notifications/read",
+        "parameters": [],
+        "bodyRequired": true
+    },
     "post_Forum_markRead": {
         "method": "POST",
         "path": "/forum/read-state",
@@ -2004,6 +2039,12 @@ export const operations = {
             }
         ],
         "bodyRequired": false
+    },
+    "put_Forum_notificationPreferences": {
+        "method": "PUT",
+        "path": "/forum/notification-preferences",
+        "parameters": [],
+        "bodyRequired": true
     },
     "put_Forum_reaction": {
         "method": "PUT",

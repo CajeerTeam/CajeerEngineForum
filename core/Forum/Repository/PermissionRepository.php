@@ -13,7 +13,16 @@ final readonly class PermissionRepository extends Repository
     public function roles(string $user): array { return array_column($this->rows('SELECT role_id FROM ce_user_roles WHERE user_id=?',[$user]),'role_id'); }
     public function roleRecords(string $user): array { return $this->rows('SELECT r.id,r.handle,r.permissions,g.role_id AS group_id FROM ce_user_roles ur JOIN ce_roles r ON r.id=ur.role_id LEFT JOIN ce_forum_groups g ON g.role_id=r.id WHERE ur.user_id=?',[$user]); }
     /** Lock the same user row as core role/credential changes, after board locks. */
-    public function lockActor(string $id): ?array { return $this->lock('ce_users','id=?',[$id]); }
+    public function lockActor(string $id): ?array
+    {
+        // Notifications insert FK references to other users while publishing. A non-key
+        // lock still serializes role/account mutations but permits their FK key-share locks.
+        if ($this->db->driver()==='pgsql') {
+            if (!$this->db->connection()->inTransaction()) throw new \LogicException('Forum lock requires a transaction');
+            return $this->row('SELECT * FROM ce_users WHERE id=? FOR NO KEY UPDATE',[$id]);
+        }
+        return $this->lock('ce_users','id=?',[$id]);
+    }
     public function inspectUser(string $id): ?array { return $this->row('SELECT id,name,status FROM ce_users WHERE id=?',[$id]); }
     public function subjectExists(string $type,string $id): bool { return $this->row('SELECT id FROM '.($type==='role'?'ce_roles':'ce_users').' WHERE id=?',[$id])!==null; }
     public function replace(string $kind,string $id,string $visibility,array $rules): void

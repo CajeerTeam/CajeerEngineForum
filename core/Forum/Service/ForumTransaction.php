@@ -30,6 +30,8 @@ final readonly class ForumTransaction
     }
 
     public function driver(): string { return $this->db->driver(); }
+    public function notifications(): NotificationService { return new NotificationService($this,new \CajeerEngine\Forum\Repository\NotificationRepository($this->db)); }
+
     public function readState(): \CajeerEngine\Forum\Repository\ReadStateRepository { return new \CajeerEngine\Forum\Repository\ReadStateRepository($this->db); }
 
     public function read(callable $operation): mixed { return $this->db->readSnapshot($operation); }

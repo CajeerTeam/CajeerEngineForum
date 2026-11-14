@@ -18,7 +18,10 @@ final readonly class EngagementService
         return $this->tx->write(function () use ($actor,$id,$enabled) {
             $thread=$this->threads->lockForPost($id) ?? throw new ForumException('Объект не найден.',404);
             $this->tx->permissions()->assertWrite($actor,$thread['board_id'],'reaction:use');
-            if ($this->engagement->reaction($id,$actor->userId,$enabled)) $this->tx->audit('forum.reaction.set',$actor->userId,['post_id'=>$id,'enabled'=>$enabled]);
+            if ($this->engagement->reaction($id,$actor->userId,$enabled)) {
+                $this->tx->notifications()->reaction($actor->userId,$id,$enabled);
+                $this->tx->audit('forum.reaction.set',$actor->userId,['post_id'=>$id,'enabled'=>$enabled]);
+            }
             return ['enabled'=>$enabled];
         });
     }

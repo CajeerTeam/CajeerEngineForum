@@ -16,6 +16,7 @@ final readonly class DiscussionService
 
     private function access(?ForumAccessPolicy $actor): array { return $this->tx->permissions()->access($actor??new ForumAccessPolicy('',[])); }
     private function decorated(array $board,array $access): array { $board['permissions']=$access['boards'][$board['id']]; return $board; }
+    public function notifications(): NotificationService { return $this->tx->notifications(); }
     public function readTracking(): ReadTrackingService { return new ReadTrackingService($this->tx,$this->tx->readState(),$this->boards,$this->threads); }
     private function readBoards(array $boards,array $allowed,string $viewer): array
     {
@@ -121,6 +122,7 @@ final readonly class DiscussionService
             $id = Uuid::v4(); $post = Uuid::v4();
             $this->threads->insert($id,$board,$actor->userId,$title);
             $this->posts->insert($post,$id,$actor->userId,$body,1);
+            $this->tx->notifications()->published($actor->userId,$id,$post,$body,false);
             $this->tx->audit('forum.thread.create',$actor->userId,['thread_id'=>$id,'board_id'=>$board,'post_id'=>$post]);
             return $id;
         });
@@ -137,6 +139,7 @@ final readonly class DiscussionService
             $post = Uuid::v4();
             $this->posts->insert($post,$id,$actor->userId,$body,$this->posts->nextOrdinal($id));
             $this->threads->touch($id);
+            $this->tx->notifications()->published($actor->userId,$id,$post,$body,true);
             $this->tx->audit('forum.post.reply',$actor->userId,['thread_id'=>$id,'post_id'=>$post]);
             return $post;
         });

@@ -68,7 +68,7 @@ final readonly class DiscussionManagementService
             $threads=$this->lock($actor,$ids,$board);
             if ($board!==null) $this->boards->writable($board);
             foreach ($threads as $id=>$thread) {
-                if ($board!==null) $this->repo->moveThread($id,$board); else $this->threads->moderate($id,$action);
+                if ($board!==null) $this->repo->moveThread($id,$board); else { $this->tx->notifications()->moderated($actor->userId,$thread,$action); $this->threads->moderate($id,$action); }
             }
             $this->tx->audit('forum.thread.bulk',$actor->userId,['thread_ids'=>$ids,'action'=>$action,'board_id'=>$board]);
             return ['ids'=>$ids];

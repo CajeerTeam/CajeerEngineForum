@@ -18,3 +18,5 @@
 .read-controls{align-items:center;margin:.75rem 0}
 .post[id]{scroll-margin-top:5rem}
 .read-controls [hidden],#unread[hidden]{display:none!important}
+
+.notification-entry{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:.75rem}.notification-unread{border-inline-start:3px solid currentColor;padding-inline-start:.75rem}.notification-entry .actions{flex-shrink:0}

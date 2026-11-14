@@ -285,6 +285,7 @@ final class Application
             $c->get(WebhookRepository::class),
             $c->get(WebhookDispatcher::class),
             $c->get(ExtensionRuntime::class)->platform(),
+            $c->get(DatabaseManager::class),
         ));
         $container->set(SchedulerRunner::class, fn (ServiceContainer $c): SchedulerRunner => new SchedulerRunner(
             $rootPath,

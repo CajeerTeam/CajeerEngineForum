@@ -57,6 +57,7 @@ final readonly class ModerationService
         return $this->tx->write(function () use ($actor,$id,$action) {
             $thread=$this->threads->lockThread($id) ?? throw new ForumException('Тема не найдена.',404);
             $this->tx->permissions()->assertWrite($actor,$thread['board_id'],'thread:moderate');
+            if($action!=='delete')$this->tx->notifications()->moderated($actor->userId,$thread,$action);
             $this->threads->moderate($id,$action);
             $this->tx->audit('forum.moderate',$actor->userId,['thread_id'=>$id,'action'=>$action]);
             return $id;

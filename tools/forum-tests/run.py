@@ -647,7 +647,72 @@ class NetworkTests(unittest.TestCase):
         for b in (hidden,board,parent): c.call('DELETE',f'/forum/boards/{b}',200,token=admin)
         c.call('DELETE',f'/forum/categories/{category}',200,token=admin)
 
-    def test_09_rate_limit(self):
+    def test_09_notifications(self):
+        c=Client(self.base)
+        admin=c.login(ADMIN,ADMIN_PASSWORD)[0]['data']['access_token']
+        email,recipient,owner=self.activated(c)
+        _,sender,writer=self.activated(c)
+        inbox='/forum/notifications'; mark=inbox+'/read'
+        c.call('GET',inbox,401); c.call('POST',mark,401,{'all':True})
+        category=c.call('POST','/forum/categories',201,{'name':'Notification tests','description':''},token=admin)['id']
+        board=c.call('POST',f'/forum/categories/{category}/boards',201,{'name':'Notification test board','description':''},token=admin)['id']
+        t=c.call('POST',f'/forum/boards/{board}/threads',201,{'title':'Notification source','body':'Original'},token=owner)['id']
+        path='/forum/threads/'+t
+        first=c.call('GET',path,token=owner)['first_post_id']
+        c.call('PUT',path+'/watch',200,{'enabled':True},token=owner)
+        body=f'@{{{recipient}}} @{{{recipient}}} >>{{{first}}} >>{{{first}}}'
+        reply=c.call('POST',path+'/posts',201,{'body':body},token=writer)['id']
+        for _ in range(2): c.call('PUT','/forum/posts/'+first+'/reaction',200,{'enabled':True},token=writer)
+        c.call('POST',path+'/moderate',200,{'action':'lock'},token=admin)
+        c.call('POST',path+'/moderate',200,{'action':'lock'},token=admin)
+        self.assertEqual(0,c.call('GET',inbox+'?count_only=1',token=owner)['unread'])
+        def drain():
+            for _ in range(20):
+                result=c.call('POST','/queue/work',200,{'limit':10},token=admin)
+                self.assertEqual(0,result['failed'])
+                if result['forum_notifications_processed']==0: return
+            self.fail('Notification outbox did not drain')
+        drain()
+        data=c.call('GET',inbox,token=owner); items=data['items']
+        self.assertEqual(5,data['unread']);self.assertCountEqual(['reply','mention','quote','reaction','moderation'],[x['kind'] for x in items])
+        drain(); self.assertEqual(5,c.call('GET',inbox+'?count_only=1',token=owner)['unread'])
+        self.assertEqual(0,c.call('GET',inbox+'?count_only=1',token=writer)['unread'])
+        item=next(x for x in items if x['kind']=='reply')
+        c.call('GET',inbox+'/'+item['id'],404,token=writer)
+        c.call('POST',mark,404,{'id':item['id']},token=writer)
+        browser=Client(self.base);browser.login(email,browser=True)
+        browser.call('POST',mark,403,{'all':True})
+        self.assertEqual(4,c.call('POST',mark,200,{'id':item['id']},token=owner)['unread'])
+        self.assertEqual(4,c.call('GET',inbox+'?count_only=1',token=Client(self.base).login(email)[0]['data']['access_token'])['unread'])
+        # Revoke access after delivery, and ensure even the counter does not reveal the rows.
+        acl=f'/forum/boards/{board}/permissions'; old=c.call('GET',acl,token=admin)
+        c.call('PUT',acl,200,{'visibility':'hidden','rules':[]},token=admin)
+        self.assertEqual([],c.call('GET',inbox,token=owner)['items'])
+        self.assertEqual(0,c.call('GET',inbox+'?count_only=1',token=owner)['unread'])
+        c.call('GET',inbox+'/'+item['id'],404,token=owner)
+        c.call('POST',mark,404,{'id':item['id']},token=owner)
+        # Pending mention is discarded when the target is inaccessible at dispatch.
+        secret=c.call('POST',f'/forum/boards/{board}/threads',201,{'title':'Secret notification','body':f'@{{{recipient}}}'},token=admin)['id']
+        drain()
+        c.call('PUT',acl,200,{'visibility':old['visibility'],'rules':old['rules']},token=admin)
+        self.assertEqual(5,len(c.call('GET',inbox,token=owner)['items']))
+        # Notification follows the stable message UUID after a split/transfer.
+        target=c.call('POST',f'/forum/boards/{board}/threads',201,{'title':'Notification target','body':'Target'},token=admin)['id']
+        c.call('POST',path+'/transfer',200,{'post_ids':[reply],'target_id':target},token=admin)
+        resolved=c.call('GET',inbox+'/'+item['id'],token=owner)
+        self.assertEqual(target,resolved['thread_id']);self.assertEqual(reply,resolved['post_id'])
+        prefs=data['preferences'];prefs['reaction']=False
+        c.call('PUT','/forum/notification-preferences',200,prefs,token=owner)
+        c.call('PUT','/forum/posts/'+first+'/reaction',200,{'enabled':False},token=writer)
+        c.call('PUT','/forum/posts/'+first+'/reaction',200,{'enabled':True},token=writer)
+        drain();self.assertNotIn('reaction',[x['kind'] for x in c.call('GET',inbox,token=owner)['items']])
+        self.assertEqual(0,c.call('POST',mark,200,{'all':True},token=owner)['unread'])
+        for thread in (t,target,secret):c.call('POST','/forum/threads/'+thread+'/moderate',200,{'action':'delete'},token=admin)
+        self.assertEqual([],c.call('GET',inbox,token=owner)['items'])
+        c.call('DELETE',f'/forum/boards/{board}',200,token=admin)
+        c.call('DELETE',f'/forum/categories/{category}',200,token=admin)
+
+    def test_10_rate_limit(self):
         # Run last: exhaust the real IP auth bucket without guessing credentials.
         c = Client(self.base)
         _, headers = c.request('GET', '/auth/me', 401)
@@ -727,6 +792,14 @@ class BrowserTests(unittest.TestCase):
                 writer=Client(self.base); token=writer.login(ADMIN,ADMIN_PASSWORD)[0]['data']['access_token']
                 thread_id=thread.rsplit('/',1)[-1]
                 reply=writer.call('POST','/forum/threads/'+thread_id+'/posts',201,{'body':'New remote reply'},token=token)['id']
+                result=writer.call('POST','/queue/work',200,{'limit':10},token=token)
+                self.assertEqual(0,result['failed'])
+                page.goto(self.base+'/forum/notifications'); heading('Уведомления')
+                expect(page.locator('.notification-unread')).to_contain_text('Новый ответ')
+                # Marking a notification read does not acknowledge the forum post itself.
+                page.locator('.notification-unread').get_by_role('button',name='Прочитано',exact=True).click()
+                expect(page.locator('.notification-unread')).to_have_count(0)
+                expect(page.get_by_role('heading',name='Настройки уведомлений')).to_be_visible()
                 page.goto(self.base+'/forum/unread'); heading('Непрочитанные темы')
                 page.get_by_role('link',name='Browser regression topic',exact=True).locator('..').get_by_role('link',name='1 новых',exact=True).click()
                 expect(page).to_have_url(re.compile(r'#post-'+reply+r'$'))

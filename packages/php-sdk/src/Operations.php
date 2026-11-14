@@ -753,6 +753,42 @@ final class Operations {
     ),
     'bodyRequired' => false,
   ),
+  'get_Forum_notificationTarget' => 
+  array (
+    'method' => 'GET',
+    'path' => '/forum/notifications/{id}',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
+  'get_Forum_notifications' => 
+  array (
+    'method' => 'GET',
+    'path' => '/forum/notifications',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'page',
+        'in' => 'query',
+        'required' => false,
+      ),
+      1 => 
+      array (
+        'name' => 'count_only',
+        'in' => 'query',
+        'required' => false,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
   'get_Forum_ownProfile' => 
   array (
     'method' => 'GET',
@@ -2151,6 +2187,15 @@ final class Operations {
     ),
     'bodyRequired' => true,
   ),
+  'post_Forum_markNotifications' => 
+  array (
+    'method' => 'POST',
+    'path' => '/forum/notifications/read',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => true,
+  ),
   'post_Forum_markRead' => 
   array (
     'method' => 'POST',
@@ -2639,6 +2684,15 @@ final class Operations {
       ),
     ),
     'bodyRequired' => false,
+  ),
+  'put_Forum_notificationPreferences' => 
+  array (
+    'method' => 'PUT',
+    'path' => '/forum/notification-preferences',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => true,
   ),
   'put_Forum_reaction' => 
   array (
