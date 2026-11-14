@@ -103,7 +103,7 @@ def install(site, env, report, label, port, driver):
         args += ['--db=pgsql', '--db-host=127.0.0.1', '--db-port='+os.environ['DB_PORT'], '--db-name='+name, '--db-user='+os.environ['DB_USERNAME'], '--db-password='+os.environ['DB_PASSWORD'], '--db-sslmode=disable']
     result = json.loads(run(site, env, report, label+'-install', args))
     require(result['ok'] and result['final']['ok'], 'Install not ready')
-    # 0.1.4 selected Redis for production even on SQLite; use explicit local cache.
+    # Explicit local cache makes baseline and current installations reproducible.
     code = r'require "vendor/autoload.php"; (new CajeerEngine\Installer\InstallerEnvironment(".env"))->write(["CACHE_DRIVER"=>"file", "FORUM_REGISTRATION"=>"false", "FORUM_REQUIRE_EMAIL_VERIFICATION"=>"true", "FORUM_SMTP_HOST"=>"127.0.0.1", "FORUM_SMTP_PORT"=>"1025", "FORUM_SMTP_SECURITY"=>"plain", "FORUM_SMTP_FROM"=>"forum@example.test", "FORUM_SMTP_USERNAME"=>"", "FORUM_SMTP_PASSWORD"=>"", "RATE_LIMIT_AUTH"=>"80"], ".env.example");'
     run(site, env, report, label+'-configure', ['php', '-r', code])
     ready = json.loads(run(site, env, report, label+'-install-check', ['php','bin/cajeer','install:check','--json']))
@@ -175,7 +175,7 @@ def verify_readiness(site, env, report, base):
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--artifact',type=Path,required=True)
-    parser.add_argument('--previous',type=Path,help='Original 0.1.4 dist; enables real signed upgrade and rollback')
+    parser.add_argument('--previous',type=Path,help='Original 0.2.0 dist; enables real signed upgrade and rollback')
     parser.add_argument('--driver',choices=('sqlite','pgsql'),default='sqlite')
     parser.add_argument('--report',type=Path,required=True)
     args=parser.parse_args(); report=args.report.resolve(); report.mkdir(parents=True,exist_ok=True)
@@ -184,7 +184,7 @@ def main():
         work=Path(tmp); port=free_port()
         # With --previous use the authentic baseline for upgrade, not a relabelled current tree.
         previous=args.previous.resolve() if args.previous else None
-        initial='0.1.4' if previous else current
+        initial='0.2.0' if previous else current
         site=unpack(previous or artifact,work/'live',initial)
         install(site,env,report,'initial',port,args.driver)
         with http(site,env,report,'initial',port,initial) as base:

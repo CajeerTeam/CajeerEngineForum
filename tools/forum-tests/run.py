@@ -279,7 +279,33 @@ class NetworkTests(unittest.TestCase):
         c.call('GET', url, 404)
         self.assertNotIn(thread, [t['id'] for t in c.call('GET', '/forum/search?q=Network')])
 
-    def test_03_rate_limit(self):
+    def test_03_node_management(self):
+        c = Client(self.base)
+        admin = c.login(ADMIN, ADMIN_PASSWORD)[0]['data']['access_token']
+        data = {'name': 'API tree', 'description': ''}
+        cat = c.call('POST', '/forum/categories', 201, data, token=admin)['id']
+        dest = c.call('POST', '/forum/categories', 201, {'name':'API destination','description':''}, token=admin)['id']
+        path = f'/forum/categories/{cat}/boards'
+        root = c.call('POST',path,201,{**data,'node_type':'container'},token=admin)['id']
+        child = c.call('POST',path,201,{'name':'API child','description':'','parent_id':root},token=admin)['id']
+        c.call('POST',f'/forum/boards/{root}/threads',409,{'title':'Forbidden','body':'No'},token=admin)
+        t = c.call('POST',f'/forum/boards/{child}/threads',201,{'title':'Moved thread','body':'Preserved'},token=admin)['id']
+        c.call('POST',f'/forum/boards/{root}/move',409,{'category_id':cat,'parent_id':child},token=admin)
+        c.call('POST',f'/forum/boards/{root}/move',200,{'category_id':dest,'parent_id':None,'position':0},token=admin)
+        self.assertEqual(dest,c.call('GET',f'/forum/boards/{child}')['board']['category_id'])
+        self.assertEqual(root,c.call('GET',f'/forum/boards/{child}')['board']['parent_id'])
+        c.call('DELETE',f'/forum/boards/{root}',409,token=admin)
+        c.call('PATCH',f'/forum/boards/{root}',200,{**data,'node_type':'container','state':'archived'},token=admin)
+        c.call('POST',f'/forum/threads/{t}/posts',409,{'body':'No'},token=admin)
+        self.assertEqual('Preserved',c.call('GET',f'/forum/threads/{t}')['posts'][0]['body'])
+        c.call('PATCH',f'/forum/boards/{root}',200,{**data,'node_type':'container','state':'open'},token=admin)
+        c.call('POST',f'/forum/threads/{t}/moderate',200,{'action':'delete'},token=admin)
+        c.call('DELETE',f'/forum/boards/{child}',200,token=admin)
+        c.call('DELETE',f'/forum/boards/{root}',200,token=admin)
+        c.call('DELETE',f'/forum/categories/{dest}',200,token=admin)
+        c.call('DELETE',f'/forum/categories/{cat}',200,token=admin)
+
+    def test_04_rate_limit(self):
         # Run last: exhaust the real IP auth bucket without guessing credentials.
         c = Client(self.base)
         _, headers = c.request('GET', '/auth/me', 401)
@@ -383,6 +409,30 @@ class BrowserTests(unittest.TestCase):
                     expect(admin_page.get_by_role('button', name='Отправить', exact=True)).to_have_count(0)
                     admin_page.get_by_role('button', name='Открыть', exact=True).click()
                     expect(admin_page.get_by_role('button', name='Отправить', exact=True)).to_be_visible()
+                    # Use the actual node-management forms, then navigate the public tree.
+                    admin_page.goto(self.base + '/forum/manage')
+                    category_form = admin_page.get_by_role('button', name='Создать', exact=True).locator('..')
+                    category_form.locator('[name=name]').fill('Browser node category')
+                    category_form.locator('[name=description]').fill('Node integration')
+                    category_form.get_by_role('button', name='Создать', exact=True).click()
+                    category_panel = admin_page.get_by_role('heading', name='Browser node category', exact=True).locator('..')
+                    expect(category_panel).to_be_visible()
+                    create = category_panel.get_by_role('button', name='Создать раздел', exact=True).locator('..')
+                    create.locator('[name=name]').fill('Browser parent')
+                    create.locator('[name=node_type]').select_option('container')
+                    create.get_by_role('button', name='Создать раздел', exact=True).click()
+                    parent = admin_page.get_by_role('heading', name='Browser parent', exact=True).locator('..')
+                    expect(parent).to_be_visible()
+                    child_form = parent.get_by_role('button', name='Создать подраздел', exact=True).locator('..')
+                    child_form.locator('[name=name]').fill('Browser child')
+                    child_form.get_by_role('button', name='Создать подраздел', exact=True).click()
+                    expect(admin_page.get_by_role('heading', name='Browser child', exact=True)).to_be_visible()
+                    admin_page.goto(self.base + '/forum')
+                    admin_page.get_by_role('link', name='Browser parent', exact=True).click()
+                    expect(admin_page.get_by_role('link', name='Browser child', exact=True)).to_be_visible()
+                    expect(admin_page.get_by_role('button', name='Создать тему', exact=True)).to_have_count(0)
+                    admin_page.get_by_role('link', name='Browser child', exact=True).click()
+                    expect(admin_page.get_by_role('button', name='Создать тему', exact=True)).to_be_visible()
                 finally:
                     admin_context.close()
                 self.assertEqual([], errors)

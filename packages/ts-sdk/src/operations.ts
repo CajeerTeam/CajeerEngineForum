@@ -77,6 +77,30 @@ export const operations = {
         ],
         "bodyRequired": false
     },
+    "delete_Forum_deleteBoard": {
+        "method": "DELETE",
+        "path": "/forum/boards/{id}",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": false
+    },
+    "delete_Forum_deleteCategory": {
+        "method": "DELETE",
+        "path": "/forum/categories/{id}",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": false
+    },
     "delete_MediaDelete": {
         "method": "DELETE",
         "path": "/media/{id}",
@@ -1033,6 +1057,30 @@ export const operations = {
         ],
         "bodyRequired": true
     },
+    "patch_Forum_updateBoard": {
+        "method": "PATCH",
+        "path": "/forum/boards/{id}",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
+    },
+    "patch_Forum_updateCategory": {
+        "method": "PATCH",
+        "path": "/forum/categories/{id}",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
+    },
     "patch_Update": {
         "method": "PATCH",
         "path": "/media/{id}",
@@ -1387,6 +1435,18 @@ export const operations = {
     "post_Forum_moderate": {
         "method": "POST",
         "path": "/forum/threads/{id}/moderate",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
+    },
+    "post_Forum_moveBoard": {
+        "method": "POST",
+        "path": "/forum/boards/{id}/move",
         "parameters": [
             {
                 "name": "id",

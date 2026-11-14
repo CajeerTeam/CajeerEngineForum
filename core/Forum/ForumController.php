@@ -57,5 +57,17 @@ final readonly class ForumController
     public function resolve(Request $r,array $p): JsonResponse { return $this->respond(fn () => ['id'=>$this->moderation->resolve($this->actor($r),$this->id($p))]); }
     public function moderate(Request $r,array $p): JsonResponse { return $this->respond(fn () => ['id'=>$this->moderation->moderate($this->actor($r),$this->id($p),$this->text($r,'action',20))]); }
     public function category(Request $r): JsonResponse { return $this->respond(fn () => ['id'=>$this->discussions->category($this->actor($r),$this->text($r,'name',120),$this->text($r,'description',1000,0))],201); }
-    public function createBoard(Request $r,array $p): JsonResponse { return $this->respond(fn () => ['id'=>$this->discussions->createBoard($this->actor($r),$this->id($p),$this->text($r,'name',120),$this->text($r,'description',1000,0))],201); }
+    private function parent(Request $r): ?string { $value=$this->field($r,'parent_id');return $value===null?null:V::id($value); }
+    private function position(Request $r): ?int {
+        $value=$this->field($r,'position');
+        if ($value===null) return null;
+        if (!is_int($value) || $value<0) throw new ForumException('position должен быть целым неотрицательным числом.',422);
+        return $value;
+    }
+    public function createBoard(Request $r,array $p): JsonResponse { return $this->respond(fn () => ['id'=>$this->discussions->nodes()->createBoard($this->actor($r),$this->id($p),$this->text($r,'name',120),$this->text($r,'description',1000,0),$this->parent($r),V::text($this->field($r,'node_type')??'forum','node_type',16),V::text($this->field($r,'state')??'open','state',16),$this->position($r))],201); }
+    public function updateCategory(Request $r,array $p): JsonResponse { return $this->respond(fn () => ['id'=>$this->discussions->nodes()->updateCategory($this->actor($r),$this->id($p),$this->text($r,'name',120),$this->text($r,'description',1000,0),$this->position($r))]); }
+    public function updateBoard(Request $r,array $p): JsonResponse { return $this->respond(fn () => ['id'=>$this->discussions->nodes()->updateBoard($this->actor($r),$this->id($p),$this->text($r,'name',120),$this->text($r,'description',1000,0),$this->text($r,'node_type',16),$this->text($r,'state',16))]); }
+    public function moveBoard(Request $r,array $p): JsonResponse { return $this->respond(fn () => ['id'=>$this->discussions->nodes()->move($this->actor($r),$this->id($p),V::id($this->field($r,'category_id')),$this->parent($r),$this->position($r))]); }
+    public function deleteBoard(Request $r,array $p): JsonResponse { return $this->respond(fn () => ['id'=>$this->discussions->nodes()->delete($this->actor($r),$this->id($p),false)]); }
+    public function deleteCategory(Request $r,array $p): JsonResponse { return $this->respond(fn () => ['id'=>$this->discussions->nodes()->delete($this->actor($r),$this->id($p),true)]); }
 }

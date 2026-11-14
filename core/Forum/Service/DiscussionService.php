@@ -21,15 +21,15 @@ final readonly class DiscussionService
     public function board(string $id, int $offset): array
     {
         return $this->db->readSnapshot(function () use ($id, $offset) {
-            $board = $this->boards->find($id) ?? throw new ForumException('Раздел не найден.', 404);
-            return ['board'=>$board, 'threads'=>$this->threads->inBoard($id,$offset)];
+            $board = $this->boards->view($id) ?? throw new ForumException('Раздел не найден.', 404);
+            return ['board'=>$board, 'threads'=>$this->threads->inBoard($id,$offset), 'children'=>$this->boards->children($id)];
         });
     }
     public function thread(string $id, int $offset): array
     {
         return $this->db->readSnapshot(function () use ($id, $offset) {
             $thread = $this->threads->find($id) ?? throw new ForumException('Тема не найдена.', 404);
-            return ['thread'=>$thread, 'posts'=>$this->posts->inThread($id,$offset)];
+            return ['thread'=>$thread, 'board'=>$this->boards->view($thread['board_id']), 'posts'=>$this->posts->inThread($id,$offset)];
         });
     }
     public function search(string $term, int $offset): array { return $this->threads->search($term,$offset); }
@@ -46,7 +46,7 @@ final readonly class DiscussionService
         $board = V::id($board); $title = V::text($title,'title',180,3); $body = V::text($body,'body',20000);
         $actor->require('forum:write');
         return $this->tx->write(function () use ($actor,$board,$title,$body) {
-            $this->boards->lockBoard($board) ?? throw new ForumException('Раздел не найден.',404);
+            $this->boards->writable($board);
             $id = Uuid::v4(); $post = Uuid::v4();
             $this->threads->insert($id,$board,$actor->userId,$title);
             $this->posts->insert($post,$id,$actor->userId,$body,1);
@@ -60,6 +60,7 @@ final readonly class DiscussionService
         $actor->require('forum:write');
         return $this->tx->write(function () use ($actor,$id,$body) {
             $thread = $this->threads->lockThread($id) ?? throw new ForumException('Тема не найдена.',404);
+            $this->boards->writable($thread['board_id']);
             if ((int) $thread['locked'] !== 0) throw new ForumException('Тема закрыта.',409);
             $post = Uuid::v4();
             $this->posts->insert($post,$id,$actor->userId,$body,$this->posts->nextOrdinal($id));
@@ -75,31 +76,20 @@ final readonly class DiscussionService
         return $this->tx->write(function () use ($actor,$id,$body) {
             $thread = $this->threads->lockForPost($id) ?? throw new ForumException('Сообщение не найдено.',404);
             $post = $this->posts->findForWrite($id) ?? throw new ForumException('Сообщение не найдено.',404);
+            $this->boards->writable($thread['board_id']);
             $actor->assertEdit($post,$thread);
             $this->posts->edit($id,$body);
             $this->tx->audit('forum.post.edit',$actor->userId,['thread_id'=>$thread['id'],'post_id'=>$id]);
             return $id;
         });
     }
+    public function nodes(): NodeService { return new NodeService($this->tx,$this->boards); }
     public function category(ForumAccessPolicy $actor, string $name, string $description): string
     {
-        $name = V::text($name,'name',120); $description = V::text($description,'description',1000,0);
-        $actor->require('*');
-        return $this->tx->write(function () use ($actor,$name,$description) {
-            $id = Uuid::v4(); $this->boards->insertCategory($id,$name,$description);
-            $this->tx->audit('forum.category.create',$actor->userId,['category_id'=>$id]);
-            return $id;
-        });
+        return $this->nodes()->createCategory($actor,$name,$description);
     }
     public function createBoard(ForumAccessPolicy $actor, string $category, string $name, string $description): string
     {
-        $category = V::id($category); $name = V::text($name,'name',120); $description = V::text($description,'description',1000,0);
-        $actor->require('*');
-        return $this->tx->write(function () use ($actor,$category,$name,$description) {
-            $this->boards->lockCategory($category) ?? throw new ForumException('Категория не найдена.',404);
-            $id = Uuid::v4(); $this->boards->insertBoard($id,$category,$name,$description);
-            $this->tx->audit('forum.board.create',$actor->userId,['board_id'=>$id,'category_id'=>$category]);
-            return $id;
-        });
+        return $this->nodes()->createBoard($actor,$category,$name,$description);
     }
 }

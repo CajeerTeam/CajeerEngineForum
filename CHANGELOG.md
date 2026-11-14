@@ -1,5 +1,13 @@
 # Changelog
 
+## Forum Edition 0.2.1 — Forum Node System
+
+- Add nested boards and containers, inherited read-only/archive state, direct counters and last activity.
+- Transactional category and board management: edit, move across categories, reorder and safe deletion; preserve UUIDs and content.
+- Add migration 0018 (SQLite/PostgreSQL/MySQL), validate graph and indexes in readiness, keep prior migrations intact.
+- Public tree and admin controls; five new API operations and regenerated SDKs.
+- Add real database and network node regressions; physical release acceptance now upgrades from 0.2.0.
+
 ## Forum Edition 0.2.0 — Forum Core Stable
 
 - Read-only migration ledger verification with missing, pending, failed and mismatched migration detection.

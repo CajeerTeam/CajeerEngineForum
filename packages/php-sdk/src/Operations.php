@@ -102,6 +102,36 @@ final class Operations {
     ),
     'bodyRequired' => false,
   ),
+  'delete_Forum_deleteBoard' => 
+  array (
+    'method' => 'DELETE',
+    'path' => '/forum/boards/{id}',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
+  'delete_Forum_deleteCategory' => 
+  array (
+    'method' => 'DELETE',
+    'path' => '/forum/categories/{id}',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
   'delete_MediaDelete' => 
   array (
     'method' => 'DELETE',
@@ -1341,6 +1371,36 @@ final class Operations {
     ),
     'bodyRequired' => true,
   ),
+  'patch_Forum_updateBoard' => 
+  array (
+    'method' => 'PATCH',
+    'path' => '/forum/boards/{id}',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => true,
+  ),
+  'patch_Forum_updateCategory' => 
+  array (
+    'method' => 'PATCH',
+    'path' => '/forum/categories/{id}',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => true,
+  ),
   'patch_Update' => 
   array (
     'method' => 'PATCH',
@@ -1816,6 +1876,21 @@ final class Operations {
   array (
     'method' => 'POST',
     'path' => '/forum/threads/{id}/moderate',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => true,
+  ),
+  'post_Forum_moveBoard' => 
+  array (
+    'method' => 'POST',
+    'path' => '/forum/boards/{id}/move',
     'parameters' => 
     array (
       0 => 
