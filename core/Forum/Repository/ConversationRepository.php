@@ -41,15 +41,15 @@ final readonly class ConversationRepository extends Repository
         if($existing!==null){if((int)$existing['active']===1)throw new ForumException('Участник уже в переписке.',409);$this->query('UPDATE ce_forum_conversation_participants SET joined_sequence=?,read_sequence=?,active=1,archived=0,muted=0 WHERE conversation_id=? AND user_id=?',[$message_sequence,$message_sequence-1,$id,$user]);return;}
         $this->query('INSERT INTO ce_forum_conversation_participants(conversation_id,user_id,joined_sequence,read_sequence) VALUES (?,?,?,?)',[$id,$user,$message_sequence,$message_sequence-1]);
     }
-    public function append(string $id,string $user,string $body,int $message_sequence): string
+    public function append(string $id,string $user,string $body,int $message_sequence,string $format='plain'): string
     {
-        $msg=Uuid::v4();$now=time();$this->query('INSERT INTO ce_forum_conversation_messages(id,conversation_id,author_id,message_sequence,body,created_at) VALUES (?,?,?,?,?,?)',[$msg,$id,$user,$message_sequence,$body,$now]);
+        $msg=Uuid::v4();$now=time();$this->query('INSERT INTO ce_forum_conversation_messages(id,conversation_id,author_id,message_sequence,body,created_at,body_format) VALUES (?,?,?,?,?,?,?)',[$msg,$id,$user,$message_sequence,$body,$now,$format]);
         $this->query('UPDATE ce_forum_conversations SET last_sequence=?,updated_at=? WHERE id=?',[$message_sequence,$now,$id]);
         $this->query('UPDATE ce_forum_conversation_participants SET archived=0 WHERE conversation_id=? AND active=1',[$id]);return $msg;
     }
     public function message(string $id,string $msg,int $joined): array
     { return $this->row('SELECT * FROM ce_forum_conversation_messages WHERE id=? AND conversation_id=? AND message_sequence>=?',[$msg,$id,$joined])??throw new ForumException('Сообщение не найдено.',404); }
-    public function edit(string $msg,string $body): void { $this->query('UPDATE ce_forum_conversation_messages SET body=?,edited_at=? WHERE id=?',[$body,time(),$msg]); }
+    public function edit(string $msg,string $body,?string $format=null): void { $this->query('UPDATE ce_forum_conversation_messages SET body=?,body_format=COALESCE(?,body_format),edited_at=? WHERE id=?',[$body,$format,time(),$msg]); }
     public function mark(string $id,string $user,int $seq): void { $this->query('UPDATE ce_forum_conversation_participants SET read_sequence=? WHERE conversation_id=? AND user_id=? AND read_sequence<?',[$seq,$id,$user,$seq]); }
     public function leave(string $id,string $user): void
     {
@@ -68,7 +68,7 @@ final readonly class ConversationRepository extends Repository
     { return (int)$this->query('SELECT COUNT(*) FROM ce_forum_conversation_participants p JOIN ce_forum_conversation_messages m ON m.conversation_id=p.conversation_id WHERE p.user_id=? AND p.active=1 AND m.message_sequence>p.read_sequence AND m.message_sequence>=p.joined_sequence AND (m.author_id IS NULL OR m.author_id<>p.user_id)'.($notifications?' AND p.muted=0':''),[$user])->fetchColumn(); }
     public static function normalize(array $row): array { foreach(['last_sequence','joined_sequence','read_sequence','message_sequence','created_at','updated_at','edited_at','archived','muted','unread'] as $k)if(isset($row[$k]))$row[$k]=(int)$row[$k];return $row; }
     public function messages(string $id,int $joined,int $offset): array
-    { return array_map(self::normalize(...),$this->rows('SELECT m.id,m.author_id,u.name AS author_name,m.message_sequence,m.body,m.created_at,m.edited_at FROM ce_forum_conversation_messages m LEFT JOIN ce_users u ON u.id=m.author_id WHERE m.conversation_id=? AND m.message_sequence>=? ORDER BY m.message_sequence DESC LIMIT 25 OFFSET '.$offset,[$id,$joined])); }
+    { return array_map(static function(array $m): array { $content=\CajeerEngine\Forum\Content\ForumContentRenderer::render($m['body'],$m['body_format']);$m['body_html']=$content['html'];$m['renderer_version']=$content['renderer_version'];return self::normalize($m); },$this->rows('SELECT m.id,m.author_id,u.name AS author_name,m.message_sequence,m.body,m.body_format,m.created_at,m.edited_at FROM ce_forum_conversation_messages m LEFT JOIN ce_users u ON u.id=m.author_id WHERE m.conversation_id=? AND m.message_sequence>=? ORDER BY m.message_sequence DESC LIMIT 25 OFFSET '.$offset,[$id,$joined])); }
     public function settings(string $user): array { return ['incoming'=>$this->incoming($user),'blocked'=>$this->rows('SELECT b.blocked_id AS id,u.name FROM ce_forum_user_blocks b JOIN ce_users u ON u.id=b.blocked_id WHERE b.user_id=? ORDER BY u.name,u.id',[$user])]; }
     public function setIncoming(string $user,string $mode): void
     { if($this->row('SELECT user_id FROM ce_forum_conversation_preferences WHERE user_id=?',[$user])===null)$this->query('INSERT INTO ce_forum_conversation_preferences(user_id,incoming) VALUES (?,?)',[$user,$mode]);else $this->query('UPDATE ce_forum_conversation_preferences SET incoming=? WHERE user_id=?',[$mode,$user]); }

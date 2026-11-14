@@ -2550,6 +2550,15 @@ final class Operations {
     ),
     'bodyRequired' => true,
   ),
+  'post_Forum_previewContent' => 
+  array (
+    'method' => 'POST',
+    'path' => '/forum/content/preview',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => true,
+  ),
   'post_Forum_readConversation' => 
   array (
     'method' => 'POST',

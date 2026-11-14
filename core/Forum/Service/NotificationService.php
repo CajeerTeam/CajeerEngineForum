@@ -18,13 +18,14 @@ final readonly class NotificationService
         preg_match_all('/'.preg_quote($prefix,'/').'\{([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})\}/D',$body,$matches);
         return array_slice(array_values(array_unique($matches[1])),0,20);
     }
-    public function published(string $actor,string $thread,string $post,string $body,bool $reply): void
+    public function published(string $actor,string $thread,string $post,string $body,bool $reply,string $format='plain'): void
     {
         $this->tx->watches()->published($actor,$thread,$post,$reply);
         if($reply)$this->repo->reply($actor,$post,$thread);
-        $this->repo->enqueue('mention',$actor,$post,self::references($body,'@'));
+        $content=\CajeerEngine\Forum\Content\ForumContentRenderer::render($body,$format);
+        $this->repo->enqueue('mention',$actor,$post,$content['mentions']);
         $authors=[];
-        foreach(self::references($body,'>>') as $quote){$author=$this->repo->quotedAuthor($quote,$thread);if($author!==null)$authors[]=$author;}
+        foreach($content['quotes'] as $quote){$author=$this->repo->quotedAuthor($quote,$thread);if($author!==null)$authors[]=$author;}
         $this->repo->enqueue('quote',$actor,$post,$authors);
     }
     public function reaction(string $actor,string $post,bool $enabled): void

@@ -140,6 +140,18 @@ def verify_data(base, state):
     c.login(ADMIN, ADMIN_PASSWORD)
 
 
+def verify_rich_content(base,state):
+    token,thread,post,_=state;c=Client(base);path='/forum/threads/'+thread
+    original=c.call('GET',path)['posts'][0]
+    require(original['body_format']=='plain' and original['body_html']=='Original content','Legacy content format changed')
+    source='**Release rich text** <script>unsafe</script>'
+    preview=c.call('POST','/forum/content/preview',200,{'body':source,'body_format':'markdown'},token=token)
+    created=c.call('POST',path+'/posts',201,{'body':source,'body_format':'markdown'},token=token)['id']
+    item=next(p for p in c.call('GET',path)['posts'] if p['id']==created)
+    require(item['body_html']==preview['html'] and '<strong>Release rich text</strong>' in item['body_html'] and '<script>' not in item['body_html'],'Rich rendering failed')
+    print('PASS physical dist rich content and legacy migration',flush=True)
+
+
 def verify_groups(base,state):
     token, _, _, member=state; c=Client(base)
     groups=c.call('GET','/forum/groups',token=token)
@@ -181,7 +193,7 @@ def verify_navigation(base,state):
 
 
 def seed_structure(base, state):
-    """Create real 0.3.6 structure before updating, not just after the upgrade."""
+    """Create real 0.4.0 structure before updating, not just after the upgrade."""
     admin, _, _, member = state
     c=Client(base)
     member_group=next(g['id'] for g in c.call('GET','/forum/groups',token=admin) if g['handle']=='forum-member')
@@ -283,7 +295,7 @@ def verify_read_tracking(base, state):
 
 def verify_notifications(base, state, fixture):
     c=Client(base); admin,thread,post,_=state
-    # The original 0.3.6 topic has no synthetic historical notifications.
+    # The original 0.4.0 topic has no synthetic historical notifications.
     path='/forum/notifications'
     c.call('POST','/queue/work',200,{'limit':10},token=admin)
     c.call('POST',path+'/read',200,{'all':True},token=admin)
@@ -447,11 +459,16 @@ def community_snapshot(base,f):
         require(res.headers.get_content_type()=='image/jpeg','Stored avatar is not JPEG')
         avatar=__import__('hashlib').sha256(res.read()).hexdigest()
     thread=c.call('GET',url,token=token); inbox=c.call('GET','/forum/notifications',token=token)
+    private=c.call('GET',conv,token=token)
+    for message in private['messages']:
+        if 'body_format' in message:
+            require(message['body_format']=='plain' and isinstance(message['body_html'],str),'Legacy private format changed')
+            for key in ('body_format','body_html','renderer_version'): message.pop(key,None)
     return {'profile':own['profile'],'preferences':own['preferences'],'fields':own['values'],'avatar':avatar,
             'read':thread['read_state'],'watch':thread['thread']['watch_mode'],'posts':[(p['id'],p['body']) for p in thread['posts']],
             'delivery':c.call('GET','/forum/watch-settings',token=token)['delivery'],
             'notifications':inbox['items'],'notification_unread':inbox['unread'],'private_unread':c.call('GET','/forum/conversations',token=token)['unread'],
-            'muted_unread':inbox['conversation_unread'],'conversation':c.call('GET',conv,token=token),
+            'muted_unread':inbox['conversation_unread'],'conversation':private,
             'relationship':c.call('GET','/forum/members/'+f['owner']+'/relationship',token=token),'reputation':public['reputation']}
 
 
@@ -489,7 +506,7 @@ def verify_community_live(base,f):
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--artifact',type=Path,required=True)
-    parser.add_argument('--previous',type=Path,help='Original 0.3.6 dist; enables real signed upgrade and rollback')
+    parser.add_argument('--previous',type=Path,help='Original 0.4.0 dist; enables real signed upgrade and rollback')
     parser.add_argument('--driver',choices=('sqlite','pgsql'),default='sqlite')
     parser.add_argument('--report',type=Path,required=True)
     args=parser.parse_args(); report=args.report.resolve(); report.mkdir(parents=True,exist_ok=True)
@@ -498,7 +515,7 @@ def main():
         work=Path(tmp); port=free_port()
         # With --previous use the authentic baseline for upgrade, not a relabelled current tree.
         previous=args.previous.resolve() if args.previous else None
-        initial='0.3.6' if previous else current
+        initial='0.4.0' if previous else current
         site=unpack(previous or artifact,work/'live',initial)
         install(site,env,report,'initial',port,args.driver)
         with http(site,env,report,'initial',port,initial) as base:
@@ -520,6 +537,7 @@ def main():
                 verify_watches(base,state)
                 verify_conversations(base,state)
                 verify_activity(base,state,fixture)
+                verify_rich_content(base,state)
         if previous:
             key=work/'backup.key'; secret=work/'release.secret'; public=work/'release.public'
             run(site,env,report,'backup-key',['php','bin/cajeer','backup:keygen','--key='+str(key)])
@@ -541,6 +559,7 @@ def main():
                 verify_watches(base,state)
                 verify_conversations(base,state)
                 verify_activity(base,state,fixture)
+                verify_rich_content(base,state)
             run(site,env,report,'rollback',['php','bin/cajeer','update:rollback','--yes','--json'],timeout=600)
             require(version(site)==initial,'Rollback did not restore release')
             with http(site,env,report,'rollback',port,initial) as base:

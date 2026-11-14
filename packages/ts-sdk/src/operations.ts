@@ -1962,6 +1962,12 @@ export const operations = {
         ],
         "bodyRequired": true
     },
+    "post_Forum_previewContent": {
+        "method": "POST",
+        "path": "/forum/content/preview",
+        "parameters": [],
+        "bodyRequired": true
+    },
     "post_Forum_readConversation": {
         "method": "POST",
         "path": "/forum/conversations/{id}/read",

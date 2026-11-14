@@ -18,7 +18,12 @@ final readonly class PostRepository extends Repository
                 $ignored=array_fill_keys(array_column($this->rows("SELECT target_id FROM ce_forum_member_relations WHERE user_id=? AND kind='ignore'",[$viewer]),'target_id'),true);
             }
         }
+        
+        $quotes=[];
         foreach($rows as &$row){
+            $content=\CajeerEngine\Forum\Content\ForumContentRenderer::render($row['body'],$row['body_format']);
+            $row['body_html']=$content['html'];$row['renderer_version']=$content['renderer_version'];
+            foreach($content['quotes'] as $quote)$quotes[$quote]=true;
             $row['reactions']=$counts[$row['id']]??[];$row['my_reaction']=$mine[$row['id']]??null;
             $row['ignored_author']=isset($ignored[$row['author_id']??'']);
             $visible=$row['author_status']==='active' && \CajeerEngine\Forum\Service\MemberProfileService::visible($row['profile_visibility'],$viewer,(string)$row['author_id']);
@@ -28,6 +33,12 @@ final readonly class PostRepository extends Repository
             $row['avatar_url']=$visible&&(int)$row['has_avatar']===1?'/api/v1/forum/members/'.$row['author_id'].'/images/avatar':null;
             unset($row['author_status'],$row['display_name'],$row['profile_visibility'],$row['has_avatar']);
         }unset($row);
+        // Only current-thread references are resolved. Never look up titles or bodies elsewhere.
+        if($quotes){
+            $pages=[];$ids=array_keys($quotes);$in=implode(',',array_fill(0,count($ids),'?'));
+            foreach($this->rows("SELECT p.id,(SELECT COUNT(*) FROM ce_forum_posts q WHERE q.thread_id=p.thread_id AND q.ordinal<=p.ordinal) AS position FROM ce_forum_posts p WHERE p.thread_id=? AND p.id IN ($in)",[$id,...$ids]) as $q)$pages[$q['id']]=1+intdiv((int)$q['position']-1,25);
+            foreach($rows as &$row)$row['body_html']=preg_replace_callback('/href="#post-([a-f0-9-]{36})"/',static fn($m)=>isset($pages[$m[1]])?'href="/forum/threads/'.$id.'?page='.$pages[$m[1]].'#post-'.$m[1].'"':'', $row['body_html'])??$row['body_html'];unset($row);
+        }
         return $rows;
     }
     public function findForWrite(string $id): ?array
@@ -51,10 +62,10 @@ final readonly class PostRepository extends Repository
         $this->query('UPDATE ce_forum_threads SET read_sequence=read_sequence+? WHERE id=?',[$count,$thread]);
         return (int)$this->query('SELECT read_sequence FROM ce_forum_threads WHERE id=?',[$thread])->fetchColumn();
     }
-    public function insert(string $id, string $thread, string $actor, string $body, int $ordinal): void
+    public function insert(string $id, string $thread, string $actor, string $body, int $ordinal, string $format='plain'): void
     {
         $sequence=$this->reserveReadSequence($thread);
-        $this->query('INSERT INTO ce_forum_posts(id,thread_id,author_id,body,ordinal,read_sequence) VALUES(?,?,?,?,?,?)',[$id,$thread,$actor,$body,$ordinal,$sequence]);
+        $this->query('INSERT INTO ce_forum_posts(id,thread_id,author_id,body,ordinal,read_sequence,body_format) VALUES(?,?,?,?,?,?,?)',[$id,$thread,$actor,$body,$ordinal,$sequence,$format]);
     }
-    public function edit(string $id, string $body): void { $this->query('UPDATE ce_forum_posts SET body=?,edited_at=CURRENT_TIMESTAMP WHERE id=?', [$body,$id]); }
+    public function edit(string $id, string $body, ?string $format=null): void { $this->query('UPDATE ce_forum_posts SET body=?,body_format=COALESCE(?,body_format),edited_at=CURRENT_TIMESTAMP WHERE id=?', [$body,$format,$id]); }
 }

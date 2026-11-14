@@ -1,5 +1,12 @@
 # Changelog
 
+## Forum Edition 0.4.1 — Rich Text Editor
+
+- Add plain, Markdown and BBCode source formats to forum posts and conversation messages; preserve legacy content literally.
+- Safe server rendering and authenticated preview, visual editor, formatting toolbar and source modes.
+- Exclude code and escaped references from notification fanout; resolve quote links within the current authorized topic.
+- Add migration 0028 and renderer regressions. Full release certification requires CI.
+
 ## Forum Edition 0.4.0 — Community Stable
 
 - Enforce a shared hourly invitation budget for conversation creation and later invitations; blocked participants cannot bypass send restrictions by editing existing messages.

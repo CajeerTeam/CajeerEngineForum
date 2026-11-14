@@ -169,6 +169,7 @@ final class RouteRegistry
             ['GET', '/api/v1/forum/threads/{id}', 'api.v1.forum.thread', 'forum', 'thread', null],
             ['GET', '/api/v1/forum/search', 'api.v1.forum.search', 'forum', 'search', null],
             ['POST', '/api/v1/forum/register', 'api.v1.forum.register', 'forum', 'register', null],
+            ['POST', '/api/v1/forum/content/preview', 'api.v1.forum.previewContent', 'forum', 'previewContent', ['forum:write']],
             ['POST', '/api/v1/forum/boards/{id}/threads', 'api.v1.forum.createThread', 'forum', 'createThread', ['forum:write']],
             ['POST', '/api/v1/forum/threads/{id}/posts', 'api.v1.forum.reply', 'forum', 'reply', ['forum:write']],
             ['PATCH', '/api/v1/forum/posts/{id}', 'api.v1.forum.edit', 'forum', 'edit', ['forum:write']],

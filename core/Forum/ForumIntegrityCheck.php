@@ -17,6 +17,8 @@ final readonly class ForumIntegrityCheck
             // Run only after schema verification. These checks may scan the discussion corpus,
             // so deliberately keep them out of the per-request readiness endpoint.
             $queries=[
+                'invalid_post_format'=> "SELECT COUNT(*) FROM ce_forum_posts WHERE body_format NOT IN ('plain','markdown','bbcode')",
+                'invalid_conversation_format'=> "SELECT COUNT(*) FROM ce_forum_conversation_messages WHERE body_format NOT IN ('plain','markdown','bbcode')",
                 'invalid_notification_recipient'=> 'SELECT COUNT(*) FROM ce_forum_notifications WHERE actor_id=recipient_id',
                 'invalid_notification_state'=> "SELECT COUNT(*) FROM ce_forum_notifications WHERE (state=0 AND is_read<>0) OR (subscription_kind IS NOT NULL AND kind<>'reply') OR (kind='moderation' AND moderation_action IS NULL) OR (kind<>'moderation' AND moderation_action IS NOT NULL)",
                 'orphan_reaction_notification'=> "SELECT COUNT(*) FROM ce_forum_notifications n WHERE n.kind='reaction' AND NOT EXISTS (SELECT 1 FROM ce_forum_reactions r WHERE r.post_id=n.post_id AND r.user_id=n.actor_id)",

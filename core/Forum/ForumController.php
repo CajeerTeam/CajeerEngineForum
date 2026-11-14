@@ -99,9 +99,13 @@ final readonly class ForumController
         if ($required) $this->identity->requestMail($email,'verify');
         return ['id'=>$id,'verification_required'=>$required];
     },201); }
-    public function createThread(Request $r,array $p): JsonResponse { return $this->respond(fn () => ['id'=>$this->discussions->createThread($this->actor($r),$this->id($p),$this->text($r,'title',180,3),$this->text($r,'body',20000))],201); }
-    public function reply(Request $r,array $p): JsonResponse { return $this->respond(fn () => ['id'=>$this->discussions->reply($this->actor($r),$this->id($p),$this->text($r,'body',20000))],201); }
-    public function edit(Request $r,array $p): JsonResponse { return $this->respond(fn () => ['id'=>$this->discussions->edit($this->actor($r),$this->id($p),$this->text($r,'body',20000))]); }
+    private function contentFormat(Request $r): ?string
+    { $body=$this->body($r);return array_key_exists('body_format',$body)?\CajeerEngine\Forum\Content\ForumContentRenderer::format($body['body_format']):null; }
+    public function previewContent(Request $r): JsonResponse
+    { return $this->respond(function()use($r){$this->actor($r)->require('forum:write');$format=$this->contentFormat($r)??'plain';$body=\CajeerEngine\Forum\Content\ForumContentRenderer::source($this->field($r,'body'),$format,true);return \CajeerEngine\Forum\Content\ForumContentRenderer::render($body,$format);}); }
+    public function createThread(Request $r,array $p): JsonResponse { return $this->respond(fn () => ['id'=>$this->discussions->createThread($this->actor($r),$this->id($p),$this->text($r,'title',180,3),$this->field($r,'body'),$this->contentFormat($r)??'plain')],201); }
+    public function reply(Request $r,array $p): JsonResponse { return $this->respond(fn () => ['id'=>$this->discussions->reply($this->actor($r),$this->id($p),$this->field($r,'body'),$this->contentFormat($r))],201); }
+    public function edit(Request $r,array $p): JsonResponse { return $this->respond(fn () => ['id'=>$this->discussions->edit($this->actor($r),$this->id($p),$this->field($r,'body'),$this->contentFormat($r))]); }
     public function reaction(Request $r,array $p): JsonResponse { return $this->respond(fn () => $this->engagement->reaction($this->actor($r),$this->id($p),V::enabled($this->field($r,'enabled')),$this->field($r,'type'))); }
     public function watch(Request $r,array $p): JsonResponse { return $this->respond(fn () => $this->engagement->watch($this->actor($r),$this->id($p),V::enabled($this->field($r,'enabled')),$this->field($r,'mode'))); }
     public function boardWatch(Request $r,array $p): JsonResponse { return $this->respond(fn()=> $this->discussions->watchDelivery()->set($this->actor($r),'board',$this->id($p),V::enabled($this->field($r,'enabled')),$this->field($r,'mode'))); }

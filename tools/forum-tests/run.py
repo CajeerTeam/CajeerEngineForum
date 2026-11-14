@@ -883,7 +883,29 @@ class NetworkTests(unittest.TestCase):
         payload['participant_ids']=recipients[:9];c.call('POST',path,201,payload,token=token)
         payload['participant_ids']=recipients[:1];c.call('POST',path,429,payload,token=token)
 
-    def test_13_rate_limit(self):
+    def test_14_rich_content(self):
+        c=Client(self.base); admin=c.login(ADMIN,ADMIN_PASSWORD)[0]['data']['access_token']
+        board=c.call('GET','/forum')['boards'][0]['id']; source='**Bold** <script>alert(1)</script>'
+        preview=c.call('POST','/forum/content/preview',200,{'body':source,'body_format':'markdown'},token=admin)
+        self.assertIn('<strong>Bold</strong>',preview['html']); self.assertNotIn('<script>',preview['html'])
+        thread=c.call('POST','/forum/boards/'+board+'/threads',201,{'title':'Rich content regression','body':source,'body_format':'markdown'},token=admin)['id']
+        path='/forum/threads/'+thread;post=c.call('GET',path)['posts'][0];self.assertEqual(preview['html'],post['body_html']);self.assertEqual('markdown',post['body_format'])
+        c.call('PATCH','/forum/posts/'+post['id'],200,{'body':'[b]Edited[/b]','body_format':'bbcode'},token=admin)
+        self.assertEqual('<strong>Edited</strong>',c.call('GET',path)['posts'][0]['body_html'])
+        c.call('PATCH','/forum/posts/'+post['id'],200,{'body':'[i]Preserved[/i]'},token=admin)
+        self.assertEqual('bbcode',c.call('GET',path)['posts'][0]['body_format'])
+        c.call('POST',path+'/posts',201,{'body':'**Literal**'},token=admin)
+        self.assertEqual('plain',c.call('GET',path)['posts'][1]['body_format'])
+        c.call('POST',path+'/posts',422,{'body':'Bad','body_format':'html'},token=admin)
+        quote='>>{'+post['id']+'}';c.call('POST',path+'/posts',201,{'body':quote,'body_format':'markdown'},token=admin)
+        self.assertIn('/forum/threads/'+thread+'?page=1#post-'+post['id'],c.call('GET',path)['posts'][-1]['body_html'])
+        email=unique_email(); member=c.call('POST','/users',201,{'email':email,'name':'Rich recipient','password':PASSWORD,'roles':['forum-member']},token=admin)['id']
+        recipient=c.login(email)[0]['data']['access_token'];conv=c.call('POST','/forum/conversations',201,{'title':'Rich private','participant_ids':[member],'body':'[b]Private[/b]','body_format':'bbcode'},token=admin)['id']
+        self.assertEqual('<strong>Private</strong>',c.call('GET','/forum/conversations/'+conv,token=recipient)['messages'][0]['body_html'])
+        c.call('GET','/forum/conversations/'+conv,401)
+        c.call('POST',path+'/moderate',200,{'action':'delete'},token=admin)
+
+    def test_99_rate_limit(self):
         # Run last: exhaust the real IP auth bucket without guessing credentials.
         c = Client(self.base)
         _, headers = c.request('GET', '/auth/me', 401)
@@ -969,6 +991,10 @@ class BrowserTests(unittest.TestCase):
                 self.assertIsNone(page.evaluate('window.forumXss'))
                 fill('body', 'Browser reply'); click('Отправить')
                 expect(page.locator('article .body').last).to_have_text('Browser reply')
+                page.locator('#app [name=body_format]').select_option('markdown'); fill('body','**Rich preview**'); click('Предпросмотр')
+                expect(page.locator('.rich-preview strong')).to_have_text('Rich preview')
+                click('Отправить'); expect(page.locator('article .body strong').last).to_have_text('Rich preview')
+                click('Визуальный редактор'); visual=page.locator('.rich-visual'); expect(visual).to_be_visible(); visual.fill('Visual text'); visual.press('Control+a'); click('Жирный'); click('Отправить'); expect(page.locator('article .body strong').last).to_have_text('Visual text')
                 expect(page.locator('.read-controls')).to_contain_text('Тема прочитана')
                 page.goto(self.base+'/forum/unread'); heading('Непрочитанные темы')
                 expect(page.get_by_role('link',name='Browser regression topic',exact=True)).to_have_count(0)
