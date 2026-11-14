@@ -14,6 +14,15 @@ final readonly class ThreadRepository extends Repository
         if ($thread===null || $current['thread_id']!==$thread['id']) throw new \CajeerEngine\Forum\ForumException('Сообщение перемещено. Повторите запрос.',409);
         return $thread;
     }
+    /** Match thread -> board -> report lock order, including SQLite's first write. */
+    public function lockForReport(string $report): ?array
+    {
+        $thread=$this->lock('ce_forum_threads','id=(SELECT p.thread_id FROM ce_forum_posts p JOIN ce_forum_reports r ON r.post_id=p.id WHERE r.id=?)',[$report]);
+        $current=$this->row('SELECT p.thread_id FROM ce_forum_posts p JOIN ce_forum_reports r ON r.post_id=p.id WHERE r.id=?',[$report]);
+        if ($current===null) return null;
+        if ($thread===null || $current['thread_id']!==$thread['id']) throw new \CajeerEngine\Forum\ForumException('Сообщение перемещено. Повторите запрос.',409);
+        return $thread;
+    }
     public function inBoard(string $id, int $offset): array { return $this->rows('SELECT t.*,u.name AS author,(SELECT COUNT(*) FROM ce_forum_posts p WHERE p.thread_id=t.id) AS posts FROM ce_forum_threads t LEFT JOIN ce_users u ON u.id=t.author_id WHERE t.board_id=? ORDER BY t.pinned DESC,t.updated_at DESC,t.id LIMIT 25 OFFSET '.$offset, [$id]); }
     public function latest(int $offset, array $allowed): array { return $this->rows('SELECT t.id,t.title,t.prefix,t.updated_at,t.pinned,t.locked,u.name AS author FROM ce_forum_threads t LEFT JOIN ce_users u ON u.id=t.author_id WHERE '.$this->boardFilter('t.board_id',$allowed).' ORDER BY t.updated_at DESC,t.id LIMIT 25 OFFSET '.$offset); }
     public function byAuthor(string $id, int $offset, array $allowed): array { return $this->rows('SELECT id,title,prefix,updated_at FROM ce_forum_threads WHERE author_id=? AND '.$this->boardFilter('board_id',$allowed).' ORDER BY updated_at DESC,id LIMIT 25 OFFSET '.$offset, [$id]); }

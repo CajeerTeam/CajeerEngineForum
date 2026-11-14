@@ -44,7 +44,7 @@ final readonly class ForumDatabaseCheck
         $invalidRoles=[];
         foreach (['admin'=>['*'],'forum-member'=>['forum:write'],'forum-moderator'=>['forum:write','forum:moderate']] as $handle=>$permissions) {
             $role=$roles->find($handle);
-            if ($role===null || array_diff($permissions,$role['permissions'] ?? [])!==[]) $invalidRoles[]=$handle;
+            if ($role===null || array_diff($permissions,$role['permissions'] ?? [])!==[] || array_diff($role['permissions'] ?? [],$permissions)!==[]) $invalidRoles[]=$handle;
         }
         $pdo=$this->db->connection();
         if ((int)$pdo->query("SELECT COUNT(*) FROM ce_forum_groups g JOIN ce_roles r ON r.id=g.role_id WHERE r.handle IN ('forum-member','forum-moderator')")->fetchColumn()!==2) $missing[]='forum_system_groups';

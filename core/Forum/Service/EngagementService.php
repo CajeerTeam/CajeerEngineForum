@@ -36,6 +36,9 @@ final readonly class EngagementService
     public function watches(ForumAccessPolicy $actor, int $offset): array
     {
         $actor->require('forum:write');
-        return $this->tx->read(fn()=> $this->engagement->watches($actor->userId,$offset,NodePermissionService::allowed($this->tx->permissions()->access($actor))));
+        return $this->tx->read(function() use($actor,$offset) {
+            $permissions=$this->tx->permissions();$permissions->requireCurrent($actor,'forum:write');
+            return $this->engagement->watches($actor->userId,$offset,NodePermissionService::allowed($permissions->access($actor)));
+        });
     }
 }

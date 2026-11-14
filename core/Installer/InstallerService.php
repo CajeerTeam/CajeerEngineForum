@@ -541,6 +541,10 @@ final readonly class InstallerService
             && $adminAssets && $this->forumAssetsReady();
         $forum = (new \CajeerEngine\Forum\ForumDatabaseCheck($database))->check();
         $ok = $ok && $forum['ok'];
+        if ($forum['ok']) {
+            $forum['data_integrity']=(new \CajeerEngine\Forum\ForumIntegrityCheck($database))->check();
+            $ok=$ok && $forum['data_integrity']['ok'];
+        }
         if ($database->driver()==='sqlite') {
             $forum['foreign_keys_ok'] = $database->connection()->query('PRAGMA foreign_key_check')->fetch() === false;
             $ok = $ok && $forum['foreign_keys_ok'];

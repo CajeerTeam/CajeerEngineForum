@@ -36,6 +36,18 @@ if (($argv[1]??'')==='worker') {
     for($i=0;$i<5;$i++) $service->reply($actor,$argv[3],'Concurrent reply '.$i);
     exit(0);
 }
+if (($argv[1]??'')==='report-race') {
+    [, , , $service]=services($root);
+    $actor=new ForumAccessPolicy($argv[2],['*']);
+    $deadline=microtime(true)+15;
+    while (!is_file($argv[5])) { if (microtime(true)>$deadline) throw new RuntimeException('Barrier timeout'); usleep(1000); }
+    if ($argv[3]==='delete') $service->moderate($actor,$argv[4],'delete');
+    elseif ($argv[3]==='resolve') {
+        try { $service->resolve($actor,$argv[4]); }
+        catch (ForumException $e) { if ($e->status!==404) throw $e; }
+    } else throw new LogicException('Unknown race operation');
+    exit(0);
+}
 $tmp=sys_get_temp_dir().'/forum-core-'.bin2hex(random_bytes(8)); mkdir($tmp,0700);
 try {
     $driver=getenv('FORUM_TEST_DRIVER')==='pgsql'?'pgsql':'sqlite';
@@ -202,8 +214,26 @@ try {
     check(count($all)===22 && array_map('intval',array_column($all,'ordinal'))===range(1,22) && in_array($parallelPost,array_column($all,'id'),true),'concurrent merge and 20 replies preserve ordinals and post IDs');
     $moderation->moderate($a,$parallel,'delete');
     $nodes->delete($a,$dest,false);$nodes->delete($a,$mc,true);
+    // Resolve and cascade-delete concurrently. Both operations must acquire the
+    // topic before the report; resolution may legitimately lose to deletion.
+    $raceThread=$discussion->createThread($m,$board,'Report race topic','Race body');
+    $racePost=$discussion->thread($raceThread,0)['first_post_id'];
+    $raceReport=$moderation->report($m,$racePost,'Race report');
+    $workers=[];$barrier=$tmp.'/report-go';
+    foreach (['resolve'=>$raceReport,'delete'=>$raceThread] as $action=>$id) {
+        $log=$tmp.'/report-'.$action.'.log';
+        $proc=proc_open([PHP_BINARY,__FILE__,'report-race',$admin,$action,$id,$barrier],[0=>['file','/dev/null','r'],1=>['file',$log,'w'],2=>['file',$log,'a']],$pipes);
+        if (!is_resource($proc)) throw new RuntimeException('Cannot start report race worker');
+        $workers[]=[$proc,$log];
+    }
+    touch($barrier);
+    foreach ($workers as [$proc,$log]) check(proc_close($proc)===0,'report/delete worker '.file_get_contents($log));
+    expectStatus(404,fn()=> $discussion->thread($raceThread,0));
+    expectStatus(404,fn()=> $moderation->resolve($a,$raceReport));
+    check((new \CajeerEngine\Forum\ForumIntegrityCheck($db))->check()['ok'],'forum data integrity after concurrent moderation');
+
     if($driver==='sqlite')check($pdo->query('PRAGMA foreign_key_check')->fetchAll()===[],'foreign keys intact');
-    $v=new ForumVersion($root);check($v->current()==='0.2.5' && $v->upstream()==='1.3.0','independent product/core versions');
+    $v=new ForumVersion($root);check($v->current()==='0.3.0' && $v->upstream()==='1.3.0','independent product/core versions');
     echo "Forum core regression passed\n";
 } finally {
     unset($db,$discussion,$engagement,$moderation,$registration,$pdo,$runner);

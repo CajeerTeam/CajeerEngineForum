@@ -104,6 +104,34 @@ final class ForumDatabaseTest extends TestCase
             $groups->delete($actor,$vip['id']);$groups->delete($actor,$mod['id']);
             self::assertNull($roles->find($vip['id']));
             self::assertTrue($forum->check()['ok']);
+            $integrity=new \CajeerEngine\Forum\ForumIntegrityCheck($db);
+            self::assertTrue($integrity->check()['ok']);
+            // Validate actual DB corruption rejection, not a mocked diagnostic.
+            $pdo->beginTransaction();
+            try {
+                $pdo->prepare('INSERT INTO ce_forum_threads(id,board_id,author_id,title) VALUES(?,?,?,?)')->execute(['99999999-9999-4999-8999-999999999999',$board,$member,'Incomplete thread']);
+                self::assertSame(1,$integrity->check()['violations']['empty_threads']);
+                $pdo->prepare('DELETE FROM ce_forum_primary_groups WHERE user_id=?')->execute([$member]);
+                self::assertSame(1,$integrity->check()['violations']['missing_primary_groups']);
+            } finally { $pdo->rollBack(); }
+            self::assertTrue($integrity->check()['ok']);
+            // Simulate a request authenticated before its role was removed. Services
+            // must recheck the DB, not trust the stale wildcard from middleware.
+            $oldAdmin=$users->create('stale-admin@example.test','Stale admin','unused-test-hash',['admin']);
+            $stale=new \CajeerEngine\Forum\Security\ForumAccessPolicy($oldAdmin,['*']);
+            $users->syncRoles($oldAdmin,['forum-member']);
+            $nodes=new \CajeerEngine\Forum\Service\NodeService($tx,new \CajeerEngine\Forum\Repository\BoardRepository($db));
+            foreach ([fn()=> $nodes->createCategory($stale,'Forbidden',''),fn()=> $groups->all($stale),fn()=> $groups->create($stale,'forbidden','Forbidden','',['forum:write']),fn()=> $tx->permissions()->replace($stale,'board',$board,'hidden',[]),fn()=> $tx->permissions()->inspect($stale,'board',$board,null)] as $operation) {
+                try { $operation(); self::fail('Stale administrator grant accepted'); }
+                catch (\CajeerEngine\Forum\ForumException $e) { self::assertSame(403,$e->status); }
+            }
+            $users->disable($member);
+            try { $tx->permissions()->access($m); self::fail('Disabled actor retained ACL'); }
+            catch (\CajeerEngine\Forum\ForumException $e) { self::assertSame(401,$e->status); }
+            $inspection=$tx->permissions()->inspect($actor,'board',$board,$member);
+            self::assertTrue($inspection['trace']['inactive']);
+            self::assertNotContains(true,$inspection['effective']);
+            self::assertTrue($integrity->check()['ok']);
 
         } finally {
             unset($runner,$pdo,$db,$audit,$tx);

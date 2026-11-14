@@ -1,5 +1,13 @@
 # Changelog
 
+## Forum Edition 0.3.0 — Forum Structure Stable
+
+- Recheck account status and current role scopes inside forum ACL and administrative transactions; serialize principal changes against user-role updates.
+- Resolve reports with thread-first locks, consistent with moderation and discussion transfers.
+- Reject inconsistent discussion, group and redirect data during installation and post-update verification. Preserve all existing migration checksums.
+- Extend physical dist acceptance with existing private nested forums, group assignments, subscriptions, report/reaction identity and merged URLs across signed update and rollback.
+- Certification is conditional on the full `forum-required` matrix; no new schema migration or API operation.
+
 ## Forum Edition 0.2.5 — Forum Navigation & Admin
 
 - ACL-safe server breadcrumbs, collapsible public tree and category anchors.

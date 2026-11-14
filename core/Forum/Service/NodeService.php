@@ -20,6 +20,7 @@ final readonly class NodeService
         $actor->require('*');
         return $this->tx->write(function () use ($actor,$action,$fn) {
             $this->boards->lockTree();
+            $this->tx->permissions()->requireAdmin($actor,true);
             $id=$fn();
             $this->tx->audit('forum.node.'.$action,$actor->userId,['id'=>$id]);
             return $id;

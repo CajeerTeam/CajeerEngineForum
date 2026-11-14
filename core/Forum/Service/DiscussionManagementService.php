@@ -47,7 +47,7 @@ final readonly class DiscussionManagementService
         if ($destination!==null) $boards[]=$destination;
         $boards=array_unique($boards);sort($boards,SORT_STRING);
         foreach ($boards as $board) $this->boards->lockBoard($board)??throw new ForumException('Раздел не найден.',404);
-        $access=$this->tx->permissions()->access($actor);
+        $access=$this->tx->permissions()->access($actor,lockActor:true);
         foreach ($boards as $board) NodePermissionService::assert($access,$board,'thread:moderate');
         return $threads;
     }

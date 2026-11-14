@@ -27,16 +27,20 @@ final readonly class ModerationService
     public function reports(ForumAccessPolicy $actor, int $offset): array
     {
         $actor->require('forum:moderate');
-        return $this->tx->read(fn()=> $this->reports->open($offset,NodePermissionService::allowed($this->tx->permissions()->access($actor),'thread:moderate')));
+        return $this->tx->read(function() use($actor,$offset) {
+            $permissions=$this->tx->permissions();$permissions->requireCurrent($actor,'forum:moderate');
+            return $this->reports->open($offset,NodePermissionService::allowed($permissions->access($actor),'thread:moderate'));
+        });
     }
     public function resolve(ForumAccessPolicy $actor, string $id): string
     {
         $id = V::id($id);
         $actor->require('forum:moderate');
         return $this->tx->write(function () use ($actor,$id) {
-            $report = $this->reports->lockReport($id) ?? throw new ForumException('Жалоба не найдена.',404);
-            $thread=$this->threads->lockForPost($report['post_id'])??throw new ForumException('Жалоба не найдена.',404);
+            // Acquire the thread before the report, matching deletion's cascade lock order.
+            $thread=$this->threads->lockForReport($id)??throw new ForumException('Жалоба не найдена.',404);
             $this->tx->permissions()->assertWrite($actor,$thread['board_id'],'thread:moderate');
+            $report=$this->reports->lockReport($id)??throw new ForumException('Жалоба не найдена.',404);
             // A repeated resolve is idempotent; do not overwrite the original reviewer.
             if ($report['status'] === 'open') {
                 $this->reports->resolve($id,$actor->userId);

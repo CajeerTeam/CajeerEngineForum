@@ -17,10 +17,10 @@
     "docs": "GitHub repository docs/",
     "updates": "GitHub Releases",
     "release_builder": "tools/build-release.php",
-    "source_artifact": "storage/releases/cajeerengine-0.2.5-source.zip",
-    "dist_artifact": "storage/releases/cajeerengine-0.2.5-dist.zip",
+    "source_artifact": "storage/releases/cajeerengine-0.3.0-source.zip",
+    "dist_artifact": "storage/releases/cajeerengine-0.3.0-dist.zip",
     "checksums": "storage/releases/*.sha256",
-    "artifact_index": "storage/releases/cajeerengine-0.2.5-artifacts.json",
+    "artifact_index": "storage/releases/cajeerengine-0.3.0-artifacts.json",
     "support_bundle": "storage/app/support",
     "backup": "storage/app/backups/production",
     "server_reports": "storage/app/reports",
@@ -44,7 +44,8 @@
     "Forum Edition 0.2.1: nested boards, transactional moves, sorting, publication state and safe deletion.",
     "Forum Edition 0.2.2: inherited node ACLs, private/hidden forums, role/user rules and access-filtered discussion queries.",
     "Forum Edition 0.2.4: transactional discussion management, merge redirects, prefixes, tags and bulk actions.",
-    "Forum Edition 0.2.5: ACL-safe breadcrumbs, accessible tree drag-and-drop, relative transactional reorder, permission matrix and effective permission inspection."
+    "Forum Edition 0.2.5: ACL-safe breadcrumbs, accessible tree drag-and-drop, relative transactional reorder, permission matrix and effective permission inspection.",
+    "Forum Edition 0.3.0: structure integrity gate, current-principal ACL checks, consistent moderation locks and physical upgrade/rollback structure acceptance."
   ],
   "notes": {
     "1.0.4": "Install UX release: real web/CLI installer, SQLite quick start, install lock, first admin creation, secrets generation and dist-ready release plan.",
@@ -70,8 +71,8 @@
     "1.2.5": "Production Deployment",
     "1.3.0": "Integration Certification, Security & Load Testing"
   },
-  "stability": "core-stable",
+  "stability": "structure-stable",
   "edition": "forum",
-  "edition_version": "0.2.5",
+  "edition_version": "0.3.0",
   "upstream_version": "1.3.0"
 }

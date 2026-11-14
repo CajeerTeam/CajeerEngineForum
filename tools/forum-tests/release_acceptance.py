@@ -179,6 +179,69 @@ def verify_navigation(base,state):
     print('PASS navigation and permission inspector on physical dist',flush=True)
 
 
+def seed_structure(base, state):
+    """Create real 0.2.5 structure before updating, not just after the upgrade."""
+    admin, _, _, member = state
+    c=Client(base)
+    member_group=next(g['id'] for g in c.call('GET','/forum/groups',token=admin) if g['handle']=='forum-member')
+    group=c.call('POST','/forum/groups',201,{'handle':'release-private','name':'Release private','description':'Upgrade fixture','permissions':['forum:write','forum:moderate']},token=admin)['id']
+    email=unique_email(); user=c.call('POST','/users',201,{'email':email,'name':'Release delegate','password':PASSWORD,'roles':['forum-member']},token=admin)['id']
+    c.call('PUT',f'/forum/members/{user}/groups',200,{'primary_group_id':member_group,'secondary_group_ids':[group]},token=admin)
+    token=c.login(email)[0]['data']['access_token']
+    cat=c.call('POST','/forum/categories',201,{'name':'Release confidential category','description':''},token=admin)['id']
+    path=f'/forum/categories/{cat}/boards'
+    root=c.call('POST',path,201,{'name':'Release confidential parent','description':'','node_type':'container'},token=admin)['id']
+    board=c.call('POST',path,201,{'name':'Release confidential child','description':'','parent_id':root},token=admin)['id']
+    rules=[{'subject_type':'role','subject_id':group,'permission':p,'effect':'allow'} for p in ('node:view','thread:read','thread:moderate')]
+    policy=f'/forum/categories/{cat}/permissions'
+    c.call('PUT',policy,200,{'visibility':'hidden','rules':rules},token=admin)
+    create=lambda title: c.call('POST',f'/forum/boards/{board}/threads',201,{'title':title,'body':'ReleasePrivateMarker'},token=token)['id']
+    source,target=create('ReleasePrivateSource'),create('ReleasePrivateTarget')
+    url=lambda t:'/forum/threads/'+t
+    post=c.call('GET',url(source),token=token)['first_post_id']
+    c.call('PUT',url(source)+'/metadata',200,{'prefix':'Private','tags':['release-private']},token=token)
+    c.call('PUT','/forum/posts/'+post+'/reaction',200,{'enabled':True},token=token)
+    c.call('PUT',url(source)+'/watch',200,{'enabled':True},token=token)
+    report=c.call('POST','/forum/posts/'+post+'/report',201,{'reason':'Release confidential report'},token=token)['id']
+    c.call('POST',url(target)+'/merge',200,{'source_ids':[source]},token=token)
+    return {'admin':admin,'token':token,'user':user,'email':email,'member_group':member_group,'group':group,'category':cat,'root':root,'board':board,'source':source,'target':target,'post':post,'report':report,'policy':c.call('GET',policy,token=admin)}
+
+
+def verify_structure(base, fixture):
+    c=Client(base); f=fixture; admin=f['admin']; token=f['token']
+    url='/forum/threads/'+f['target']; old='/forum/threads/'+f['source']
+    c.call('GET','/auth/me',token=token)
+    membership=c.call('GET',f'/forum/members/{f["user"]}/groups',token=admin)
+    require(membership['primary_group_id']==f['member_group'] and membership['secondary_group_ids']==[f['group']], 'Private group assignments changed')
+    policy=c.call('GET',f'/forum/categories/{f["category"]}/permissions',token=admin)
+    require(policy==f['policy'],'Private ACL or revision changed')
+    result=c.call('GET',old,token=token)
+    require(result['thread']['id']==f['target'] and result['posts'][1]['id']==f['post'] and int(result['posts'][1]['likes'])==1,'Private redirect, post or reaction lost')
+    require([n['id'] for n in result['breadcrumbs']]==[f['category'],f['root'],f['board']], 'Private ancestry changed')
+    require('release-private' in result['thread']['tags'],'Private tags lost')
+    require(f['target'] in [t['id'] for t in c.call('GET','/forum/watches',token=token)],'Private watch lost')
+    require(f['report'] in [r['id'] for r in c.call('GET','/forum/reports',token=token)],'Private report lost')
+    effective=c.call('GET',f'/forum/permission-inspector?kind=board&id={f["board"]}&user_id={f["user"]}',token=admin)['effective']
+    require(effective==result['board']['permissions'] and effective['thread:moderate'],'Inspector/delegation drift')
+    # Verify the guest and an unrelated logged-in moderator separately. The latter
+    # has global moderation but must still not receive the closed content.
+    other=Client(base)
+    outsider_email=unique_email()
+    outsider=c.call('POST','/users',201,{'email':outsider_email,'name':'Release outsider','password':PASSWORD,'roles':['forum-member','forum-moderator']},token=admin)['id']
+    other_token=other.login(outsider_email)[0]['data']['access_token']
+    for viewer in (None,other_token):
+        c.call('GET',url,404,token=viewer); c.call('GET',old,404,token=viewer)
+        tree=c.call('GET','/forum',token=viewer)
+        require(f['category'] not in [n['id'] for n in tree['categories']] and f['board'] not in [n['id'] for n in tree['boards']],'Private tree leaked')
+        for path in ('/forum/latest','/forum/search?q=ReleasePrivateMarker','/forum/search?tag=release-private'):
+            require(f['target'] not in [t['id'] for t in c.call('GET',path,token=viewer)],'Private search/latest leaked')
+        require(f['target'] not in [t['id'] for t in c.call('GET',f'/forum/members/{f["user"]}',token=viewer)['threads']],'Private profile leaked')
+    require(f['report'] not in [r['id'] for r in c.call('GET','/forum/reports',token=other_token)],'Private moderation report leaked')
+    c.call('POST',f'/forum/reports/{f["report"]}/resolve',404,token=other_token)
+    c.call('POST',url+'/posts',404,{'body':'Forbidden'},token=other_token)
+    print('PASS private nested structure, delegated roles, ACL and discussion identities',flush=True)
+
+
 def verify_identity(site, env, report, base):
     code = r'require "vendor/autoload.php"; (new CajeerEngine\Installer\InstallerEnvironment(".env"))->write(["FORUM_REGISTRATION"=>"true"], ".env.example");'
     run(site, env, report, 'open-registration', ['php','-r',code])
@@ -214,10 +277,27 @@ def verify_readiness(site, env, report, base):
     print('PASS damaged ledger rejected and recovered',flush=True)
 
 
+def verify_data_integrity(site, env, report, fixture):
+    # Simulate a corrupt topic on the disposable installed dist, then remove it.
+    # A post-update gate must reject actual data corruption even when schema and
+    # migration checksums are intact. Never mutate a caller's production DB.
+    script=r'''require "vendor/autoload.php"; (new Symfony\Component\Dotenv\Dotenv())->usePutenv()->loadEnv(".env"); $db=new CajeerEngine\Database\DatabaseManager(new CajeerEngine\Runtime\ConfigRepository(getcwd())); $p=$db->connection(); if ($argv[1]==="break") {$q=$p->prepare("INSERT INTO ce_forum_threads(id,board_id,title) VALUES(?,?,?)");$q->execute([$argv[2],$argv[3],"Incomplete release fixture"]);} else {$q=$p->prepare("DELETE FROM ce_forum_threads WHERE id=?");$q->execute([$argv[2]]);} if ($q->rowCount()!==1) exit(1);'''
+    import uuid
+    damaged=str(uuid.uuid4())
+    run(site,env,report,'damage-forum-data',['php','-r',script,'break',damaged,fixture['board']])
+    try:
+        result=run(site,env,report,'reject-forum-data',['php','tools/update-postcheck.php','verify'],expected=1)
+        require('empty_threads' in result,'Postcheck failed for the wrong reason')
+    finally:
+        run(site,env,report,'restore-forum-data',['php','-r',script,'restore',damaged,fixture['board']])
+    run(site,env,report,'verify-restored-forum-data',['php','tools/update-postcheck.php','verify'])
+    print('PASS physical dist rejects corrupt forum data and recovers',flush=True)
+
+
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--artifact',type=Path,required=True)
-    parser.add_argument('--previous',type=Path,help='Original 0.2.4 dist; enables real signed upgrade and rollback')
+    parser.add_argument('--previous',type=Path,help='Original 0.2.5 dist; enables real signed upgrade and rollback')
     parser.add_argument('--driver',choices=('sqlite','pgsql'),default='sqlite')
     parser.add_argument('--report',type=Path,required=True)
     args=parser.parse_args(); report=args.report.resolve(); report.mkdir(parents=True,exist_ok=True)
@@ -226,17 +306,19 @@ def main():
         work=Path(tmp); port=free_port()
         # With --previous use the authentic baseline for upgrade, not a relabelled current tree.
         previous=args.previous.resolve() if args.previous else None
-        initial='0.2.4' if previous else current
+        initial='0.2.5' if previous else current
         site=unpack(previous or artifact,work/'live',initial)
         install(site,env,report,'initial',port,args.driver)
         with http(site,env,report,'initial',port,initial) as base:
             state=seed(base); verify_data(base,state)
+            fixture=seed_structure(base,state); verify_structure(base,fixture)
             if not previous:
                 verify_groups(base,state)
                 verify_discussions(base,state)
                 verify_navigation(base,state)
                 verify_identity(site,env,report,base)
                 verify_readiness(site,env,report,base)
+                verify_data_integrity(site,env,report,fixture)
         if previous:
             key=work/'backup.key'; secret=work/'release.secret'; public=work/'release.public'
             run(site,env,report,'backup-key',['php','bin/cajeer','backup:keygen','--key='+str(key)])
@@ -250,10 +332,12 @@ def main():
             update=json.loads(run(site,env,report,'upgrade',['php','bin/cajeer','update:apply','--package='+str(package),'--json'],timeout=600))
             require(update['state']=='committed' and version(site)==current,'Update not committed')
             with http(site,env,report,'updated',port,current) as base:
-                verify_data(base,state); verify_groups(base,state); verify_discussions(base,state); verify_navigation(base,state); verify_identity(site,env,report,base)
+                verify_data(base,state); verify_structure(base,fixture); verify_groups(base,state); verify_discussions(base,state); verify_navigation(base,state); verify_identity(site,env,report,base)
+                verify_data_integrity(site,env,report,fixture)
             run(site,env,report,'rollback',['php','bin/cajeer','update:rollback','--yes','--json'],timeout=600)
             require(version(site)==initial,'Rollback did not restore release')
-            with http(site,env,report,'rollback',port,initial) as base: verify_data(base,state)
+            with http(site,env,report,'rollback',port,initial) as base:
+                verify_data(base,state); verify_structure(base,fixture)
             # Inject actual failing SQL into a separately built, correctly signed target.
             broken=unpack(artifact,work/'broken',current)
             (broken/'migrations'/args.driver/'9999_acceptance_failure.sql').write_text('CREATE TABLE ce_acceptance_failure(id INTEGER); THIS IS INVALID SQL;\n')
@@ -263,7 +347,8 @@ def main():
             run(site,env,report,'sign-broken',['php','bin/cajeer','release:sign','--package='+str(pkg),'--secret-key='+str(secret)])
             failed=json.loads(run(site,env,report,'failed-upgrade',['php','bin/cajeer','update:apply','--package='+str(pkg),'--json'],expected=1,timeout=600))
             require(failed['state']=='rolled_back' and version(site)==initial and not (site/'storage/app/updates/active.json').exists(), 'Automatic rollback failed')
-            with http(site,env,report,'failed-rollback',port,initial) as base: verify_data(base,state)
+            with http(site,env,report,'failed-rollback',port,initial) as base:
+                verify_data(base,state); verify_structure(base,fixture)
         print('PASS physical dist acceptance',flush=True)
 
 

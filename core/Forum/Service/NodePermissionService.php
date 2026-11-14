@@ -11,19 +11,38 @@ use CajeerEngine\Forum\Validation\ForumValidator as V;
 final readonly class NodePermissionService
 {
     public function __construct(private ForumTransaction $tx,private PermissionRepository $repo,private BoardRepository $boards) {}
-    /** One ACL snapshot per operation, shared by all queries and pagination. */
-    public function access(ForumAccessPolicy $actor, ?string $inspectKey=null, ?array &$trace=null): array
+    /** Recheck the authenticated principal against current account status and roles.
+     * For writes the caller already holds the relevant board/tree lock. */
+    private function principal(ForumAccessPolicy $actor,bool $lock=false): array
     {
-        $categories=array_column($this->repo->nodes('category'),null,'id');
-        $boards=array_column($this->repo->nodes('board'),null,'id');
-        $records=$actor->userId===''?[]:$this->repo->roleRecords($actor->userId);
+        if ($actor->userId==='') return [$actor->restrict([]),[],false];
+        $user=$lock?$this->repo->lockActor($actor->userId):$this->repo->inspectUser($actor->userId);
+        if ($user===null || $user['status']!=='active') throw new ForumException('Требуется авторизация.',401);
+        $records=$this->repo->roleRecords($actor->userId);
         $roles=array_column($records,'id');$scopes=[];$globalModerator=false;
         foreach ($records as $role) {
             $p=json_decode((string)$role['permissions'],true,512,JSON_THROW_ON_ERROR);
             $scopes=array_merge($scopes,$p);
             if (($role['group_id']===null || $role['handle']==='forum-moderator') && (in_array('*',$p,true)||in_array('forum:moderate',$p,true))) $globalModerator=true;
         }
-        $actor=$actor->restrict($scopes);
+        return [$actor->restrict($scopes),$roles,$globalModerator];
+    }
+    public function requireAdmin(ForumAccessPolicy $actor,bool $lock=false): void
+    {
+        $this->requireCurrent($actor,'*',$lock);
+    }
+    public function requireCurrent(ForumAccessPolicy $actor,string $scope,bool $lock=false): void
+    {
+        $actor->require($scope);
+        [$current]=$this->principal($actor,$lock);
+        $current->require($scope);
+    }
+    /** One ACL snapshot per operation, shared by all queries and pagination. */
+    public function access(ForumAccessPolicy $actor, ?string $inspectKey=null, ?array &$trace=null, bool $lockActor=false): array
+    {
+        [$actor,$roles,$globalModerator]=$this->principal($actor,$lockActor);
+        $categories=array_column($this->repo->nodes('category'),null,'id');
+        $boards=array_column($this->repo->nodes('board'),null,'id');
         $delegated=$actor->has('forum:moderate')&&!$globalModerator;
         $rules=[];
         foreach (['category','board'] as $kind) foreach ($this->repo->rules($kind) as $r) $rules[$kind.':'.$r['node_id']][]=$r;
@@ -56,14 +75,15 @@ final readonly class NodePermissionService
     {
         $actor->require('*');
         if (!in_array($kind,['category','board'],true)) throw new ForumException('Некорректный тип раздела.',422);
-        return $this->tx->read(function () use ($kind,$id,$userId) {
+        return $this->tx->read(function () use ($actor,$kind,$id,$userId) {
+            $this->requireAdmin($actor);
             $node=$this->repo->node($kind,$id)??throw new ForumException('Раздел не найден.',404);
             $user=$userId===null?null:$this->repo->inspectUser($userId);
             if ($userId!==null && $user===null) throw new ForumException('Пользователь не найден.',404);
             $trace=[];
             $active=$user===null || $user['status']==='active';
             $target=new ForumAccessPolicy($userId??'', $userId===null?[]:['*']);
-            $access=$this->access($target,$kind.':'.$id,$trace);
+            $access=$active?$this->access($target,$kind.':'.$id,$trace):[];
             $effective=$access[$kind==='board'?'boards':'categories'][$id]??array_fill_keys(PermissionResolver::PERMISSIONS,false);
             if (!$active) { $effective=array_fill_keys(PermissionResolver::PERMISSIONS,false); $trace=['inactive'=>true,'steps'=>[]]; }
             return ['node'=>['id'=>$id,'kind'=>$kind,'name'=>$node['name']],'user'=>$user,'effective'=>$effective,'trace'=>$trace,
@@ -83,7 +103,7 @@ final readonly class NodePermissionService
     public function assertWrite(ForumAccessPolicy $actor,string $board,string $permission): void
     {
         $this->boards->lockBoard($board) ?? throw new ForumException('Раздел не найден.',404);
-        self::assert($this->access($actor),$board,$permission);
+        self::assert($this->access($actor,lockActor:true),$board,$permission);
     }
     private function policy(string $kind,string $id): array
     {
@@ -95,7 +115,7 @@ final readonly class NodePermissionService
     public function get(ForumAccessPolicy $actor,string $kind,string $id): array
     {
         $actor->require('*');
-        return $this->tx->read(fn()=> $this->policy($kind,$id));
+        return $this->tx->read(function () use ($actor,$kind,$id) { $this->requireAdmin($actor); return $this->policy($kind,$id); });
     }
     public function replace(ForumAccessPolicy $actor,string $kind,string $id,mixed $visibility,mixed $rules,mixed $revision=null): array
     {
@@ -104,6 +124,7 @@ final readonly class NodePermissionService
         if ($revision!==null && (!is_string($revision) || !preg_match('/^[a-f0-9]{64}$/D',$revision))) throw new ForumException('Некорректная версия правил.',422);
         return $this->tx->write(function () use ($actor,$kind,$id,$visibility,$rules,$revision) {
             $this->boards->lockTree();
+            $this->requireAdmin($actor,true);
             $current=$this->policy($kind,$id);
             if ($revision!==null && !hash_equals($current['revision'],$revision)) throw new ForumException('Правила изменены другим администратором. Откройте редактор заново.',409);
             $normalized=[];$seen=[];

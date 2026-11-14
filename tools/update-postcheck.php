@@ -17,6 +17,8 @@ try {
     if (($argv[1]??'')==='migrate') $runner->run($db->migrationDriver());
     if (!$runner->verifyApplied($db->migrationDriver())['ok']) throw new RuntimeException('Migration verification failed');
     if (!(new CajeerEngine\Forum\ForumDatabaseCheck($db))->check()['ok']) throw new RuntimeException('Forum schema or roles not ready');
+    $integrity=(new CajeerEngine\Forum\ForumIntegrityCheck($db))->check();
+    if (!$integrity['ok']) throw new RuntimeException('Forum data integrity failed: '.json_encode($integrity['violations'],JSON_THROW_ON_ERROR));
     if ($db->driver()==='sqlite' && $db->connection()->query('PRAGMA foreign_key_check')->fetch()!==false) throw new RuntimeException('Forum database foreign key integrity failed');
     foreach (['index.html','forum.js','forum.css'] as $asset) if (!is_file($root.'/public/forum-assets/'.$asset) || filesize($root.'/public/forum-assets/'.$asset)===0) throw new RuntimeException('Forum assets invalid');
     $health=$db->health(); if (!($health['ok']??false)||!($health['schema_ready']??false)) throw new RuntimeException('DB schema not ready');

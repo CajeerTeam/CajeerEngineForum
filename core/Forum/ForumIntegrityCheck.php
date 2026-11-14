@@ -1,0 +1,52 @@
+<?php
+
+declare(strict_types=1);
+namespace CajeerEngine\Forum;
+
+use CajeerEngine\Database\DatabaseManager;
+
+/** Offline release/installation gate. Does not mutate data or expose content. */
+final readonly class ForumIntegrityCheck
+{
+    public function __construct(private DatabaseManager $db) {}
+
+    /** @return array{ok:bool,violations:array<string,int>} */
+    public function check(): array
+    {
+        return $this->db->readSnapshot(function(\PDO $pdo): array {
+            // Run only after schema verification. These checks may scan the discussion corpus,
+            // so deliberately keep them out of the per-request readiness endpoint.
+            $queries=[
+                'empty_threads'=> 'SELECT COUNT(*) FROM ce_forum_threads t WHERE NOT EXISTS (SELECT 1 FROM ce_forum_posts p WHERE p.thread_id=t.id)',
+                'container_threads'=> "SELECT COUNT(*) FROM ce_forum_threads t JOIN ce_forum_boards b ON b.id=t.board_id WHERE b.node_type<>'forum'",
+                'invalid_ordinals'=> 'SELECT COUNT(*) FROM ce_forum_posts WHERE ordinal<1',
+                'duplicate_ordinals'=> 'SELECT COUNT(*) FROM (SELECT thread_id,ordinal FROM ce_forum_posts GROUP BY thread_id,ordinal HAVING COUNT(*)>1) AS duplicate_posts',
+                'redirect_collision'=> 'SELECT COUNT(*) FROM ce_forum_thread_redirects r JOIN ce_forum_threads t ON t.id=r.source_id',
+                'redirect_missing_target'=> 'SELECT COUNT(*) FROM ce_forum_thread_redirects r LEFT JOIN ce_forum_threads t ON t.id=r.target_id LEFT JOIN ce_forum_boards b ON b.id=r.source_board_id WHERE t.id IS NULL OR b.id IS NULL',
+                'invalid_primary_groups'=> 'SELECT COUNT(*) FROM ce_forum_primary_groups p LEFT JOIN ce_user_roles ur ON ur.user_id=p.user_id AND ur.role_id=p.role_id LEFT JOIN ce_forum_groups g ON g.role_id=p.role_id WHERE ur.user_id IS NULL OR g.role_id IS NULL',
+                'missing_primary_groups'=> 'SELECT COUNT(DISTINCT ur.user_id) FROM ce_user_roles ur JOIN ce_forum_groups g ON g.role_id=ur.role_id LEFT JOIN ce_forum_primary_groups p ON p.user_id=ur.user_id WHERE p.user_id IS NULL',
+                'invalid_group_identity'=> "SELECT COUNT(*) FROM ce_forum_groups g JOIN ce_roles r ON r.id=g.role_id WHERE r.handle NOT IN ('forum-member','forum-moderator') AND r.handle NOT LIKE 'forum-group-%'",
+                'unmanaged_group_roles'=> "SELECT COUNT(*) FROM ce_roles r LEFT JOIN ce_forum_groups g ON g.role_id=r.id WHERE r.handle LIKE 'forum-group-%' AND g.role_id IS NULL",
+            ];
+            $violations=[];
+            foreach ($queries as $name=>$sql) {
+                $count=(int)$pdo->query($sql)->fetchColumn();
+                if ($count!==0) $violations[$name]=$count;
+            }
+            $invalid=0;
+            foreach ($pdo->query('SELECT r.handle,r.permissions FROM ce_forum_groups g JOIN ce_roles r ON r.id=g.role_id')->fetchAll(\PDO::FETCH_ASSOC) as $group) {
+                $permissions=json_decode((string)$group['permissions'],true);
+                if (!is_array($permissions) || !array_is_list($permissions) || count(array_filter($permissions,'is_string'))!==count($permissions)) { ++$invalid; continue; }
+                sort($permissions);
+                $expected=match($group['handle']) {
+                    'forum-member'=>['forum:write'],
+                    'forum-moderator'=>['forum:moderate','forum:write'],
+                    default=>null,
+                };
+                if ($expected!==null ? $permissions!==$expected : (array_diff($permissions,['forum:write','forum:moderate'])!==[] || count(array_unique($permissions))!==count($permissions) || (in_array('forum:moderate',$permissions,true)&&!in_array('forum:write',$permissions,true)))) ++$invalid;
+            }
+            if ($invalid!==0) $violations['invalid_group_scopes']=$invalid;
+            return ['ok'=>$violations===[],'violations'=>$violations];
+        });
+    }
+}
