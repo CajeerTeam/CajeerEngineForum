@@ -12,7 +12,7 @@ final readonly class NodePermissionService
 {
     public function __construct(private ForumTransaction $tx,private PermissionRepository $repo,private BoardRepository $boards) {}
     /** One ACL snapshot per operation, shared by all queries and pagination. */
-    public function access(ForumAccessPolicy $actor): array
+    public function access(ForumAccessPolicy $actor, ?string $inspectKey=null, ?array &$trace=null): array
     {
         $categories=array_column($this->repo->nodes('category'),null,'id');
         $boards=array_column($this->repo->nodes('board'),null,'id');
@@ -30,7 +30,9 @@ final readonly class NodePermissionService
         $result=['categories'=>[],'boards'=>[]];
         foreach ($categories as $id=>$category) {
             $category['key']='category:'.$id;
-            $result['categories'][$id]=PermissionResolver::evaluate($actor,$roles,[$category],$rules,$delegated);
+            $detail=$inspectKey===$category['key']?[]:null;
+            $result['categories'][$id]=PermissionResolver::evaluate($actor,$roles,[$category],$rules,$delegated,$detail);
+            if ($detail!==null) $trace=$detail;
         }
         foreach ($boards as $id=>$board) {
             $chain=[];$seen=[];$cursor=$board;
@@ -43,9 +45,31 @@ final readonly class NodePermissionService
             }
             $category=$categories[$board['category_id']]??null;if ($category===null) continue;
             $category['key']='category:'.$category['id'];$chain[]=$category;
-            $result['boards'][$id]=PermissionResolver::evaluate($actor,$roles,array_reverse($chain),$rules,$delegated);
+            $detail=$inspectKey==='board:'.$id?[]:null;
+            $result['boards'][$id]=PermissionResolver::evaluate($actor,$roles,array_reverse($chain),$rules,$delegated,$detail);
+            if ($detail!==null) $trace=$detail;
         }
         return $result;
+    }
+    /** Inspect a fresh browser login, not an arbitrary token's narrower scope. */
+    public function inspect(ForumAccessPolicy $actor,string $kind,string $id,?string $userId): array
+    {
+        $actor->require('*');
+        if (!in_array($kind,['category','board'],true)) throw new ForumException('Некорректный тип раздела.',422);
+        return $this->tx->read(function () use ($kind,$id,$userId) {
+            $node=$this->repo->node($kind,$id)??throw new ForumException('Раздел не найден.',404);
+            $user=$userId===null?null:$this->repo->inspectUser($userId);
+            if ($userId!==null && $user===null) throw new ForumException('Пользователь не найден.',404);
+            $trace=[];
+            $active=$user===null || $user['status']==='active';
+            $target=new ForumAccessPolicy($userId??'', $userId===null?[]:['*']);
+            $access=$this->access($target,$kind.':'.$id,$trace);
+            $effective=$access[$kind==='board'?'boards':'categories'][$id]??array_fill_keys(PermissionResolver::PERMISSIONS,false);
+            if (!$active) { $effective=array_fill_keys(PermissionResolver::PERMISSIONS,false); $trace=['inactive'=>true,'steps'=>[]]; }
+            return ['node'=>['id'=>$id,'kind'=>$kind,'name'=>$node['name']],'user'=>$user,'effective'=>$effective,'trace'=>$trace,
+                'publication_state'=>$kind==='board'?($this->boards->view($id)['effective_state']??'archived'):null,
+                'node_type'=>$node['node_type']??null];
+        });
     }
     public static function allowed(array $access,string $permission='thread:read',string $kind='boards'): array
     { return array_keys(array_filter($access[$kind],fn(array $p)=>$p['node:view'] && $p['thread:read'] && ($p[$permission]??false))); }
@@ -61,21 +85,27 @@ final readonly class NodePermissionService
         $this->boards->lockBoard($board) ?? throw new ForumException('Раздел не найден.',404);
         self::assert($this->access($actor),$board,$permission);
     }
+    private function policy(string $kind,string $id): array
+    {
+        $row=$this->repo->node($kind,$id)??throw new ForumException('Раздел не найден.',404);
+        $rules=array_map(static function(array $r): array { unset($r['node_id']);return $r; },$this->repo->rules($kind,$id));
+        $data=['visibility'=>$row['visibility'],'rules'=>$rules];
+        return $data+['revision'=>hash('sha256',json_encode($data,JSON_THROW_ON_ERROR))];
+    }
     public function get(ForumAccessPolicy $actor,string $kind,string $id): array
     {
         $actor->require('*');
-        return $this->tx->read(function () use ($kind,$id) {
-            $row=$this->repo->node($kind,$id)??throw new ForumException('Раздел не найден.',404);
-            return ['visibility'=>$row['visibility'],'rules'=>array_map(static function(array $r): array { unset($r['node_id']);return $r; },$this->repo->rules($kind,$id))];
-        });
+        return $this->tx->read(fn()=> $this->policy($kind,$id));
     }
-    public function replace(ForumAccessPolicy $actor,string $kind,string $id,mixed $visibility,mixed $rules): array
+    public function replace(ForumAccessPolicy $actor,string $kind,string $id,mixed $visibility,mixed $rules,mixed $revision=null): array
     {
         $actor->require('*');
         if (!in_array($visibility,['public','private','hidden'],true) || !is_array($rules) || !array_is_list($rules) || count($rules)>500) throw new ForumException('Некорректные правила доступа.');
-        return $this->tx->write(function () use ($actor,$kind,$id,$visibility,$rules) {
+        if ($revision!==null && (!is_string($revision) || !preg_match('/^[a-f0-9]{64}$/D',$revision))) throw new ForumException('Некорректная версия правил.',422);
+        return $this->tx->write(function () use ($actor,$kind,$id,$visibility,$rules,$revision) {
             $this->boards->lockTree();
-            $this->repo->node($kind,$id)??throw new ForumException('Раздел не найден.',404);
+            $current=$this->policy($kind,$id);
+            if ($revision!==null && !hash_equals($current['revision'],$revision)) throw new ForumException('Правила изменены другим администратором. Откройте редактор заново.',409);
             $normalized=[];$seen=[];
             foreach ($rules as $r) {
                 if (!is_array($r)) throw new ForumException('Некорректное правило.');
@@ -88,7 +118,7 @@ final readonly class NodePermissionService
             }
             $this->repo->replace($kind,$id,$visibility,$normalized);
             $this->tx->audit('forum.node.permissions',$actor->userId,['kind'=>$kind,'id'=>$id,'visibility'=>$visibility,'rules'=>$normalized]);
-            return ['visibility'=>$visibility,'rules'=>$normalized];
+            return $this->policy($kind,$id);
         });
     }
 }

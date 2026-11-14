@@ -536,6 +536,28 @@ export const operations = {
         ],
         "bodyRequired": false
     },
+    "get_Forum_permissionInspector": {
+        "method": "GET",
+        "path": "/forum/permission-inspector",
+        "parameters": [
+            {
+                "name": "kind",
+                "in": "query",
+                "required": true
+            },
+            {
+                "name": "id",
+                "in": "query",
+                "required": true
+            },
+            {
+                "name": "user_id",
+                "in": "query",
+                "required": false
+            }
+        ],
+        "bodyRequired": false
+    },
     "get_Forum_profile": {
         "method": "GET",
         "path": "/forum/members/{id}",
@@ -1554,6 +1576,12 @@ export const operations = {
     "post_Forum_register": {
         "method": "POST",
         "path": "/forum/register",
+        "parameters": [],
+        "bodyRequired": true
+    },
+    "post_Forum_reorderNodes": {
+        "method": "POST",
+        "path": "/forum/nodes/reorder",
         "parameters": [],
         "bodyRequired": true
     },

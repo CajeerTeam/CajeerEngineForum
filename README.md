@@ -1,6 +1,6 @@
 # CajeerEngine Forum Edition
 
-**Forum Edition 0.2.4 — Discussion Management**, built on CajeerEngine 1.3.0. Release certification requires all `forum-required` CI jobs to pass.
+**Forum Edition 0.2.5 — Forum Navigation & Admin**, built on CajeerEngine 1.3.0. Release certification requires all `forum-required` CI jobs to pass.
 
 Self-hosted forum platform by CajeerTeam. PHP 8.4.1+, CajeerEngine kernel, Symfony Components, REST API, Apache-2.0.
 

@@ -16,6 +16,23 @@ final readonly class DiscussionService
 
     private function access(?ForumAccessPolicy $actor): array { return $this->tx->permissions()->access($actor??new ForumAccessPolicy('',[])); }
     private function decorated(array $board,array $access): array { $board['permissions']=$access['boards'][$board['id']]; return $board; }
+    /** Build the full path from the same ACL-protected snapshot as the content. */
+    private function breadcrumbs(array $board,array $access): array
+    {
+        $path=[];$seen=[];$categoryId=$board['category_id'];
+        while (true) {
+            NodePermissionService::assert($access,$board['id'],'thread:read');
+            if (isset($seen[$board['id']]) || count($seen)>=16 || $board['category_id']!==$categoryId) throw new ForumException('Раздел не найден.',404);
+            $seen[$board['id']]=true;
+            $path[]=['kind'=>'board','id'=>$board['id'],'name'=>$board['name']];
+            if ($board['parent_id']===null) break;
+            $board=$this->boards->find($board['parent_id'])??throw new ForumException('Раздел не найден.',404);
+        }
+        $categories=$this->boards->categories([$categoryId]);
+        if (!in_array($categoryId,NodePermissionService::allowed($access,'thread:read','categories'),true) || !$categories) throw new ForumException('Раздел не найден.',404);
+        $path[]=['kind'=>'category','id'=>$categoryId,'name'=>$categories[0]['name']];
+        return array_reverse($path);
+    }
     public function index(?ForumAccessPolicy $actor=null): array
     {
         return $this->db->readSnapshot(function () use ($actor) {
@@ -29,7 +46,9 @@ final readonly class DiscussionService
             $access=$this->access($actor);NodePermissionService::assert($access,$id,'thread:read');
             $board=$this->boards->view($id)??throw new ForumException('Раздел не найден.',404);
             $children=$this->boards->children($id,NodePermissionService::allowed($access));
-            return ['board'=>$this->decorated($board,$access),'threads'=>$this->threads->inBoard($id,$offset),'children'=>array_map(fn($b)=>$this->decorated($b,$access),$children)];
+            foreach ($children as &$child) $child['effective_state']=($this->boards->view($child['id'])??$child)['effective_state']??'archived';
+            unset($child);
+            return ['board'=>$this->decorated($board,$access),'breadcrumbs'=>$this->breadcrumbs($board,$access),'threads'=>$this->threads->inBoard($id,$offset),'children'=>array_map(fn($b)=>$this->decorated($b,$access),$children)];
         });
     }
     public function thread(string $id, int $offset, ?ForumAccessPolicy $actor=null): array
@@ -43,7 +62,8 @@ final readonly class DiscussionService
                 $id=$redirect['target_id'];$thread=$this->threads->find($id)??throw new ForumException('Тема не найдена.',404);
             }
             NodePermissionService::assert($access,$thread['board_id'],'thread:read');$thread['tags']=$repo->tags($id);
-            return ['thread'=>$thread,'board'=>$this->decorated($this->boards->view($thread['board_id'])??throw new ForumException('Раздел не найден.',404),$access),'posts'=>$this->posts->inThread($id,$offset),'first_post_id'=>$this->posts->firstId($id)];
+            $board=$this->boards->view($thread['board_id'])??throw new ForumException('Раздел не найден.',404);
+            return ['thread'=>$thread,'breadcrumbs'=>$this->breadcrumbs($board,$access),'board'=>$this->decorated($board,$access),'posts'=>$this->posts->inThread($id,$offset),'first_post_id'=>$this->posts->firstId($id)];
         });
     }
     public function search(string $term,int $offset,?ForumAccessPolicy $actor=null,?string $tag=null): array { return $this->db->readSnapshot(fn()=> $this->threads->search($term,$offset,NodePermissionService::allowed($this->access($actor)),$tag)); }

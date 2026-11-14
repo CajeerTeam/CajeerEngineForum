@@ -696,6 +696,33 @@ final class Operations {
     ),
     'bodyRequired' => false,
   ),
+  'get_Forum_permissionInspector' => 
+  array (
+    'method' => 'GET',
+    'path' => '/forum/permission-inspector',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'kind',
+        'in' => 'query',
+        'required' => true,
+      ),
+      1 => 
+      array (
+        'name' => 'id',
+        'in' => 'query',
+        'required' => true,
+      ),
+      2 => 
+      array (
+        'name' => 'user_id',
+        'in' => 'query',
+        'required' => false,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
   'get_Forum_profile' => 
   array (
     'method' => 'GET',
@@ -2029,6 +2056,15 @@ final class Operations {
   array (
     'method' => 'POST',
     'path' => '/forum/register',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => true,
+  ),
+  'post_Forum_reorderNodes' => 
+  array (
+    'method' => 'POST',
+    'path' => '/forum/nodes/reorder',
     'parameters' => 
     array (
     ),

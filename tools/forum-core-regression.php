@@ -108,7 +108,12 @@ try {
     expectStatus(409,fn()=>$nodes->createBoard($a,$other,'Wrong parent','',$rootNode));
     expectStatus(409,fn()=>$discussion->createThread($m,$rootNode,'Container topic','Blocked'));
     $topic=$discussion->createThread($m,$nested,'Nested topic','Original');$original=$discussion->thread($topic,0)['posts'][0]['id'];
-    $nodes->move($a,$sibling,$cat,$rootNode,0);
+    $nodes->reorder($a,'board',$sibling,'board',$child,'before');
+    expectStatus(409,fn()=>$nodes->reorder($a,'board',$rootNode,'board',$nested,'inside'));
+    check(array_column($discussion->thread($topic,0)['breadcrumbs'],'id')===[$cat,$rootNode,$child,$nested],'nested thread breadcrumbs');
+    $inspected=$discussion->permissions()->inspect($a,'board',$nested,$member);
+    check($inspected['effective']===$discussion->board($nested,0,$m)['board']['permissions'],'inspector equals runtime ACL');
+    expectStatus(403,fn()=>$discussion->permissions()->inspect($m,'board',$nested,$member));
     check(array_column($discussion->board($rootNode,0)['children'],'id')===[$sibling,$child],'sibling reorder');
     $nodes->move($a,$child,$other,null,0);
     check($discussion->board($nested,0)['board']['category_id']===$other && $discussion->board($nested,0)['board']['parent_id']===$child,'subtree cross-category move');
@@ -198,7 +203,7 @@ try {
     $moderation->moderate($a,$parallel,'delete');
     $nodes->delete($a,$dest,false);$nodes->delete($a,$mc,true);
     if($driver==='sqlite')check($pdo->query('PRAGMA foreign_key_check')->fetchAll()===[],'foreign keys intact');
-    $v=new ForumVersion($root);check($v->current()==='0.2.4' && $v->upstream()==='1.3.0','independent product/core versions');
+    $v=new ForumVersion($root);check($v->current()==='0.2.5' && $v->upstream()==='1.3.0','independent product/core versions');
     echo "Forum core regression passed\n";
 } finally {
     unset($db,$discussion,$engagement,$moderation,$registration,$pdo,$runner);

@@ -190,6 +190,8 @@ final class RouteRegistry
             ['PATCH', '/api/v1/forum/boards/{id}', 'api.v1.forum.updateBoard', 'forum', 'updateBoard', ['*']],
             ['DELETE', '/api/v1/forum/boards/{id}', 'api.v1.forum.deleteBoard', 'forum', 'deleteBoard', ['*']],
             ['POST', '/api/v1/forum/boards/{id}/move', 'api.v1.forum.moveBoard', 'forum', 'moveBoard', ['*']],
+            ['POST', '/api/v1/forum/nodes/reorder', 'api.v1.forum.reorderNodes', 'forum', 'reorderNodes', ['*']],
+            ['GET', '/api/v1/forum/permission-inspector', 'api.v1.forum.permissionInspector', 'forum', 'permissionInspector', ['*']],
             ['GET', '/api/v1/forum/boards/{id}/permissions', 'api.v1.forum.boardPermissions', 'forum', 'boardPermissions', ['*']],
             ['GET', '/api/v1/forum/groups', 'api.v1.forum.groups', 'forum', 'groups', ['*']],
             ['POST', '/api/v1/forum/groups', 'api.v1.forum.createGroup', 'forum', 'createGroup', ['*']],

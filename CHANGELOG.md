@@ -1,5 +1,12 @@
 # Changelog
 
+## Forum Edition 0.2.5 — Forum Navigation & Admin
+
+- ACL-safe server breadcrumbs, collapsible public tree and category anchors.
+- Transactional relative node reorder with mouse drag-and-drop and keyboard selection; reject cycles and invalid targets.
+- Editable permission matrix, optimistic ACL revisions and server-side inspector with inherited rule trace.
+- API/SDK updates and navigation, ACL, browser and signed upgrade regressions. No schema changes.
+
 ## Forum Edition 0.2.4 — Discussion Management
 
 - Transactional topic move, merge, split and reply transfer; retain post IDs, reactions, reports and source subscriptions on merge.

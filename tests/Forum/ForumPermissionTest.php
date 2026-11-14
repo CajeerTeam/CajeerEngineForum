@@ -52,4 +52,19 @@ final class ForumPermissionTest extends TestCase
         self::assertFalse(PermissionResolver::evaluate($actor,['support'],$this->chain(),$rules,true)['thread:moderate']);
         self::assertFalse(PermissionResolver::evaluate($actor->restrict(['forum:write']),['support'],$this->chain(),['parent'=>[$grant]],true)['thread:moderate']);
     }
+    public function testInspectionTraceUsesSameDecisions(): void
+    {
+        $actor=new ForumAccessPolicy('member',['forum:write']);
+        $rules=['parent'=>[$this->rule('post:reply','never')],'child'=>[$this->rule('post:reply','allow','user','member')]];
+        $trace=[];$effective=PermissionResolver::evaluate($actor,[],$this->chain(),$rules,false,$trace);
+        self::assertSame(PermissionResolver::evaluate($actor,[],$this->chain(),$rules),$effective);
+        self::assertFalse($effective['post:reply']);
+        self::assertSame(['post:reply'],$trace['steps'][1]['never']);
+        self::assertSame($effective,$trace['steps'][1]['effective']);
+        $trace=[];$effective=PermissionResolver::evaluate($actor,[],$this->chain('hidden'),[],false,$trace);
+        self::assertCount(1,$trace['steps']);self::assertTrue($trace['steps'][0]['blocked']);
+        self::assertSame($effective,$trace['steps'][0]['effective']);
+        $trace=[];PermissionResolver::evaluate(new ForumAccessPolicy('admin',['*']),[],$this->chain('hidden'),[],false,$trace);
+        self::assertTrue($trace['administrator']);
+    }
 }

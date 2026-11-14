@@ -164,6 +164,21 @@ def verify_discussions(base,state):
     print('PASS discussion management on physical dist',flush=True)
 
 
+def verify_navigation(base,state):
+    token, thread, _, member=state; c=Client(base)
+    original=c.call('GET','/forum/threads/'+thread,token=token)
+    board=original['board']['id']; category=original['board']['category_id']
+    parent=c.call('POST',f'/forum/categories/{category}/boards',201,{'name':'Acceptance parent','description':'','node_type':'container'},token=token)['id']
+    c.call('POST','/forum/nodes/reorder',200,{'kind':'board','id':board,'target_kind':'board','target_id':parent,'placement':'inside'},token=token)
+    path=c.call('GET','/forum/threads/'+thread)['breadcrumbs']
+    require([n['id'] for n in path]==[category,parent,board],'Breadcrumb hierarchy incorrect')
+    effective=c.call('GET',f'/forum/permission-inspector?kind=board&id={board}&user_id={member}',token=token)
+    require(effective['effective']['thread:read'] and effective['effective']['post:reply'],'Permission inspector incorrect')
+    c.call('POST','/forum/nodes/reorder',200,{'kind':'board','id':board,'target_kind':'category','target_id':category,'placement':'inside'},token=token)
+    c.call('DELETE',f'/forum/boards/{parent}',200,token=token)
+    print('PASS navigation and permission inspector on physical dist',flush=True)
+
+
 def verify_identity(site, env, report, base):
     code = r'require "vendor/autoload.php"; (new CajeerEngine\Installer\InstallerEnvironment(".env"))->write(["FORUM_REGISTRATION"=>"true"], ".env.example");'
     run(site, env, report, 'open-registration', ['php','-r',code])
@@ -202,7 +217,7 @@ def verify_readiness(site, env, report, base):
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--artifact',type=Path,required=True)
-    parser.add_argument('--previous',type=Path,help='Original 0.2.3 dist; enables real signed upgrade and rollback')
+    parser.add_argument('--previous',type=Path,help='Original 0.2.4 dist; enables real signed upgrade and rollback')
     parser.add_argument('--driver',choices=('sqlite','pgsql'),default='sqlite')
     parser.add_argument('--report',type=Path,required=True)
     args=parser.parse_args(); report=args.report.resolve(); report.mkdir(parents=True,exist_ok=True)
@@ -211,7 +226,7 @@ def main():
         work=Path(tmp); port=free_port()
         # With --previous use the authentic baseline for upgrade, not a relabelled current tree.
         previous=args.previous.resolve() if args.previous else None
-        initial='0.2.3' if previous else current
+        initial='0.2.4' if previous else current
         site=unpack(previous or artifact,work/'live',initial)
         install(site,env,report,'initial',port,args.driver)
         with http(site,env,report,'initial',port,initial) as base:
@@ -219,6 +234,7 @@ def main():
             if not previous:
                 verify_groups(base,state)
                 verify_discussions(base,state)
+                verify_navigation(base,state)
                 verify_identity(site,env,report,base)
                 verify_readiness(site,env,report,base)
         if previous:
@@ -234,7 +250,7 @@ def main():
             update=json.loads(run(site,env,report,'upgrade',['php','bin/cajeer','update:apply','--package='+str(package),'--json'],timeout=600))
             require(update['state']=='committed' and version(site)==current,'Update not committed')
             with http(site,env,report,'updated',port,current) as base:
-                verify_data(base,state); verify_groups(base,state); verify_discussions(base,state); verify_identity(site,env,report,base)
+                verify_data(base,state); verify_groups(base,state); verify_discussions(base,state); verify_navigation(base,state); verify_identity(site,env,report,base)
             run(site,env,report,'rollback',['php','bin/cajeer','update:rollback','--yes','--json'],timeout=600)
             require(version(site)==initial,'Rollback did not restore release')
             with http(site,env,report,'rollback',port,initial) as base: verify_data(base,state)

@@ -78,10 +78,17 @@ final readonly class ForumController
     public function updateCategory(Request $r,array $p): JsonResponse { return $this->respond(fn () => ['id'=>$this->discussions->nodes()->updateCategory($this->actor($r),$this->id($p),$this->text($r,'name',120),$this->text($r,'description',1000,0),$this->position($r))]); }
     public function updateBoard(Request $r,array $p): JsonResponse { return $this->respond(fn () => ['id'=>$this->discussions->nodes()->updateBoard($this->actor($r),$this->id($p),$this->text($r,'name',120),$this->text($r,'description',1000,0),$this->text($r,'node_type',16),$this->text($r,'state',16),$this->field($r,'rules')===null?null:$this->text($r,'rules',4000,0))]); }
     public function moveBoard(Request $r,array $p): JsonResponse { return $this->respond(fn () => ['id'=>$this->discussions->nodes()->move($this->actor($r),$this->id($p),V::id($this->field($r,'category_id')),$this->parent($r),$this->position($r))]); }
+    public function reorderNodes(Request $r): JsonResponse { return $this->respond(fn()=> ['id'=>$this->discussions->nodes()->reorder($this->actor($r),$this->text($r,'kind',16),V::id($this->field($r,'id')),$this->text($r,'target_kind',16),V::id($this->field($r,'target_id')),$this->text($r,'placement',16))]); }
+    public function permissionInspector(Request $r): JsonResponse { return $this->respond(function () use ($r) {
+        $actor=$this->actor($r);$actor->require('*');$q=$r->query->all();
+        $kind=V::text($q['kind']??null,'kind',16);$id=V::id($q['id']??null);
+        $user=array_key_exists('user_id',$q)?V::id($q['user_id']):null;
+        return $this->discussions->permissions()->inspect($actor,$kind,$id,$user);
+    }); }
     public function boardPermissions(Request $r,array $p): JsonResponse { return $this->respond(fn()=> $this->discussions->permissions()->get($this->actor($r),'board',$this->id($p))); }
     public function categoryPermissions(Request $r,array $p): JsonResponse { return $this->respond(fn()=> $this->discussions->permissions()->get($this->actor($r),'category',$this->id($p))); }
-    public function setBoardPermissions(Request $r,array $p): JsonResponse { return $this->respond(fn()=> $this->discussions->permissions()->replace($this->actor($r),'board',$this->id($p),$this->field($r,'visibility'),$this->field($r,'rules'))); }
-    public function setCategoryPermissions(Request $r,array $p): JsonResponse { return $this->respond(fn()=> $this->discussions->permissions()->replace($this->actor($r),'category',$this->id($p),$this->field($r,'visibility'),$this->field($r,'rules'))); }
+    public function setBoardPermissions(Request $r,array $p): JsonResponse { return $this->respond(fn()=> $this->discussions->permissions()->replace($this->actor($r),'board',$this->id($p),$this->field($r,'visibility'),$this->field($r,'rules'),$this->field($r,'revision'))); }
+    public function setCategoryPermissions(Request $r,array $p): JsonResponse { return $this->respond(fn()=> $this->discussions->permissions()->replace($this->actor($r),'category',$this->id($p),$this->field($r,'visibility'),$this->field($r,'rules'),$this->field($r,'revision'))); }
     public function groups(Request $r): JsonResponse { return $this->respond(fn()=> $this->discussions->groups()->all($this->actor($r))); }
     public function createGroup(Request $r): JsonResponse { return $this->respond(fn()=> $this->discussions->groups()->create($this->actor($r),$this->field($r,'handle'),$this->field($r,'name'),$this->field($r,'description')??'', $this->field($r,'permissions')),201); }
     public function updateGroup(Request $r,array $p): JsonResponse { return $this->respond(fn()=> $this->discussions->groups()->update($this->actor($r),$this->id($p),$this->field($r,'name'),$this->field($r,'description')??'', $this->field($r,'permissions'))); }

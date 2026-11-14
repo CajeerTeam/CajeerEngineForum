@@ -94,16 +94,46 @@ final readonly class NodeService
     }
     public function move(ForumAccessPolicy $actor,string $id,string $category,?string $parent,?int $position): string
     {
-        return $this->change($actor,'board.move',function () use ($id,$category,$parent,$position) {
-            $old=$this->boardRow($id);$this->categoryRow($category);if ($parent!==null) $this->boardRow($parent);
-            $rows=array_column($this->boards->topology(),null,'id');$subtree=[$id=>true];
-            // Bounded traversal even if externally corrupted data contains a cycle.
-            do {$changed=false;foreach ($rows as $key=>$row) if (!isset($subtree[$key]) && isset($subtree[$row['parent_id']??''])) {$subtree[$key]=true;$changed=true;}} while ($changed);
-            foreach ($subtree as $key=>$_) $rows[$key]['category_id']=$category;
-            $rows[$id]['parent_id']=$parent;self::validateTree(array_values($rows));
-            foreach ($subtree as $key=>$_) $this->boards->moveBoard($key,$category,$rows[$key]['parent_id']);
-            if ($old['category_id']!==$category || $old['parent_id']!==$parent) $this->sortBoards($old['category_id'],$old['parent_id'],null,null);
-            $this->sortBoards($category,$parent,$id,$position);return $id;
+        return $this->change($actor,'board.move',fn()=> $this->moveLocked($id,$category,$parent,$position));
+    }
+    private function moveLocked(string $id,string $category,?string $parent,?int $position): string
+    {
+        $old=$this->boardRow($id);$this->categoryRow($category);if ($parent!==null) $this->boardRow($parent);
+        $rows=array_column($this->boards->topology(),null,'id');$subtree=[$id=>true];
+        // Bounded traversal even if externally corrupted data contains a cycle.
+        do {$changed=false;foreach ($rows as $key=>$row) if (!isset($subtree[$key]) && isset($subtree[$row['parent_id']??''])) {$subtree[$key]=true;$changed=true;}} while ($changed);
+        foreach ($subtree as $key=>$_) $rows[$key]['category_id']=$category;
+        $rows[$id]['parent_id']=$parent;self::validateTree(array_values($rows));
+        foreach ($subtree as $key=>$_) $this->boards->moveBoard($key,$category,$rows[$key]['parent_id']);
+        if ($old['category_id']!==$category || $old['parent_id']!==$parent) $this->sortBoards($old['category_id'],$old['parent_id'],null,null);
+        $this->sortBoards($category,$parent,$id,$position);return $id;
+    }
+    /** Relative placement resolves positions against the locked, current tree (not a stale browser index). */
+    public function reorder(ForumAccessPolicy $actor,string $kind,string $id,string $targetKind,string $targetId,string $placement): string
+    {
+        if (!in_array($kind,['category','board'],true) || !in_array($targetKind,['category','board'],true) || !in_array($placement,['before','after','inside'],true)) throw new ForumException('Некорректное перемещение.',422);
+        if ($kind===$targetKind && $id===$targetId) throw new ForumException('Нельзя переместить раздел относительно себя.',409);
+        return $this->change($actor,'reorder',function () use ($kind,$id,$targetKind,$targetId,$placement) {
+            if ($kind==='category') {
+                if ($targetKind!=='category' || $placement==='inside') throw new ForumException('Категории могут сортироваться только среди категорий.',422);
+                $this->categoryRow($id);$this->categoryRow($targetId);
+                $siblings=array_values(array_filter(array_column($this->boards->categories(),'id'),fn($v)=>$v!==$id));
+                $position=array_search($targetId,$siblings,true);
+                if ($position===false) throw new ForumException('Цель не найдена.',404);
+                $this->sortCategories($id,$position+($placement==='after'?1:0));return $id;
+            }
+            $this->boardRow($id);
+            if ($targetKind==='category') {
+                if ($placement!=='inside') throw new ForumException('Раздел можно поместить только внутрь категории.',422);
+                $this->categoryRow($targetId);return $this->moveLocked($id,$targetId,null,null);
+            }
+            $target=$this->boardRow($targetId);
+            if ($placement==='inside') return $this->moveLocked($id,$target['category_id'],$targetId,null);
+            $siblings=[];
+            foreach ($this->boards->topology() as $row) if ($row['id']!==$id && $row['category_id']===$target['category_id'] && $row['parent_id']===$target['parent_id']) $siblings[]=$row['id'];
+            $position=array_search($targetId,$siblings,true);
+            if ($position===false) throw new ForumException('Цель не найдена.',404);
+            return $this->moveLocked($id,$target['category_id'],$target['parent_id'],$position+($placement==='after'?1:0));
         });
     }
     public function delete(ForumAccessPolicy $actor,string $id,bool $category): string

@@ -24476,6 +24476,11 @@
                       "additionalProperties": false
                     },
                     "maxItems": 500
+                  },
+                  "revision": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{64}$",
+                    "description": "Optional optimistic concurrency token returned by GET; stale revisions return 409."
                   }
                 },
                 "required": [
@@ -24838,6 +24843,11 @@
                       "additionalProperties": false
                     },
                     "maxItems": 500
+                  },
+                  "revision": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{64}$",
+                    "description": "Optional optimistic concurrency token returned by GET; stale revisions return 409."
                   }
                 },
                 "required": [
@@ -26694,6 +26704,352 @@
           }
         },
         "description": "Move selected replies to target_id, or split into a new thread with board_id and title. First post stays in source."
+      }
+    },
+    "/forum/permission-inspector": {
+      "get": {
+        "tags": [
+          "Forum"
+        ],
+        "operationId": "get_Forum_permissionInspector",
+        "summary": "Inspect effective node permissions for a guest or active user",
+        "x-cajeer-route": "api.v1.forum.permissionInspector",
+        "x-cajeer-required-scopes": [
+          "*"
+        ],
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "BrowserSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "category",
+                "board"
+              ]
+            }
+          },
+          {
+            "name": "id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "user_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "400": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data"
+                  ],
+                  "properties": {
+                    "data": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/forum/nodes/reorder": {
+      "post": {
+        "tags": [
+          "Forum"
+        ],
+        "operationId": "post_Forum_reorderNodes",
+        "summary": "Move a category or board relative to a live tree node",
+        "x-cajeer-route": "api.v1.forum.reorderNodes",
+        "x-cajeer-required-scopes": [
+          "*"
+        ],
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "BrowserSession": [],
+            "CsrfToken": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "kind",
+                  "id",
+                  "target_kind",
+                  "target_id",
+                  "placement"
+                ],
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "category",
+                      "board"
+                    ]
+                  },
+                  "id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "target_kind": {
+                    "type": "string",
+                    "enum": [
+                      "category",
+                      "board"
+                    ]
+                  },
+                  "target_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "placement": {
+                    "type": "string",
+                    "enum": [
+                      "before",
+                      "after",
+                      "inside"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "400": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data"
+                  ],
+                  "properties": {
+                    "data": {}
+                  }
+                }
+              }
+            }
+          }
+        }
       }
     }
   },
