@@ -87,7 +87,7 @@ final readonly class MemberProfileService
     {
         if(!in_array($kind,['avatar','cover'],true))throw new ForumException('Изображение не найдено.',404);
         return $this->tx->read(function()use($actor,$id,$kind){$viewer=$this->viewer($actor);if(!$this->repo->user($id)||!self::visible($this->repo->preferences($id)['profile_visibility'],$viewer,$id))throw new ForumException('Изображение не найдено.',404);
-            $data=$this->repo->image($id,$kind);if($data===null||($bytes=base64_decode($data,true))===false)throw new ForumException('Изображение не найдено.',404);return $bytes;});
+            $data=$this->repo->image($id,$kind);if($data===null||($bytes=ProfileImage::decodeStored($kind,$data))===null)throw new ForumException('Изображение не найдено.',404);return $bytes;});
     }
     public function fields(ForumAccessPolicy $actor): array { return $this->tx->read(function()use($actor){$this->tx->permissions()->requireAdmin($actor);return $this->repo->fields();}); }
     public function saveField(ForumAccessPolicy $actor,?string $id,array $input): array

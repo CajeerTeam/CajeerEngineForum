@@ -32,7 +32,7 @@ final readonly class ConversationService
         $kind=$body['kind']??(count($ids)===1?'direct':'group');if(!in_array($kind,['direct','group'],true)||($kind==='direct'&&count($ids)!==1))throw new ForumException('Некорректный тип переписки.');
         return $this->write($actor,function()use($user,$ids,$title,$text,$kind){
             $this->repo->limit($user,'create',3600,5);$members=[$user];
-            foreach($ids as $target){$this->checkInvite($user,$target,$members);$members[]=$target;}
+            foreach($ids as $target){$this->repo->limit($user,'invite',3600,20);$this->checkInvite($user,$target,$members);$members[]=$target;}
             $id=$this->repo->create($user,$title,$kind);foreach($members as $member)$this->repo->join($id,$member,1);
             $msg=$this->repo->append($id,$user,$text,1);$this->repo->mark($id,$user,1);return ['id'=>$id,'message_id'=>$msg];
         });
@@ -44,8 +44,8 @@ final readonly class ConversationService
     /** Conversation alerts are durable unread membership state, not copied private bodies. */
     public function alerts(ForumAccessPolicy $actor,bool $countOnly): array
     {
-        try{return $this->read($actor,function()use($actor,$countOnly){$result=['conversation_unread'=>$this->repo->unread($actor->userId,true)];if(!$countOnly)$result['conversations']=$this->repo->inbox($actor->userId,0,false,true);return $result;});}
-        catch(ForumException $e){if($e->status!==403)throw $e;return ['conversation_unread'=>0]+($countOnly?[]:['conversations'=>[]]);}
+        try{return $this->read($actor,function()use($actor,$countOnly){$result=['conversation_unread'=>$this->repo->unread($actor->userId,true),'conversation_total_unread'=>$this->repo->unread($actor->userId)];if(!$countOnly)$result['conversations']=$this->repo->inbox($actor->userId,0,false,true);return $result;});}
+        catch(ForumException $e){if($e->status!==403)throw $e;return ['conversation_unread'=>0,'conversation_total_unread'=>0]+($countOnly?[]:['conversations'=>[]]);}
     }
     private function owner(array $conversation,array $members): ?string
     { return in_array($conversation['owner_id'],$members,true)?$conversation['owner_id']:($members[0]??null); }
@@ -66,7 +66,7 @@ final readonly class ConversationService
     }
     public function edit(ForumAccessPolicy $actor,string $id,string $msg,array $body): array
     {
-        $text=V::text($body['body']??null,'body',20000);return $this->write($actor,function()use($actor,$id,$msg,$text){$c=$this->repo->membership($id,$actor->userId);$m=$this->repo->message($id,$msg,(int)$c['joined_sequence']);if($m['author_id']!==$actor->userId)throw new ForumException('Недостаточно прав.',403);$this->repo->limit($actor->userId,'edit',60,30);$this->repo->edit($msg,$text);return ['id'=>$msg];});
+        $text=V::text($body['body']??null,'body',20000);return $this->write($actor,function()use($actor,$id,$msg,$text){$c=$this->repo->membership($id,$actor->userId);$m=$this->repo->message($id,$msg,(int)$c['joined_sequence']);if($m['author_id']!==$actor->userId)throw new ForumException('Недостаточно прав.',403);foreach($this->repo->participants($id) as $participant){$target=$participant['user_id'];if($target!==$actor->userId&&$this->repo->blocked($actor->userId,$target))throw new ForumException('Редактирование в этой переписке недоступно.',403);}$this->repo->limit($actor->userId,'edit',60,30);$this->repo->edit($msg,$text);return ['id'=>$msg];});
     }
     public function invite(ForumAccessPolicy $actor,string $id,array $body): array
     {

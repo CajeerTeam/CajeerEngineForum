@@ -8,6 +8,17 @@ use CajeerEngine\Forum\ForumException;
 /** Decode only bounded raster images, discard metadata and original bytes. */
 final class ProfileImage
 {
+    /** Validate stored output independently of GD, including after restore. */
+    public static function decodeStored(string $kind,string $encoded): ?string
+    {
+        if (!in_array($kind,['avatar','cover'],true) || strlen($encoded)>1398104) return null;
+        $raw=base64_decode($encoded,true);
+        if ($raw===false || strlen($raw)>1048576 || !str_starts_with($raw,"\xff\xd8") || !str_ends_with($raw,"\xff\xd9")) return null;
+        $info=@getimagesizefromstring($raw);
+        if (!$info || $info[2]!==IMAGETYPE_JPEG || $info[0]<1 || $info[1]<1 || $info[0]>($kind==='avatar'?256:1200) || $info[1]>($kind==='avatar'?256:480)) return null;
+        return $raw;
+    }
+
     public static function encode(string $kind,mixed $input): string
     {
         if(!in_array($kind,['avatar','cover'],true))throw new ForumException('Некорректный тип изображения.',422);

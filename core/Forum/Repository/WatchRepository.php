@@ -73,9 +73,22 @@ final readonly class WatchRepository extends Repository
     }
     public function leased(string $token): array
     { return $this->rows("SELECT d.*,p.thread_id,t.board_id AS current_board FROM ce_forum_mail_delivery d JOIN ce_forum_posts p ON p.id=d.post_id JOIN ce_forum_threads t ON t.id=p.thread_id WHERE d.lease_token=? AND d.state='pending' ORDER BY d.id",[$token]); }
-    public function complete(string $token,array $ids,string $state,int $now): void
+    public function complete(string $token,array $ids,string $state,int $now): int
     {
-        foreach($ids as $id)$this->query("UPDATE ce_forum_mail_delivery SET state=?,sent_at=?,lease_token=NULL,lease_until=0,last_error=NULL WHERE id=? AND lease_token=? AND state='pending'",[$state,$state==='sent'?$now:null,$id,$token]);
+        $count=0;foreach($ids as $id)$count+=$this->query("UPDATE ce_forum_mail_delivery SET state=?,sent_at=?,lease_token=NULL,lease_until=0,last_error=NULL WHERE id=? AND lease_token=? AND state='pending'",[$state,$state==='sent'?$now:null,$id,$token])->rowCount();
+        return $count;
+    }
+    /** Check ownership immediately before transport. Do not begin a send on a nearly expired lease. */
+    public function ownsBatch(string $token,array $ids,int $now): bool
+    {
+        $rows=$this->rows("SELECT id FROM ce_forum_mail_delivery WHERE lease_token=? AND state='pending' AND lease_until>?",[$token,$now+60]);
+        $actual=array_column($rows,'id');sort($actual,SORT_STRING);sort($ids,SORT_STRING);
+        return $ids!==[] && $actual===$ids;
+    }
+    /** Release a claim that never reached SMTP; do not spend a transport retry. */
+    public function releaseUnsent(string $token): void
+    {
+        $this->query("UPDATE ce_forum_mail_delivery SET lease_token=NULL,lease_until=0,attempts=CASE WHEN attempts>0 THEN attempts-1 ELSE 0 END WHERE lease_token=? AND state='pending'",[$token]);
     }
     public function retry(string $token,int $now): void
     {

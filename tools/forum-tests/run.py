@@ -797,6 +797,8 @@ class NetworkTests(unittest.TestCase):
         second=c.call('POST',path+'/messages',201,{'body':'New group message'},token=bt)['id']
         self.assertEqual(1,c.call('GET',base,token=ct)['unread'])
         self.assertEqual(0,c.call('GET',base+'?notifications=1',token=ct)['notification_unread'])
+        muted=c.call('GET','/forum/notifications?count_only=1',token=ct)
+        self.assertEqual(0,muted['conversation_unread']);self.assertEqual(1,muted['conversation_total_unread'])
         self.assertEqual([second],[m['id'] for m in c.call('GET',path,token=ct)['messages']])
         c.call('PATCH',path+'/settings',200,{'muted':False},token=ct)
         self.assertEqual(1,c.call('GET',base+'?notifications=1',token=ct)['notification_unread'])
@@ -809,6 +811,8 @@ class NetworkTests(unittest.TestCase):
         c.call('PUT','/forum/conversation-reports/'+report,200,{'status':'resolved'},token=admin)
         c.call('PUT','/forum/conversation-blocks/'+b,200,{'enabled':True},token=ct)
         c.call('POST',path+'/messages',403,{'body':'Blocked'},token=bt)
+        c.call('PATCH',path+'/messages/'+second,403,{'body':'Blocked edit'},token=bt)
+        self.assertEqual('Edited afterwards',c.call('GET',path,token=ct)['messages'][0]['body'])
         c.call('POST',base,403,{'participant_ids':[third],'title':'Blocked','body':'Blocked'},token=bt)
         c.call('PUT','/forum/conversation-blocks/'+b,200,{'enabled':False},token=ct)
         c.call('DELETE',path+'/participants/'+third,403,token=bt)
@@ -864,6 +868,20 @@ class NetworkTests(unittest.TestCase):
         self.assertEqual(0,c.call('GET',profile)['member']['reputation']['reputation'])
         c.call('POST',path+'/moderate',200,{'action':'delete'},token=admin)
         c.call('DELETE','/forum/boards/'+board,200,token=admin);c.call('DELETE','/forum/categories/'+cat,200,token=admin)
+
+    def test_13_conversation_invitation_budget(self):
+        c=Client(self.base); admin=c.login(ADMIN,ADMIN_PASSWORD)[0]['data']['access_token']
+        email=unique_email(); owner=c.call('POST','/users',201,{'email':email,'name':'Invite quota owner','password':PASSWORD,'roles':['forum-member']},token=admin)['id']
+        token=c.login(email)[0]['data']['access_token']; recipients=[]
+        for i in range(11):
+            recipients.append(c.call('POST','/users',201,{'email':unique_email(),'name':'Quota recipient '+str(i),'password':PASSWORD,'roles':['forum-member']},token=admin)['id'])
+        path='/forum/conversations'; payload={'kind':'group','title':'Quota test','body':'Initial message','participant_ids':recipients}
+        first=c.call('POST',path,201,payload,token=token)['id']
+        c.call('POST',path,429,payload,token=token)
+        self.assertEqual([first],[r['id'] for r in c.call('GET',path,token=token)['items']])
+        # The failed creation must not consume the remaining invite budget.
+        payload['participant_ids']=recipients[:9];c.call('POST',path,201,payload,token=token)
+        payload['participant_ids']=recipients[:1];c.call('POST',path,429,payload,token=token)
 
     def test_13_rate_limit(self):
         # Run last: exhaust the real IP auth bucket without guessing credentials.

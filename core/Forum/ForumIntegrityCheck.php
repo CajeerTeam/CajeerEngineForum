@@ -17,6 +17,10 @@ final readonly class ForumIntegrityCheck
             // Run only after schema verification. These checks may scan the discussion corpus,
             // so deliberately keep them out of the per-request readiness endpoint.
             $queries=[
+                'invalid_notification_recipient'=> 'SELECT COUNT(*) FROM ce_forum_notifications WHERE actor_id=recipient_id',
+                'invalid_notification_state'=> "SELECT COUNT(*) FROM ce_forum_notifications WHERE (state=0 AND is_read<>0) OR (subscription_kind IS NOT NULL AND kind<>'reply') OR (kind='moderation' AND moderation_action IS NULL) OR (kind<>'moderation' AND moderation_action IS NOT NULL)",
+                'orphan_reaction_notification'=> "SELECT COUNT(*) FROM ce_forum_notifications n WHERE n.kind='reaction' AND NOT EXISTS (SELECT 1 FROM ce_forum_reactions r WHERE r.post_id=n.post_id AND r.user_id=n.actor_id)",
+                'invalid_conversation_limits'=> "SELECT COUNT(*) FROM ce_forum_conversation_limits WHERE action NOT IN ('create','invite','send','edit','report') OR hits<1 OR window_start<0",
                 'invalid_reaction_type'=> "SELECT COUNT(*) FROM ce_forum_reactions WHERE reaction_type NOT IN ('like','helpful','celebrate')",
                 'invalid_member_relation'=> "SELECT COUNT(*) FROM ce_forum_member_relations WHERE user_id=target_id OR kind NOT IN ('follow','ignore')",
                 'invalid_achievement_rule'=> "SELECT COUNT(*) FROM ce_forum_achievement_rules WHERE code NOT IN ('first_post','active_member','topic_author','helpful_member','veteran') OR threshold<1 OR threshold>1000000 OR enabled NOT IN (0,1)",
@@ -48,6 +52,14 @@ final readonly class ForumIntegrityCheck
                 $count=(int)$pdo->query($sql)->fetchColumn();
                 if ($count!==0) $violations[$name]=$count;
             }
+            // Validate restored profile images without loading the entire image collection into memory.
+            $badImages=0;
+            $images=$pdo->query('SELECT kind,image_data FROM ce_forum_profile_images');
+            while ($image=$images->fetch(\PDO::FETCH_ASSOC)) {
+                if (\CajeerEngine\Forum\Security\ProfileImage::decodeStored((string)$image['kind'],(string)$image['image_data'])===null) ++$badImages;
+            }
+            $images->closeCursor();
+            if ($badImages!==0) $violations['invalid_profile_images']=$badImages;
             $invalid=0;
             foreach ($pdo->query('SELECT r.handle,r.permissions FROM ce_forum_groups g JOIN ce_roles r ON r.id=g.role_id')->fetchAll(\PDO::FETCH_ASSOC) as $group) {
                 $permissions=json_decode((string)$group['permissions'],true);

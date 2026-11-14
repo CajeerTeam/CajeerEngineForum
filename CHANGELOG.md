@@ -1,5 +1,14 @@
 # Changelog
 
+## Forum Edition 0.4.0 — Community Stable
+
+- Enforce a shared hourly invitation budget for conversation creation and later invitations; blocked participants cannot bypass send restrictions by editing existing messages.
+- Separate all private unread messages from unmuted conversation notifications, keeping the original API counter compatible.
+- Check stored JPEG headers, bounds and markers before delivery and during offline integrity verification. Reject inconsistent notification/reaction references and invalid conversation counters during installation/update verification.
+- Check mail batch ownership and remaining lease immediately before SMTP, and report only delivery acknowledgements committed under that lease.
+- Physical 0.3.6 upgrade/rollback acceptance now seeds community profiles/images, read state, delivered notifications, sent and pending email, private messages, follows and reputation before upgrading. Verify those same data on upgrade and both rollback paths.
+- No schema migration; all previous migrations and API routes are unchanged. Full release certification requires successful SQLite/PostgreSQL, HTTP and browser CI.
+
 ## Forum Edition 0.3.6 — Reputation & Activity
 
 - Typed reactions, live public reputation and configurable achievement thresholds.

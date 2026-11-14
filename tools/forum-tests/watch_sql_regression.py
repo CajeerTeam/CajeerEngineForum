@@ -40,11 +40,19 @@ insert=sql('INSERT INTO ce_forum_mail_delivery(');candidate=sql('SELECT id,user_
 lease_sql=sql('UPDATE ce_forum_mail_delivery SET lease_token=');retry_sql=sql('UPDATE ce_forum_mail_delivery SET state=?,due_at=');finish_sql=sql('UPDATE ce_forum_mail_delivery SET state=?,sent_at=')
 now=1000000;delivery=uid();lease=uid();db.commit();db.execute('BEGIN');db.execute(insert,(delivery,b,reply,board,'thread','email',now));db.rollback();assert db.execute('SELECT COUNT(*) FROM ce_forum_mail_delivery').fetchone()==(0,)
 db.execute(insert,(delivery,b,reply,board,'thread','email',now));assert db.execute(candidate,(now,now,now,now-60)).fetchone()==(delivery,b,'email')
-db.execute(lease_sql,(lease,now+300,delivery));assert db.execute(candidate,(now,now,now,now-60)).fetchone() is None
+owns=sql('SELECT id FROM ce_forum_mail_delivery WHERE lease_token=')
+db.execute(lease_sql,(lease,now+300,delivery));assert db.execute(owns,(lease,now+60)).fetchall()==[(delivery,)]
+release_unsent=sql('UPDATE ce_forum_mail_delivery SET lease_token=NULL,lease_until=0,attempts=')
+assert db.execute(release_unsent,(uid(),)).rowcount==0
+assert db.execute(release_unsent,(lease,)).rowcount==1
+assert db.execute('SELECT attempts,lease_until,lease_token FROM ce_forum_mail_delivery WHERE id=?',(delivery,)).fetchone()==(0,0,None)
+db.execute(lease_sql,(lease,now+300,delivery))
+assert db.execute(owns,(lease,now+300)).fetchall()==[]
+assert db.execute(candidate,(now,now,now,now-60)).fetchone() is None
 # Failed attempt retains pending row and schedules retry; stale lease cannot acknowledge it.
 db.execute(retry_sql,('pending',now+60,delivery,lease));assert db.execute(candidate,(now,now,now,now-60)).fetchone() is None
 assert db.execute(candidate,(now+60,now+60,now+60,now)).fetchone()==(delivery,b,'email')
-new_lease=uid();db.execute(lease_sql,(new_lease,now+360,delivery));assert db.execute(finish_sql,('sent',now+61,delivery,lease)).rowcount==0
+new_lease=uid();db.execute(lease_sql,(new_lease,now+360,delivery));assert db.execute(finish_sql,('sent',now+61,delivery,lease)).rowcount==0;assert db.execute(owns,(lease,now+61)).fetchall()==[]
 assert db.execute(finish_sql,('sent',now+61,delivery,new_lease)).rowcount==1
 assert db.execute('SELECT state,attempts,sent_at FROM ce_forum_mail_delivery').fetchone()==('sent',2,now+61)
 # Duplicate mail and inconsistent delivery state cannot be persisted.

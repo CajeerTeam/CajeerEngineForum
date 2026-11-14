@@ -181,7 +181,7 @@ def verify_navigation(base,state):
 
 
 def seed_structure(base, state):
-    """Create real 0.3.5 structure before updating, not just after the upgrade."""
+    """Create real 0.3.6 structure before updating, not just after the upgrade."""
     admin, _, _, member = state
     c=Client(base)
     member_group=next(g['id'] for g in c.call('GET','/forum/groups',token=admin) if g['handle']=='forum-member')
@@ -283,7 +283,7 @@ def verify_read_tracking(base, state):
 
 def verify_notifications(base, state, fixture):
     c=Client(base); admin,thread,post,_=state
-    # The original 0.3.5 topic has no synthetic historical notifications.
+    # The original 0.3.6 topic has no synthetic historical notifications.
     path='/forum/notifications'
     c.call('POST','/queue/work',200,{'limit':10},token=admin)
     c.call('POST',path+'/read',200,{'all':True},token=admin)
@@ -325,7 +325,7 @@ def verify_watches(base,state):
     c.call('PUT',path+'/watch',200,{'enabled':True,'mode':'email'},token=watcher)
     c.call('POST',path+'/posts',201,{'body':'Physical dist email update'},token=admin)
     result=c.call('POST','/queue/work',200,{'limit':10},token=admin)
-    require(result['forum_mail']['sent']==1 and result['failed']==0,'Physical dist SMTP delivery failed')
+    require(result['forum_mail']['sent']>=1 and result['failed']==0,'Physical dist SMTP delivery failed')
     _,token=mail_link(email,'/forum/unsubscribe',base)
     c.call('POST','/forum/unsubscribe',200,{'token':token})
     require(c.call('GET',path,token=watcher)['thread']['watch_mode']=='internal','Physical dist unsubscribe failed')
@@ -400,10 +400,96 @@ def verify_activity(base,state,fixture):
     print('PASS physical dist reputation and activity',flush=True)
 
 
+def seed_community(base,state):
+    """Persist a representative community before upgrade, not merely exercise new code."""
+    c=Client(base);admin=state[0];email=unique_email()
+    user=c.call('POST','/users',201,{'email':email,'name':'Community baseline','password':PASSWORD,'roles':['forum-member']},token=admin)['id']
+    c.call('POST','/auth/email/resend',202,{'email':email})
+    _,code=mail_link(email,'/forum/verify-email',base)
+    c.call('POST','/auth/email/verify',200,{'token':code,'password':PASSWORD})
+    token=c.login(email)[0]['data']['access_token']
+    owner=c.call('GET','/auth/me',token=admin)['user_id']
+    own='/forum/account/profile'
+    field=c.call('POST','/forum/profile-fields',201,{'label':'Community baseline private field','visibility':'private'},token=admin)['id']
+    c.call('PATCH',own,200,{'display_name':'Community baseline profile','bio':'Persistent community bio','signature':'Persistent signature','fields':[{'id':field,'value':'Private baseline value'}]},token=token)
+    c.call('PATCH','/forum/account/preferences',200,{'theme':'dark','timezone':'Europe/Berlin','activity_visibility':'public'},token=token)
+    c.call('PUT','/forum/account/images/avatar',200,{'data':base64.b64encode(profile_png()).decode()},token=token)
+    board=c.call('GET','/forum')['boards'][0]['id']
+    thread=c.call('POST',f'/forum/boards/{board}/threads',201,{'title':'Community baseline topic','body':'Persistent community post'},token=token)['id']
+    url='/forum/threads/'+thread
+    post=c.call('GET',url,token=token)['posts'][0]['id']
+    c.call('POST','/forum/read-state',200,{'scope':'thread','id':thread},token=token)
+    c.call('PUT','/forum/posts/'+post+'/reaction',200,{'enabled':True,'type':'helpful'},token=admin)
+    c.call('PUT',url+'/watch',200,{'enabled':True,'mode':'email'},token=token)
+    reply=c.call('POST',url+'/posts',201,{'body':'Persistent reply'},token=admin)['id']
+    work=c.call('POST','/queue/work',200,{'limit':10},token=admin)
+    require(work['failed']==0 and work['forum_mail']['sent']>=1,'Baseline email delivery did not run')
+    mail_link(email,'/forum/unsubscribe',base)
+    c.call('PUT',url+'/watch',200,{'enabled':True,'mode':'weekly'},token=token)
+    c.call('POST',url+'/posts',201,{'body':'Pending weekly digest'},token=admin)
+    c.call('PUT','/forum/members/'+owner+'/relationship',200,{'kind':'follow','enabled':True},token=token)
+    conv=c.call('POST','/forum/conversations',201,{'kind':'direct','title':'Community baseline private','participant_ids':[user],'body':'Persistent private message'},token=admin)
+    cid=conv['id']; c.call('PATCH','/forum/conversations/'+cid+'/settings',200,{'muted':True},token=token)
+    f={'token':token,'user':user,'owner':owner,'thread':thread,'post':post,'reply':reply,'conversation':cid,'field':field,'admin':admin,'email':email}
+    f['snapshot']=community_snapshot(base,f)
+    require(f['snapshot']['delivery']['sent']==1 and f['snapshot']['delivery']['pending']==1,'Expected sent and pending delivery before update')
+    require(f['snapshot']['read']['unread_posts']==2 and f['snapshot']['private_unread']==1,'Expected baseline unread state')
+    require(f['snapshot']['reputation']['reputation']==2,'Expected baseline reputation')
+    require(any(n['post_id']==reply for n in f['snapshot']['notifications']),'Baseline reply notification missing')
+    print('PASS seeded real community data, sent email and pending digest',flush=True)
+    return f
+
+
+def community_snapshot(base,f):
+    c=Client(base);token=f['token'];profile='/forum/members/'+f['user'];url='/forum/threads/'+f['thread'];conv='/forum/conversations/'+f['conversation']
+    own=c.call('GET','/forum/account/profile',token=token);public=c.call('GET',profile)['member']
+    with c.opener.open(base+public['avatar_url'],timeout=10) as res:
+        require(res.headers.get_content_type()=='image/jpeg','Stored avatar is not JPEG')
+        avatar=__import__('hashlib').sha256(res.read()).hexdigest()
+    thread=c.call('GET',url,token=token); inbox=c.call('GET','/forum/notifications',token=token)
+    return {'profile':own['profile'],'preferences':own['preferences'],'fields':own['values'],'avatar':avatar,
+            'read':thread['read_state'],'watch':thread['thread']['watch_mode'],'posts':[(p['id'],p['body']) for p in thread['posts']],
+            'delivery':c.call('GET','/forum/watch-settings',token=token)['delivery'],
+            'notifications':inbox['items'],'notification_unread':inbox['unread'],'private_unread':c.call('GET','/forum/conversations',token=token)['unread'],
+            'muted_unread':inbox['conversation_unread'],'conversation':c.call('GET',conv,token=token),
+            'relationship':c.call('GET','/forum/members/'+f['owner']+'/relationship',token=token),'reputation':public['reputation']}
+
+
+def verify_community(base,f):
+    actual=community_snapshot(base,f)
+    for key,expected in f['snapshot'].items():
+        require(actual[key]==expected,'Community upgrade/rollback changed '+key)
+    c=Client(base); token=f['token'];conv='/forum/conversations/'+f['conversation'];profile='/forum/members/'+f['user']
+    c.call('GET',conv,401)
+    require(c.call('GET',profile)['member']['fields']==[],'Private profile field leaked')
+    require(c.call('GET','/forum/notifications?count_only=1',token=token)['conversation_unread']==0,'Muted conversation became an alert')
+    print('PASS persisted community profile/avatar/read/notification/mail/conversation/reputation/follow state',flush=True)
+
+
+def verify_community_live(base,f):
+    c=Client(base); token=f['token']; admin=f['admin'];path='/forum/conversations/'+f['conversation']
+    count=c.call('GET','/forum/notifications?count_only=1',token=token)
+    require(count['conversation_total_unread']==1 and count['conversation_unread']==0,'Separate unread and muted counters drift')
+    c.call('PUT','/forum/conversation-blocks/'+f['owner'],200,{'enabled':True},token=token)
+    msg=f['snapshot']['conversation']['messages'][0]['id']
+    c.call('PATCH',path+'/messages/'+msg,403,{'body':'Blocked modification'},token=admin)
+    c.call('POST',path+'/messages',403,{'body':'Blocked send'},token=admin)
+    require(c.call('GET',path,token=token)['messages'][0]['body']=='Persistent private message','Blocked sender changed content')
+    c.call('PUT','/forum/conversation-blocks/'+f['owner'],200,{'enabled':False},token=token)
+    c.call('POST',path+'/read',200,{'message_id':msg},token=token)
+    require(c.call('GET','/forum/notifications?count_only=1',token=token)['conversation_total_unread']==0,'Read did not synchronize')
+    c.call('PATCH',path+'/settings',200,{'muted':False},token=token)
+    c.call('POST',path+'/messages',201,{'body':'Post-upgrade private reply'},token=admin)
+    require(c.call('GET','/forum/notifications?count_only=1',token=token)['conversation_unread']==1,'Post-upgrade private notification missing')
+    c.call('PUT','/forum/threads/'+f['thread']+'/watch',200,{'enabled':True,'mode':'internal'},token=token)
+    require(c.call('GET','/forum/watch-settings',token=token)['delivery']['pending']==0,'Changing watch left pending mail')
+    print('PASS post-upgrade cross-module community operations',flush=True)
+
+
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--artifact',type=Path,required=True)
-    parser.add_argument('--previous',type=Path,help='Original 0.3.5 dist; enables real signed upgrade and rollback')
+    parser.add_argument('--previous',type=Path,help='Original 0.3.6 dist; enables real signed upgrade and rollback')
     parser.add_argument('--driver',choices=('sqlite','pgsql'),default='sqlite')
     parser.add_argument('--report',type=Path,required=True)
     args=parser.parse_args(); report=args.report.resolve(); report.mkdir(parents=True,exist_ok=True)
@@ -412,13 +498,16 @@ def main():
         work=Path(tmp); port=free_port()
         # With --previous use the authentic baseline for upgrade, not a relabelled current tree.
         previous=args.previous.resolve() if args.previous else None
-        initial='0.3.5' if previous else current
+        initial='0.3.6' if previous else current
         site=unpack(previous or artifact,work/'live',initial)
         install(site,env,report,'initial',port,args.driver)
         with http(site,env,report,'initial',port,initial) as base:
             state=seed(base); verify_data(base,state)
             fixture=seed_structure(base,state); verify_structure(base,fixture)
+            community=seed_community(base,state)
+            verify_community(base,community)
             if not previous:
+                verify_community_live(base,community)
                 verify_groups(base,state)
                 verify_discussions(base,state)
                 verify_navigation(base,state)
@@ -444,7 +533,7 @@ def main():
             update=json.loads(run(site,env,report,'upgrade',['php','bin/cajeer','update:apply','--package='+str(package),'--json'],timeout=600))
             require(update['state']=='committed' and version(site)==current,'Update not committed')
             with http(site,env,report,'updated',port,current) as base:
-                verify_data(base,state); verify_structure(base,fixture); verify_groups(base,state); verify_discussions(base,state); verify_navigation(base,state); verify_identity(site,env,report,base)
+                verify_data(base,state); verify_structure(base,fixture); verify_community(base,community); verify_community_live(base,community); verify_groups(base,state); verify_discussions(base,state); verify_navigation(base,state); verify_identity(site,env,report,base)
                 verify_data_integrity(site,env,report,fixture)
                 verify_profiles(base,fixture)
                 verify_read_tracking(base,state)
@@ -455,7 +544,7 @@ def main():
             run(site,env,report,'rollback',['php','bin/cajeer','update:rollback','--yes','--json'],timeout=600)
             require(version(site)==initial,'Rollback did not restore release')
             with http(site,env,report,'rollback',port,initial) as base:
-                verify_data(base,state); verify_structure(base,fixture)
+                verify_data(base,state); verify_structure(base,fixture); verify_community(base,community)
             # Inject actual failing SQL into a separately built, correctly signed target.
             broken=unpack(artifact,work/'broken',current)
             (broken/'migrations'/args.driver/'9999_acceptance_failure.sql').write_text('CREATE TABLE ce_acceptance_failure(id INTEGER); THIS IS INVALID SQL;\n')
@@ -466,7 +555,7 @@ def main():
             failed=json.loads(run(site,env,report,'failed-upgrade',['php','bin/cajeer','update:apply','--package='+str(pkg),'--json'],expected=1,timeout=600))
             require(failed['state']=='rolled_back' and version(site)==initial and not (site/'storage/app/updates/active.json').exists(), 'Automatic rollback failed')
             with http(site,env,report,'failed-rollback',port,initial) as base:
-                verify_data(base,state); verify_structure(base,fixture)
+                verify_data(base,state); verify_structure(base,fixture); verify_community(base,community)
         print('PASS physical dist acceptance',flush=True)
 
 

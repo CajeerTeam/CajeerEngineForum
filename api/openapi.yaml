@@ -29470,6 +29470,11 @@
                           "minimum": 0,
                           "description": "Unread private messages in unmuted active memberships."
                         },
+                        "conversation_total_unread": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "description": "All unread private messages, including muted conversations."
+                        },
                         "conversations": {
                           "type": "array",
                           "items": {
