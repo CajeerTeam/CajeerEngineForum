@@ -147,6 +147,36 @@ final class Operations {
     ),
     'bodyRequired' => false,
   ),
+  'delete_Forum_deleteProfileField' => 
+  array (
+    'method' => 'DELETE',
+    'path' => '/forum/profile-fields/{id}',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
+  'delete_Forum_deleteProfileImage' => 
+  array (
+    'method' => 'DELETE',
+    'path' => '/forum/account/images/{kind}',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'kind',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
   'delete_MediaDelete' => 
   array (
     'method' => 'DELETE',
@@ -696,6 +726,42 @@ final class Operations {
     ),
     'bodyRequired' => false,
   ),
+  'get_Forum_members' => 
+  array (
+    'method' => 'GET',
+    'path' => '/forum/members',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'q',
+        'in' => 'query',
+        'required' => false,
+      ),
+      1 => 
+      array (
+        'name' => 'sort',
+        'in' => 'query',
+        'required' => false,
+      ),
+      2 => 
+      array (
+        'name' => 'page',
+        'in' => 'query',
+        'required' => false,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
+  'get_Forum_ownProfile' => 
+  array (
+    'method' => 'GET',
+    'path' => '/forum/account/profile',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => false,
+  ),
   'get_Forum_permissionInspector' => 
   array (
     'method' => 'GET',
@@ -740,6 +806,36 @@ final class Operations {
         'name' => 'page',
         'in' => 'query',
         'required' => false,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
+  'get_Forum_profileFields' => 
+  array (
+    'method' => 'GET',
+    'path' => '/forum/profile-fields',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => false,
+  ),
+  'get_Forum_profileImage' => 
+  array (
+    'method' => 'GET',
+    'path' => '/forum/members/{id}/images/{kind}',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+      1 => 
+      array (
+        'name' => 'kind',
+        'in' => 'path',
+        'required' => true,
       ),
     ),
     'bodyRequired' => false,
@@ -1518,6 +1614,24 @@ final class Operations {
     ),
     'bodyRequired' => true,
   ),
+  'patch_Forum_updatePreferences' => 
+  array (
+    'method' => 'PATCH',
+    'path' => '/forum/account/preferences',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => true,
+  ),
+  'patch_Forum_updateProfile' => 
+  array (
+    'method' => 'PATCH',
+    'path' => '/forum/account/profile',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => true,
+  ),
   'patch_Update' => 
   array (
     'method' => 'PATCH',
@@ -1992,6 +2106,15 @@ final class Operations {
     ),
     'bodyRequired' => true,
   ),
+  'post_Forum_createProfileField' => 
+  array (
+    'method' => 'POST',
+    'path' => '/forum/profile-fields',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => true,
+  ),
   'post_Forum_createThread' => 
   array (
     'method' => 'POST',
@@ -2026,6 +2149,21 @@ final class Operations {
   array (
     'method' => 'POST',
     'path' => '/forum/threads/{id}/moderate',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => true,
+  ),
+  'post_Forum_moderateProfile' => 
+  array (
+    'method' => 'POST',
+    'path' => '/forum/members/{id}/moderate-profile',
     'parameters' => 
     array (
       0 => 
@@ -2532,10 +2670,40 @@ final class Operations {
     ),
     'bodyRequired' => true,
   ),
+  'put_Forum_setProfileImage' => 
+  array (
+    'method' => 'PUT',
+    'path' => '/forum/account/images/{kind}',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'kind',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => true,
+  ),
   'put_Forum_threadMetadata' => 
   array (
     'method' => 'PUT',
     'path' => '/forum/threads/{id}/metadata',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => true,
+  ),
+  'put_Forum_updateProfileField' => 
+  array (
+    'method' => 'PUT',
+    'path' => '/forum/profile-fields/{id}',
     'parameters' => 
     array (
       0 => 

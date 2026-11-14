@@ -20,6 +20,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
+import zlib
 import xml.etree.ElementTree as ET
 from contextlib import contextmanager
 
@@ -31,6 +32,11 @@ ADMIN = 'admin@example.test'
 ADMIN_PASSWORD = 'AdminPass12345!'
 XSS = '<img src=x onerror="window.forumXss=1"><script>window.forumXss=1</script>'
 
+
+def profile_png():
+    def chunk(kind,data):
+        return struct.pack('>I',len(data))+kind+data+struct.pack('>I',zlib.crc32(kind+data)&0xffffffff)
+    return b'\x89PNG\r\n\x1a\n'+chunk(b'IHDR',struct.pack('>IIBBBBB',2,2,8,2,0,0,0))+chunk(b'IDAT',zlib.compress(b'\0'+b'\xff\0\0'*2+b'\0'+b'\0\xff\0'*2))+chunk(b'IEND',b'')
 
 def unique_email():
     return 'forum-' + uuid.uuid4().hex + '@example.test'
@@ -504,7 +510,83 @@ class NetworkTests(unittest.TestCase):
         c.call('DELETE',f'/forum/boards/{dest}',200,token=admin)
         c.call('DELETE',f'/forum/categories/{category}',200,token=admin)
 
-    def test_07_rate_limit(self):
+    def test_07_member_profiles(self):
+        c=Client(self.base)
+        admin=c.login(ADMIN,ADMIN_PASSWORD)[0]['data']['access_token']
+        email,member,token=self.activated(c)
+        _,other,foreign=self.activated(c)
+        profile='/forum/members/'+member
+        own='/forum/account/profile'
+        prefs='/forum/account/preferences'
+        field=c.call('POST','/forum/profile-fields',201,{'label':'Favorite language','visibility':'public','position':1},token=admin)['id']
+        private=c.call('POST','/forum/profile-fields',201,{'label':'Private field','visibility':'private','position':2},token=admin)['id']
+        c.call('POST','/forum/profile-fields',403,{'label':'Denied','visibility':'public'},token=token)
+        c.call('PATCH',own,401,{'bio':'unauthorized'})
+        c.call('PATCH',own,422,{'website':'javascript:alert(1)'},token=token)
+        c.call('PATCH',own,422,{'bio':'unchanged','fields':[{'id':str(uuid.uuid4()),'value':'invalid'}]},token=token)
+        self.assertEqual('',c.call('GET',own,token=token)['profile']['bio'])
+        label='ProfileTest-'+uuid.uuid4().hex[:12]
+        data={'display_name':label,'bio':XSS,'location':'Berlin','website':'https://example.org','signature':'Test signature','fields':[{'id':field,'value':'PHP'},{'id':private,'value':'secret marker'}]}
+        c.call('PATCH',own,200,data,token=token)
+        self.assertEqual(label,c.call('GET',profile)['member']['name'])
+        self.assertEqual(['PHP'],[v['field_value'] for v in c.call('GET',profile)['member']['fields']])
+        self.assertEqual(2,len(c.call('GET',own,token=token)['values']))
+        self.assertNotIn('secret marker',json.dumps(c.call('GET',profile,token=foreign)))
+        self.assertIn(member,[m['id'] for m in c.call('GET','/forum/members?q='+label)])
+        c.call('PUT','/forum/account/images/avatar',422,{'data':base64.b64encode(b'<svg onload="alert(1)"/>').decode()},token=token)
+        image=base64.b64encode(profile_png()).decode()
+        c.call('PUT','/forum/account/images/avatar',200,{'data':image},token=token)
+        c.call('PUT','/forum/account/images/cover',200,{'data':image},token=token)
+        avatar=c.call('GET',profile)['member']['avatar_url']
+        def image_status(client,status,bearer=None):
+            req=urllib.request.Request(self.base+avatar,headers={'Authorization':'Bearer '+bearer} if bearer else {})
+            try: response=client.opener.open(req,timeout=10)
+            except urllib.error.HTTPError as err: response=err
+            with response:
+                self.assertEqual(status,response.status)
+                self.assertIn('no-store',response.headers['Cache-Control'])
+                if status==200:
+                    self.assertEqual('image/jpeg',response.headers.get_content_type())
+                    self.assertTrue(response.read().startswith(b'\xff\xd8'))
+        image_status(c,200)
+        board=c.call('GET','/forum')['boards'][0]['id']
+        thread=c.call('POST',f'/forum/boards/{board}/threads',201,{'title':'Profile privacy topic','body':'Public content'},token=token)['id']
+        url='/forum/threads/'+thread
+        self.assertEqual('Test signature',c.call('GET',url)['posts'][0]['signature'])
+        c.call('PATCH',prefs,200,{'show_signatures':False},token=foreign)
+        self.assertEqual('',c.call('GET',url,token=foreign)['posts'][0]['signature'])
+        c.call('PATCH',prefs,200,{'profile_visibility':'members','activity_visibility':'private','theme':'light','locale':'en-US','timezone':'Europe/Berlin','show_groups':True},token=token)
+        c.call('GET',profile,404)
+        self.assertEqual([],c.call('GET','/forum/members?q='+label))
+        image_status(c,404)
+        image_status(c,200,foreign)
+        self.assertEqual([],c.call('GET',profile,token=foreign)['threads'])
+        self.assertIn(thread,[t['id'] for t in c.call('GET',profile,token=token)['threads']])
+        c.call('PATCH',prefs,200,{'profile_visibility':'private'},token=token)
+        c.call('GET',profile,404,token=foreign)
+        image_status(c,404,foreign)
+        image_status(c,200,token)
+        browser=Client(self.base)
+        response,_=browser.login(email,browser=True)
+        csrf=response['data']['csrf_token']
+        browser.call('PATCH',own,403,{'bio':'CSRF attempt'})
+        browser.call('PATCH',own,200,{'bio':'Cookie authenticated'},headers={'X-CSRF-Token':csrf})
+        image_status(browser,200)
+        self.assertEqual('Public content',c.call('GET',url)['posts'][0]['body'])
+        self.assertEqual('',c.call('GET',url)['posts'][0]['signature'])
+        c.call('POST',profile+'/moderate-profile',403,{'field':'bio'},token=foreign)
+        c.call('POST',profile+'/moderate-profile',200,{'field':'bio'},token=admin)
+        self.assertEqual('',c.call('GET',own,token=token)['profile']['bio'])
+        c.call('DELETE','/forum/account/images/avatar',200,token=token)
+        image_status(c,404,token)
+        c.call('PUT','/forum/profile-fields/'+field,200,{'label':'Language','visibility':'members','position':1},token=admin)
+        c.call('DELETE','/forum/profile-fields/'+private,200,token=admin)
+        self.assertEqual([field],[v['id'] for v in c.call('GET',own,token=token)['values']])
+        self.assertEqual('',c.call('GET','/forum/members/'+other,token=foreign)['member']['bio'])
+        c.call('DELETE','/forum/profile-fields/'+field,200,token=admin)
+        c.call('DELETE','/forum/account/images/cover',200,token=token)
+
+    def test_08_rate_limit(self):
         # Run last: exhaust the real IP auth bucket without guessing credentials.
         c = Client(self.base)
         _, headers = c.request('GET', '/auth/me', 401)
@@ -554,6 +636,18 @@ class BrowserTests(unittest.TestCase):
                 page.goto(url); fill('password', PASSWORD); click('Подтвердить'); heading('Email подтверждён')
                 login(email, PASSWORD)
                 expect(page.locator('#session')).to_contain_text('Browser member')
+                page.goto(self.base+'/forum/account/profile'); heading('Профиль и настройки')
+                fill('bio', XSS); fill('signature','Browser signature'); click('Сохранить профиль')
+                expect(page.locator('#notice')).to_contain_text('Профиль сохранён')
+                page.locator('#app input[type=file]').first.set_input_files({'name':'avatar.png','mimeType':'image/png','buffer':profile_png()})
+                click('Загрузить аватар'); expect(page.locator('#app img.profile-avatar')).to_be_visible()
+                page.locator('#app [name=theme]').select_option('light'); click('Сохранить настройки')
+                expect(page.locator('html')).to_have_attribute('data-theme','light')
+                page.goto(self.base+'/forum/members?q=Browser+member'); heading('Участники')
+                page.get_by_role('link',name='Browser member',exact=True).click()
+                expect(page.locator('.profile-text')).to_have_text(XSS)
+                self.assertEqual(0,page.locator('.profile-text img,.profile-text script').count())
+                page.goto(self.base+'/forum'); heading('Разделы форума')
                 page.get_by_role('link', name='Test board', exact=True).click()
                 fill('title', 'Browser regression topic'); fill('body', XSS); click('Создать тему')
                 heading('Browser regression topic')

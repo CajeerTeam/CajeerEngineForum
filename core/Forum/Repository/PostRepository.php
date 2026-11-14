@@ -5,7 +5,20 @@ namespace CajeerEngine\Forum\Repository;
 
 final readonly class PostRepository extends Repository
 {
-    public function inThread(string $id, int $offset): array { return $this->rows('SELECT p.*,u.name AS author,(SELECT COUNT(*) FROM ce_forum_reactions a WHERE a.post_id=p.id) AS likes FROM ce_forum_posts p LEFT JOIN ce_users u ON u.id=p.author_id WHERE p.thread_id=? ORDER BY p.ordinal LIMIT 25 OFFSET '.$offset, [$id]); }
+    public function inThread(string $id, int $offset,string $viewer=''): array
+    {
+        $rows=$this->rows("SELECT p.*,u.name AS author,u.status AS author_status, m.display_name,m.signature,COALESCE(pref.profile_visibility,'public') AS profile_visibility,CASE WHEN img.user_id IS NULL THEN 0 ELSE 1 END AS has_avatar,(SELECT COUNT(*) FROM ce_forum_reactions a WHERE a.post_id=p.id) AS likes FROM ce_forum_posts p LEFT JOIN ce_users u ON u.id=p.author_id LEFT JOIN ce_forum_member_profiles m ON m.user_id=u.id LEFT JOIN ce_forum_member_preferences pref ON pref.user_id=u.id LEFT JOIN ce_forum_profile_images img ON img.user_id=u.id AND img.kind='avatar' WHERE p.thread_id=? ORDER BY p.ordinal LIMIT 25 OFFSET ".$offset,[$id]);
+        $show=$viewer===''|| (int)(new ProfileRepository($this->db))->preferences($viewer)['show_signatures']===1;
+        foreach($rows as &$row){
+            $visible=$row['author_status']==='active' && \CajeerEngine\Forum\Service\MemberProfileService::visible($row['profile_visibility'],$viewer,(string)$row['author_id']);
+            $row['author_profile_visible']=$visible;
+            if($visible && $row['display_name'])$row['author']=$row['display_name'];
+            $row['signature']=$visible&&$show?($row['signature']??''):'';
+            $row['avatar_url']=$visible&&(int)$row['has_avatar']===1?'/api/v1/forum/members/'.$row['author_id'].'/images/avatar':null;
+            unset($row['author_status'],$row['display_name'],$row['profile_visibility'],$row['has_avatar']);
+        }unset($row);
+        return $rows;
+    }
     public function findForWrite(string $id): ?array
     {
         if (!$this->db->connection()->inTransaction()) throw new \LogicException('Forum post lock requires a transaction');

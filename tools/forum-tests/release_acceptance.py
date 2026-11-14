@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Physical dist acceptance. Uses disposable local databases only; no production secrets."""
 import argparse
+import base64
 from contextlib import contextmanager
 import json
 import os
@@ -15,7 +16,7 @@ import urllib.error
 import urllib.request
 import zipfile
 
-from run import ROOT, HERE, Client, ADMIN, ADMIN_PASSWORD, PASSWORD, unique_email, mail_link
+from run import ROOT, HERE, Client, ADMIN, ADMIN_PASSWORD, PASSWORD, unique_email, mail_link, profile_png
 
 
 def require(condition, message):
@@ -104,7 +105,7 @@ def install(site, env, report, label, port, driver):
     result = json.loads(run(site, env, report, label+'-install', args))
     require(result['ok'] and result['final']['ok'], 'Install not ready')
     # Explicit local cache makes baseline and current installations reproducible.
-    code = r'require "vendor/autoload.php"; (new CajeerEngine\Installer\InstallerEnvironment(".env"))->write(["CACHE_DRIVER"=>"file", "FORUM_REGISTRATION"=>"false", "FORUM_REQUIRE_EMAIL_VERIFICATION"=>"true", "FORUM_SMTP_HOST"=>"127.0.0.1", "FORUM_SMTP_PORT"=>"1025", "FORUM_SMTP_SECURITY"=>"plain", "FORUM_SMTP_FROM"=>"forum@example.test", "FORUM_SMTP_USERNAME"=>"", "FORUM_SMTP_PASSWORD"=>"", "RATE_LIMIT_AUTH"=>"80"], ".env.example");'
+    code = r'require "vendor/autoload.php"; (new CajeerEngine\Installer\InstallerEnvironment(".env"))->write(["CACHE_DRIVER"=>"file", "FORUM_REGISTRATION"=>"false", "FORUM_REQUIRE_EMAIL_VERIFICATION"=>"true", "FORUM_SMTP_HOST"=>"127.0.0.1", "FORUM_SMTP_PORT"=>"1025", "FORUM_SMTP_SECURITY"=>"plain", "FORUM_SMTP_FROM"=>"forum@example.test", "FORUM_SMTP_USERNAME"=>"", "FORUM_SMTP_PASSWORD"=>"", "RATE_LIMIT_AUTH"=>"80", "RATE_LIMIT_GLOBAL"=>"1000"], ".env.example");'
     run(site, env, report, label+'-configure', ['php', '-r', code])
     ready = json.loads(run(site, env, report, label+'-install-check', ['php','bin/cajeer','install:check','--json']))
     require(ready['configured_ready'], 'Install check not ready')
@@ -180,7 +181,7 @@ def verify_navigation(base,state):
 
 
 def seed_structure(base, state):
-    """Create real 0.2.5 structure before updating, not just after the upgrade."""
+    """Create real 0.3.0 structure before updating, not just after the upgrade."""
     admin, _, _, member = state
     c=Client(base)
     member_group=next(g['id'] for g in c.call('GET','/forum/groups',token=admin) if g['handle']=='forum-member')
@@ -242,6 +243,31 @@ def verify_structure(base, fixture):
     print('PASS private nested structure, delegated roles, ACL and discussion identities',flush=True)
 
 
+def verify_profiles(base, fixture):
+    c=Client(base); token=fixture['token']; admin=fixture['admin']; user=fixture['user']
+    own='/forum/account/profile'; public='/forum/members/'+user
+    require(c.call('GET',own,token=token)['profile']['bio']=='','Existing member profile not initialized lazily')
+    field=c.call('POST','/forum/profile-fields',201,{'label':'Release profile field','visibility':'private'},token=admin)['id']
+    c.call('PATCH',own,200,{'display_name':'Release Profile','bio':'Release bio','signature':'Release signature','fields':[{'id':field,'value':'private profile value'}]},token=token)
+    c.call('PATCH','/forum/account/preferences',200,{'profile_visibility':'public','activity_visibility':'public','timezone':'Europe/Berlin','theme':'dark'},token=token)
+    c.call('PUT','/forum/account/images/avatar',200,{'data':base64.b64encode(profile_png()).decode()},token=token)
+    result=c.call('GET',public)
+    require(result['member']['name']=='Release Profile' and result['member']['fields']==[] and fixture['target'] not in [t['id'] for t in result['threads']],'Profile or ACL leak after upgrade')
+    avatar=result['member']['avatar_url']
+    with c.opener.open(base+avatar,timeout=10) as res:
+        require(res.headers.get_content_type()=='image/jpeg' and res.read().startswith(b'\xff\xd8'),'Avatar was not reencoded')
+    c.call('PATCH','/forum/account/preferences',200,{'profile_visibility':'private'},token=token)
+    c.call('GET',public,404)
+    try:
+        c.opener.open(base+avatar,timeout=10)
+        raise RuntimeError('Private avatar exposed')
+    except urllib.error.HTTPError as err:
+        require(err.code==404,'Unexpected private avatar response')
+    require(c.call('GET',own,token=token)['values'][0]['field_value']=='private profile value','Private field lost')
+    c.call('PATCH','/forum/account/preferences',200,{'profile_visibility':'public'},token=token)
+    print('PASS profile privacy, image delivery and legacy user upgrade',flush=True)
+
+
 def verify_identity(site, env, report, base):
     code = r'require "vendor/autoload.php"; (new CajeerEngine\Installer\InstallerEnvironment(".env"))->write(["FORUM_REGISTRATION"=>"true"], ".env.example");'
     run(site, env, report, 'open-registration', ['php','-r',code])
@@ -297,7 +323,7 @@ def verify_data_integrity(site, env, report, fixture):
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--artifact',type=Path,required=True)
-    parser.add_argument('--previous',type=Path,help='Original 0.2.5 dist; enables real signed upgrade and rollback')
+    parser.add_argument('--previous',type=Path,help='Original 0.3.0 dist; enables real signed upgrade and rollback')
     parser.add_argument('--driver',choices=('sqlite','pgsql'),default='sqlite')
     parser.add_argument('--report',type=Path,required=True)
     args=parser.parse_args(); report=args.report.resolve(); report.mkdir(parents=True,exist_ok=True)
@@ -306,7 +332,7 @@ def main():
         work=Path(tmp); port=free_port()
         # With --previous use the authentic baseline for upgrade, not a relabelled current tree.
         previous=args.previous.resolve() if args.previous else None
-        initial='0.2.5' if previous else current
+        initial='0.3.0' if previous else current
         site=unpack(previous or artifact,work/'live',initial)
         install(site,env,report,'initial',port,args.driver)
         with http(site,env,report,'initial',port,initial) as base:
@@ -319,6 +345,7 @@ def main():
                 verify_identity(site,env,report,base)
                 verify_readiness(site,env,report,base)
                 verify_data_integrity(site,env,report,fixture)
+                verify_profiles(base,fixture)
         if previous:
             key=work/'backup.key'; secret=work/'release.secret'; public=work/'release.public'
             run(site,env,report,'backup-key',['php','bin/cajeer','backup:keygen','--key='+str(key)])
@@ -334,6 +361,7 @@ def main():
             with http(site,env,report,'updated',port,current) as base:
                 verify_data(base,state); verify_structure(base,fixture); verify_groups(base,state); verify_discussions(base,state); verify_navigation(base,state); verify_identity(site,env,report,base)
                 verify_data_integrity(site,env,report,fixture)
+                verify_profiles(base,fixture)
             run(site,env,report,'rollback',['php','bin/cajeer','update:rollback','--yes','--json'],timeout=600)
             require(version(site)==initial,'Rollback did not restore release')
             with http(site,env,report,'rollback',port,initial) as base:

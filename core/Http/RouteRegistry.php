@@ -10,7 +10,7 @@ final class RouteRegistry
     /** These public GET/HEAD operations optionally resolve an existing session. */
     public static function optionalAuthentication(string $name): bool
     {
-        return in_array($name,['api.v1.forum.index','api.v1.forum.board','api.v1.forum.thread','api.v1.forum.search','api.v1.forum.latest','api.v1.forum.profile'],true);
+        return in_array($name,['api.v1.forum.index','api.v1.forum.board','api.v1.forum.thread','api.v1.forum.search','api.v1.forum.latest','api.v1.forum.profile','api.v1.forum.members','api.v1.forum.profileImage'],true);
     }
 
     /** @return list<array{0:string,1:string,2:string,3:string,4:string,5:?array}> */
@@ -203,8 +203,20 @@ final class RouteRegistry
             ['GET', '/api/v1/forum/categories/{id}/permissions', 'api.v1.forum.categoryPermissions', 'forum', 'categoryPermissions', ['*']],
             ['PUT', '/api/v1/forum/categories/{id}/permissions', 'api.v1.forum.setCategoryPermissions', 'forum', 'setCategoryPermissions', ['*']],
             ['GET', '/api/v1/forum/latest', 'api.v1.forum.latest', 'forum', 'latest', null],
+            ['GET', '/api/v1/forum/members', 'api.v1.forum.members', 'forum', 'members', null],
+            ['GET', '/api/v1/forum/account/profile', 'api.v1.forum.ownProfile', 'forum', 'ownProfile', []],
+            ['PATCH', '/api/v1/forum/account/profile', 'api.v1.forum.updateProfile', 'forum', 'updateProfile', []],
+            ['PATCH', '/api/v1/forum/account/preferences', 'api.v1.forum.updatePreferences', 'forum', 'updatePreferences', []],
+            ['PUT', '/api/v1/forum/account/images/{kind}', 'api.v1.forum.setProfileImage', 'forum', 'setProfileImage', []],
+            ['DELETE', '/api/v1/forum/account/images/{kind}', 'api.v1.forum.deleteProfileImage', 'forum', 'deleteProfileImage', []],
+            ['GET', '/api/v1/forum/profile-fields', 'api.v1.forum.profileFields', 'forum', 'profileFields', ['*']],
+            ['POST', '/api/v1/forum/profile-fields', 'api.v1.forum.createProfileField', 'forum', 'createProfileField', ['*']],
+            ['PUT', '/api/v1/forum/profile-fields/{id}', 'api.v1.forum.updateProfileField', 'forum', 'updateProfileField', ['*']],
+            ['DELETE', '/api/v1/forum/profile-fields/{id}', 'api.v1.forum.deleteProfileField', 'forum', 'deleteProfileField', ['*']],
+            ['POST', '/api/v1/forum/members/{id}/moderate-profile', 'api.v1.forum.moderateProfile', 'forum', 'moderateProfile', ['*']],
             ['GET', '/api/v1/forum/members/{id}', 'api.v1.forum.profile', 'forum', 'profile', null],
             ['GET', '/forum', 'forum.home', 'forum', 'page', null],
+            ['GET', '/api/v1/forum/members/{id}/images/{kind}', 'api.v1.forum.profileImage', 'forum', 'profileImage', null],
             ['GET', '/forum/{path}', 'forum.page', 'forum', 'page', null],
             ['GET', '/', 'public.home', 'forum', 'page', null],
             ['GET', '/{path}', 'public.page.path', 'public', 'renderByPath', null],

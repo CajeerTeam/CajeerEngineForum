@@ -113,6 +113,30 @@ export const operations = {
         ],
         "bodyRequired": false
     },
+    "delete_Forum_deleteProfileField": {
+        "method": "DELETE",
+        "path": "/forum/profile-fields/{id}",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": false
+    },
+    "delete_Forum_deleteProfileImage": {
+        "method": "DELETE",
+        "path": "/forum/account/images/{kind}",
+        "parameters": [
+            {
+                "name": "kind",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": false
+    },
     "delete_MediaDelete": {
         "method": "DELETE",
         "path": "/media/{id}",
@@ -536,6 +560,34 @@ export const operations = {
         ],
         "bodyRequired": false
     },
+    "get_Forum_members": {
+        "method": "GET",
+        "path": "/forum/members",
+        "parameters": [
+            {
+                "name": "q",
+                "in": "query",
+                "required": false
+            },
+            {
+                "name": "sort",
+                "in": "query",
+                "required": false
+            },
+            {
+                "name": "page",
+                "in": "query",
+                "required": false
+            }
+        ],
+        "bodyRequired": false
+    },
+    "get_Forum_ownProfile": {
+        "method": "GET",
+        "path": "/forum/account/profile",
+        "parameters": [],
+        "bodyRequired": false
+    },
     "get_Forum_permissionInspector": {
         "method": "GET",
         "path": "/forum/permission-inspector",
@@ -571,6 +623,29 @@ export const operations = {
                 "name": "page",
                 "in": "query",
                 "required": false
+            }
+        ],
+        "bodyRequired": false
+    },
+    "get_Forum_profileFields": {
+        "method": "GET",
+        "path": "/forum/profile-fields",
+        "parameters": [],
+        "bodyRequired": false
+    },
+    "get_Forum_profileImage": {
+        "method": "GET",
+        "path": "/forum/members/{id}/images/{kind}",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            },
+            {
+                "name": "kind",
+                "in": "path",
+                "required": true
             }
         ],
         "bodyRequired": false
@@ -1174,6 +1249,18 @@ export const operations = {
         ],
         "bodyRequired": true
     },
+    "patch_Forum_updatePreferences": {
+        "method": "PATCH",
+        "path": "/forum/account/preferences",
+        "parameters": [],
+        "bodyRequired": true
+    },
+    "patch_Forum_updateProfile": {
+        "method": "PATCH",
+        "path": "/forum/account/profile",
+        "parameters": [],
+        "bodyRequired": true
+    },
     "patch_Update": {
         "method": "PATCH",
         "path": "/media/{id}",
@@ -1525,6 +1612,12 @@ export const operations = {
         "parameters": [],
         "bodyRequired": true
     },
+    "post_Forum_createProfileField": {
+        "method": "POST",
+        "path": "/forum/profile-fields",
+        "parameters": [],
+        "bodyRequired": true
+    },
     "post_Forum_createThread": {
         "method": "POST",
         "path": "/forum/boards/{id}/threads",
@@ -1552,6 +1645,18 @@ export const operations = {
     "post_Forum_moderate": {
         "method": "POST",
         "path": "/forum/threads/{id}/moderate",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
+    },
+    "post_Forum_moderateProfile": {
+        "method": "POST",
+        "path": "/forum/members/{id}/moderate-profile",
         "parameters": [
             {
                 "name": "id",
@@ -1925,9 +2030,33 @@ export const operations = {
         ],
         "bodyRequired": true
     },
+    "put_Forum_setProfileImage": {
+        "method": "PUT",
+        "path": "/forum/account/images/{kind}",
+        "parameters": [
+            {
+                "name": "kind",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
+    },
     "put_Forum_threadMetadata": {
         "method": "PUT",
         "path": "/forum/threads/{id}/metadata",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
+    },
+    "put_Forum_updateProfileField": {
+        "method": "PUT",
+        "path": "/forum/profile-fields/{id}",
         "parameters": [
             {
                 "name": "id",

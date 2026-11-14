@@ -20,6 +20,11 @@ final readonly class ForumDatabaseCheck
             'ce_roles'=>['id','handle','permissions'],
             'ce_user_roles'=>['user_id','role_id'],
             'ce_api_tokens'=>['id','user_id','name','token_hash','scopes','expires_at','revoked_at','last_used_at'],
+            'ce_forum_member_profiles'=>['user_id','display_name','bio','location','website','signature'],
+            'ce_forum_member_preferences'=>['user_id','profile_visibility','activity_visibility','show_groups','show_signatures','theme','locale','timezone'],
+            'ce_forum_profile_images'=>['user_id','kind','image_data'],
+            'ce_forum_profile_fields'=>['id','label','visibility','position'],
+            'ce_forum_profile_field_values'=>['user_id','field_id','field_value'],
             'ce_forum_groups'=>['role_id','description'],
             'ce_forum_primary_groups'=>['user_id','role_id'],
             'ce_forum_categories'=>['id','name','description','position','visibility'],
@@ -53,7 +58,7 @@ final readonly class ForumDatabaseCheck
             'sqlite' => $pdo->query("SELECT name FROM sqlite_master WHERE type='index'")->fetchAll(\PDO::FETCH_COLUMN),
             default => $pdo->query('SELECT DISTINCT index_name FROM information_schema.statistics WHERE table_schema=DATABASE()')->fetchAll(\PDO::FETCH_COLUMN),
         };
-        $missingIndexes = array_values(array_diff(['ce_forum_tag_lookup','ce_forum_redirect_target','ce_forum_group_members','ce_forum_board_parent','ce_identity_expiry_idx','ce_forum_post_thread','ce_forum_thread_latest','ce_forum_thread_author','ce_forum_post_author','ce_forum_watch_user','ce_forum_reaction_user','ce_forum_report_post','ce_forum_report_user','ce_forum_report_resolver'],$indexes));
+        $missingIndexes = array_values(array_diff(['ce_forum_profile_field_lookup','ce_forum_tag_lookup','ce_forum_redirect_target','ce_forum_group_members','ce_forum_board_parent','ce_identity_expiry_idx','ce_forum_post_thread','ce_forum_thread_latest','ce_forum_thread_author','ce_forum_post_author','ce_forum_watch_user','ce_forum_reaction_user','ce_forum_report_post','ce_forum_report_user','ce_forum_report_resolver'],$indexes));
         try {
             if ((int)$pdo->query('SELECT COUNT(*) FROM ce_forum_tree_lock WHERE id=1')->fetchColumn()!==1) $missing[]='ce_forum_tree_lock.id=1';
             \CajeerEngine\Forum\Service\NodeService::validateTree($pdo->query('SELECT id,category_id,parent_id FROM ce_forum_boards')->fetchAll(\PDO::FETCH_ASSOC));

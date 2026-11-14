@@ -1,5 +1,10 @@
 # Changelog
 
+## Forum Edition 0.3.1 — Member Profiles
+
+- Persistent profile details, avatar and cover, signatures, custom fields, privacy, member directory and account preferences.
+- ACL-safe profile activity and private image delivery. Additive migration 0022; upstream engine version unchanged.
+
 ## Forum Edition 0.3.0 — Forum Structure Stable
 
 - Recheck account status and current role scopes inside forum ACL and administrative transactions; serialize principal changes against user-role updates.

@@ -23,8 +23,12 @@ final readonly class ThreadRepository extends Repository
         if ($thread===null || $current['thread_id']!==$thread['id']) throw new \CajeerEngine\Forum\ForumException('Сообщение перемещено. Повторите запрос.',409);
         return $thread;
     }
-    public function inBoard(string $id, int $offset): array { return $this->rows('SELECT t.*,u.name AS author,(SELECT COUNT(*) FROM ce_forum_posts p WHERE p.thread_id=t.id) AS posts FROM ce_forum_threads t LEFT JOIN ce_users u ON u.id=t.author_id WHERE t.board_id=? ORDER BY t.pinned DESC,t.updated_at DESC,t.id LIMIT 25 OFFSET '.$offset, [$id]); }
-    public function latest(int $offset, array $allowed): array { return $this->rows('SELECT t.id,t.title,t.prefix,t.updated_at,t.pinned,t.locked,u.name AS author FROM ce_forum_threads t LEFT JOIN ce_users u ON u.id=t.author_id WHERE '.$this->boardFilter('t.board_id',$allowed).' ORDER BY t.updated_at DESC,t.id LIMIT 25 OFFSET '.$offset); }
+    private const AUTHOR = "CASE WHEN u.status='active' AND (COALESCE(pref.profile_visibility,'public')='public' OR (pref.profile_visibility='members' AND ?<>'') OR u.id=?) THEN COALESCE(NULLIF(m.display_name,''),u.name) ELSE u.name END AS author";
+    private const AUTHOR_JOIN = ' LEFT JOIN ce_users u ON u.id=t.author_id LEFT JOIN ce_forum_member_profiles m ON m.user_id=u.id LEFT JOIN ce_forum_member_preferences pref ON pref.user_id=u.id ';
+    public function inBoard(string $id, int $offset,string $viewer=''): array
+    { return $this->rows('SELECT t.*,'.self::AUTHOR.',(SELECT COUNT(*) FROM ce_forum_posts p WHERE p.thread_id=t.id) AS posts FROM ce_forum_threads t'.self::AUTHOR_JOIN.'WHERE t.board_id=? ORDER BY t.pinned DESC,t.updated_at DESC,t.id LIMIT 25 OFFSET '.$offset,[$viewer,$viewer===''?null:$viewer,$id]); }
+    public function latest(int $offset,array $allowed,string $viewer=''): array
+    { return $this->rows('SELECT t.id,t.title,t.prefix,t.updated_at,t.pinned,t.locked,'.self::AUTHOR.' FROM ce_forum_threads t'.self::AUTHOR_JOIN.'WHERE '.$this->boardFilter('t.board_id',$allowed).' ORDER BY t.updated_at DESC,t.id LIMIT 25 OFFSET '.$offset,[$viewer,$viewer===''?null:$viewer]); }
     public function byAuthor(string $id, int $offset, array $allowed): array { return $this->rows('SELECT id,title,prefix,updated_at FROM ce_forum_threads WHERE author_id=? AND '.$this->boardFilter('board_id',$allowed).' ORDER BY updated_at DESC,id LIMIT 25 OFFSET '.$offset, [$id]); }
     public function search(string $term, int $offset, array $allowed, ?string $tag=null): array
     {

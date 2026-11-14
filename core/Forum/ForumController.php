@@ -45,6 +45,23 @@ final readonly class ForumController
     }); }
     public function latest(Request $r): JsonResponse { return $this->respond(fn () => $this->discussions->latest($this->offset($r),$this->reader($r))); }
     public function profile(Request $r,array $p): JsonResponse { return $this->respond(fn () => $this->discussions->profile($this->id($p),$this->offset($r),$this->reader($r))); }
+    private function body(Request $r): array { $data=$r->attributes->get('json',[]);return is_array($data)?$data:[]; }
+    public function members(Request $r): JsonResponse { return $this->respond(fn()=> $this->discussions->profiles()->directory($this->reader($r),$r->query->all()['q']??'',$this->offset($r),$r->query->all()['sort']??'name')); }
+    public function ownProfile(Request $r): JsonResponse { return $this->respond(fn()=> $this->discussions->profiles()->own($this->actor($r))); }
+    public function updateProfile(Request $r): JsonResponse { return $this->respond(fn()=> $this->discussions->profiles()->update($this->actor($r),$this->body($r))); }
+    public function updatePreferences(Request $r): JsonResponse { return $this->respond(fn()=> $this->discussions->profiles()->preferences($this->actor($r),$this->body($r))); }
+    public function setProfileImage(Request $r,array $p): JsonResponse { return $this->respond(function()use($r,$p){$data=$this->field($r,'data');if(!is_string($data)||$data==='')throw new ForumException('Требуется изображение.',422);return $this->discussions->profiles()->setImage($this->actor($r),$p['kind'],$data);}); }
+    public function deleteProfileImage(Request $r,array $p): JsonResponse { return $this->respond(fn()=> $this->discussions->profiles()->setImage($this->actor($r),$p['kind'],null)); }
+    public function profileImage(Request $r,array $p): Response {
+        $headers=['Cache-Control'=>'private, no-store','Vary'=>'Cookie, Authorization, X-API-Token','X-Content-Type-Options'=>'nosniff'];
+        try { return new Response($this->discussions->profiles()->image($this->reader($r),$this->id($p),$p['kind']),200,$headers+['Content-Type'=>'image/jpeg']); }
+        catch(ForumException $e){return new JsonResponse(['error'=>['code'=>'forum_error','message'=>$e->getMessage()]],$e->status,$headers);}
+    }
+    public function profileFields(Request $r): JsonResponse { return $this->respond(fn()=> $this->discussions->profiles()->fields($this->actor($r))); }
+    public function createProfileField(Request $r): JsonResponse { return $this->respond(fn()=> $this->discussions->profiles()->saveField($this->actor($r),null,$this->body($r)),201); }
+    public function updateProfileField(Request $r,array $p): JsonResponse { return $this->respond(fn()=> $this->discussions->profiles()->saveField($this->actor($r),$this->id($p),$this->body($r))); }
+    public function deleteProfileField(Request $r,array $p): JsonResponse { return $this->respond(fn()=> $this->discussions->profiles()->deleteField($this->actor($r),$this->id($p))); }
+    public function moderateProfile(Request $r,array $p): JsonResponse { return $this->respond(fn()=> $this->discussions->profiles()->moderate($this->actor($r),$this->id($p),$this->field($r,'field'))); }
     public function register(Request $r): JsonResponse { return $this->respond(function () use ($r) {
         $email=$this->text($r,'email',254);
         $id=$this->registration->register($email,$this->text($r,'name',60,2),V::password($this->field($r,'password')));
