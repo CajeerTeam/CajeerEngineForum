@@ -32,6 +32,9 @@ $workspace = sys_get_temp_dir() . '/ce-release-test-' . bin2hex(random_bytes(8))
 mkdir($workspace, 0700);
 try {
     $builder = new ReleaseBuilder($root);
+    foreach (['tools/forum-identity-regression.php','tools/forum-tests/run.py','tools/forum-tests/install.php','tools/forum-tests/router.php','tools/forum-tests/requirements.txt','tests/Forum/ForumDatabaseTest.php'] as $testFile) {
+        ensure(in_array($testFile,$builder->plan('source')['files'],true) && !in_array($testFile,$builder->plan('dist')['files'],true),'source-only regression: '.$testFile);
+    }
     $one = $builder->build(false, 'source', $workspace . '/one');
     $two = $builder->build(false, 'source', $workspace . '/two');
     ensure($one['sha256'] === $two['sha256'], 'independent source ZIPs are byte-identical');

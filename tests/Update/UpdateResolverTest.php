@@ -14,7 +14,9 @@ final class UpdateResolverTest extends TestCase
     {
         $root = dirname(__DIR__, 2);
         $config = new ConfigRepository($root);
-        $diag = (new UpdateResolver($config->get('updates', []), $root))->diagnostics('1.0.4');
+        $updates = $config->get('updates', []);
+        $updates['core']['releases_url'] = $root.'/tests/nonexistent-release-catalog.json';
+        $diag = (new UpdateResolver($updates, $root))->diagnostics('1.0.4');
         self::assertTrue($diag['metadata_ready']);
         self::assertGreaterThanOrEqual(1, $diag['release_count']);
     }

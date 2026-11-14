@@ -1,6 +1,6 @@
 # CajeerEngine Forum Edition
 
-**Forum Edition 0.1.3 — development preview**, built on CajeerEngine 1.3.0.
+**Forum Edition 0.1.4 — development preview**, built on CajeerEngine 1.3.0.
 
 Self-hosted forum platform by CajeerTeam. PHP 8.4.1+, CajeerEngine kernel, Symfony Components, REST API, Apache-2.0.
 

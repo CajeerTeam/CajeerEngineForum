@@ -1,5 +1,5 @@
 <?php
-/** Actual service/SQLite transaction and multi-process regression. No HTTP mocks. */
+/** Actual service/SQLite and PostgreSQL transaction and multi-process regression. No HTTP mocks. */
 declare(strict_types=1);
 
 use CajeerEngine\Database\{DatabaseManager, MigrationRunner};
@@ -38,9 +38,17 @@ if (($argv[1]??'')==='worker') {
 }
 $tmp=sys_get_temp_dir().'/forum-core-'.bin2hex(random_bytes(8)); mkdir($tmp,0700);
 try {
-    foreach(['APP_ENV=testing','DB_DRIVER=sqlite','SQLITE_DATABASE='.$tmp.'/forum.sqlite','DB_SQLITE_BUSY_TIMEOUT_MS=15000','DB_SQLITE_WAL=true','FORUM_REGISTRATION=true','FORUM_REQUIRE_EMAIL_VERIFICATION=false','PASSWORD_ARGON2_MEMORY=8192','PASSWORD_ARGON2_TIME=2'] as $env) putenv($env);
+    $driver=getenv('FORUM_TEST_DRIVER')==='pgsql'?'pgsql':'sqlite';
+    if($driver==='pgsql'){
+        $name=(string)getenv('FORUM_TEST_CORE_DB');
+        if(!preg_match('/^forum_test_[a-z0-9_]+$/D',$name)||getenv('DB_HOST')!=='127.0.0.1')throw new RuntimeException('Dedicated loopback forum_test_* database required');
+        putenv('DB_DATABASE='.$name);
+    }
+    foreach(['APP_ENV=testing','DB_DRIVER='.$driver,'SQLITE_DATABASE='.$tmp.'/forum.sqlite','DB_SQLITE_BUSY_TIMEOUT_MS=15000','DB_SQLITE_WAL=true','FORUM_REGISTRATION=true','FORUM_REQUIRE_EMAIL_VERIFICATION=false','PASSWORD_ARGON2_MEMORY=8192','PASSWORD_ARGON2_TIME=2'] as $env) putenv($env);
     [$db,$discussion,$engagement,$moderation,$registration]=services($root);
-    $pdo=$db->connection();$runner=new MigrationRunner($pdo,$root.'/migrations');$runner->run('sqlite');
+    $pdo=$db->connection();$runner=new MigrationRunner($pdo,$root.'/migrations');
+    if($driver==='pgsql' && (int)$pdo->query("SELECT COUNT(*) FROM pg_catalog.pg_tables WHERE schemaname='public'")->fetchColumn()!==0)throw new RuntimeException('Disposable database must be empty');
+    $runner->run($driver);
     (new RoleRepository($db))->seedDefaults();
     $member=$registration->register('first@example.test','Member','ForumPass12345');
     $admin=(new UserRepository($db,new RoleRepository($db),new PasswordHasher(new ConfigRepository($root))))->createAdmin('admin@example.test','Admin','AdminPass12345');
@@ -59,13 +67,19 @@ try {
     $engagement->reaction($m,$p,true);$engagement->reaction($m,$p,true);$engagement->watch($m,$t,true);$engagement->watch($m,$t,true);
     check((int)$pdo->query('SELECT COUNT(*) FROM ce_forum_reactions')->fetchColumn()===1 && count($engagement->watches($m,0))===1,'idempotent reaction and watch');
     // Failure injection at audit write: both thread and first post must roll back.
-    $pdo->exec("CREATE TRIGGER forum_test_abort BEFORE INSERT ON ce_audit_log WHEN NEW.event='forum.thread.create' BEGIN SELECT RAISE(ABORT,'test audit failure'); END");
+    $inject=function(string $event)use($pdo,$driver):void{
+        if(!in_array($event,['forum.thread.create','forum.post.reply'],true))throw new LogicException('Invalid failure event');
+        if($driver==='pgsql')$pdo->exec("ALTER TABLE ce_audit_log ADD CONSTRAINT forum_test_abort CHECK (event <> '$event') NOT VALID");
+        else $pdo->exec("CREATE TRIGGER forum_test_abort BEFORE INSERT ON ce_audit_log WHEN NEW.event='$event' BEGIN SELECT RAISE(ABORT,'test audit failure'); END");
+    };
+    $remove=function()use($pdo,$driver):void{$pdo->exec($driver==='pgsql'?'ALTER TABLE ce_audit_log DROP CONSTRAINT forum_test_abort':'DROP TRIGGER forum_test_abort');};
+    $inject('forum.thread.create');
     try { $discussion->createThread($m,$board,'Rollback topic','Must not persist'); throw new LogicException('Expected audit failure'); } catch (PDOException) {}
-    $pdo->exec('DROP TRIGGER forum_test_abort');
+    $remove();
     check((int)$pdo->query('SELECT COUNT(*) FROM ce_forum_threads')->fetchColumn()===1 && (int)$pdo->query('SELECT COUNT(*) FROM ce_forum_posts')->fetchColumn()===1,'audit failure rolls back thread and first post');
-    $pdo->exec("CREATE TRIGGER forum_test_abort BEFORE INSERT ON ce_audit_log WHEN NEW.event='forum.post.reply' BEGIN SELECT RAISE(ABORT,'test audit failure'); END");
+    $inject('forum.post.reply');
     try { $discussion->reply($m,$t,'Rollback reply'); throw new LogicException('Expected audit failure'); } catch (PDOException) {}
-    $pdo->exec('DROP TRIGGER forum_test_abort');
+    $remove();
     check(count($discussion->thread($t,0)['posts'])===1,'reply rollback preserves ordinal');
     $workers=[]; $barrier=$tmp.'/go';
     for($i=0;$i<4;$i++) {
@@ -81,11 +95,11 @@ try {
     expectStatus(403,fn()=>$discussion->edit($m,$p,'Locked'));
     $discussion->edit($a,$p,'Moderator edit');
     $moderation->moderate($a,$t,'unlock');
-    check($runner->run('sqlite')['applied']===0 && $discussion->thread($t,0)['posts'][0]['body']==='Moderator edit','existing migration ledger and data unchanged');
+    check($runner->run($driver)['applied']===0 && $discussion->thread($t,0)['posts'][0]['body']==='Moderator edit','existing migration ledger and data unchanged');
     $moderation->moderate($a,$t,'delete');
     foreach(['ce_forum_posts','ce_forum_reactions','ce_forum_watches','ce_forum_reports'] as $table) check((int)$pdo->query('SELECT COUNT(*) FROM '.$table)->fetchColumn()===0,'cascade '.$table);
-    check($pdo->query('PRAGMA foreign_key_check')->fetchAll()===[],'foreign keys intact');
-    $v=new ForumVersion($root);check($v->current()==='0.1.3' && $v->upstream()==='1.3.0','independent product/core versions');
+    if($driver==='sqlite')check($pdo->query('PRAGMA foreign_key_check')->fetchAll()===[],'foreign keys intact');
+    $v=new ForumVersion($root);check($v->current()==='0.1.4' && $v->upstream()==='1.3.0','independent product/core versions');
     echo "Forum core regression passed\n";
 } finally {
     unset($db,$discussion,$engagement,$moderation,$registration,$pdo,$runner);

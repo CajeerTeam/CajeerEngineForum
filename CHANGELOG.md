@@ -1,5 +1,13 @@
 # Changelog
 
+## Forum Edition 0.1.4 — Forum Test Infrastructure
+
+- Add executable PHPUnit validation, access, identity and database tests.
+- Run isolated installed forum over real HTTP, including SMTP, session revocation, CSRF, RBAC and rate limits.
+- Run Playwright Chromium and Firefox against real pages; collect JUnit and failure diagnostics.
+- Run PostgreSQL 17/18 with dedicated databases and multi-process forum regression.
+- Include source-only test tooling in release packages; no schema changes.
+
 ## Forum Edition 0.1.3 — Forum Identity & Access
 
 - Email verification for new registrations, SMTP delivery, one-time hashed tokens and password recovery.

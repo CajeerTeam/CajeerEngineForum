@@ -5,9 +5,13 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+concurrency:
+  group: forum-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   test:
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     services:
       mailpit:
         image: axllent/mailpit:v1.27
@@ -21,23 +25,48 @@ jobs:
           php-version: '8.4'
           extensions: mbstring, pdo_sqlite, sodium, zip, dom, xml, xmlwriter, curl, openssl
           tools: composer:v2
+          coverage: xdebug
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
       - run: composer validate --no-check-publish
       - run: composer install --prefer-dist --no-interaction
+      - name: PHP syntax and static analysis
+        run: |
+          find core tests tools -name '*.php' -print0 | xargs -0 -n1 php -l
+          vendor/bin/phpstan analyse core/Forum --level=3 --no-progress
+      - name: PHPUnit and forum coverage
+        run: |
+          mkdir -p storage/tmp/forum-ci
+          vendor/bin/phpunit --log-junit storage/tmp/forum-ci/phpunit.xml --fail-on-warning --fail-on-risky --fail-on-deprecation
+          XDEBUG_MODE=coverage vendor/bin/phpunit tests/Forum --coverage-filter core/Forum --coverage-clover storage/tmp/forum-ci/coverage.xml
       - run: php tools/generate-api-sdk.php --check
       - run: php bin/cajeer api:lint --strict --json
       - run: node --check public/forum-assets/forum.js
       - run: php tools/forum-regression.php
       - run: php tools/forum-identity-regression.php
       - run: php tools/forum-core-regression.php
+      - run: php tools/forum-installer-regression.php
+      - name: Network API and security regression (SQLite)
+        run: python tools/forum-tests/run.py --suite api --report storage/tmp/forum-ci/network
+      - run: php tools/security-regression.php
       - run: php tools/release-regression.php
       - run: php tools/update-regression.php
       - run: php tools/build-release.php --dry-run --all --json
-      - run: php tools/forum-installer-regression.php
+      - name: Upload test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: forum-sqlite-evidence
+          path: storage/tmp/forum-ci/
+          if-no-files-found: warn
+          retention-days: 7
   postgres:
     runs-on: ubuntu-24.04
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
@@ -66,6 +95,9 @@ jobs:
       FORUM_TEST_INSTALL_DB: forum_install
       FORUM_TEST_UPGRADE_DB: forum_upgrade
       FORUM_TEST_IDENTITY_DB: forum_identity
+      FORUM_TEST_PHPUNIT_DB: forum_test_phpunit
+      FORUM_TEST_CORE_DB: forum_test_core
+      FORUM_TEST_NETWORK_DB: forum_test_network
       DB_HOST: 127.0.0.1
       DB_PORT: '5432'
       DB_USERNAME: forum_ci
@@ -79,10 +111,78 @@ jobs:
           php-version: '8.4'
           extensions: mbstring, pdo_pgsql, pdo_sqlite, sodium, zip, dom, xml, xmlwriter, curl, openssl
           tools: composer:v2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
       - run: composer install --prefer-dist --no-interaction
       - name: Prepare isolated databases
         run: |
-          php -r '$p=new PDO("pgsql:host=127.0.0.1;port=5432;dbname=forum_install",getenv("DB_USERNAME"),getenv("DB_PASSWORD")); $p->exec("CREATE DATABASE forum_upgrade"); $p->exec("CREATE DATABASE forum_http"); $p->exec("CREATE DATABASE forum_identity");'
+          php -r '$p=new PDO("pgsql:host=127.0.0.1;port=5432;dbname=forum_install",getenv("DB_USERNAME"),getenv("DB_PASSWORD")); foreach (["forum_upgrade","forum_http","forum_identity","forum_test_phpunit","forum_test_core","forum_test_network"] as $db) $p->exec("CREATE DATABASE ".$db);'
+      - name: PHPUnit PostgreSQL integration
+        run: |
+          mkdir -p storage/tmp/forum-ci
+          vendor/bin/phpunit tests/Forum --log-junit storage/tmp/forum-ci/phpunit.xml --fail-on-warning --fail-on-risky --fail-on-deprecation
       - run: php tools/forum-installer-regression.php
       - run: php tools/forum-regression.php
       - run: php tools/forum-identity-regression.php
+      - run: php tools/forum-core-regression.php
+      - name: Network API and security regression (PostgreSQL)
+        run: python tools/forum-tests/run.py --suite api --report storage/tmp/forum-ci/network
+      - name: Upload PostgreSQL evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: forum-postgres-${{ matrix.postgres }}-evidence
+          path: storage/tmp/forum-ci/
+          if-no-files-found: warn
+          retention-days: 7
+  browser:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, firefox]
+    services:
+      mailpit:
+        image: axllent/mailpit:v1.27
+        ports:
+          - 1025:1025
+          - 8025:8025
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: mbstring, pdo_sqlite, sodium, zip, dom, xml, xmlwriter, curl, openssl
+          tools: composer:v2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: composer install --prefer-dist --no-interaction
+      - run: python -m pip install -r tools/forum-tests/requirements.txt
+      - run: python -m playwright install --with-deps ${{ matrix.browser }}
+      - name: Real browser E2E with SMTP
+        run: python tools/forum-tests/run.py --suite browser --browser ${{ matrix.browser }} --report storage/tmp/forum-ci/browser
+      - name: Upload browser evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: forum-${{ matrix.browser }}-evidence
+          path: storage/tmp/forum-ci/
+          if-no-files-found: warn
+          retention-days: 7
+  forum-required:
+    runs-on: ubuntu-24.04
+    if: always()
+    needs: [test, postgres, browser]
+    steps:
+      - name: Require every test matrix to pass
+        env:
+          SQLITE: ${{ needs.test.result }}
+          POSTGRES: ${{ needs.postgres.result }}
+          BROWSER: ${{ needs.browser.result }}
+        run: |
+          test "$SQLITE" = success
+          test "$POSTGRES" = success
+          test "$BROWSER" = success

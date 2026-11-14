@@ -38,7 +38,7 @@ The inherited `/install` and `/upgrade` front controllers are routed through `pu
 
 ## Releases
 
-`VERSION` and `release.json.version` identify the upstream engine (1.3.0); `release.json.edition_version` is 0.1.3. `ForumVersion` validates both identities. Source/dist artifact names, manifest version, release tags and updater comparisons use the edition version. The signed manifest also records `upstream_version`, checked against VERSION, release metadata and the prebuilt admin manifest. The engine API/SDK compatibility version stays unchanged. Health/admin/system diagnostics expose `edition_version`; HTTP responses include `X-CajeerEngine-Forum-Version`.
+`VERSION` and `release.json.version` identify the upstream engine (1.3.0); `release.json.edition_version` is 0.1.4. `ForumVersion` validates both identities. Source/dist artifact names, manifest version, release tags and updater comparisons use the edition version. The signed manifest also records `upstream_version`, checked against VERSION, release metadata and the prebuilt admin manifest. The engine API/SDK compatibility version stays unchanged. Health/admin/system diagnostics expose `edition_version`; HTTP responses include `X-CajeerEngine-Forum-Version`.
 
 The 0.1.0 updater compared upstream engine versions. Apply the 0.1.1 changed-file archive manually to a backed-up test installation before using the new updater. Do not submit the patch ZIP to `update:apply`: it is not a signed full dist. With 0.1.1 installed, later signed releases can advance edition_version without changing upstream. Legacy forum manifests without upstream_version and ordinary CMS packages are refused by the updater. The upstream signed publication workflow is archived, not active; no production signature or deployment certification is claimed.
 
@@ -111,3 +111,28 @@ FORUM_SMTP_PASSWORD='your-provider-secret'
 Verification and reset requests use existing auth IP rate limits plus per-account mail cooldown. Production multi-instance shared rate limiting, asynchronous mail and external penetration testing are later operational work. Tests: `php tools/forum-identity-regression.php` with Mailpit at `127.0.0.1:1025` / HTTP `127.0.0.1:8025`; use a disposable Mailpit and DB. The CI tests the HTTP identity lifecycle with SQLite and PostgreSQL.
 
 Session timestamps are now written and interpreted in UTC; on a legacy installation that ran non-UTC PHP/DB time zones, revoke old sessions at upgrade to avoid ambiguous stored expiry timestamps. Login also has a per-account rate limit using the existing file-backed rate limiter.
+
+### 0.1.4 — Forum Test Infrastructure
+
+The `Forum Edition CI` workflow runs the existing engine/Forum regressions plus PHPUnit, real network HTTP and Playwright. All checks are required by the aggregate `forum-required` job. Configure that job as a required status check in the repository's branch protection/ruleset; workflow code alone cannot enforce repository settings. No new database migrations or API changes in this release.
+
+**Local commands (disposable checkout; never point tests at production):**
+
+```sh
+composer install --prefer-dist --no-interaction
+vendor/bin/phpunit --fail-on-warning --fail-on-risky --log-junit storage/tmp/forum-phpunit.xml
+vendor/bin/phpstan analyse core/Forum --level=3 --no-progress
+php tools/forum-core-regression.php
+# Local Mailpit (no real mail delivery):
+docker run --rm -p 127.0.0.1:1025:1025 -p 127.0.0.1:8025:8025 axllent/mailpit:v1.27
+# In a separate terminal:
+python tools/forum-tests/run.py --suite api --report storage/tmp/forum-ci/network
+python -m pip install -r tools/forum-tests/requirements.txt
+python -m playwright install chromium firefox
+python tools/forum-tests/run.py --suite browser --browser chromium --report storage/tmp/forum-ci/chromium
+python tools/forum-tests/run.py --suite browser --browser firefox --report storage/tmp/forum-ci/firefox
+```
+
+The network/browser runner installs a temporary source tree with the actual InstallerService, starts PHP on a random loopback port, and uses a fresh SQLite file. It never reads the checkout's `.env` or copies runtime storage; the temporary installation and PHP process are removed even on failure. Test mail goes only to the local Mailpit server. To run PostgreSQL, create a **new empty** database on a disposable local PostgreSQL 17/18 instance, e.g. `forum_test_network`. Export `FORUM_TEST_DRIVER=pgsql`, `FORUM_TEST_NETWORK_DB=forum_test_network`, `DB_HOST=127.0.0.1`, `DB_PORT`, `DB_USERNAME`, `DB_PASSWORD`, `DB_SSLMODE=disable`. The fixture refuses non-loopback hosts, other database name prefixes and nonempty public schemas. The DB is not automatically dropped; drop/recreate the disposable DB before repeating. `FORUM_TEST_CORE_DB` and `FORUM_TEST_PHPUNIT_DB` must name separate empty `forum_test_*` databases for core and PHPUnit PostgreSQL tests. The legacy installer and identity scripts retain their separate database variables; see CI for the complete setup.
+
+Network tests cover the HTTP status/error contract, pending email lifecycle via SMTP, token replay, password reset, TOTP and recovery code replay, session isolation, unauthorized edits, moderation, search injection/wildcards, cookie flags, CSRF, cascade deletion and IP rate limiting. Browser tests perform real registration, verification, discussion creation, XSS-as-text checks, replies, reactions, watches, password reset, 2FA, session revocation and administrator moderation. Existing identity regressions also exercise expired challenges. CI retains JUnit XML, PHPUnit forum coverage, installation/HTTP logs and failure screenshots/Playwright trace (synthetic users only) for seven days. Browser jobs use SQLite; HTTP and transactional regressions also run on PostgreSQL 17/18. Coverage is reported rather than equated with production certification. HTTPS/reverse-proxy behavior and MySQL/MariaDB certification are outside this release.
