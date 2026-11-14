@@ -426,7 +426,52 @@ class NetworkTests(unittest.TestCase):
         c.call('DELETE',f'/forum/groups/{default}',403,token=admin)
         self.assertNotIn(vip,[g['id'] for g in c.call('GET','/forum/groups',token=admin)])
 
-    def test_06_rate_limit(self):
+    def test_06_discussion_management(self):
+        c=Client(self.base)
+        admin=c.login(ADMIN,ADMIN_PASSWORD)[0]['data']['access_token']
+        mod_email=unique_email()
+        c.call('POST','/users',201,{'email':mod_email,'name':'Discussion moderator','password':PASSWORD,'roles':['forum-moderator']},token=admin)
+        mod=c.login(mod_email)[0]['data']['access_token']
+        board=c.call('GET','/forum')['boards'][0]['id']
+        category=c.call('POST','/forum/categories',201,{'name':'Discussion management','description':''},token=admin)['id']
+        dest=c.call('POST',f'/forum/categories/{category}/boards',201,{'name':'Destination','description':'','rules':'Posting rules for this board.'},token=admin)['id']
+        self.assertEqual('Posting rules for this board.',c.call('GET',f'/forum/boards/{dest}')['board']['rules'])
+        make=lambda title: c.call('POST',f'/forum/boards/{board}/threads',201,{'title':title,'body':'Original'},token=admin)['id']
+        source,target=make('Merge source'),make('Merge target')
+        url=lambda t:f'/forum/threads/{t}'
+        first=c.call('GET',url(source))['posts'][0]['id']
+        reply=c.call('POST',url(source)+'/posts',201,{'body':'Moved answer'},token=admin)['id']
+        c.call('PUT',f'/forum/posts/{reply}/reaction',200,{'enabled':True},token=admin)
+        c.call('PUT',url(source)+'/watch',200,{'enabled':True},token=admin)
+        c.call('PUT',url(source)+'/metadata',200,{'prefix':'Bug','tags':['PHP','php','Discussion-tag']},token=mod)
+        self.assertEqual(['discussion-tag','php'],c.call('GET',url(source))['thread']['tags'])
+        self.assertIn(source,[x['id'] for x in c.call('GET','/forum/search?tag=discussion-tag')])
+        bulk='/forum/thread-actions/bulk'
+        c.call('POST',bulk,401,{'action':'pin','thread_ids':[source]})
+        c.call('POST',bulk,200,{'action':'pin','thread_ids':[source,target]},token=mod)
+        c.call('PUT',f'/forum/boards/{dest}/permissions',200,{'visibility':'hidden','rules':[]},token=admin)
+        c.call('POST',bulk,404,{'action':'move','thread_ids':[source,target],'board_id':dest},token=mod)
+        self.assertEqual(board,c.call('GET',url(source))['thread']['board_id'])
+        c.call('POST',bulk,200,{'action':'move','thread_ids':[source],'board_id':dest},token=admin)
+        c.call('GET',url(source),404)
+        self.assertNotIn(source,[x['id'] for x in c.call('GET','/forum/search?tag=discussion-tag')])
+        c.call('POST',url(source)+'/transfer',409,{'post_ids':[first],'board_id':dest,'title':'Cannot split first'},token=admin)
+        split=c.call('POST',url(source)+'/transfer',200,{'post_ids':[reply],'board_id':dest,'title':'New split topic'},token=admin)['id']
+        self.assertEqual(reply,c.call('GET',url(split),token=admin)['first_post_id'])
+        self.assertEqual(1,int(c.call('GET',url(split),token=admin)['posts'][0]['likes']))
+        c.call('POST',url(target)+'/merge',404,{'source_ids':[source,split]},token=mod)
+        self.assertEqual(1,len(c.call('GET',url(target))['posts']))
+        c.call('POST',url(target)+'/merge',200,{'source_ids':[source,split]},token=admin)
+        self.assertEqual(target,c.call('GET',url(source),token=admin)['thread']['id'])
+        c.call('GET',url(source),404)
+        self.assertEqual([first,reply],[x['id'] for x in c.call('GET',url(target))['posts'][1:]])
+        self.assertIn(target,[x['id'] for x in c.call('GET','/forum/watches',token=admin)])
+        c.call('POST',url(target)+'/moderate',200,{'action':'delete'},token=admin)
+        c.call('GET',url(source),404,token=admin)
+        c.call('DELETE',f'/forum/boards/{dest}',200,token=admin)
+        c.call('DELETE',f'/forum/categories/{category}',200,token=admin)
+
+    def test_07_rate_limit(self):
         # Run last: exhaust the real IP auth bucket without guessing credentials.
         c = Client(self.base)
         _, headers = c.request('GET', '/auth/me', 401)
@@ -530,6 +575,22 @@ class BrowserTests(unittest.TestCase):
                     expect(admin_page.get_by_role('button', name='Отправить', exact=True)).to_have_count(0)
                     admin_page.get_by_role('button', name='Открыть', exact=True).click()
                     expect(admin_page.get_by_role('button', name='Отправить', exact=True)).to_be_visible()
+                    # Exercise real moderator UI for metadata and split; no mock requests.
+                    admin_page.get_by_role('button',name='Префикс и теги',exact=True).click()
+                    admin_page.locator('[name=prefix]').fill('Browser prefix')
+                    admin_page.locator('[name=tags]').fill('browser-tag, Browser-tag')
+                    admin_page.get_by_role('button',name='Сохранить метаданные',exact=True).click()
+                    expect(admin_page.locator('.thread-prefix')).to_have_text('Browser prefix')
+                    expect(admin_page.get_by_role('link',name='#browser-tag',exact=True)).to_be_visible()
+                    admin_page.locator('input[name=post-selection]').first.check()
+                    admin_page.get_by_role('button',name='Разделить тему',exact=True).click()
+                    admin_page.locator('[name=title]').fill('Browser split topic')
+                    admin_page.once('dialog',lambda dialog: dialog.accept())
+                    admin_page.get_by_role('button',name='Создать отдельную тему',exact=True).click()
+                    expect(admin_page.get_by_role('heading',name='Browser split topic',exact=True)).to_be_visible()
+                    expect(admin_page.locator('article .body').first).to_have_text('Browser reply')
+                    admin_page.goto(thread)
+                    expect(admin_page.locator('article')).to_have_count(1)
                     # Use the actual node-management forms, then navigate the public tree.
                     admin_page.goto(self.base + '/forum/manage')
                     group_form=admin_page.get_by_role('button',name='Создать группу',exact=True).locator('..')

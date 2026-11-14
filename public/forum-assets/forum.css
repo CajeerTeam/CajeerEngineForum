@@ -3,3 +3,5 @@
 /* Nested node navigation and administrative controls. */
 .node-tree{margin-inline-start:1rem;border-inline-start:1px solid var(--border,#64748b);padding-inline-start:.65rem}.node-tree:empty{display:none}.node-tree>.panel{margin-block:.6rem}form select{width:100%;font:inherit;padding:.5rem;border:1px solid var(--border,#64748b);border-radius:.35rem;background:var(--panel,Canvas);color:inherit}
 @media(max-width:600px){.node-tree{margin-inline-start:.2rem;padding-inline-start:.3rem}}
+
+.thread-prefix{display:inline-block;padding:.15rem .5rem;border:1px solid currentColor;border-radius:.35rem;margin-right:.5rem;font-size:.8rem;font-weight:600}.thread-tags{display:flex;flex-wrap:wrap;gap:.5rem;margin:.5rem 0}.thread-tag{border:1px solid currentColor;border-radius:1rem;padding:.15rem .65rem}.panel input[type=checkbox],.entry input[type=checkbox],.post input[type=checkbox]{width:auto;margin:.25rem .5rem;flex:none}.panel button{margin:.2rem}.panel label:has(input[type=checkbox]){display:flex;align-items:center;gap:.5rem}

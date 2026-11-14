@@ -68,7 +68,7 @@ try {
     check((int)$pdo->query('SELECT COUNT(*) FROM ce_forum_reactions')->fetchColumn()===1 && count($engagement->watches($m,0))===1,'idempotent reaction and watch');
     // Failure injection at audit write: both thread and first post must roll back.
     $inject=function(string $event)use($pdo,$driver):void{
-        if(!in_array($event,['forum.thread.create','forum.post.reply'],true))throw new LogicException('Invalid failure event');
+        if(!in_array($event,['forum.thread.create','forum.post.reply','forum.thread.merge','forum.thread.bulk'],true))throw new LogicException('Invalid failure event');
         if($driver==='pgsql')$pdo->exec("ALTER TABLE ce_audit_log ADD CONSTRAINT forum_test_abort CHECK (event <> '$event') NOT VALID");
         else $pdo->exec("CREATE TRIGGER forum_test_abort BEFORE INSERT ON ce_audit_log WHEN NEW.event='$event' BEGIN SELECT RAISE(ABORT,'test audit failure'); END");
     };
@@ -129,8 +129,76 @@ try {
     check($discussion->index()['categories'][0]['id']===$other,'category rename and reorder');
     $moderation->moderate($a,$topic,'delete');$nodes->delete($a,$nested,false);$nodes->delete($a,$child,false);$nodes->delete($a,$other,true);
     check(!in_array($other,array_column($discussion->index()['categories'],'id'),true),'empty nodes removed safely');
+    // Discussion management uses the same real transactions and audit log on both drivers.
+    $management=$discussion->management();
+    $mc=$nodes->createCategory($a,'Management regression','');
+    $dest=$nodes->createBoard($a,$mc,'Discussion destination','',null,'forum','open',null,'Respect other participants.');
+    check($discussion->board($dest,0)['board']['rules']==='Respect other participants.','board rules persisted');
+    $nodes->updateBoard($a,$dest,'Discussion destination','Updated','forum','open');
+    check($discussion->board($dest,0)['board']['rules']==='Respect other participants.','omitted board rules preserved');
+    $source=$discussion->createThread($m,$board,'Management source','First source');
+    $target=$discussion->createThread($m,$board,'Management target','First target');
+    $first=$discussion->thread($source,0)['first_post_id'];
+    $reply=$discussion->reply($m,$source,'Transferred reply');
+    $extra=$discussion->reply($m,$source,'Another transferred reply');
+    $engagement->reaction($m,$reply,true);$rid=$moderation->report($m,$reply,'Keep report');
+    $engagement->watch($m,$source,true);$engagement->watch($m,$target,true);
+    expectStatus(403,fn()=>$management->bulk($m,[$source],'move',$dest));
+    $management->metadata($a,$source,'Question',['PHP','php','Migration']);
+    $management->metadata($a,$target,'Answer',['SQLite']);
+    check($discussion->thread($source,0)['thread']['tags']===['migration','php'],'tags normalized and deduplicated');
+    check(in_array($source,array_column($discussion->search('',0,$m,'php'),'id'),true),'exact tag lookup');
+    expectStatus(422,fn()=>$management->metadata($a,$source,'',array_fill(0,11,'tag')));
+    $management->bulk($a,[$source,$target],'pin');
+    check((int)$discussion->thread($source,0)['thread']['pinned']===1 && (int)$discussion->thread($target,0)['thread']['pinned']===1,'bulk pin all');
+    expectStatus(404,fn()=>$management->bulk($a,[$source,Uuid::v4()],'unpin'));
+    check((int)$discussion->thread($source,0)['thread']['pinned']===1,'bulk failure leaves all selected topics unchanged');
+    $management->bulk($a,[$source],'move',$dest);
+    check($discussion->thread($source,0)['thread']['board_id']===$dest,'move preserves topic id');
+    expectStatus(409,fn()=>$management->transfer($a,$source,[$first],null,$dest,'Invalid split'));
+    $split=$management->transfer($a,$source,[$reply],null,$dest,'Split discussion')['id'];
+    check($discussion->thread($split,0)['first_post_id']===$reply && $discussion->thread($split,0)['thread']['author_id']===$member,'split preserves original post and author');
+    check((int)$discussion->thread($split,0)['posts'][0]['likes']===1,'split retains reactions');
+    expectStatus(409,fn()=>$management->transfer($a,$source,[$reply],$target,null,null));
+    $management->transfer($a,$source,[$extra],$split,null,null);
+    check(array_column($discussion->thread($split,0)['posts'],'id')===[$reply,$extra],'move selected replies maintains order');
+    $inject('forum.thread.merge');
+    try { $management->merge($a,$target,[$source,$split]);throw new LogicException('Expected merge audit failure'); } catch (PDOException) {}
+    $remove();
+    check($discussion->thread($source,0)['thread']['id']===$source && $discussion->thread($split,0)['first_post_id']===$reply,'failed merge rolls back posts and redirects');
+    $management->merge($a,$target,[$source,$split]);
+    $merged=$discussion->thread($target,0);
+    check(array_slice(array_column($merged['posts'],'id'),1)===[$first,$reply,$extra],'merge retains ordered post UUIDs');
+    check($merged['thread']['tags']===['migration','php','sqlite'] && $merged['thread']['prefix']==='Answer','merge preserves target prefix and combines tags');
+    check($discussion->thread($source,0)['thread']['id']===$target && $discussion->thread($split,0)['thread']['id']===$target,'old merged URLs resolve');
+    check(count(array_filter($engagement->watches($m,0),fn($w)=>$w['id']===$target))===1,'merge deduplicates subscriptions');
+    $moderation->resolve($a,$rid); // report still follows the moved post
+    $discussion->permissions()->replace($a,'board',$dest,'hidden',[]);
+    expectStatus(404,fn()=>$discussion->thread($source,0,$m));
+    check($discussion->thread($target,0,$m)['thread']['id']===$target,'public target remains readable');
+    $discussion->permissions()->replace($a,'board',$dest,'public',[]);
+    $next=$discussion->createThread($m,$board,'Final target','First final');
+    $management->merge($a,$next,[$target]);
+    check($discussion->thread($source,0)['thread']['id']===$next && $discussion->thread($target,0)['thread']['id']===$next,'redirects flatten after another merge');
+    $moderation->moderate($a,$next,'delete');
+    expectStatus(404,fn()=>$discussion->thread($source,0));
+    // Merge against independent processes replying to the target: no duplicate or lost ordinals.
+    $parallel=$discussion->createThread($m,$board,'Parallel target','Target first');
+    $parallelSource=$discussion->createThread($m,$board,'Parallel source','Source first');
+    $parallelPost=$discussion->thread($parallelSource,0)['first_post_id'];
+    $workers=[];$barrier=$tmp.'/merge-go';
+    for($i=0;$i<4;$i++) {
+        $proc=proc_open([PHP_BINARY,__FILE__,'worker',$member,$parallel,$barrier],[0=>['file','/dev/null','r'],1=>['file',$tmp.'/merge-worker-'.$i.'.log','w'],2=>['file',$tmp.'/merge-worker-'.$i.'.log','a']],$pipes);
+        if(!is_resource($proc)) throw new RuntimeException('Cannot start merge worker');$workers[]=[$proc,$i];
+    }
+    touch($barrier);$management->merge($a,$parallel,[$parallelSource]);
+    foreach($workers as [$proc,$i]) check(proc_close($proc)===0,'merge worker '.$i.' '.file_get_contents($tmp.'/merge-worker-'.$i.'.log'));
+    $all=$discussion->thread($parallel,0)['posts'];
+    check(count($all)===22 && array_map('intval',array_column($all,'ordinal'))===range(1,22) && in_array($parallelPost,array_column($all,'id'),true),'concurrent merge and 20 replies preserve ordinals and post IDs');
+    $moderation->moderate($a,$parallel,'delete');
+    $nodes->delete($a,$dest,false);$nodes->delete($a,$mc,true);
     if($driver==='sqlite')check($pdo->query('PRAGMA foreign_key_check')->fetchAll()===[],'foreign keys intact');
-    $v=new ForumVersion($root);check($v->current()==='0.2.3' && $v->upstream()==='1.3.0','independent product/core versions');
+    $v=new ForumVersion($root);check($v->current()==='0.2.4' && $v->upstream()==='1.3.0','independent product/core versions');
     echo "Forum core regression passed\n";
 } finally {
     unset($db,$discussion,$engagement,$moderation,$registration,$pdo,$runner);

@@ -148,6 +148,22 @@ def verify_groups(base,state):
     print('PASS primary and secondary role assignments preserved',flush=True)
 
 
+def verify_discussions(base,state):
+    token, thread, _, _=state; c=Client(base)
+    board=c.call('GET','/forum/threads/'+thread,token=token)['thread']['board_id']
+    create=lambda title:c.call('POST',f'/forum/boards/{board}/threads',201,{'title':title,'body':'Acceptance message'},token=token)['id']
+    source,target=create('Acceptance source'),create('Acceptance destination')
+    url=lambda t:'/forum/threads/'+t
+    post=c.call('GET',url(source))['first_post_id']
+    c.call('PUT',url(source)+'/metadata',200,{'prefix':'Release','tags':['acceptance-tag']},token=token)
+    c.call('POST',url(target)+'/merge',200,{'source_ids':[source]},token=token)
+    require(c.call('GET',url(source))['thread']['id']==target,'Merged URL did not resolve')
+    require(c.call('GET',url(target))['posts'][1]['id']==post,'Merged post identity lost')
+    require(target in [t['id'] for t in c.call('GET','/forum/search?tag=acceptance-tag')],'Tag search failed')
+    c.call('POST',url(target)+'/moderate',200,{'action':'delete'},token=token)
+    print('PASS discussion management on physical dist',flush=True)
+
+
 def verify_identity(site, env, report, base):
     code = r'require "vendor/autoload.php"; (new CajeerEngine\Installer\InstallerEnvironment(".env"))->write(["FORUM_REGISTRATION"=>"true"], ".env.example");'
     run(site, env, report, 'open-registration', ['php','-r',code])
@@ -186,7 +202,7 @@ def verify_readiness(site, env, report, base):
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--artifact',type=Path,required=True)
-    parser.add_argument('--previous',type=Path,help='Original 0.2.2 dist; enables real signed upgrade and rollback')
+    parser.add_argument('--previous',type=Path,help='Original 0.2.3 dist; enables real signed upgrade and rollback')
     parser.add_argument('--driver',choices=('sqlite','pgsql'),default='sqlite')
     parser.add_argument('--report',type=Path,required=True)
     args=parser.parse_args(); report=args.report.resolve(); report.mkdir(parents=True,exist_ok=True)
@@ -195,13 +211,14 @@ def main():
         work=Path(tmp); port=free_port()
         # With --previous use the authentic baseline for upgrade, not a relabelled current tree.
         previous=args.previous.resolve() if args.previous else None
-        initial='0.2.2' if previous else current
+        initial='0.2.3' if previous else current
         site=unpack(previous or artifact,work/'live',initial)
         install(site,env,report,'initial',port,args.driver)
         with http(site,env,report,'initial',port,initial) as base:
             state=seed(base); verify_data(base,state)
             if not previous:
                 verify_groups(base,state)
+                verify_discussions(base,state)
                 verify_identity(site,env,report,base)
                 verify_readiness(site,env,report,base)
         if previous:
@@ -217,7 +234,7 @@ def main():
             update=json.loads(run(site,env,report,'upgrade',['php','bin/cajeer','update:apply','--package='+str(package),'--json'],timeout=600))
             require(update['state']=='committed' and version(site)==current,'Update not committed')
             with http(site,env,report,'updated',port,current) as base:
-                verify_data(base,state); verify_groups(base,state); verify_identity(site,env,report,base)
+                verify_data(base,state); verify_groups(base,state); verify_discussions(base,state); verify_identity(site,env,report,base)
             run(site,env,report,'rollback',['php','bin/cajeer','update:rollback','--yes','--json'],timeout=600)
             require(version(site)==initial,'Rollback did not restore release')
             with http(site,env,report,'rollback',port,initial) as base: verify_data(base,state)

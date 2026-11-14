@@ -1,5 +1,11 @@
 # Changelog
 
+## Forum Edition 0.2.4 — Discussion Management
+
+- Transactional topic move, merge, split and reply transfer; retain post IDs, reactions, reports and source subscriptions on merge.
+- Bulk lock/unlock/pin/unpin/move with ACL checks in all boards and audit; redirect old merged reads with source and target ACL.
+- Prefix and tag editing, exact tag search, board posting rules and integrated moderation controls; migration 0021 and regression tests.
+
 ## Forum Edition 0.2.3 — User Groups
 
 - Role-backed custom groups, primary and secondary assignments, scoped forum rights and delegated moderation.

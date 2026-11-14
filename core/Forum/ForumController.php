@@ -37,7 +37,12 @@ final readonly class ForumController
     public function index(Request $r): JsonResponse { return $this->respond(fn () => $this->discussions->index($this->reader($r))); }
     public function board(Request $r,array $p): JsonResponse { return $this->respond(fn () => $this->discussions->board($this->id($p),$this->offset($r),$this->reader($r))); }
     public function thread(Request $r,array $p): JsonResponse { return $this->respond(fn () => $this->discussions->thread($this->id($p),$this->offset($r),$this->reader($r))); }
-    public function search(Request $r): JsonResponse { return $this->respond(fn () => $this->discussions->search(V::text($r->query->all()['q'] ?? '', 'q',100,2),$this->offset($r),$this->reader($r))); }
+    public function search(Request $r): JsonResponse { return $this->respond(function () use ($r) {
+        $q=$r->query->all();$tag=null;
+        if (array_key_exists('tag',$q)) { [, $tags]=\CajeerEngine\Forum\Service\DiscussionManagementService::normalizeMetadata('',[$q['tag']]);$tag=$tags[0]; }
+        $term=V::text($q['q']??'','q',100,$tag===null?2:0);
+        return $this->discussions->search($term,$this->offset($r),$this->reader($r),$tag);
+    }); }
     public function latest(Request $r): JsonResponse { return $this->respond(fn () => $this->discussions->latest($this->offset($r),$this->reader($r))); }
     public function profile(Request $r,array $p): JsonResponse { return $this->respond(fn () => $this->discussions->profile($this->id($p),$this->offset($r),$this->reader($r))); }
     public function register(Request $r): JsonResponse { return $this->respond(function () use ($r) {
@@ -57,6 +62,10 @@ final readonly class ForumController
     public function reports(Request $r): JsonResponse { return $this->respond(fn () => $this->moderation->reports($this->actor($r),$this->offset($r))); }
     public function resolve(Request $r,array $p): JsonResponse { return $this->respond(fn () => ['id'=>$this->moderation->resolve($this->actor($r),$this->id($p))]); }
     public function moderate(Request $r,array $p): JsonResponse { return $this->respond(fn () => ['id'=>$this->moderation->moderate($this->actor($r),$this->id($p),$this->text($r,'action',20))]); }
+    public function threadMetadata(Request $r,array $p): JsonResponse { return $this->respond(fn()=> $this->discussions->management()->metadata($this->actor($r),$this->id($p),$this->field($r,'prefix'),$this->field($r,'tags'))); }
+    public function bulkThreads(Request $r): JsonResponse { return $this->respond(fn()=> $this->discussions->management()->bulk($this->actor($r),$this->field($r,'thread_ids'),$this->field($r,'action'),$this->field($r,'board_id'))); }
+    public function mergeThreads(Request $r,array $p): JsonResponse { return $this->respond(fn()=> $this->discussions->management()->merge($this->actor($r),$this->id($p),$this->field($r,'source_ids'))); }
+    public function transferPosts(Request $r,array $p): JsonResponse { return $this->respond(fn()=> $this->discussions->management()->transfer($this->actor($r),$this->id($p),$this->field($r,'post_ids'),$this->field($r,'target_id'),$this->field($r,'board_id'),$this->field($r,'title'))); }
     public function category(Request $r): JsonResponse { return $this->respond(fn () => ['id'=>$this->discussions->category($this->actor($r),$this->text($r,'name',120),$this->text($r,'description',1000,0))],201); }
     private function parent(Request $r): ?string { $value=$this->field($r,'parent_id');return $value===null?null:V::id($value); }
     private function position(Request $r): ?int {
@@ -65,9 +74,9 @@ final readonly class ForumController
         if (!is_int($value) || $value<0) throw new ForumException('position должен быть целым неотрицательным числом.',422);
         return $value;
     }
-    public function createBoard(Request $r,array $p): JsonResponse { return $this->respond(fn () => ['id'=>$this->discussions->nodes()->createBoard($this->actor($r),$this->id($p),$this->text($r,'name',120),$this->text($r,'description',1000,0),$this->parent($r),V::text($this->field($r,'node_type')??'forum','node_type',16),V::text($this->field($r,'state')??'open','state',16),$this->position($r))],201); }
+    public function createBoard(Request $r,array $p): JsonResponse { return $this->respond(fn () => ['id'=>$this->discussions->nodes()->createBoard($this->actor($r),$this->id($p),$this->text($r,'name',120),$this->text($r,'description',1000,0),$this->parent($r),V::text($this->field($r,'node_type')??'forum','node_type',16),V::text($this->field($r,'state')??'open','state',16),$this->position($r),V::text($this->field($r,'rules')??'','rules',4000,0))],201); }
     public function updateCategory(Request $r,array $p): JsonResponse { return $this->respond(fn () => ['id'=>$this->discussions->nodes()->updateCategory($this->actor($r),$this->id($p),$this->text($r,'name',120),$this->text($r,'description',1000,0),$this->position($r))]); }
-    public function updateBoard(Request $r,array $p): JsonResponse { return $this->respond(fn () => ['id'=>$this->discussions->nodes()->updateBoard($this->actor($r),$this->id($p),$this->text($r,'name',120),$this->text($r,'description',1000,0),$this->text($r,'node_type',16),$this->text($r,'state',16))]); }
+    public function updateBoard(Request $r,array $p): JsonResponse { return $this->respond(fn () => ['id'=>$this->discussions->nodes()->updateBoard($this->actor($r),$this->id($p),$this->text($r,'name',120),$this->text($r,'description',1000,0),$this->text($r,'node_type',16),$this->text($r,'state',16),$this->field($r,'rules')===null?null:$this->text($r,'rules',4000,0))]); }
     public function moveBoard(Request $r,array $p): JsonResponse { return $this->respond(fn () => ['id'=>$this->discussions->nodes()->move($this->actor($r),$this->id($p),V::id($this->field($r,'category_id')),$this->parent($r),$this->position($r))]); }
     public function boardPermissions(Request $r,array $p): JsonResponse { return $this->respond(fn()=> $this->discussions->permissions()->get($this->actor($r),'board',$this->id($p))); }
     public function categoryPermissions(Request $r,array $p): JsonResponse { return $this->respond(fn()=> $this->discussions->permissions()->get($this->actor($r),'category',$this->id($p))); }

@@ -35,12 +35,18 @@ final readonly class DiscussionService
     public function thread(string $id, int $offset, ?ForumAccessPolicy $actor=null): array
     {
         return $this->db->readSnapshot(function () use ($id,$offset,$actor) {
-            $thread=$this->threads->find($id)??throw new ForumException('Тема не найдена.',404);
-            $access=$this->access($actor);NodePermissionService::assert($access,$thread['board_id'],'thread:read');
-            return ['thread'=>$thread,'board'=>$this->decorated($this->boards->view($thread['board_id'])??throw new ForumException('Раздел не найден.',404),$access),'posts'=>$this->posts->inThread($id,$offset)];
+            $repo=new \CajeerEngine\Forum\Repository\DiscussionManagementRepository($this->db);
+            $access=$this->access($actor);$thread=$this->threads->find($id);
+            if ($thread===null) {
+                $redirect=$repo->findRedirect($id)??throw new ForumException('Тема не найдена.',404);
+                NodePermissionService::assert($access,$redirect['source_board_id'],'thread:read');
+                $id=$redirect['target_id'];$thread=$this->threads->find($id)??throw new ForumException('Тема не найдена.',404);
+            }
+            NodePermissionService::assert($access,$thread['board_id'],'thread:read');$thread['tags']=$repo->tags($id);
+            return ['thread'=>$thread,'board'=>$this->decorated($this->boards->view($thread['board_id'])??throw new ForumException('Раздел не найден.',404),$access),'posts'=>$this->posts->inThread($id,$offset),'first_post_id'=>$this->posts->firstId($id)];
         });
     }
-    public function search(string $term,int $offset,?ForumAccessPolicy $actor=null): array { return $this->db->readSnapshot(fn()=> $this->threads->search($term,$offset,NodePermissionService::allowed($this->access($actor)))); }
+    public function search(string $term,int $offset,?ForumAccessPolicy $actor=null,?string $tag=null): array { return $this->db->readSnapshot(fn()=> $this->threads->search($term,$offset,NodePermissionService::allowed($this->access($actor)),$tag)); }
     public function latest(int $offset,?ForumAccessPolicy $actor=null): array { return $this->db->readSnapshot(fn()=> $this->threads->latest($offset,NodePermissionService::allowed($this->access($actor)))); }
     public function profile(string $id,int $offset,?ForumAccessPolicy $actor=null): array
     {
@@ -49,6 +55,7 @@ final readonly class DiscussionService
             return ['member'=>$member,'threads'=>$this->threads->byAuthor($id,$offset,NodePermissionService::allowed($this->access($actor)))];
         });
     }
+    public function management(): DiscussionManagementService { return new DiscussionManagementService($this->tx,$this->boards,$this->threads,$this->posts,new \CajeerEngine\Forum\Repository\DiscussionManagementRepository($this->db)); }
     public function groups(): GroupService { return $this->tx->groups(); }
     public function permissions(): NodePermissionService { return $this->tx->permissions(); }
     public function createThread(ForumAccessPolicy $actor, string $board, string $title, string $body): string

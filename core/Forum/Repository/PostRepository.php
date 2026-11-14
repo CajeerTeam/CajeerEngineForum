@@ -11,6 +11,7 @@ final readonly class PostRepository extends Repository
         if (!$this->db->connection()->inTransaction()) throw new \LogicException('Forum post lock requires a transaction');
         return $this->row('SELECT * FROM ce_forum_posts WHERE id=?'.($this->db->driver() === 'sqlite' ? '' : ' FOR UPDATE'), [$id]);
     }
+    public function firstId(string $thread): ?string { return $this->row('SELECT id FROM ce_forum_posts WHERE thread_id=? ORDER BY ordinal LIMIT 1',[$thread])['id']??null; }
     public function nextOrdinal(string $thread): int
     {
         // The caller holds the thread lock. A locking read also avoids stale

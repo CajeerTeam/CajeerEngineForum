@@ -39,7 +39,7 @@ final readonly class BoardRepository extends Repository
     public function topology(): array { return $this->rows('SELECT * FROM ce_forum_boards ORDER BY position,name,id'); }
     public function updateCategory(string $id,string $name,string $description): void { $this->query('UPDATE ce_forum_categories SET name=?,description=? WHERE id=?',[$name,$description,$id]); }
     public function categoryPosition(string $id,int $position): void { $this->query('UPDATE ce_forum_categories SET position=? WHERE id=?',[$position,$id]); }
-    public function updateBoard(string $id,string $name,string $description,string $type,string $state): void { $this->query('UPDATE ce_forum_boards SET name=?,description=?,node_type=?,state=? WHERE id=?',[$name,$description,$type,$state,$id]); }
+    public function updateBoard(string $id,string $name,string $description,string $type,string $state,?string $rules=null): void { $this->query('UPDATE ce_forum_boards SET name=?,description=?,node_type=?,state=?,rules=COALESCE(?,rules) WHERE id=?',[$name,$description,$type,$state,$rules,$id]); }
     public function moveBoard(string $id,string $category,?string $parent): void { $this->query('UPDATE ce_forum_boards SET category_id=?,parent_id=? WHERE id=?',[$category,$parent,$id]); }
     public function boardPosition(string $id,int $position): void { $this->query('UPDATE ce_forum_boards SET position=? WHERE id=?',[$position,$id]); }
     public function hasThreads(string $id): bool { return $this->row('SELECT id FROM ce_forum_threads WHERE board_id=? LIMIT 1',[$id])!==null; }

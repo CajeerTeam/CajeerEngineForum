@@ -748,7 +748,13 @@ final class Operations {
       array (
         'name' => 'q',
         'in' => 'query',
-        'required' => true,
+        'required' => false,
+      ),
+      2 => 
+      array (
+        'name' => 'tag',
+        'in' => 'query',
+        'required' => false,
       ),
     ),
     'bodyRequired' => false,
@@ -1917,6 +1923,15 @@ final class Operations {
     ),
     'bodyRequired' => false,
   ),
+  'post_Forum_bulkThreads' => 
+  array (
+    'method' => 'POST',
+    'path' => '/forum/thread-actions/bulk',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => true,
+  ),
   'post_Forum_category' => 
   array (
     'method' => 'POST',
@@ -1954,6 +1969,21 @@ final class Operations {
   array (
     'method' => 'POST',
     'path' => '/forum/boards/{id}/threads',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => true,
+  ),
+  'post_Forum_mergeThreads' => 
+  array (
+    'method' => 'POST',
+    'path' => '/forum/threads/{id}/merge',
     'parameters' => 
     array (
       0 => 
@@ -2048,6 +2078,21 @@ final class Operations {
       ),
     ),
     'bodyRequired' => false,
+  ),
+  'post_Forum_transferPosts' => 
+  array (
+    'method' => 'POST',
+    'path' => '/forum/threads/{id}/transfer',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => true,
   ),
   'post_ImportExportExport' => 
   array (
@@ -2440,6 +2485,21 @@ final class Operations {
   array (
     'method' => 'PUT',
     'path' => '/forum/members/{id}/groups',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => true,
+  ),
+  'put_Forum_threadMetadata' => 
+  array (
+    'method' => 'PUT',
+    'path' => '/forum/threads/{id}/metadata',
     'parameters' => 
     array (
       0 => 

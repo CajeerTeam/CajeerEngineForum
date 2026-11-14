@@ -577,7 +577,12 @@ export const operations = {
             {
                 "name": "q",
                 "in": "query",
-                "required": true
+                "required": false
+            },
+            {
+                "name": "tag",
+                "in": "query",
+                "required": false
             }
         ],
         "bodyRequired": false
@@ -1468,6 +1473,12 @@ export const operations = {
         ],
         "bodyRequired": false
     },
+    "post_Forum_bulkThreads": {
+        "method": "POST",
+        "path": "/forum/thread-actions/bulk",
+        "parameters": [],
+        "bodyRequired": true
+    },
     "post_Forum_category": {
         "method": "POST",
         "path": "/forum/categories",
@@ -1495,6 +1506,18 @@ export const operations = {
     "post_Forum_createThread": {
         "method": "POST",
         "path": "/forum/boards/{id}/threads",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
+    },
+    "post_Forum_mergeThreads": {
+        "method": "POST",
+        "path": "/forum/threads/{id}/merge",
         "parameters": [
             {
                 "name": "id",
@@ -1569,6 +1592,18 @@ export const operations = {
             }
         ],
         "bodyRequired": false
+    },
+    "post_Forum_transferPosts": {
+        "method": "POST",
+        "path": "/forum/threads/{id}/transfer",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
     },
     "post_ImportExportExport": {
         "method": "POST",
@@ -1853,6 +1888,18 @@ export const operations = {
     "put_Forum_setGroupMembership": {
         "method": "PUT",
         "path": "/forum/members/{id}/groups",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
+    },
+    "put_Forum_threadMetadata": {
+        "method": "PUT",
+        "path": "/forum/threads/{id}/metadata",
         "parameters": [
             {
                 "name": "id",
