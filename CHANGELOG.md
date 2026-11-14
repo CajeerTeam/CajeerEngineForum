@@ -1,5 +1,12 @@
 # Changelog
 
+## Forum Edition 0.1.3 — Forum Identity & Access
+
+- Email verification for new registrations, SMTP delivery, one-time hashed tokens and password recovery.
+- Session listing and revocation, password reset invalidates all access tokens.
+- Two-step TOTP enrollment, single-use recovery codes and TOTP replay protection.
+- Additive migration 0017; existing active users remain active. Configure SMTP before opening registration.
+
 ## Forum Edition 0.1.2 — Database & Installer
 
 - PostgreSQL 17+ / SQLite 3.40+ installation checks; SQLite foreign keys, WAL and persistent database path validation.

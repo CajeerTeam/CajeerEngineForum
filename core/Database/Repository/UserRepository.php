@@ -14,6 +14,28 @@ final readonly class UserRepository
     {
     }
 
+    /** Serialize credential mutations and login on the same user row. */
+    public function locked(string $id, callable $callback): mixed
+    {
+        return $this->database->transaction(function (\PDO $pdo) use ($id, $callback) {
+            if ($this->database->driver() === 'sqlite') {
+                $stmt = $pdo->prepare('UPDATE ce_users SET id = id WHERE id = :id');
+            } else {
+                $stmt = $pdo->prepare('SELECT id FROM ce_users WHERE id = :id FOR UPDATE');
+            }
+            $stmt->execute(['id' => $id]);
+            $stmt->closeCursor();
+            return $callback();
+        });
+    }
+
+    public function acceptTotpStep(string $id, int $step): bool
+    {
+        $stmt = $this->database->connection()->prepare('UPDATE ce_users SET two_factor_last_step = :step WHERE id = :id AND two_factor_enabled = TRUE AND (two_factor_last_step IS NULL OR two_factor_last_step < :previous)');
+        $stmt->execute(['step'=>$step, 'previous'=>$step, 'id'=>$id]);
+        return $stmt->rowCount() === 1;
+    }
+
     public function count(): int
     {
         return (int) $this->database->connection()->query('SELECT COUNT(*) FROM ce_users')->fetchColumn();
@@ -22,14 +44,14 @@ final readonly class UserRepository
     /** @return list<array<string, mixed>> */
     public function all(): array
     {
-        $rows = $this->database->connection()->query('SELECT id, email, name, status, two_factor_enabled, last_login_at, disabled_at, created_at, updated_at FROM ce_users ORDER BY created_at DESC')->fetchAll();
+        $rows = $this->database->connection()->query('SELECT id, email, name, status, email_verified_at, two_factor_enabled, last_login_at, disabled_at, created_at, updated_at FROM ce_users ORDER BY created_at DESC')->fetchAll();
         return array_map(fn (array $row): array => $this->normalize($row), $rows);
     }
 
     /** @return array<string, mixed>|null */
     public function findById(string $id): ?array
     {
-        $stmt = $this->database->connection()->prepare('SELECT id, email, name, status, two_factor_enabled, last_login_at, disabled_at, created_at, updated_at FROM ce_users WHERE id = :id');
+        $stmt = $this->database->connection()->prepare('SELECT id, email, name, status, email_verified_at, two_factor_enabled, last_login_at, disabled_at, created_at, updated_at FROM ce_users WHERE id = :id');
         $stmt->execute(['id' => $id]);
         $row = $stmt->fetch();
         return is_array($row) ? $this->withRoles($this->normalize($row)) : null;
@@ -38,7 +60,7 @@ final readonly class UserRepository
     /** @return array<string, mixed>|null */
     public function findByEmail(string $email): ?array
     {
-        $stmt = $this->database->connection()->prepare('SELECT id, email, name, status, two_factor_enabled, last_login_at, disabled_at, created_at, updated_at FROM ce_users WHERE email = :email');
+        $stmt = $this->database->connection()->prepare('SELECT id, email, name, status, email_verified_at, two_factor_enabled, last_login_at, disabled_at, created_at, updated_at FROM ce_users WHERE email = :email');
         $stmt->execute(['email' => mb_strtolower($email)]);
         $row = $stmt->fetch();
         return is_array($row) ? $this->withRoles($this->normalize($row)) : null;
@@ -58,7 +80,7 @@ final readonly class UserRepository
     }
 
     /** @param list<string> $roles */
-    public function create(string $email, string $name, string $passwordHash, array $roles = ['viewer']): string
+    public function create(string $email, string $name, string $passwordHash, array $roles = ['viewer'], string $status = 'active'): string
     {
         if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
             throw new \InvalidArgumentException('Некорректный email пользователя.');
@@ -67,13 +89,14 @@ final readonly class UserRepository
         if ($this->findByEmail($email) !== null) {
             throw new \InvalidArgumentException('Пользователь с таким email уже существует.');
         }
+        if (!in_array($status, ['active', 'pending'], true)) throw new \InvalidArgumentException('Invalid initial status');
         $userId = Uuid::v4();
-        $this->database->transaction(function () use ($userId, $email, $name, $passwordHash, $roles): void {
+        $this->database->transaction(function () use ($userId, $email, $name, $passwordHash, $roles, $status): void {
             $driver = $this->database->driver();
             $recovery = $driver === 'pgsql' ? "'[]'::jsonb" : ($driver === 'sqlite' ? "'[]'" : "JSON_ARRAY()");
-            $sql = "INSERT INTO ce_users (id, email, name, password_hash, status, two_factor_enabled, two_factor_recovery_codes, created_at, updated_at) VALUES (:id, :email, :name, :password_hash, 'active', FALSE, {$recovery}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)";
+            $sql = "INSERT INTO ce_users (id, email, name, password_hash, status, two_factor_enabled, two_factor_recovery_codes, created_at, updated_at) VALUES (:id, :email, :name, :password_hash, :status, FALSE, {$recovery}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)";
             $stmt = $this->database->connection()->prepare($sql);
-            $stmt->execute(['id' => $userId, 'email' => $email, 'name' => $name, 'password_hash' => $passwordHash]);
+            $stmt->execute(['id' => $userId, 'email' => $email, 'name' => $name, 'password_hash' => $passwordHash, 'status' => $status]);
             $this->syncRoles($userId, $roles);
         });
         return $userId;
@@ -105,7 +128,7 @@ final readonly class UserRepository
         }
         $name = isset($payload['name']) ? trim((string) $payload['name']) : (string) $user['name'];
         $status = isset($payload['status']) ? (string) $payload['status'] : (string) ($user['status'] ?? 'active');
-        if (!in_array($status, ['active', 'disabled'], true)) {
+        if (!in_array($status, ['active', 'disabled', 'pending'], true)) {
             throw new \InvalidArgumentException('Некорректный status пользователя.');
         }
         $this->database->transaction(function () use ($id, $name, $status, $payload): void {
@@ -162,8 +185,8 @@ final readonly class UserRepository
     {
         $json = json_encode($hashedRecoveryCodes, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
         $sql = $this->database->driver() === 'pgsql'
-            ? 'UPDATE ce_users SET two_factor_enabled = TRUE, two_factor_secret = :secret, two_factor_recovery_codes = CAST(:codes AS jsonb), updated_at = CURRENT_TIMESTAMP WHERE id = :id'
-            : 'UPDATE ce_users SET two_factor_enabled = TRUE, two_factor_secret = :secret, two_factor_recovery_codes = :codes, updated_at = CURRENT_TIMESTAMP WHERE id = :id';
+            ? 'UPDATE ce_users SET two_factor_enabled = TRUE, two_factor_secret = :secret, two_factor_last_step = NULL, two_factor_recovery_codes = CAST(:codes AS jsonb), updated_at = CURRENT_TIMESTAMP WHERE id = :id'
+            : 'UPDATE ce_users SET two_factor_enabled = TRUE, two_factor_secret = :secret, two_factor_last_step = NULL, two_factor_recovery_codes = :codes, updated_at = CURRENT_TIMESTAMP WHERE id = :id';
         $stmt = $this->database->connection()->prepare($sql);
         $stmt->execute(['id' => $userId, 'secret' => $secret, 'codes' => $json]);
     }
@@ -172,15 +195,16 @@ final readonly class UserRepository
     {
         $driver = $this->database->driver();
         $sql = $driver === 'pgsql'
-            ? "UPDATE ce_users SET two_factor_enabled = FALSE, two_factor_secret = NULL, two_factor_recovery_codes = '[]'::jsonb, updated_at = CURRENT_TIMESTAMP WHERE id = :id"
+            ? "UPDATE ce_users SET two_factor_enabled = FALSE, two_factor_secret = NULL, two_factor_last_step = NULL, two_factor_recovery_codes = '[]'::jsonb, updated_at = CURRENT_TIMESTAMP WHERE id = :id"
             : ($driver === 'sqlite'
-                ? "UPDATE ce_users SET two_factor_enabled = FALSE, two_factor_secret = NULL, two_factor_recovery_codes = '[]', updated_at = CURRENT_TIMESTAMP WHERE id = :id"
-                : "UPDATE ce_users SET two_factor_enabled = FALSE, two_factor_secret = NULL, two_factor_recovery_codes = JSON_ARRAY(), updated_at = CURRENT_TIMESTAMP WHERE id = :id");
+                ? "UPDATE ce_users SET two_factor_enabled = FALSE, two_factor_secret = NULL, two_factor_last_step = NULL, two_factor_recovery_codes = '[]', updated_at = CURRENT_TIMESTAMP WHERE id = :id"
+                : "UPDATE ce_users SET two_factor_enabled = FALSE, two_factor_secret = NULL, two_factor_last_step = NULL, two_factor_recovery_codes = JSON_ARRAY(), updated_at = CURRENT_TIMESTAMP WHERE id = :id");
         $this->database->connection()->prepare($sql)->execute(['id' => $userId]);
     }
 
     public function consumeRecoveryCode(string $userId, string $code): bool
     {
+        return $this->locked($userId, function () use ($userId, $code): bool {
         $record = $this->findByIdWithRecoveryCodes($userId);
         if ($record === null) {
             return false;
@@ -201,6 +225,7 @@ final readonly class UserRepository
             }
         }
         return false;
+        });
     }
 
     /** @return array<string, mixed>|null */
@@ -222,9 +247,10 @@ final readonly class UserRepository
         return [
             'id' => (string) $row['id'],
             'email' => (string) $row['email'],
+            'email_verified_at' => $row['email_verified_at'] ?? null,
             'name' => (string) $row['name'],
             'status' => (string) ($row['status'] ?? 'active'),
-            'two_factor_enabled' => (bool) ($row['two_factor_enabled'] ?? false),
+            'two_factor_enabled' => filter_var($row['two_factor_enabled'] ?? false, FILTER_VALIDATE_BOOLEAN),
             'last_login_at' => isset($row['last_login_at']) ? (string) $row['last_login_at'] : null,
             'disabled_at' => isset($row['disabled_at']) ? (string) $row['disabled_at'] : null,
             'created_at' => (string) $row['created_at'],

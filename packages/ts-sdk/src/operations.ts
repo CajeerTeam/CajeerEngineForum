@@ -12,6 +12,18 @@ export const operations = {
         ],
         "bodyRequired": false
     },
+    "delete_AuthSession": {
+        "method": "DELETE",
+        "path": "/auth/sessions/{id}",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": false
+    },
     "delete_CmsNavigationMenu": {
         "method": "DELETE",
         "path": "/cms/navigation/{handle}",
@@ -156,6 +168,12 @@ export const operations = {
     "get_AuthMe": {
         "method": "GET",
         "path": "/auth/me",
+        "parameters": [],
+        "bodyRequired": false
+    },
+    "get_AuthSessions": {
+        "method": "GET",
+        "path": "/auth/sessions",
         "parameters": [],
         "bodyRequired": false
     },
@@ -1057,6 +1075,12 @@ export const operations = {
         "parameters": [],
         "bodyRequired": false
     },
+    "post_Auth2faConfirm": {
+        "method": "POST",
+        "path": "/auth/2fa/confirm",
+        "parameters": [],
+        "bodyRequired": true
+    },
     "post_Auth2faDisable": {
         "method": "POST",
         "path": "/auth/2fa/disable",
@@ -1066,6 +1090,18 @@ export const operations = {
     "post_Auth2faEnable": {
         "method": "POST",
         "path": "/auth/2fa/enable",
+        "parameters": [],
+        "bodyRequired": true
+    },
+    "post_AuthEmailResend": {
+        "method": "POST",
+        "path": "/auth/email/resend",
+        "parameters": [],
+        "bodyRequired": true
+    },
+    "post_AuthEmailVerify": {
+        "method": "POST",
+        "path": "/auth/email/verify",
         "parameters": [],
         "bodyRequired": true
     },
@@ -1091,6 +1127,24 @@ export const operations = {
         "path": "/auth/logout",
         "parameters": [],
         "bodyRequired": false
+    },
+    "post_AuthPasswordForgot": {
+        "method": "POST",
+        "path": "/auth/password/forgot",
+        "parameters": [],
+        "bodyRequired": true
+    },
+    "post_AuthPasswordReset": {
+        "method": "POST",
+        "path": "/auth/password/reset",
+        "parameters": [],
+        "bodyRequired": true
+    },
+    "post_AuthSessionsRevokeAll": {
+        "method": "POST",
+        "path": "/auth/sessions/revoke-all",
+        "parameters": [],
+        "bodyRequired": true
     },
     "post_CmsBootstrap": {
         "method": "POST",

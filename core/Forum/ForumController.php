@@ -10,7 +10,7 @@ use Symfony\Component\HttpFoundation\{JsonResponse, Request, Response};
 
 final readonly class ForumController
 {
-    public function __construct(private DiscussionService $discussions, private EngagementService $engagement, private ModerationService $moderation, private RegistrationService $registration, private string $root) {}
+    public function __construct(private DiscussionService $discussions, private EngagementService $engagement, private ModerationService $moderation, private RegistrationService $registration, private string $root, private \CajeerEngine\Forum\Service\IdentityService $identity) {}
 
     public function page(): Response
     {
@@ -39,7 +39,13 @@ final readonly class ForumController
     public function search(Request $r): JsonResponse { return $this->respond(fn () => $this->discussions->search(V::text($r->query->all()['q'] ?? '', 'q',100,2),$this->offset($r))); }
     public function latest(Request $r): JsonResponse { return $this->respond(fn () => $this->discussions->latest($this->offset($r))); }
     public function profile(Request $r,array $p): JsonResponse { return $this->respond(fn () => $this->discussions->profile($this->id($p),$this->offset($r))); }
-    public function register(Request $r): JsonResponse { return $this->respond(fn () => ['id'=>$this->registration->register($this->text($r,'email',254),$this->text($r,'name',60,2),V::password($this->field($r,'password')))],201); }
+    public function register(Request $r): JsonResponse { return $this->respond(function () use ($r) {
+        $email=$this->text($r,'email',254);
+        $id=$this->registration->register($email,$this->text($r,'name',60,2),V::password($this->field($r,'password')));
+        $required=RegistrationService::verificationRequired();
+        if ($required) $this->identity->requestMail($email,'verify');
+        return ['id'=>$id,'verification_required'=>$required];
+    },201); }
     public function createThread(Request $r,array $p): JsonResponse { return $this->respond(fn () => ['id'=>$this->discussions->createThread($this->actor($r),$this->id($p),$this->text($r,'title',180,3),$this->text($r,'body',20000))],201); }
     public function reply(Request $r,array $p): JsonResponse { return $this->respond(fn () => ['id'=>$this->discussions->reply($this->actor($r),$this->id($p),$this->text($r,'body',20000))],201); }
     public function edit(Request $r,array $p): JsonResponse { return $this->respond(fn () => ['id'=>$this->discussions->edit($this->actor($r),$this->id($p),$this->text($r,'body',20000))]); }

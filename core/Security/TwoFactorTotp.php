@@ -43,17 +43,22 @@ final class TwoFactorTotp
 
     public function verify(string $secret, string $code, int $window = 1): bool
     {
+        return $this->matchingStep($secret, $code, $window) !== null;
+    }
+
+    public function matchingStep(string $secret, string $code, int $window = 1): ?int
+    {
         $code = preg_replace('/\s+/', '', $code) ?? '';
         if (!preg_match('/^\d{6}$/', $code)) {
-            return false;
+            return null;
         }
         $now = time();
         for ($i = -$window; $i <= $window; $i++) {
             if (hash_equals($this->code($secret, $now + ($i * 30)), $code)) {
-                return true;
+                return intdiv($now + ($i * 30), 30);
             }
         }
-        return false;
+        return null;
     }
 
     /** @return list<string> */
@@ -61,7 +66,7 @@ final class TwoFactorTotp
     {
         $codes = [];
         for ($i = 0; $i < $count; $i++) {
-            $codes[] = strtoupper(substr(bin2hex(random_bytes(5)), 0, 10));
+            $codes[] = strtoupper(bin2hex(random_bytes(10)));
         }
         return $codes;
     }

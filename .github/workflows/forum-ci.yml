@@ -8,6 +8,12 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-24.04
+    services:
+      mailpit:
+        image: axllent/mailpit:v1.27
+        ports:
+          - 1025:1025
+          - 8025:8025
     steps:
       - uses: actions/checkout@v4
       - uses: shivammathur/setup-php@v2
@@ -24,6 +30,7 @@ jobs:
       - run: php bin/cajeer api:lint --strict --json
       - run: node --check public/forum-assets/forum.js
       - run: php tools/forum-regression.php
+      - run: php tools/forum-identity-regression.php
       - run: php tools/forum-core-regression.php
       - run: php tools/release-regression.php
       - run: php tools/update-regression.php
@@ -36,6 +43,11 @@ jobs:
       matrix:
         postgres: ['17', '18']
     services:
+      mailpit:
+        image: axllent/mailpit:v1.27
+        ports:
+          - 1025:1025
+          - 8025:8025
       postgres:
         image: postgres:${{ matrix.postgres }}
         env:
@@ -53,6 +65,7 @@ jobs:
       FORUM_TEST_DRIVER: pgsql
       FORUM_TEST_INSTALL_DB: forum_install
       FORUM_TEST_UPGRADE_DB: forum_upgrade
+      FORUM_TEST_IDENTITY_DB: forum_identity
       DB_HOST: 127.0.0.1
       DB_PORT: '5432'
       DB_USERNAME: forum_ci
@@ -69,6 +82,7 @@ jobs:
       - run: composer install --prefer-dist --no-interaction
       - name: Prepare isolated databases
         run: |
-          php -r '$p=new PDO("pgsql:host=127.0.0.1;port=5432;dbname=forum_install",getenv("DB_USERNAME"),getenv("DB_PASSWORD")); $p->exec("CREATE DATABASE forum_upgrade"); $p->exec("CREATE DATABASE forum_http");'
+          php -r '$p=new PDO("pgsql:host=127.0.0.1;port=5432;dbname=forum_install",getenv("DB_USERNAME"),getenv("DB_PASSWORD")); $p->exec("CREATE DATABASE forum_upgrade"); $p->exec("CREATE DATABASE forum_http"); $p->exec("CREATE DATABASE forum_identity");'
       - run: php tools/forum-installer-regression.php
       - run: php tools/forum-regression.php
+      - run: php tools/forum-identity-regression.php

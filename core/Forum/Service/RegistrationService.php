@@ -11,6 +11,10 @@ use CajeerEngine\Security\PasswordHasher;
 final readonly class RegistrationService
 {
     public function __construct(private ForumTransaction $tx, private UserRepository $users, private PasswordHasher $passwords) {}
+    public static function verificationRequired(): bool
+    {
+        return getenv('FORUM_REQUIRE_EMAIL_VERIFICATION') !== 'false';
+    }
     public function register(string $email, string $name, string $password): string
     {
         $email = V::text($email,'email',254); $name = V::text($name,'name',60,2); $password = V::password($password);
@@ -21,7 +25,7 @@ final readonly class RegistrationService
         try {
             return $this->tx->write(function () use ($email,$name,$hash) {
                 if ($this->users->findByEmail($email) !== null) throw new ForumException('Регистрация невозможна.',409);
-                try { $id = $this->users->create($email,$name,$hash,['forum-member']); }
+                try { $id = $this->users->create($email,$name,$hash,['forum-member'],self::verificationRequired() ? 'pending' : 'active'); }
                 catch (\InvalidArgumentException $e) {
                     if ($this->users->findByEmail($email) !== null) throw new ForumException('Регистрация невозможна.',409);
                     throw new \LogicException('Forum registration configuration invalid', 0, $e);

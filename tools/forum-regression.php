@@ -12,7 +12,7 @@ $root=dirname(__DIR__);$driver=getenv('FORUM_TEST_DRIVER')==='pgsql'?'pgsql':'sq
 $tmp=sys_get_temp_dir().'/forum-ci-'.bin2hex(random_bytes(6));mkdir($tmp,0700);
 function check(bool $condition,string $message): void {if(!$condition)throw new RuntimeException($message);echo "PASS $message\n";}
 try {
-    foreach(['APP_NAME=Test <Forum>','APP_ENV=testing','APP_DEBUG=false','APP_URL=https://forum.test','DB_DRIVER='.$driver,'SQLITE_DATABASE='.$tmp.'/forum.sqlite','CACHE_DRIVER=file','QUEUE_DRIVER=file','STORAGE_DRIVER=local','CONTENT_STORAGE=database','CMS_STORAGE=database','FORUM_REGISTRATION=true','RATE_LIMIT_GLOBAL=1000','RATE_LIMIT_AUTH=1000','PASSWORD_ARGON2_MEMORY=8192','PASSWORD_ARGON2_TIME=2'] as $v)putenv($v);
+    foreach(['APP_NAME=Test <Forum>','APP_ENV=testing','APP_DEBUG=false','APP_URL=https://forum.test','DB_DRIVER='.$driver,'SQLITE_DATABASE='.$tmp.'/forum.sqlite','CACHE_DRIVER=file','QUEUE_DRIVER=file','STORAGE_DRIVER=local','CONTENT_STORAGE=database','CMS_STORAGE=database','FORUM_REGISTRATION=true','FORUM_REQUIRE_EMAIL_VERIFICATION=false','RATE_LIMIT_GLOBAL=1000','RATE_LIMIT_AUTH=1000','PASSWORD_ARGON2_MEMORY=8192','PASSWORD_ARGON2_TIME=2'] as $v)putenv($v);
     $cfg=new ConfigRepository($root);$db=new DatabaseManager($cfg);(new MigrationRunner($db->connection(),$root.'/migrations'))->run($driver);
     if ((int)$db->connection()->query('SELECT COUNT(*) FROM ce_users')->fetchColumn()!==0) throw new RuntimeException('Disposable forum database must be empty');
     $roles=new RoleRepository($db);$roles->seedDefaults();$users=new UserRepository($db,$roles,new PasswordHasher($cfg));$users->createAdmin('admin@example.test','Admin','AdminPass12345');
@@ -59,6 +59,6 @@ try {
     putenv('FORUM_REGISTRATION=false');
     $call('POST','/forum/register',['name'=>'Closed','email'=>'closed@example.test','password'=>'MemberPass12345'],null,403);
     check(str_contains((string)$app->handle(Request::create('https://forum.test/'))->getContent(),'data-registration="false"'),'closed registration UI');
-    check($app->handle(Request::create('https://forum.test/'))->headers->get('X-CajeerEngine-Forum-Version')==='0.1.2','forum version header');
+    check($app->handle(Request::create('https://forum.test/'))->headers->get('X-CajeerEngine-Forum-Version')==='0.1.3','forum version header');
     echo "Forum integration passed\n";
 } finally {foreach(glob($tmp.'/*')?:[] as $f)unlink($f);rmdir($tmp);}

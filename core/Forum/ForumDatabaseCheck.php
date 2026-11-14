@@ -15,6 +15,8 @@ final readonly class ForumDatabaseCheck
     public function check(): array
     {
         $required = [
+            'ce_identity_challenges'=>['user_id','purpose','token_hash','secret','issued_at','expires_at'],
+            'ce_users'=>['email_verified_at','password_changed_at','two_factor_last_step'],
             'ce_forum_categories'=>['id','name','description','position'],
             'ce_forum_boards'=>['id','category_id','name','description','position'],
             'ce_forum_threads'=>['id','board_id','author_id','title','locked','pinned','created_at','updated_at'],
@@ -39,7 +41,7 @@ final readonly class ForumDatabaseCheck
             'sqlite' => $pdo->query("SELECT name FROM sqlite_master WHERE type='index'")->fetchAll(\PDO::FETCH_COLUMN),
             default => $pdo->query('SELECT DISTINCT index_name FROM information_schema.statistics WHERE table_schema=DATABASE()')->fetchAll(\PDO::FETCH_COLUMN),
         };
-        $missingIndexes = array_values(array_diff(['ce_forum_post_thread','ce_forum_thread_latest','ce_forum_thread_author','ce_forum_post_author','ce_forum_watch_user','ce_forum_reaction_user','ce_forum_report_post','ce_forum_report_user','ce_forum_report_resolver'],$indexes));
+        $missingIndexes = array_values(array_diff(['ce_identity_expiry_idx','ce_forum_post_thread','ce_forum_thread_latest','ce_forum_thread_author','ce_forum_post_author','ce_forum_watch_user','ce_forum_reaction_user','ce_forum_report_post','ce_forum_report_user','ce_forum_report_resolver'],$indexes));
         return ['ok'=>$missing===[] && $invalidRoles===[] && $missingIndexes===[], 'missing'=>$missing,'invalid_roles'=>$invalidRoles,'missing_indexes'=>$missingIndexes];
     }
 }

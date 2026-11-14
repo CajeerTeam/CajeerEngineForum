@@ -21,6 +21,21 @@ final class Operations {
     ),
     'bodyRequired' => false,
   ),
+  'delete_AuthSession' => 
+  array (
+    'method' => 'DELETE',
+    'path' => '/auth/sessions/{id}',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
   'delete_CmsNavigationMenu' => 
   array (
     'method' => 'DELETE',
@@ -205,6 +220,15 @@ final class Operations {
   array (
     'method' => 'GET',
     'path' => '/auth/me',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => false,
+  ),
+  'get_AuthSessions' => 
+  array (
+    'method' => 'GET',
+    'path' => '/auth/sessions',
     'parameters' => 
     array (
     ),
@@ -1371,6 +1395,15 @@ final class Operations {
     ),
     'bodyRequired' => false,
   ),
+  'post_Auth2faConfirm' => 
+  array (
+    'method' => 'POST',
+    'path' => '/auth/2fa/confirm',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => true,
+  ),
   'post_Auth2faDisable' => 
   array (
     'method' => 'POST',
@@ -1384,6 +1417,24 @@ final class Operations {
   array (
     'method' => 'POST',
     'path' => '/auth/2fa/enable',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => true,
+  ),
+  'post_AuthEmailResend' => 
+  array (
+    'method' => 'POST',
+    'path' => '/auth/email/resend',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => true,
+  ),
+  'post_AuthEmailVerify' => 
+  array (
+    'method' => 'POST',
+    'path' => '/auth/email/verify',
     'parameters' => 
     array (
     ),
@@ -1418,6 +1469,33 @@ final class Operations {
     array (
     ),
     'bodyRequired' => false,
+  ),
+  'post_AuthPasswordForgot' => 
+  array (
+    'method' => 'POST',
+    'path' => '/auth/password/forgot',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => true,
+  ),
+  'post_AuthPasswordReset' => 
+  array (
+    'method' => 'POST',
+    'path' => '/auth/password/reset',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => true,
+  ),
+  'post_AuthSessionsRevokeAll' => 
+  array (
+    'method' => 'POST',
+    'path' => '/auth/sessions/revoke-all',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => true,
   ),
   'post_CmsBootstrap' => 
   array (

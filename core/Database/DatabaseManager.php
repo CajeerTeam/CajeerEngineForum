@@ -218,6 +218,7 @@ final class DatabaseManager
             'ce_users.password_changed_at' => ['ce_users', 'password_changed_at'],
             'ce_users.email_verified_at' => ['ce_users', 'email_verified_at'],
             'ce_users.two_factor_recovery_codes' => ['ce_users', 'two_factor_recovery_codes'],
+            'ce_users.two_factor_last_step' => ['ce_users','two_factor_last_step'],
             'ce_api_tokens.token_prefix' => ['ce_api_tokens', 'token_prefix'],
             'ce_api_tokens.revoked_at' => ['ce_api_tokens', 'revoked_at'],
         ];
@@ -254,7 +255,7 @@ final class DatabaseManager
             'ce_public_routes',
             'ce_cms_search',
             'ce_forum_categories','ce_forum_boards','ce_forum_threads','ce_forum_posts',
-            'ce_forum_reactions','ce_forum_watches','ce_forum_reports',
+            'ce_forum_reactions','ce_forum_watches','ce_forum_reports','ce_identity_challenges',
         ];
 
         if($driver==='pgsql')$tables[]='ce_scheduler_runs';

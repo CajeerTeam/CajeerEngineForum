@@ -38,7 +38,7 @@ if (($argv[1]??'')==='worker') {
 }
 $tmp=sys_get_temp_dir().'/forum-core-'.bin2hex(random_bytes(8)); mkdir($tmp,0700);
 try {
-    foreach(['APP_ENV=testing','DB_DRIVER=sqlite','SQLITE_DATABASE='.$tmp.'/forum.sqlite','DB_SQLITE_BUSY_TIMEOUT_MS=15000','DB_SQLITE_WAL=true','FORUM_REGISTRATION=true','PASSWORD_ARGON2_MEMORY=8192','PASSWORD_ARGON2_TIME=2'] as $env) putenv($env);
+    foreach(['APP_ENV=testing','DB_DRIVER=sqlite','SQLITE_DATABASE='.$tmp.'/forum.sqlite','DB_SQLITE_BUSY_TIMEOUT_MS=15000','DB_SQLITE_WAL=true','FORUM_REGISTRATION=true','FORUM_REQUIRE_EMAIL_VERIFICATION=false','PASSWORD_ARGON2_MEMORY=8192','PASSWORD_ARGON2_TIME=2'] as $env) putenv($env);
     [$db,$discussion,$engagement,$moderation,$registration]=services($root);
     $pdo=$db->connection();$runner=new MigrationRunner($pdo,$root.'/migrations');$runner->run('sqlite');
     (new RoleRepository($db))->seedDefaults();
@@ -85,7 +85,7 @@ try {
     $moderation->moderate($a,$t,'delete');
     foreach(['ce_forum_posts','ce_forum_reactions','ce_forum_watches','ce_forum_reports'] as $table) check((int)$pdo->query('SELECT COUNT(*) FROM '.$table)->fetchColumn()===0,'cascade '.$table);
     check($pdo->query('PRAGMA foreign_key_check')->fetchAll()===[],'foreign keys intact');
-    $v=new ForumVersion($root);check($v->current()==='0.1.2' && $v->upstream()==='1.3.0','independent product/core versions');
+    $v=new ForumVersion($root);check($v->current()==='0.1.3' && $v->upstream()==='1.3.0','independent product/core versions');
     echo "Forum core regression passed\n";
 } finally {
     unset($db,$discussion,$engagement,$moderation,$registration,$pdo,$runner);

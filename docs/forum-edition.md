@@ -38,7 +38,7 @@ The inherited `/install` and `/upgrade` front controllers are routed through `pu
 
 ## Releases
 
-`VERSION` and `release.json.version` identify the upstream engine (1.3.0); `release.json.edition_version` is 0.1.2. `ForumVersion` validates both identities. Source/dist artifact names, manifest version, release tags and updater comparisons use the edition version. The signed manifest also records `upstream_version`, checked against VERSION, release metadata and the prebuilt admin manifest. The engine API/SDK compatibility version stays unchanged. Health/admin/system diagnostics expose `edition_version`; HTTP responses include `X-CajeerEngine-Forum-Version`.
+`VERSION` and `release.json.version` identify the upstream engine (1.3.0); `release.json.edition_version` is 0.1.3. `ForumVersion` validates both identities. Source/dist artifact names, manifest version, release tags and updater comparisons use the edition version. The signed manifest also records `upstream_version`, checked against VERSION, release metadata and the prebuilt admin manifest. The engine API/SDK compatibility version stays unchanged. Health/admin/system diagnostics expose `edition_version`; HTTP responses include `X-CajeerEngine-Forum-Version`.
 
 The 0.1.0 updater compared upstream engine versions. Apply the 0.1.1 changed-file archive manually to a backed-up test installation before using the new updater. Do not submit the patch ZIP to `update:apply`: it is not a signed full dist. With 0.1.1 installed, later signed releases can advance edition_version without changing upstream. Legacy forum manifests without upstream_version and ordinary CMS packages are refused by the updater. The upstream signed publication workflow is archived, not active; no production signature or deployment certification is claimed.
 
@@ -86,3 +86,28 @@ php bin/cajeer install:check --json
 `0016_forum_lookup_indexes.sql` adds indexes only. Existing migration files and their SHA-256 hashes remain unchanged. PostgreSQL/SQLite DDL and ledger application are transactional; a failed migration can be retried after correcting the cause. A missing or altered applied migration blocks further migrations. The changed-file ZIP is not a signed updater package.
 
 Verification on a disposable environment: `php tools/forum-installer-regression.php`, `php tools/forum-core-regression.php`, `php tools/forum-regression.php`. PostgreSQL tests run using separate empty `FORUM_TEST_INSTALL_DB`, `FORUM_TEST_UPGRADE_DB`, and `DB_DATABASE` with `FORUM_TEST_DRIVER=pgsql` and connection variables; CI provides disposable PostgreSQL 17/18 services. The installer regression exercises failure rollback, initial setup, interrupted setup resume, token protection, dotenv round-trip, data preservation and migration checksum checks. CI results must pass before deployment.
+
+### 0.1.3 — Forum Identity & Access
+
+Upgrade: back up files and DB, deploy the changed files and run `php bin/cajeer migrate` before accepting traffic. Migration 0017 is additive. Existing active users and the installer-created administrator stay active; new forum registrations are `pending` by default and cannot log in until confirmed. `FORUM_REQUIRE_EMAIL_VERIFICATION=false` explicitly opts out (e.g. trusted local demo); it does not activate existing pending accounts.
+
+Configure SMTP in `.env` (use a trusted provider, a verified sender, and HTTPS `APP_URL`):
+
+```dotenv
+APP_URL=https://forum.example.org
+FORUM_REQUIRE_EMAIL_VERIFICATION=true
+FORUM_SMTP_HOST=smtp.example.org
+FORUM_SMTP_PORT=587
+FORUM_SMTP_SECURITY=starttls
+FORUM_SMTP_FROM=forum@example.org
+FORUM_SMTP_USERNAME=forum@example.org
+FORUM_SMTP_PASSWORD='your-provider-secret'
+```
+
+`FORUM_SMTP_SECURITY=tls` supports implicit TLS (465); `plain` is limited to localhost/127.0.0.1 without authentication (Mailpit/local development). SMTP TLS verifies the server certificate and hostname; authentication uses AUTH PLAIN inside TLS. Mail is sent synchronously after transaction commit. If SMTP fails, the account remains recoverable; audit event `auth.identity_mail_failed` contains no link or credentials. Configure SMTP before opening public registration. `/forum/resend-email` and `/forum/forgot-password` allow a retry after 60 seconds; responses are generic even for nonexistent accounts. Links expire after 24h (verification) or 30 minutes (reset); only SHA-256 token hashes are stored. Confirmation also requires the registration password to prevent pre-registered account takeover. Email links put the token in a URL fragment, removed from the address bar by the UI before submission. Use a fresh request if the link expires. Reset invalidates all tokens, preserves TOTP and does not reactivate disabled accounts.
+
+`/forum/account` includes security and active sessions. Session revocation is scoped to the current user's login sessions; revoke-all requires password and current second factor when enabled. API tokens are not included in session listing/revoke-all. Existing token API remains unchanged; password reset and 2FA changes revoke all tokens (including API tokens). TOTP enrollment uses `POST /api/v1/auth/2fa/enable` (returns `secret`, `setup_token`, `otpauth_uri`, `expires_in`; no credential change), then `POST /api/v1/auth/2fa/confirm` with `password`, `setup_token`, `two_factor_code`. The confirmation code cannot be used again; wait for the next 30-second code or use a recovery code to log in. Recovery codes are shown once; store them securely. Disabling 2FA requires password and unused TOTP/recovery code. The enrollment response intentionally changes from 0.1.2: clients must implement confirmation. TOTP secrets follow the existing database storage model; secure DB and backups. No QR rendering library is required: the account page offers the manual secret and the API provides an otpauth URI.
+
+Verification and reset requests use existing auth IP rate limits plus per-account mail cooldown. Production multi-instance shared rate limiting, asynchronous mail and external penetration testing are later operational work. Tests: `php tools/forum-identity-regression.php` with Mailpit at `127.0.0.1:1025` / HTTP `127.0.0.1:8025`; use a disposable Mailpit and DB. The CI tests the HTTP identity lifecycle with SQLite and PostgreSQL.
+
+Session timestamps are now written and interpreted in UTC; on a legacy installation that ran non-UTC PHP/DB time zones, revoke old sessions at upgrade to avoid ambiguous stored expiry timestamps. Login also has a per-account rate limit using the existing file-backed rate limiter.

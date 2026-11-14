@@ -26,37 +26,48 @@ final readonly class AuthService
     public function login(string $email, string $password, ?string $twoFactorCode, Request $request): array
     {
         $user = $this->users->findByEmailForAuth($email);
-        if ($user === null || !$this->passwords->verify($password, (string) $user['password_hash'])) {
-            $this->audit->record('auth.login_failed', null, ['email' => mb_strtolower($email), 'reason' => 'invalid_credentials'], $request->getClientIp(), $request->headers->get('User-Agent'));
+        if ($user === null) {
+            $this->audit->record('auth.login_failed', null, ['reason'=>'invalid_credentials'], $request->getClientIp(), $request->headers->get('User-Agent'));
             throw new \RuntimeException('Неверный email или пароль.');
         }
-
-        if (($user['status'] ?? 'active') !== 'active') {
-            $this->audit->record('auth.login_failed', (string) $user['id'], ['email' => $user['email'], 'reason' => 'disabled_user'], $request->getClientIp(), $request->headers->get('User-Agent'));
-            throw new \RuntimeException('Пользователь отключён.');
+        $hit=(new RateLimiter($this->config->rootPath()))->hit('auth-account',(string)$user['id'],max(5,$this->config->int('security.rate_limits.auth',20)),60);
+        if (!$hit['allowed']) throw new \CajeerEngine\Forum\ForumException('Превышен лимит попыток входа.',429);
+        // Re-read credentials after locking, so a password reset cannot race session issuance.
+        try {
+            return $this->users->locked((string)$user['id'], function () use ($email, $password, $twoFactorCode, $request): array {
+                $user = $this->users->findByEmailForAuth($email);
+                if ($user === null || !$this->passwords->verify($password, (string)$user['password_hash'])) {
+                    throw new \RuntimeException('Неверный email или пароль.');
+                }
+                if (($user['status'] ?? 'active') !== 'active') {
+                    throw new \RuntimeException('Аккаунт не активирован или отключён.');
+                }
+                if (filter_var($user['two_factor_enabled'] ?? false, FILTER_VALIDATE_BOOLEAN)) {
+                    $secret = (string)($user['two_factor_secret'] ?? '');
+                    if ($secret === '' || $twoFactorCode === null || !$this->verifyTwoFactorCode((string)$user['id'], $secret, $twoFactorCode)) {
+                        throw new \RuntimeException('Требуется корректный 2FA-код.');
+                    }
+                }
+                $scopes = $this->users->permissionsForUser((string)$user['id']);
+                $ttlDays = max(1, $this->config->int('security.sessions.ttl_days', 14));
+                $token = $this->tokens->create((string)$user['id'], 'admin-session', $scopes, new \DateTimeImmutable('+' . $ttlDays . ' days'));
+                $this->users->markLogin((string)$user['id']);
+                $this->audit->record('auth.login_success', (string)$user['id'], ['email'=>$user['email'],'token_id'=>$token['id']], $request->getClientIp(), $request->headers->get('User-Agent'));
+                return [
+                    'access_token'=>$token['plain_token'],
+                    'token_type'=>'Bearer',
+                    'expires_at'=>$token['expires_at'] ?? null,
+                    'user'=>$this->publicUser($this->users->findById((string)$user['id']) ?? $user),
+                    'scopes'=>$scopes,
+                ];
+            });
+        } catch (\PDOException|\CajeerEngine\Database\DatabaseUnavailable $e) {
+            throw $e;
+        } catch (\RuntimeException $e) {
+            // Record failures outside the rolled-back login transaction.
+            $this->audit->record('auth.login_failed',(string)$user['id'],['reason'=>'authentication_failed'],$request->getClientIp(),$request->headers->get('User-Agent'));
+            throw $e;
         }
-
-        if ((bool) ($user['two_factor_enabled'] ?? false)) {
-            $secret = (string) ($user['two_factor_secret'] ?? '');
-            if ($secret === '' || $twoFactorCode === null || !$this->verifyTwoFactorCode((string) $user['id'], $secret, $twoFactorCode)) {
-                $this->audit->record('auth.login_failed', (string) $user['id'], ['email' => $user['email'], 'reason' => 'two_factor_failed'], $request->getClientIp(), $request->headers->get('User-Agent'));
-                throw new \RuntimeException('Требуется корректный 2FA-код.');
-            }
-        }
-
-        $scopes = $this->users->permissionsForUser((string) $user['id']);
-        $ttlDays = max(1, $this->config->int('security.sessions.ttl_days', 14));
-        $token = $this->tokens->create((string) $user['id'], 'admin-session', $scopes, new \DateTimeImmutable('+' . $ttlDays . ' days'));
-        $this->users->markLogin((string) $user['id']);
-        $this->audit->record('auth.login_success', (string) $user['id'], ['email' => $user['email'], 'token_id' => $token['id']], $request->getClientIp(), $request->headers->get('User-Agent'));
-
-        return [
-            'access_token' => $token['plain_token'],
-            'token_type' => 'Bearer',
-            'expires_at' => $token['expires_at'] ?? null,
-            'user' => $this->publicUser($this->users->findById((string) $user['id']) ?? $user),
-            'scopes' => $scopes,
-        ];
     }
 
     /** @return array<string, mixed>|null */
@@ -155,44 +166,25 @@ final readonly class AuthService
 
     public function confirmSensitiveAction(array $identity, string $password, ?string $code): bool
     {
-        if (!($identity['session'] ?? false) || empty($identity['user']['email']) || $password === '') { return false; }
+        if (!($identity['session'] ?? false) || empty($identity['user']['email']) || $password === '' || strlen($password)>1024) return false;
         $user = $this->users->findByEmailForAuth((string) $identity['user']['email']);
-        if ($user === null || !$this->passwords->verify($password, (string) $user['password_hash'])) { return false; }
-        return !filter_var($user['two_factor_enabled'] ?? false, FILTER_VALIDATE_BOOLEAN)
-            || ($code !== null && $this->verifyTwoFactorCode((string) $user['id'], (string) $user['two_factor_secret'], $code));
-    }
-
-    /** @return array{secret:string,recovery_codes:list<string>} */
-    public function enableTwoFactor(string $userId): array
-    {
-        $secret = $this->totp->generateSecret();
-        $codes = $this->totp->recoveryCodes();
-        $this->users->enableTwoFactor($userId, $secret, $this->totp->hashRecoveryCodes($codes));
-        $this->tokens->revokeForUser($userId);
-        $this->audit->record('auth.2fa_enabled', $userId, []);
-        return ['secret' => $secret, 'recovery_codes' => $codes];
-    }
-
-    public function disableTwoFactor(string $userId): void
-    {
-        $this->users->disableTwoFactor($userId);
-        $this->tokens->revokeForUser($userId);
-        $this->audit->record('auth.2fa_disabled', $userId, []);
+        if ($user === null || $user['status'] !== 'active' || !$this->passwords->verify($password, (string)$user['password_hash'])) return false;
+        return !filter_var($user['two_factor_enabled'] ?? false,FILTER_VALIDATE_BOOLEAN)
+            || ($code !== null && $this->verifyTwoFactorCode((string)$user['id'],(string)$user['two_factor_secret'],$code));
     }
 
     /** @return array<string, mixed> */
     private function publicUser(array $user): array
     {
-        unset($user['password_hash'], $user['two_factor_secret'], $user['two_factor_recovery_codes']);
+        unset($user['password_hash'], $user['two_factor_secret'], $user['two_factor_recovery_codes'], $user['two_factor_last_step']);
         $user['permissions'] = isset($user['id']) ? $this->users->permissionsForUser((string) $user['id']) : [];
         return $user;
     }
 
     private function verifyTwoFactorCode(string $userId, string $secret, string $code): bool
     {
-        if ($this->totp->verify($secret, $code)) {
-            return true;
-        }
+        $step = $this->totp->matchingStep($secret, $code);
+        if ($step !== null) return $this->users->acceptTotpStep($userId, $step);
         return $this->users->consumeRecoveryCode($userId, $code);
     }
 }

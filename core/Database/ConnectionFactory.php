@@ -69,10 +69,12 @@ final readonly class ConnectionFactory
                 if($mode!=='wal'&&$mode!=='memory')throw new \RuntimeException('Cannot enable SQLite WAL');
             }
         }elseif($driver==='pgsql'){
+            $pdo->exec("SET TIME ZONE 'UTC'");
             $pdo->exec('SET statement_timeout = '.self::bounded($connection,'statement_timeout_ms',30000,0,3600000));
             $pdo->exec('SET lock_timeout = '.self::bounded($connection,'lock_timeout_ms',5000,0,600000));
             $pdo->exec('SET idle_in_transaction_session_timeout = '.self::bounded($connection,'idle_transaction_timeout_ms',60000,0,3600000));
         }elseif($driver==='mysql'){
+            $pdo->exec("SET time_zone = '+00:00'");
             $pdo->exec('SET SESSION innodb_lock_wait_timeout = '.self::bounded($connection,'lock_timeout_seconds',5,1,600));
         }
         return $pdo;
