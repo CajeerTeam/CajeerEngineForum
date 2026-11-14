@@ -17,6 +17,10 @@ final readonly class ForumAccessPolicy
         return new self($auth['user_id'], is_array($auth['scopes'] ?? null) ? $auth['scopes'] : []);
     }
 
+    public static function optional(mixed $auth): self { return is_array($auth) ? self::fromAuth($auth) : new self("", []); }
+
+    public function has(string $scope): bool { return in_array("*", $this->scopes, true) || in_array($scope, $this->scopes, true); }
+
     public function require(string $scope): void
     {
         if (!in_array('*', $this->scopes, true) && !in_array($scope, $this->scopes, true)) {

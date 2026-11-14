@@ -305,7 +305,81 @@ class NetworkTests(unittest.TestCase):
         c.call('DELETE',f'/forum/categories/{dest}',200,token=admin)
         c.call('DELETE',f'/forum/categories/{cat}',200,token=admin)
 
-    def test_04_rate_limit(self):
+    def test_04_private_nodes_and_revocation(self):
+        c = Client(self.base)
+        _, member, token = self.activated(c)
+        other_email, other_id, other = self.activated(Client(self.base))
+        admin = c.login(ADMIN, ADMIN_PASSWORD)[0]['data']['access_token']
+        category = c.call('POST','/forum/categories',201,{'name':'ACL confidential category','description':''},token=admin)['id']
+        root = c.call('POST',f'/forum/categories/{category}/boards',201,{'name':'ACL confidential parent','description':'','node_type':'container'},token=admin)['id']
+        board = c.call('POST',f'/forum/categories/{category}/boards',201,{'name':'ACL confidential child','description':'','parent_id':root},token=admin)['id']
+        thread = c.call('POST',f'/forum/boards/{board}/threads',201,{'title':'ACLUniqueSecret','body':'ACLUniqueSecret'},token=token)['id']
+        url=f'/forum/threads/{thread}'
+        post='/forum/posts/'+c.call('GET',url)['posts'][0]['id']
+        c.call('PUT',url+'/watch',200,{'enabled':True},token=other)
+        report=c.call('POST',post+'/report',201,{'reason':'confidential report'},token=other)['id']
+        def rule(permission,effect,subject_type='user',subject_id=member):
+            return {'subject_type':subject_type,'subject_id':subject_id,'permission':permission,'effect':effect}
+        policy=f'/forum/categories/{category}/permissions'
+        rules=[rule('thread:read','allow'),rule('node:view','allow'),rule('post:reply','never')]
+        c.call('PUT',policy,403,{'visibility':'hidden','rules':rules},token=token)
+        c.call('PUT',policy,200,{'visibility':'hidden','rules':rules},token=admin)
+        for viewer in (None,other):
+            tree=c.call('GET','/forum',token=viewer)
+            self.assertNotIn(category,[x['id'] for x in tree['categories']])
+            self.assertNotIn(root,[x['id'] for x in tree['boards']])
+            self.assertNotIn(board,[x['id'] for x in tree['boards']])
+            c.call('GET',f'/forum/boards/{board}',404,token=viewer)
+            c.call('GET',url,404,token=viewer)
+            self.assertNotIn(thread,[x['id'] for x in c.call('GET','/forum/latest',token=viewer)])
+            self.assertNotIn(thread,[x['id'] for x in c.call('GET','/forum/search?q=ACLUniqueSecret',token=viewer)])
+            self.assertNotIn(thread,[x['id'] for x in c.call('GET',f'/forum/members/{member}',token=viewer)['threads']])
+        self.assertNotIn(thread,[x['id'] for x in c.call('GET','/forum/watches',token=other)])
+        c.call('POST',url+'/posts',404,{'body':'blocked'},token=other)
+        c.call('PATCH',post,404,{'body':'blocked'},token=other)
+        c.call('PUT',post+'/reaction',404,{'enabled':True},token=other)
+        c.call('PUT',url+'/watch',404,{'enabled':True},token=other)
+        c.call('POST',post+'/report',404,{'reason':'blocked'},token=other)
+        self.assertEqual('ACLUniqueSecret',c.call('GET',url,token=token)['posts'][0]['body'])
+        self.assertIn(thread,[x['id'] for x in c.call('GET','/forum/search?q=ACLUniqueSecret',token=token)])
+        c.call('POST',url+'/posts',403,{'body':'blocked by never'},token=token)
+        # Descendant allow cannot override never or an inaccessible ancestor.
+        child_policy=f'/forum/boards/{board}/permissions'
+        c.call('PUT',child_policy,200,{'visibility':'public','rules':[rule('post:reply','allow'),rule('thread:read','allow','everyone',''),rule('node:view','allow','everyone','')]},token=admin)
+        c.call('POST',url+'/posts',403,{'body':'still blocked'},token=token)
+        c.call('GET',url,404,token=other)
+        self.assertIn(report,[x['id'] for x in c.call('GET','/forum/reports',token=admin)])
+        c.call('PATCH',f'/users/{other_id}',200,{'roles':['forum-member','forum-moderator']},token=admin)
+        mod=c.login(other_email)[0]['data']['access_token']
+        self.assertNotIn(report,[x['id'] for x in c.call('GET','/forum/reports',token=mod)])
+        c.call('POST',f'/forum/reports/{report}/resolve',404,token=mod)
+        c.call('POST',url+'/moderate',404,{'action':'lock'},token=mod)
+        c.call('PUT',policy,200,{'visibility':'private','rules':[]},token=admin)
+        c.call('GET',url,404,token=token)
+        c.call('GET',url,200,token=admin)
+        # Explicit role allow grants access with existing token; removing it revokes access.
+        role=next(r['id'] for r in c.call('GET','/roles',token=admin) if r['handle']=='forum-member')
+        c.call('PUT',policy,200,{'visibility':'private','rules':[rule('thread:read','allow','role',role)]},token=admin)
+        c.call('GET',url,200,token=token)
+        c.call('GET',url,200,token=other)
+        # A moderator can read a report only if both visibility and moderation allow it.
+        c.call('PUT',child_policy,200,{'visibility':'public','rules':[rule('thread:moderate','deny','role',next(r['id'] for r in c.call('GET','/roles',token=admin) if r['handle']=='forum-moderator'))]},token=admin)
+        self.assertNotIn(report,[x['id'] for x in c.call('GET','/forum/reports',token=mod)])
+        c.call('POST',url+'/moderate',403,{'action':'lock'},token=mod)
+        c.call('PUT',child_policy,200,{'visibility':'public','rules':[]},token=admin)
+        self.assertIn(report,[x['id'] for x in c.call('GET','/forum/reports',token=mod)])
+        c.call('POST',f'/forum/reports/{report}/resolve',200,token=mod)
+        # Revoking the role grant changes access for an already issued token.
+        c.call('PATCH',f'/users/{other_id}',200,{'roles':['forum-moderator']},token=admin)
+        c.call('GET',url,404,token=mod)
+        c.call('PUT',policy,200,{'visibility':'private','rules':[]},token=admin)
+        c.call('GET',url,404,token=other)
+        c.call('POST',url+'/moderate',200,{'action':'delete'},token=admin)
+        c.call('DELETE',f'/forum/boards/{board}',200,token=admin)
+        c.call('DELETE',f'/forum/boards/{root}',200,token=admin)
+        c.call('DELETE',f'/forum/categories/{category}',200,token=admin)
+
+    def test_05_rate_limit(self):
         # Run last: exhaust the real IP auth bucket without guessing credentials.
         c = Client(self.base)
         _, headers = c.request('GET', '/auth/me', 401)
@@ -433,6 +507,22 @@ class BrowserTests(unittest.TestCase):
                     expect(admin_page.get_by_role('button', name='Создать тему', exact=True)).to_have_count(0)
                     admin_page.get_by_role('link', name='Browser child', exact=True).click()
                     expect(admin_page.get_by_role('button', name='Создать тему', exact=True)).to_be_visible()
+                    child_url=admin_page.url
+                    admin_page.goto(self.base+'/forum/manage')
+                    child_panel=admin_page.get_by_role('heading',name='Browser child',exact=True).locator('..')
+                    child_panel.get_by_role('button',name='Разрешения',exact=True).click()
+                    child_panel.locator('[name=visibility]').select_option('hidden')
+                    admin_page.once('dialog',lambda dialog: dialog.accept())
+                    child_panel.get_by_role('button',name='Сохранить разрешения',exact=True).click()
+                    expect(child_panel.get_by_role('button',name='Разрешения',exact=True)).to_be_visible()
+                    guest=browser.new_context()
+                    try:
+                        guest_page=guest.new_page();guest_page.goto(self.base+'/forum')
+                        expect(guest_page.get_by_role('link',name='Browser parent',exact=True)).to_be_visible()
+                        expect(guest_page.get_by_role('link',name='Browser child',exact=True)).to_have_count(0)
+                        guest_page.goto(child_url)
+                        expect(guest_page.locator('#notice')).to_contain_text('Раздел не найден')
+                    finally: guest.close()
                 finally:
                     admin_context.close()
                 self.assertEqual([], errors)

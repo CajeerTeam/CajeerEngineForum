@@ -256,6 +256,7 @@ final class DatabaseManager
             'ce_cms_search',
             'ce_forum_categories','ce_forum_boards','ce_forum_threads','ce_forum_posts',
             'ce_forum_reactions','ce_forum_watches','ce_forum_reports','ce_identity_challenges',
+            'ce_forum_category_permissions','ce_forum_board_permissions',
         ];
 
         if($driver==='pgsql')$tables[]='ce_scheduler_runs';

@@ -29,6 +29,9 @@ final readonly class ForumTransaction
         }
     }
 
+    public function read(callable $operation): mixed { return $this->db->readSnapshot($operation); }
+    public function permissions(): NodePermissionService { return new NodePermissionService($this,new \CajeerEngine\Forum\Repository\PermissionRepository($this->db),new \CajeerEngine\Forum\Repository\BoardRepository($this->db)); }
+
     public function audit(string $event, string $actor, array $context): void
     {
         if (!$this->db->connection()->inTransaction()) throw new \LogicException('Forum audit requires a transaction');

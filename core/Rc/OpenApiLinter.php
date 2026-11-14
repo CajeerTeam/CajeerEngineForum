@@ -33,6 +33,7 @@ final readonly class OpenApiLinter
                 [$name,$scopes] = $expected[$key];
                 if (($op['x-cajeer-route'] ?? '') !== $name || !array_key_exists('x-cajeer-required-scopes',$op) || $op['x-cajeer-required-scopes'] !== $scopes) $errors[] = 'Route / scope mismatch: '.$key;
                 $security = $scopes === null ? [] : [['BearerAuth'=>[]],['ApiTokenAuth'=>[]],['BrowserSession'=>[]]+($method !== 'get' ? ['CsrfToken'=>[]] : [])];
+                if ($scopes===null && RouteRegistry::optionalAuthentication($name)) $security=[[],['BearerAuth'=>[]],['ApiTokenAuth'=>[]],['BrowserSession'=>[]]];
                 if (($op['security'] ?? null) !== $security) $errors[] = 'Security mismatch: '.$key;
                 $id = $op['operationId'] ?? '';
                 if (!is_string($id) || $id === '' || isset($ids[$id])) $errors[] = 'Missing/duplicate operationId: '.$key;

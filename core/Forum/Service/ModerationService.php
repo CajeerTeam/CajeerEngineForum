@@ -17,7 +17,8 @@ final readonly class ModerationService
         $post = V::id($post); $reason = V::text($reason,'reason',500,3);
         $actor->require('forum:write');
         return $this->tx->write(function () use ($actor,$post,$reason) {
-            $this->threads->lockForPost($post) ?? throw new ForumException('Сообщение не найдено.',404);
+            $thread=$this->threads->lockForPost($post) ?? throw new ForumException('Сообщение не найдено.',404);
+            $this->tx->permissions()->assertWrite($actor,$thread['board_id'],'report:create');
             $id = Uuid::v4(); $this->reports->insert($id,$post,$actor->userId,$reason);
             $this->tx->audit('forum.report.create',$actor->userId,['report_id'=>$id,'post_id'=>$post]);
             return $id;
@@ -26,7 +27,7 @@ final readonly class ModerationService
     public function reports(ForumAccessPolicy $actor, int $offset): array
     {
         $actor->require('forum:moderate');
-        return $this->reports->open($offset);
+        return $this->tx->read(fn()=> $this->reports->open($offset,NodePermissionService::allowed($this->tx->permissions()->access($actor),'thread:moderate')));
     }
     public function resolve(ForumAccessPolicy $actor, string $id): string
     {
@@ -34,6 +35,8 @@ final readonly class ModerationService
         $actor->require('forum:moderate');
         return $this->tx->write(function () use ($actor,$id) {
             $report = $this->reports->lockReport($id) ?? throw new ForumException('Жалоба не найдена.',404);
+            $thread=$this->threads->lockForPost($report['post_id'])??throw new ForumException('Жалоба не найдена.',404);
+            $this->tx->permissions()->assertWrite($actor,$thread['board_id'],'thread:moderate');
             // A repeated resolve is idempotent; do not overwrite the original reviewer.
             if ($report['status'] === 'open') {
                 $this->reports->resolve($id,$actor->userId);
@@ -48,7 +51,8 @@ final readonly class ModerationService
         $actor->require('forum:moderate');
         if (!in_array($action,['lock','unlock','pin','unpin','delete'],true)) throw new ForumException('Неизвестное действие.');
         return $this->tx->write(function () use ($actor,$id,$action) {
-            $this->threads->lockThread($id) ?? throw new ForumException('Тема не найдена.',404);
+            $thread=$this->threads->lockThread($id) ?? throw new ForumException('Тема не найдена.',404);
+            $this->tx->permissions()->assertWrite($actor,$thread['board_id'],'thread:moderate');
             $this->threads->moderate($id,$action);
             $this->tx->audit('forum.moderate',$actor->userId,['thread_id'=>$id,'action'=>$action]);
             return $id;

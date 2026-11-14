@@ -21,8 +21,8 @@ final readonly class ForumController
     }
     private function respond(callable $operation, int $status = 200): JsonResponse
     {
-        try { return new JsonResponse(['data'=>$operation()],$status); }
-        catch (ForumException $e) { return new JsonResponse(['error'=>['code'=>'forum_error','message'=>$e->getMessage()]],$e->status); }
+        try { return new JsonResponse(['data'=>$operation()],$status,['Cache-Control'=>'private, no-store','Vary'=>'Cookie, Authorization, X-API-Token']); }
+        catch (ForumException $e) { return new JsonResponse(['error'=>['code'=>'forum_error','message'=>$e->getMessage()]],$e->status,['Cache-Control'=>'private, no-store','Vary'=>'Cookie, Authorization, X-API-Token']); }
     }
     private function field(Request $r, string $key): mixed
     {
@@ -31,14 +31,15 @@ final readonly class ForumController
     }
     private function text(Request $r, string $key, int $max, int $min = 1): string { return V::text($this->field($r,$key),$key,$max,$min); }
     private function actor(Request $r): ForumAccessPolicy { return ForumAccessPolicy::fromAuth($r->attributes->get('auth')); }
+    private function reader(Request $r): ForumAccessPolicy { return ForumAccessPolicy::optional($r->attributes->get('auth')); }
     private function id(array $p): string { return V::id($p['id'] ?? null); }
     private function offset(Request $r): int { return V::offset($r->query->all()['page'] ?? 1); }
-    public function index(): JsonResponse { return $this->respond(fn () => $this->discussions->index()); }
-    public function board(Request $r,array $p): JsonResponse { return $this->respond(fn () => $this->discussions->board($this->id($p),$this->offset($r))); }
-    public function thread(Request $r,array $p): JsonResponse { return $this->respond(fn () => $this->discussions->thread($this->id($p),$this->offset($r))); }
-    public function search(Request $r): JsonResponse { return $this->respond(fn () => $this->discussions->search(V::text($r->query->all()['q'] ?? '', 'q',100,2),$this->offset($r))); }
-    public function latest(Request $r): JsonResponse { return $this->respond(fn () => $this->discussions->latest($this->offset($r))); }
-    public function profile(Request $r,array $p): JsonResponse { return $this->respond(fn () => $this->discussions->profile($this->id($p),$this->offset($r))); }
+    public function index(Request $r): JsonResponse { return $this->respond(fn () => $this->discussions->index($this->reader($r))); }
+    public function board(Request $r,array $p): JsonResponse { return $this->respond(fn () => $this->discussions->board($this->id($p),$this->offset($r),$this->reader($r))); }
+    public function thread(Request $r,array $p): JsonResponse { return $this->respond(fn () => $this->discussions->thread($this->id($p),$this->offset($r),$this->reader($r))); }
+    public function search(Request $r): JsonResponse { return $this->respond(fn () => $this->discussions->search(V::text($r->query->all()['q'] ?? '', 'q',100,2),$this->offset($r),$this->reader($r))); }
+    public function latest(Request $r): JsonResponse { return $this->respond(fn () => $this->discussions->latest($this->offset($r),$this->reader($r))); }
+    public function profile(Request $r,array $p): JsonResponse { return $this->respond(fn () => $this->discussions->profile($this->id($p),$this->offset($r),$this->reader($r))); }
     public function register(Request $r): JsonResponse { return $this->respond(function () use ($r) {
         $email=$this->text($r,'email',254);
         $id=$this->registration->register($email,$this->text($r,'name',60,2),V::password($this->field($r,'password')));
@@ -68,6 +69,10 @@ final readonly class ForumController
     public function updateCategory(Request $r,array $p): JsonResponse { return $this->respond(fn () => ['id'=>$this->discussions->nodes()->updateCategory($this->actor($r),$this->id($p),$this->text($r,'name',120),$this->text($r,'description',1000,0),$this->position($r))]); }
     public function updateBoard(Request $r,array $p): JsonResponse { return $this->respond(fn () => ['id'=>$this->discussions->nodes()->updateBoard($this->actor($r),$this->id($p),$this->text($r,'name',120),$this->text($r,'description',1000,0),$this->text($r,'node_type',16),$this->text($r,'state',16))]); }
     public function moveBoard(Request $r,array $p): JsonResponse { return $this->respond(fn () => ['id'=>$this->discussions->nodes()->move($this->actor($r),$this->id($p),V::id($this->field($r,'category_id')),$this->parent($r),$this->position($r))]); }
+    public function boardPermissions(Request $r,array $p): JsonResponse { return $this->respond(fn()=> $this->discussions->permissions()->get($this->actor($r),'board',$this->id($p))); }
+    public function categoryPermissions(Request $r,array $p): JsonResponse { return $this->respond(fn()=> $this->discussions->permissions()->get($this->actor($r),'category',$this->id($p))); }
+    public function setBoardPermissions(Request $r,array $p): JsonResponse { return $this->respond(fn()=> $this->discussions->permissions()->replace($this->actor($r),'board',$this->id($p),$this->field($r,'visibility'),$this->field($r,'rules'))); }
+    public function setCategoryPermissions(Request $r,array $p): JsonResponse { return $this->respond(fn()=> $this->discussions->permissions()->replace($this->actor($r),'category',$this->id($p),$this->field($r,'visibility'),$this->field($r,'rules'))); }
     public function deleteBoard(Request $r,array $p): JsonResponse { return $this->respond(fn () => ['id'=>$this->discussions->nodes()->delete($this->actor($r),$this->id($p),false)]); }
     public function deleteCategory(Request $r,array $p): JsonResponse { return $this->respond(fn () => ['id'=>$this->discussions->nodes()->delete($this->actor($r),$this->id($p),true)]); }
 }

@@ -7,14 +7,14 @@ use CajeerEngine\Forum\ForumException;
 
 final readonly class BoardRepository extends Repository
 {
-    public function categories(): array { return $this->rows('SELECT * FROM ce_forum_categories ORDER BY position,name,id'); }
+    public function categories(?array $allowed=null): array { return $this->rows('SELECT * FROM ce_forum_categories WHERE '.$this->boardFilter('id',$allowed).' ORDER BY position,name,id'); }
     private const COUNTS='SELECT b.*, (SELECT COUNT(*) FROM ce_forum_threads t WHERE t.board_id=b.id) AS threads, (SELECT COUNT(*) FROM ce_forum_posts p JOIN ce_forum_threads t ON t.id=p.thread_id WHERE t.board_id=b.id) AS posts, (SELECT MAX(t.updated_at) FROM ce_forum_threads t WHERE t.board_id=b.id) AS last_activity FROM ce_forum_boards b';
-    public function boards(): array {
-        $rows=$this->rows(self::COUNTS.' ORDER BY b.position,b.name,b.id');$map=array_column($rows,null,'id');
+    public function boards(?array $allowed=null): array {
+        $rows=$this->rows(self::COUNTS.' WHERE '.$this->boardFilter('b.id',$allowed).' ORDER BY b.position,b.name,b.id');$map=array_column($rows,null,'id');
         foreach ($rows as &$b) $b['effective_state']=self::effectiveState($b,$map);
         return $rows;
     }
-    public function children(string $id): array { return $this->rows(self::COUNTS.' WHERE b.parent_id=? ORDER BY b.position,b.name,b.id',[$id]); }
+    public function children(string $id,?array $allowed=null): array { return $this->rows(self::COUNTS.' WHERE b.parent_id=? AND '.$this->boardFilter('b.id',$allowed).' ORDER BY b.position,b.name,b.id',[$id]); }
 
     public function find(string $id): ?array { return $this->row('SELECT * FROM ce_forum_boards WHERE id=?', [$id]); }
     public function lockBoard(string $id): ?array { return $this->lock('ce_forum_boards', 'id=?', [$id]); }

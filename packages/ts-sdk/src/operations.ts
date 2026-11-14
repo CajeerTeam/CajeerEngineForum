@@ -464,6 +464,30 @@ export const operations = {
         ],
         "bodyRequired": false
     },
+    "get_Forum_boardPermissions": {
+        "method": "GET",
+        "path": "/forum/boards/{id}/permissions",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": false
+    },
+    "get_Forum_categoryPermissions": {
+        "method": "GET",
+        "path": "/forum/categories/{id}/permissions",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": false
+    },
     "get_Forum_index": {
         "method": "GET",
         "path": "/forum",
@@ -1745,6 +1769,30 @@ export const operations = {
     "put_Forum_reaction": {
         "method": "PUT",
         "path": "/forum/posts/{id}/reaction",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
+    },
+    "put_Forum_setBoardPermissions": {
+        "method": "PUT",
+        "path": "/forum/boards/{id}/permissions",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
+    },
+    "put_Forum_setCategoryPermissions": {
+        "method": "PUT",
+        "path": "/forum/categories/{id}/permissions",
         "parameters": [
             {
                 "name": "id",

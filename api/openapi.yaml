@@ -19225,7 +19225,18 @@
         "summary": "GET /forum",
         "x-cajeer-route": "api.v1.forum.index",
         "x-cajeer-required-scopes": null,
-        "security": [],
+        "security": [
+          {},
+          {
+            "BearerAuth": []
+          },
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "BrowserSession": []
+          }
+        ],
         "responses": {
           "200": {
             "description": "Success",
@@ -19323,7 +19334,8 @@
               }
             }
           }
-        }
+        },
+        "description": "Optional authentication via session or API token. Results are filtered by effective node permissions; inaccessible nodes return 404."
       }
     },
     "/forum/boards/{id}": {
@@ -19335,7 +19347,18 @@
         "summary": "GET /forum/boards/{id}",
         "x-cajeer-route": "api.v1.forum.board",
         "x-cajeer-required-scopes": null,
-        "security": [],
+        "security": [
+          {},
+          {
+            "BearerAuth": []
+          },
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "BrowserSession": []
+          }
+        ],
         "parameters": [
           {
             "name": "id",
@@ -19453,7 +19476,8 @@
               }
             }
           }
-        }
+        },
+        "description": "Optional authentication via session or API token. Results are filtered by effective node permissions; inaccessible nodes return 404."
       },
       "patch": {
         "tags": [
@@ -19791,7 +19815,18 @@
         "summary": "GET /forum/threads/{id}",
         "x-cajeer-route": "api.v1.forum.thread",
         "x-cajeer-required-scopes": null,
-        "security": [],
+        "security": [
+          {},
+          {
+            "BearerAuth": []
+          },
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "BrowserSession": []
+          }
+        ],
         "parameters": [
           {
             "name": "id",
@@ -19909,7 +19944,8 @@
               }
             }
           }
-        }
+        },
+        "description": "Optional authentication via session or API token. Results are filtered by effective node permissions; inaccessible nodes return 404."
       }
     },
     "/forum/search": {
@@ -19921,7 +19957,18 @@
         "summary": "GET /forum/search",
         "x-cajeer-route": "api.v1.forum.search",
         "x-cajeer-required-scopes": null,
-        "security": [],
+        "security": [
+          {},
+          {
+            "BearerAuth": []
+          },
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "BrowserSession": []
+          }
+        ],
         "parameters": [
           {
             "name": "page",
@@ -20039,7 +20086,8 @@
               }
             }
           }
-        }
+        },
+        "description": "Optional authentication via session or API token. Results are filtered by effective node permissions; inaccessible nodes return 404."
       }
     },
     "/forum/register": {
@@ -22147,7 +22195,18 @@
         "summary": "GET /forum/latest",
         "x-cajeer-route": "api.v1.forum.latest",
         "x-cajeer-required-scopes": null,
-        "security": [],
+        "security": [
+          {},
+          {
+            "BearerAuth": []
+          },
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "BrowserSession": []
+          }
+        ],
         "parameters": [
           {
             "name": "page",
@@ -22256,7 +22315,8 @@
               }
             }
           }
-        }
+        },
+        "description": "Optional authentication via session or API token. Results are filtered by effective node permissions; inaccessible nodes return 404."
       }
     },
     "/forum/members/{id}": {
@@ -22268,7 +22328,18 @@
         "summary": "GET /forum/members/{id}",
         "x-cajeer-route": "api.v1.forum.profile",
         "x-cajeer-required-scopes": null,
-        "security": [],
+        "security": [
+          {},
+          {
+            "BearerAuth": []
+          },
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "BrowserSession": []
+          }
+        ],
         "parameters": [
           {
             "name": "id",
@@ -22386,7 +22457,8 @@
               }
             }
           }
-        }
+        },
+        "description": "Optional authentication via session or API token. Results are filtered by effective node permissions; inaccessible nodes return 404."
       }
     },
     "/auth/2fa/confirm": {
@@ -24030,6 +24102,730 @@
                     "data": {}
                   }
                 }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/forum/boards/{id}/permissions": {
+      "get": {
+        "tags": [
+          "Forum"
+        ],
+        "operationId": "get_Forum_boardPermissions",
+        "summary": "GET /forum/boards/{id}/permissions",
+        "x-cajeer-route": "api.v1.forum.boardPermissions",
+        "x-cajeer-required-scopes": [
+          "*"
+        ],
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "BrowserSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "400": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data"
+                  ],
+                  "properties": {
+                    "data": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Forum"
+        ],
+        "operationId": "put_Forum_setBoardPermissions",
+        "summary": "PUT /forum/boards/{id}/permissions",
+        "x-cajeer-route": "api.v1.forum.setBoardPermissions",
+        "x-cajeer-required-scopes": [
+          "*"
+        ],
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "BrowserSession": [],
+            "CsrfToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "400": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data"
+                  ],
+                  "properties": {
+                    "data": {}
+                  }
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "visibility": {
+                    "type": "string",
+                    "enum": [
+                      "public",
+                      "private",
+                      "hidden"
+                    ]
+                  },
+                  "rules": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "subject_type": {
+                          "type": "string",
+                          "enum": [
+                            "everyone",
+                            "guest",
+                            "authenticated",
+                            "role",
+                            "user"
+                          ]
+                        },
+                        "subject_id": {
+                          "type": "string"
+                        },
+                        "permission": {
+                          "type": "string",
+                          "enum": [
+                            "node:view",
+                            "thread:read",
+                            "thread:create",
+                            "post:reply",
+                            "post:edit_own",
+                            "post:edit_any",
+                            "reaction:use",
+                            "watch:use",
+                            "report:create",
+                            "thread:moderate"
+                          ]
+                        },
+                        "effect": {
+                          "type": "string",
+                          "enum": [
+                            "inherit",
+                            "allow",
+                            "deny",
+                            "never"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "subject_type",
+                        "permission",
+                        "effect"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "maxItems": 500
+                  }
+                },
+                "required": [
+                  "visibility",
+                  "rules"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/forum/categories/{id}/permissions": {
+      "get": {
+        "tags": [
+          "Forum"
+        ],
+        "operationId": "get_Forum_categoryPermissions",
+        "summary": "GET /forum/categories/{id}/permissions",
+        "x-cajeer-route": "api.v1.forum.categoryPermissions",
+        "x-cajeer-required-scopes": [
+          "*"
+        ],
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "BrowserSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "400": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data"
+                  ],
+                  "properties": {
+                    "data": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Forum"
+        ],
+        "operationId": "put_Forum_setCategoryPermissions",
+        "summary": "PUT /forum/categories/{id}/permissions",
+        "x-cajeer-route": "api.v1.forum.setCategoryPermissions",
+        "x-cajeer-required-scopes": [
+          "*"
+        ],
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "BrowserSession": [],
+            "CsrfToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "400": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data"
+                  ],
+                  "properties": {
+                    "data": {}
+                  }
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "visibility": {
+                    "type": "string",
+                    "enum": [
+                      "public",
+                      "private",
+                      "hidden"
+                    ]
+                  },
+                  "rules": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "subject_type": {
+                          "type": "string",
+                          "enum": [
+                            "everyone",
+                            "guest",
+                            "authenticated",
+                            "role",
+                            "user"
+                          ]
+                        },
+                        "subject_id": {
+                          "type": "string"
+                        },
+                        "permission": {
+                          "type": "string",
+                          "enum": [
+                            "node:view",
+                            "thread:read",
+                            "thread:create",
+                            "post:reply",
+                            "post:edit_own",
+                            "post:edit_any",
+                            "reaction:use",
+                            "watch:use",
+                            "report:create",
+                            "thread:moderate"
+                          ]
+                        },
+                        "effect": {
+                          "type": "string",
+                          "enum": [
+                            "inherit",
+                            "allow",
+                            "deny",
+                            "never"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "subject_type",
+                        "permission",
+                        "effect"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "maxItems": 500
+                  }
+                },
+                "required": [
+                  "visibility",
+                  "rules"
+                ],
+                "additionalProperties": false
               }
             }
           }

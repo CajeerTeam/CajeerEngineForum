@@ -130,7 +130,7 @@ try {
     $moderation->moderate($a,$topic,'delete');$nodes->delete($a,$nested,false);$nodes->delete($a,$child,false);$nodes->delete($a,$other,true);
     check(!in_array($other,array_column($discussion->index()['categories'],'id'),true),'empty nodes removed safely');
     if($driver==='sqlite')check($pdo->query('PRAGMA foreign_key_check')->fetchAll()===[],'foreign keys intact');
-    $v=new ForumVersion($root);check($v->current()==='0.2.1' && $v->upstream()==='1.3.0','independent product/core versions');
+    $v=new ForumVersion($root);check($v->current()==='0.2.2' && $v->upstream()==='1.3.0','independent product/core versions');
     echo "Forum core regression passed\n";
 } finally {
     unset($db,$discussion,$engagement,$moderation,$registration,$pdo,$runner);

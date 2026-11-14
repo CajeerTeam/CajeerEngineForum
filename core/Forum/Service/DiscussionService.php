@@ -14,38 +14,48 @@ final readonly class DiscussionService
 {
     public function __construct(private DatabaseManager $db, private ForumTransaction $tx, private BoardRepository $boards, private ThreadRepository $threads, private PostRepository $posts, private MemberRepository $members) {}
 
-    public function index(): array
+    private function access(?ForumAccessPolicy $actor): array { return $this->tx->permissions()->access($actor??new ForumAccessPolicy('',[])); }
+    private function decorated(array $board,array $access): array { $board['permissions']=$access['boards'][$board['id']]; return $board; }
+    public function index(?ForumAccessPolicy $actor=null): array
     {
-        return $this->db->readSnapshot(fn () => ['categories'=>$this->boards->categories(), 'boards'=>$this->boards->boards()]);
-    }
-    public function board(string $id, int $offset): array
-    {
-        return $this->db->readSnapshot(function () use ($id, $offset) {
-            $board = $this->boards->view($id) ?? throw new ForumException('Раздел не найден.', 404);
-            return ['board'=>$board, 'threads'=>$this->threads->inBoard($id,$offset), 'children'=>$this->boards->children($id)];
+        return $this->db->readSnapshot(function () use ($actor) {
+            $access=$this->access($actor);$allowed=NodePermissionService::allowed($access);$categories=NodePermissionService::allowed($access,'thread:read','categories');
+            return ['categories'=>$this->boards->categories($categories), 'boards'=>array_map(fn($b)=>$this->decorated($b,$access),$this->boards->boards($allowed))];
         });
     }
-    public function thread(string $id, int $offset): array
+    public function board(string $id, int $offset, ?ForumAccessPolicy $actor=null): array
     {
-        return $this->db->readSnapshot(function () use ($id, $offset) {
-            $thread = $this->threads->find($id) ?? throw new ForumException('Тема не найдена.', 404);
-            return ['thread'=>$thread, 'board'=>$this->boards->view($thread['board_id']), 'posts'=>$this->posts->inThread($id,$offset)];
+        return $this->db->readSnapshot(function () use ($id,$offset,$actor) {
+            $access=$this->access($actor);NodePermissionService::assert($access,$id,'thread:read');
+            $board=$this->boards->view($id)??throw new ForumException('Раздел не найден.',404);
+            $children=$this->boards->children($id,NodePermissionService::allowed($access));
+            return ['board'=>$this->decorated($board,$access),'threads'=>$this->threads->inBoard($id,$offset),'children'=>array_map(fn($b)=>$this->decorated($b,$access),$children)];
         });
     }
-    public function search(string $term, int $offset): array { return $this->threads->search($term,$offset); }
-    public function latest(int $offset): array { return $this->threads->latest($offset); }
-    public function profile(string $id, int $offset): array
+    public function thread(string $id, int $offset, ?ForumAccessPolicy $actor=null): array
     {
-        return $this->db->readSnapshot(function () use ($id, $offset) {
-            $member = $this->members->publicProfile($id) ?? throw new ForumException('Пользователь не найден.', 404);
-            return ['member'=>$member, 'threads'=>$this->threads->byAuthor($id,$offset)];
+        return $this->db->readSnapshot(function () use ($id,$offset,$actor) {
+            $thread=$this->threads->find($id)??throw new ForumException('Тема не найдена.',404);
+            $access=$this->access($actor);NodePermissionService::assert($access,$thread['board_id'],'thread:read');
+            return ['thread'=>$thread,'board'=>$this->decorated($this->boards->view($thread['board_id'])??throw new ForumException('Раздел не найден.',404),$access),'posts'=>$this->posts->inThread($id,$offset)];
         });
     }
+    public function search(string $term,int $offset,?ForumAccessPolicy $actor=null): array { return $this->db->readSnapshot(fn()=> $this->threads->search($term,$offset,NodePermissionService::allowed($this->access($actor)))); }
+    public function latest(int $offset,?ForumAccessPolicy $actor=null): array { return $this->db->readSnapshot(fn()=> $this->threads->latest($offset,NodePermissionService::allowed($this->access($actor)))); }
+    public function profile(string $id,int $offset,?ForumAccessPolicy $actor=null): array
+    {
+        return $this->db->readSnapshot(function () use ($id,$offset,$actor) {
+            $member=$this->members->publicProfile($id)??throw new ForumException('Пользователь не найден.',404);
+            return ['member'=>$member,'threads'=>$this->threads->byAuthor($id,$offset,NodePermissionService::allowed($this->access($actor)))];
+        });
+    }
+    public function permissions(): NodePermissionService { return $this->tx->permissions(); }
     public function createThread(ForumAccessPolicy $actor, string $board, string $title, string $body): string
     {
         $board = V::id($board); $title = V::text($title,'title',180,3); $body = V::text($body,'body',20000);
         $actor->require('forum:write');
         return $this->tx->write(function () use ($actor,$board,$title,$body) {
+            $this->permissions()->assertWrite($actor,$board,'thread:create');
             $this->boards->writable($board);
             $id = Uuid::v4(); $post = Uuid::v4();
             $this->threads->insert($id,$board,$actor->userId,$title);
@@ -60,6 +70,7 @@ final readonly class DiscussionService
         $actor->require('forum:write');
         return $this->tx->write(function () use ($actor,$id,$body) {
             $thread = $this->threads->lockThread($id) ?? throw new ForumException('Тема не найдена.',404);
+            $this->permissions()->assertWrite($actor,$thread['board_id'],'post:reply');
             $this->boards->writable($thread['board_id']);
             if ((int) $thread['locked'] !== 0) throw new ForumException('Тема закрыта.',409);
             $post = Uuid::v4();
@@ -76,6 +87,7 @@ final readonly class DiscussionService
         return $this->tx->write(function () use ($actor,$id,$body) {
             $thread = $this->threads->lockForPost($id) ?? throw new ForumException('Сообщение не найдено.',404);
             $post = $this->posts->findForWrite($id) ?? throw new ForumException('Сообщение не найдено.',404);
+            $this->permissions()->assertWrite($actor,$thread['board_id'],$post['author_id']===$actor->userId && (int)$thread['locked']===0?'post:edit_own':'post:edit_any');
             $this->boards->writable($thread['board_id']);
             $actor->assertEdit($post,$thread);
             $this->posts->edit($id,$body);

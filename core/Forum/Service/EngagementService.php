@@ -16,7 +16,8 @@ final readonly class EngagementService
         $id = V::id($id);
         $actor->require('forum:write');
         return $this->tx->write(function () use ($actor,$id,$enabled) {
-            $this->threads->lockForPost($id) ?? throw new ForumException('Объект не найден.',404);
+            $thread=$this->threads->lockForPost($id) ?? throw new ForumException('Объект не найден.',404);
+            $this->tx->permissions()->assertWrite($actor,$thread['board_id'],'reaction:use');
             if ($this->engagement->reaction($id,$actor->userId,$enabled)) $this->tx->audit('forum.reaction.set',$actor->userId,['post_id'=>$id,'enabled'=>$enabled]);
             return ['enabled'=>$enabled];
         });
@@ -26,7 +27,8 @@ final readonly class EngagementService
         $id = V::id($id);
         $actor->require('forum:write');
         return $this->tx->write(function () use ($actor,$id,$enabled) {
-            $this->threads->lockThread($id) ?? throw new ForumException('Объект не найден.',404);
+            $thread=$this->threads->lockThread($id) ?? throw new ForumException('Объект не найден.',404);
+            $this->tx->permissions()->assertWrite($actor,$thread['board_id'],'watch:use');
             if ($this->engagement->watch($id,$actor->userId,$enabled)) $this->tx->audit('forum.watch.set',$actor->userId,['thread_id'=>$id,'enabled'=>$enabled]);
             return ['enabled'=>$enabled];
         });
@@ -34,6 +36,6 @@ final readonly class EngagementService
     public function watches(ForumAccessPolicy $actor, int $offset): array
     {
         $actor->require('forum:write');
-        return $this->engagement->watches($actor->userId,$offset);
+        return $this->tx->read(fn()=> $this->engagement->watches($actor->userId,$offset,NodePermissionService::allowed($this->tx->permissions()->access($actor))));
     }
 }

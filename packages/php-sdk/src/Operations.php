@@ -603,6 +603,36 @@ final class Operations {
     ),
     'bodyRequired' => false,
   ),
+  'get_Forum_boardPermissions' => 
+  array (
+    'method' => 'GET',
+    'path' => '/forum/boards/{id}/permissions',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
+  'get_Forum_categoryPermissions' => 
+  array (
+    'method' => 'GET',
+    'path' => '/forum/categories/{id}/permissions',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
   'get_Forum_index' => 
   array (
     'method' => 'GET',
@@ -2302,6 +2332,36 @@ final class Operations {
   array (
     'method' => 'PUT',
     'path' => '/forum/posts/{id}/reaction',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => true,
+  ),
+  'put_Forum_setBoardPermissions' => 
+  array (
+    'method' => 'PUT',
+    'path' => '/forum/boards/{id}/permissions',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => true,
+  ),
+  'put_Forum_setCategoryPermissions' => 
+  array (
+    'method' => 'PUT',
+    'path' => '/forum/categories/{id}/permissions',
     'parameters' => 
     array (
       0 => 

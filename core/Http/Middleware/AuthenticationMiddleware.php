@@ -18,7 +18,14 @@ final readonly class AuthenticationMiddleware implements MiddlewareInterface
     public function process(Request $request, callable $next): Response
     {
         $required = $this->router->accessPolicy($request);
-        if ($required === null) { return $next($request); }
+        if ($required === null) {
+            // Public forum reads are optionally authenticated; other public routes retain their behavior.
+            if (\CajeerEngine\Http\RouteRegistry::optionalAuthentication((string)$request->attributes->get('matched_route',''))) {
+                $identity=$this->auth->authenticateRequest($request);
+                if ($identity!==null) { $request->attributes->set('auth',$identity); $request->attributes->set('user',$identity['user']??null); }
+            }
+            return $next($request);
+        }
         $identity = $this->auth->authenticateRequest($request);
         if ($identity === null) { return $this->error($request, 'unauthenticated', 401); }
         if (!$this->auth->hasScopes($identity, $required)) { return $this->error($request, 'forbidden', 403); }

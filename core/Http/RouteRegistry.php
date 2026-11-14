@@ -7,6 +7,12 @@ namespace CajeerEngine\Http;
 /** Single source for core route registration and access policy. null = public; [] = authenticated. */
 final class RouteRegistry
 {
+    /** These public GET/HEAD operations optionally resolve an existing session. */
+    public static function optionalAuthentication(string $name): bool
+    {
+        return in_array($name,['api.v1.forum.index','api.v1.forum.board','api.v1.forum.thread','api.v1.forum.search','api.v1.forum.latest','api.v1.forum.profile'],true);
+    }
+
     /** @return list<array{0:string,1:string,2:string,3:string,4:string,5:?array}> */
     public static function all(): array
     {
@@ -180,6 +186,10 @@ final class RouteRegistry
             ['PATCH', '/api/v1/forum/boards/{id}', 'api.v1.forum.updateBoard', 'forum', 'updateBoard', ['*']],
             ['DELETE', '/api/v1/forum/boards/{id}', 'api.v1.forum.deleteBoard', 'forum', 'deleteBoard', ['*']],
             ['POST', '/api/v1/forum/boards/{id}/move', 'api.v1.forum.moveBoard', 'forum', 'moveBoard', ['*']],
+            ['GET', '/api/v1/forum/boards/{id}/permissions', 'api.v1.forum.boardPermissions', 'forum', 'boardPermissions', ['*']],
+            ['PUT', '/api/v1/forum/boards/{id}/permissions', 'api.v1.forum.setBoardPermissions', 'forum', 'setBoardPermissions', ['*']],
+            ['GET', '/api/v1/forum/categories/{id}/permissions', 'api.v1.forum.categoryPermissions', 'forum', 'categoryPermissions', ['*']],
+            ['PUT', '/api/v1/forum/categories/{id}/permissions', 'api.v1.forum.setCategoryPermissions', 'forum', 'setCategoryPermissions', ['*']],
             ['GET', '/api/v1/forum/latest', 'api.v1.forum.latest', 'forum', 'latest', null],
             ['GET', '/api/v1/forum/members/{id}', 'api.v1.forum.profile', 'forum', 'profile', null],
             ['GET', '/forum', 'forum.home', 'forum', 'page', null],

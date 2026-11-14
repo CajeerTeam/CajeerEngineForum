@@ -1,5 +1,12 @@
 # Changelog
 
+## Forum Edition 0.2.2 — Node Permissions
+
+- Inherited category and board ACLs for guests, authenticated members, roles and individual users; private and hidden nodes.
+- Enforce read and mutation permissions on all forum routes; filter lists before pagination and disable shared caching.
+- Transactional ACL editor, API and migration 0019. Preserve existing IDs and public access by default.
+- Add resolver and live HTTP security regression; signed upgrade baseline 0.2.1.
+
 ## Forum Edition 0.2.1 — Forum Node System
 
 - Add nested boards and containers, inherited read-only/archive state, direct counters and last activity.
