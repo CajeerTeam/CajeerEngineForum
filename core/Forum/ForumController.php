@@ -79,7 +79,11 @@ final readonly class ForumController
     public function reply(Request $r,array $p): JsonResponse { return $this->respond(fn () => ['id'=>$this->discussions->reply($this->actor($r),$this->id($p),$this->text($r,'body',20000))],201); }
     public function edit(Request $r,array $p): JsonResponse { return $this->respond(fn () => ['id'=>$this->discussions->edit($this->actor($r),$this->id($p),$this->text($r,'body',20000))]); }
     public function reaction(Request $r,array $p): JsonResponse { return $this->respond(fn () => $this->engagement->reaction($this->actor($r),$this->id($p),V::enabled($this->field($r,'enabled')))); }
-    public function watch(Request $r,array $p): JsonResponse { return $this->respond(fn () => $this->engagement->watch($this->actor($r),$this->id($p),V::enabled($this->field($r,'enabled')))); }
+    public function watch(Request $r,array $p): JsonResponse { return $this->respond(fn () => $this->engagement->watch($this->actor($r),$this->id($p),V::enabled($this->field($r,'enabled')),$this->field($r,'mode'))); }
+    public function boardWatch(Request $r,array $p): JsonResponse { return $this->respond(fn()=> $this->discussions->watchDelivery()->set($this->actor($r),'board',$this->id($p),V::enabled($this->field($r,'enabled')),$this->field($r,'mode'))); }
+    public function watchSettings(Request $r): JsonResponse { return $this->respond(fn()=> $this->discussions->watchDelivery()->settings($this->actor($r),$this->offset($r))); }
+    public function watchPreferences(Request $r): JsonResponse { return $this->respond(fn()=> $this->discussions->watchDelivery()->preferences($this->actor($r),$this->field($r,'auto_mode'))); }
+    public function unsubscribeEmail(Request $r): JsonResponse { return $this->respond(fn()=> $this->discussions->watchDelivery()->unsubscribe($this->field($r,'token'))); }
     public function watches(Request $r): JsonResponse { return $this->respond(fn () => $this->engagement->watches($this->actor($r),$this->offset($r))); }
     public function report(Request $r,array $p): JsonResponse { return $this->respond(fn () => ['id'=>$this->moderation->report($this->actor($r),$this->id($p),$this->text($r,'reason',500,3))],201); }
     public function reports(Request $r): JsonResponse { return $this->respond(fn () => $this->moderation->reports($this->actor($r),$this->offset($r))); }

@@ -10,14 +10,14 @@ final readonly class NotificationRepository extends Repository
 {
     public const KINDS=['reply','mention','quote','reaction','moderation'];
 
-    public function enqueue(string $kind,string $actor,string $post,array $recipients,?string $action=null): void
+    public function enqueue(string $kind,string $actor,string $post,array $recipients,?string $action=null,?string $subscription=null): void
     {
-        if (!$this->db->connection()->inTransaction() || !in_array($kind,self::KINDS,true) || ($kind==='moderation'?!in_array($action,['lock','unlock','pin','unpin'],true):$action!==null)) throw new \LogicException('Invalid notification event or missing transaction');
+        if (($subscription!==null && ($subscription!=='board'||$kind!=='reply')) || !$this->db->connection()->inTransaction() || !in_array($kind,self::KINDS,true) || ($kind==='moderation'?!in_array($action,['lock','unlock','pin','unpin'],true):$action!==null)) throw new \LogicException('Invalid notification event or missing transaction');
         $event=Uuid::v4();
         $uuid=$this->db->driver()==='pgsql'?'CAST(? AS uuid)':'?';
         foreach (array_unique($recipients) as $recipient) {
             if ($recipient==='' || $recipient===$actor) continue;
-            $this->query('INSERT INTO ce_forum_notifications(event_id,recipient_id,actor_id,post_id,kind,moderation_action) SELECT '.$uuid.',u.id,'.$uuid.','.$uuid.',?,? FROM ce_users u WHERE u.id=? AND u.status=\'active\' AND COALESCE((SELECT pref.'.$kind.' FROM ce_forum_notification_preferences pref WHERE pref.user_id=u.id),1)=1',[$event,$actor,$post,$kind,$action,$recipient]);
+            $this->query('INSERT INTO ce_forum_notifications(event_id,recipient_id,actor_id,post_id,kind,moderation_action,subscription_kind) SELECT '.$uuid.',u.id,'.$uuid.','.$uuid.',?,?,? FROM ce_users u WHERE u.id=? AND u.status=\'active\' AND COALESCE((SELECT pref.'.$kind.' FROM ce_forum_notification_preferences pref WHERE pref.user_id=u.id),1)=1',[$event,$actor,$post,$kind,$action,$subscription,$recipient]);
         }
     }
     public function reply(string $actor,string $post,string $thread): void
@@ -25,7 +25,12 @@ final readonly class NotificationRepository extends Repository
         if (!$this->db->connection()->inTransaction()) throw new \LogicException('Notification event requires a transaction');
         // One set-based insert, independent of the number of subscribers.
         $uuid=$this->db->driver()==='pgsql'?'CAST(? AS uuid)':'?';
-        $this->query("INSERT INTO ce_forum_notifications(event_id,recipient_id,actor_id,post_id,kind) SELECT $uuid,u.id,$uuid,$uuid,'reply' FROM (SELECT author_id AS user_id FROM ce_forum_threads WHERE id=? UNION SELECT user_id FROM ce_forum_watches WHERE thread_id=?) candidates JOIN ce_users u ON u.id=candidates.user_id LEFT JOIN ce_forum_notification_preferences pref ON pref.user_id=u.id WHERE u.status='active' AND u.id<>? AND COALESCE(pref.reply,1)=1",[Uuid::v4(),$actor,$post,$thread,$thread,$actor]);
+        $this->query("INSERT INTO ce_forum_notifications(event_id,recipient_id,actor_id,post_id,kind,subscription_kind) SELECT $uuid,u.id,$uuid,$uuid,'reply',CASE WHEN t.author_id=u.id THEN NULL ELSE 'thread' END FROM (SELECT author_id AS user_id FROM ce_forum_threads WHERE id=? UNION SELECT user_id FROM ce_forum_watches WHERE thread_id=? AND mode='internal') candidates JOIN ce_forum_threads t ON t.id=? JOIN ce_users u ON u.id=candidates.user_id LEFT JOIN ce_forum_notification_preferences pref ON pref.user_id=u.id WHERE u.status='active' AND u.id<>? AND COALESCE(pref.reply,1)=1",[Uuid::v4(),$actor,$post,$thread,$thread,$thread,$actor]);
+    }
+    public function subscriptionEligible(string $user,string $post,string $kind): bool
+    {
+        $sql=$kind==='thread'?"EXISTS (SELECT 1 FROM ce_forum_watches w WHERE w.thread_id=t.id AND w.user_id=? AND w.mode='internal')":"p.ordinal=1 AND EXISTS (SELECT 1 FROM ce_forum_board_watches b WHERE b.board_id=t.board_id AND b.user_id=? AND b.mode='internal')";
+        return $this->row('SELECT p.id FROM ce_forum_posts p JOIN ce_forum_threads t ON t.id=p.thread_id WHERE p.id=? AND '.$sql,[$post,$user])!==null;
     }
     public function quotedAuthor(string $id,string $thread): ?string
     { return $this->row('SELECT author_id FROM ce_forum_posts WHERE id=? AND thread_id=?',[$id,$thread])['author_id']??null; }
@@ -61,7 +66,7 @@ final readonly class NotificationRepository extends Repository
     public function inbox(string $user,array $allowed,int $offset,?string $id=null): array
     {
         $params=[$user];if($id!==null)$params[]=$id;
-        $rows=$this->rows('SELECT n.event_id AS id,n.kind,n.moderation_action,n.is_read,n.created_at,n.actor_id,(SELECT u.name FROM ce_users u WHERE u.id=n.actor_id) AS actor_name,n.post_id,t.id AS thread_id,t.title,(SELECT COUNT(*) FROM ce_forum_posts p2 WHERE p2.thread_id=p.thread_id AND p2.ordinal<p.ordinal) AS preceding'.$this->visible($allowed).($id===null?'':' AND n.event_id=?').' ORDER BY n.created_at DESC,n.event_id DESC LIMIT 25 OFFSET '.$offset,$params);
+        $rows=$this->rows('SELECT n.event_id AS id,n.kind,n.moderation_action,n.subscription_kind,n.is_read,n.created_at,n.actor_id,(SELECT u.name FROM ce_users u WHERE u.id=n.actor_id) AS actor_name,n.post_id,t.id AS thread_id,t.title,(SELECT COUNT(*) FROM ce_forum_posts p2 WHERE p2.thread_id=p.thread_id AND p2.ordinal<p.ordinal) AS preceding'.$this->visible($allowed).($id===null?'':' AND n.event_id=?').' ORDER BY n.created_at DESC,n.event_id DESC LIMIT 25 OFFSET '.$offset,$params);
         foreach($rows as &$r){$r['is_read']=(int)$r['is_read']===1;$r['page']=1+intdiv((int)$r['preceding'],25);unset($r['preceding']);}unset($r);
         return $rows;
     }

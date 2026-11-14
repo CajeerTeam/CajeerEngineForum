@@ -32,7 +32,7 @@ final readonly class DiscussionManagementRepository extends Repository
     public function mergeWatches(string $source,string $target): void
     {
         // Both threads are locked, so concurrent subscription changes cannot race this insert.
-        $this->query('INSERT INTO ce_forum_watches(thread_id,user_id) SELECT ?,s.user_id FROM ce_forum_watches s WHERE s.thread_id=? AND NOT EXISTS (SELECT 1 FROM ce_forum_watches d WHERE d.thread_id=? AND d.user_id=s.user_id)',[$target,$source,$target]);
+        $this->query('INSERT INTO ce_forum_watches(thread_id,user_id,mode) SELECT ?,s.user_id,s.mode FROM ce_forum_watches s WHERE s.thread_id=? AND NOT EXISTS (SELECT 1 FROM ce_forum_watches d WHERE d.thread_id=? AND d.user_id=s.user_id)',[$target,$source,$target]);
     }
     public function redirect(string $source,string $board,string $target): void
     {

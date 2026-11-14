@@ -167,6 +167,40 @@ final class ForumDatabaseTest extends TestCase
             self::assertSame(2,$notifications->inbox($reader,0)['unread']);
             self::assertSame(0,$notifications->mark($reader,['all'=>true])['unread']);
 
+            // Mail events use the same publication transaction and survive retries.
+            $watch=$discussion->watchDelivery();
+            $watchRepo=new \CajeerEngine\Forum\Repository\WatchRepository($db);
+            $pdo->prepare('UPDATE ce_users SET email_verified_at=CURRENT_TIMESTAMP WHERE id=?')->execute([$member]);
+            $watch->set($reader,'thread',$notified,true,'daily');
+            $now=time();
+            $daily=$watchRepo::due('daily',$now);$weekly=$watchRepo::due('weekly',$now);
+            self::assertGreaterThan($now,$daily);self::assertLessThanOrEqual($now+86400,$daily);
+            self::assertSame('Mon 00:00',gmdate('D H:i',$weekly));
+            try {
+                $tx->write(function()use($discussion,$actor,$notified){$discussion->reply($actor,$notified,'Mail rollback');throw new \DomainException('rollback mail');});
+                self::fail('Expected mail rollback');
+            }catch(\DomainException $e){self::assertSame('rollback mail',$e->getMessage());}
+            self::assertSame(0,(int)$pdo->query('SELECT COUNT(*) FROM ce_forum_mail_delivery')->fetchColumn());
+            $discussion->reply($actor,$notified,'Mail one');$discussion->reply($actor,$notified,'Mail two');
+            self::assertSame(2,(int)$pdo->query('SELECT COUNT(*) FROM ce_forum_mail_delivery')->fetchColumn());
+            self::assertNull($watchRepo->candidate($now));
+            $pdo->exec('UPDATE ce_forum_mail_delivery SET due_at=0');
+            $candidate=$watchRepo->candidate($now);self::assertNotNull($candidate);
+            $lease='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+            $ids=$tx->write(fn()=> $watchRepo->claim($candidate,$now,$lease));self::assertCount(2,$ids);
+            self::assertNull($watchRepo->candidate($now));
+            $tx->write(fn()=> $watchRepo->retry($lease,$now));
+            self::assertNull($watchRepo->candidate($now));
+            self::assertSame(2,(int)$pdo->query("SELECT COUNT(*) FROM ce_forum_mail_delivery WHERE attempts=1 AND state='pending' AND lease_token IS NULL")->fetchColumn());
+            $pdo->exec('UPDATE ce_forum_mail_delivery SET due_at=0');
+            $candidate=$watchRepo->candidate($now);self::assertNotNull($candidate);
+            $tx->write(fn()=> $watchRepo->claim($candidate,$now,$lease));
+            $tx->write(fn()=> $watchRepo->complete($lease,$ids,'sent',$now));
+            self::assertSame(2,(int)$pdo->query("SELECT COUNT(*) FROM ce_forum_mail_delivery WHERE state='sent'")->fetchColumn());
+            $discussion->reply($actor,$notified,'Mail three');
+            $watch->set($reader,'thread',$notified,true,'none');
+            self::assertSame(1,(int)$pdo->query("SELECT COUNT(*) FROM ce_forum_mail_delivery WHERE state='cancelled'")->fetchColumn());
+
             // Simulate a request authenticated before its role was removed. Services
             // must recheck the DB, not trust the stale wildcard from middleware.
             $oldAdmin=$users->create('stale-admin@example.test','Stale admin','unused-test-hash',['admin']);

@@ -25,17 +25,8 @@ final readonly class EngagementService
             return ['enabled'=>$enabled];
         });
     }
-    public function watch(ForumAccessPolicy $actor, string $id, bool $enabled): array
-    {
-        $id = V::id($id);
-        $actor->require('forum:write');
-        return $this->tx->write(function () use ($actor,$id,$enabled) {
-            $thread=$this->threads->lockThread($id) ?? throw new ForumException('Объект не найден.',404);
-            $this->tx->permissions()->assertWrite($actor,$thread['board_id'],'watch:use');
-            if ($this->engagement->watch($id,$actor->userId,$enabled)) $this->tx->audit('forum.watch.set',$actor->userId,['thread_id'=>$id,'enabled'=>$enabled]);
-            return ['enabled'=>$enabled];
-        });
-    }
+    public function watch(ForumAccessPolicy $actor,string $id,bool $enabled,mixed $mode=null): array
+    { return $this->tx->watches()->set($actor,'thread',$id,$enabled,$mode); }
     public function watches(ForumAccessPolicy $actor, int $offset): array
     {
         $actor->require('forum:write');

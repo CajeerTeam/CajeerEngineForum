@@ -22,6 +22,7 @@ final readonly class ForumIntegrityCheck
                 'invalid_publication_sequence'=> 'SELECT COUNT(*) FROM ce_forum_posts p JOIN ce_forum_threads t ON t.id=p.thread_id WHERE p.read_sequence<1 OR p.read_sequence>t.read_sequence',
                 'invalid_read_cursor'=> 'SELECT COUNT(*) FROM ce_forum_read_state r JOIN ce_forum_threads t ON t.id=r.thread_id WHERE r.read_sequence>t.read_sequence OR r.read_sequence<0',
                 'invalid_publication_order'=> 'SELECT COUNT(*) FROM (SELECT read_sequence,LAG(read_sequence) OVER (PARTITION BY thread_id ORDER BY ordinal) AS previous_sequence FROM ce_forum_posts) AS ordered_posts WHERE read_sequence<=previous_sequence',
+                'invalid_mail_delivery'=> "SELECT COUNT(*) FROM ce_forum_mail_delivery WHERE attempts<0 OR attempts>8 OR (lease_token IS NULL AND lease_until<>0) OR (lease_token IS NOT NULL AND (state<>'pending' OR lease_until<=0)) OR (state='sent' AND sent_at IS NULL) OR (state<>'sent' AND sent_at IS NOT NULL)",
                 'invalid_ordinals'=> 'SELECT COUNT(*) FROM ce_forum_posts WHERE ordinal<1',
                 'duplicate_ordinals'=> 'SELECT COUNT(*) FROM (SELECT thread_id,ordinal FROM ce_forum_posts GROUP BY thread_id,ordinal HAVING COUNT(*)>1) AS duplicate_posts',
                 'redirect_collision'=> 'SELECT COUNT(*) FROM ce_forum_thread_redirects r JOIN ce_forum_threads t ON t.id=r.source_id',

@@ -15,5 +15,5 @@ final readonly class EngagementRepository extends Repository
             : "INSERT INTO $table($column,user_id) VALUES(?,?) ON CONFLICT ($column,user_id) DO NOTHING";
         return $this->query($sql, [$id,$actor])->rowCount() > 0;
     }
-    public function watches(string $actor, int $offset, array $allowed): array { return $this->rows('SELECT t.id,t.title,t.prefix,t.updated_at FROM ce_forum_watches w JOIN ce_forum_threads t ON t.id=w.thread_id WHERE w.user_id=? AND '.$this->boardFilter('t.board_id',$allowed).' ORDER BY t.updated_at DESC,t.id LIMIT 25 OFFSET '.$offset, [$actor]); }
+    public function watches(string $actor, int $offset, array $allowed): array { return $this->rows('SELECT t.id,t.title,t.prefix,t.updated_at,w.mode FROM ce_forum_watches w JOIN ce_forum_threads t ON t.id=w.thread_id WHERE w.user_id=? AND '.$this->boardFilter('t.board_id',$allowed).' ORDER BY t.updated_at DESC,t.id LIMIT 25 OFFSET '.$offset, [$actor]); }
 }

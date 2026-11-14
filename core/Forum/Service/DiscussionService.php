@@ -16,6 +16,7 @@ final readonly class DiscussionService
 
     private function access(?ForumAccessPolicy $actor): array { return $this->tx->permissions()->access($actor??new ForumAccessPolicy('',[])); }
     private function decorated(array $board,array $access): array { $board['permissions']=$access['boards'][$board['id']]; return $board; }
+    public function watchDelivery(): WatchService { return $this->tx->watches(); }
     public function notifications(): NotificationService { return $this->tx->notifications(); }
     public function readTracking(): ReadTrackingService { return new ReadTrackingService($this->tx,$this->tx->readState(),$this->boards,$this->threads); }
     private function readBoards(array $boards,array $allowed,string $viewer): array
@@ -70,7 +71,7 @@ final readonly class DiscussionService
             foreach ($children as &$child) $child['effective_state']=($this->boards->view($child['id'])??$child)['effective_state']??'archived';
             unset($child);
             $nodes=$this->readBoards([$this->decorated($board,$access),...array_map(fn($b)=>$this->decorated($b,$access),$children)],$allowed,$viewer);
-            $current=array_shift($nodes);
+            $current=array_shift($nodes);$current['watch_mode']=$this->tx->watches()->mode('board',$id,$viewer);
             return ['board'=>$current,'breadcrumbs'=>$this->breadcrumbs($board,$access),'threads'=>$this->tx->readState()->decorateThreads($this->threads->inBoard($id,$offset,$viewer),$viewer),'children'=>$nodes];
         });
     }
@@ -87,6 +88,7 @@ final readonly class DiscussionService
             NodePermissionService::assert($access,$thread['board_id'],'thread:read');$thread['tags']=$repo->tags($id);
             $board=$this->boards->view($thread['board_id'])??throw new ForumException('Раздел не найден.',404);
             $viewer=$actor?->userId??'';
+            $thread['watch_mode']=$this->tx->watches()->mode('thread',$id,$viewer);
             $state=$viewer===''?null:$this->tx->readState()->summary($viewer,$id);
             // Resolve the destination and fetch that page in one ACL-protected snapshot.
             if($firstUnread) $offset=25*(($state['first_unread']['page']??1)-1);

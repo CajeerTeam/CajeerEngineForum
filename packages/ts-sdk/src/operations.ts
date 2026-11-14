@@ -747,6 +747,18 @@ export const operations = {
         ],
         "bodyRequired": false
     },
+    "get_Forum_watchSettings": {
+        "method": "GET",
+        "path": "/forum/watch-settings",
+        "parameters": [
+            {
+                "name": "page",
+                "in": "query",
+                "required": false
+            }
+        ],
+        "bodyRequired": false
+    },
     "get_Forum_watches": {
         "method": "GET",
         "path": "/forum/watches",
@@ -1796,6 +1808,12 @@ export const operations = {
         ],
         "bodyRequired": true
     },
+    "post_Forum_unsubscribeEmail": {
+        "method": "POST",
+        "path": "/forum/unsubscribe",
+        "parameters": [],
+        "bodyRequired": true
+    },
     "post_ImportExportExport": {
         "method": "POST",
         "path": "/import-export/export",
@@ -2040,6 +2058,18 @@ export const operations = {
         ],
         "bodyRequired": false
     },
+    "put_Forum_boardWatch": {
+        "method": "PUT",
+        "path": "/forum/boards/{id}/watch",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
+    },
     "put_Forum_notificationPreferences": {
         "method": "PUT",
         "path": "/forum/notification-preferences",
@@ -2140,6 +2170,12 @@ export const operations = {
                 "required": true
             }
         ],
+        "bodyRequired": true
+    },
+    "put_Forum_watchPreferences": {
+        "method": "PUT",
+        "path": "/forum/watch-settings",
+        "parameters": [],
         "bodyRequired": true
     }
 } as const

@@ -960,6 +960,21 @@ final class Operations {
     ),
     'bodyRequired' => false,
   ),
+  'get_Forum_watchSettings' => 
+  array (
+    'method' => 'GET',
+    'path' => '/forum/watch-settings',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'page',
+        'in' => 'query',
+        'required' => false,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
   'get_Forum_watches' => 
   array (
     'method' => 'GET',
@@ -2343,6 +2358,15 @@ final class Operations {
     ),
     'bodyRequired' => true,
   ),
+  'post_Forum_unsubscribeEmail' => 
+  array (
+    'method' => 'POST',
+    'path' => '/forum/unsubscribe',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => true,
+  ),
   'post_ImportExportExport' => 
   array (
     'method' => 'POST',
@@ -2685,6 +2709,21 @@ final class Operations {
     ),
     'bodyRequired' => false,
   ),
+  'put_Forum_boardWatch' => 
+  array (
+    'method' => 'PUT',
+    'path' => '/forum/boards/{id}/watch',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => true,
+  ),
   'put_Forum_notificationPreferences' => 
   array (
     'method' => 'PUT',
@@ -2811,6 +2850,15 @@ final class Operations {
         'in' => 'path',
         'required' => true,
       ),
+    ),
+    'bodyRequired' => true,
+  ),
+  'put_Forum_watchPreferences' => 
+  array (
+    'method' => 'PUT',
+    'path' => '/forum/watch-settings',
+    'parameters' => 
+    array (
     ),
     'bodyRequired' => true,
   ),

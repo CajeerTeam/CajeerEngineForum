@@ -21,7 +21,7 @@ final readonly class IdentityService
         $id=$user['id'];
         $plain=$this->users->locked($id,function() use($id,$email,$purpose) {
             $user=$this->users->findByEmailForAuth($email);
-            if (!$user || $user['id']!==$id || ($purpose==='verify' && $user['status']!=='pending') || ($purpose==='reset' && !in_array($user['status'],['active','pending'],true))) return null;
+            if (!$user || $user['id']!==$id || ($purpose==='verify' && (!in_array($user['status'],['pending','active'],true) || !empty($user['email_verified_at']))) || ($purpose==='reset' && !in_array($user['status'],['active','pending'],true))) return null;
             $row=$this->challenge($id,$purpose);
             if ($row && (int)$row['issued_at']>time()-60) return null;
             return $this->issue($id,$purpose,$purpose==='verify'?86400:1800);
@@ -39,8 +39,8 @@ final readonly class IdentityService
     public function verifyEmail(string $token,string $password): void
     {
         $this->consume($token,'verify',function(array $user) use($password) {
-            if ($user['status']!=='pending' || !$this->passwords->verify($password,$user['password_hash'])) throw new ForumException('Недействительная ссылка или пароль.',422);
-            $this->sql("UPDATE ce_users SET status='active', email_verified_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP WHERE id=:id AND status='pending'",['id'=>$user['id']]);
+            if (!in_array($user['status'],['pending','active'],true) || !empty($user['email_verified_at']) || !$this->passwords->verify($password,$user['password_hash'])) throw new ForumException('Недействительная ссылка или пароль.',422);
+            $this->sql("UPDATE ce_users SET status='active', email_verified_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP WHERE id=:id AND status IN ('pending','active') AND email_verified_at IS NULL",['id'=>$user['id']]);
             $this->audit->record('auth.email_verified',$user['id'],[]);
         });
     }

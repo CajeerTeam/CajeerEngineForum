@@ -1,5 +1,11 @@
 # Changelog
 
+## Forum Edition 0.3.4 — Watches & Email Delivery
+
+- Thread and direct-board watches with tracking-only, in-app, email, daily and weekly modes; automatic watches, account manager and signed unsubscribe.
+- Durable per-post delivery, recipient leases, bounded SMTP, retry/backoff, coalescing, current ACL and verified-address checks; shared identity SMTP transport.
+- Additive migration 0025, preserved watch modes on merge, real Mailpit integration regression and release acceptance.
+
 ## Forum Edition 0.3.3 — Notification Engine
 
 - Transactional database outbox for replies, explicit UUID mentions and quotes, reactions and moderation state changes; worker dispatch is atomic and repeatable.

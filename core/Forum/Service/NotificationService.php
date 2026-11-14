@@ -20,6 +20,7 @@ final readonly class NotificationService
     }
     public function published(string $actor,string $thread,string $post,string $body,bool $reply): void
     {
+        $this->tx->watches()->published($actor,$thread,$post,$reply);
         if($reply)$this->repo->reply($actor,$post,$thread);
         $this->repo->enqueue('mention',$actor,$post,self::references($body,'@'));
         $authors=[];
@@ -48,7 +49,7 @@ final readonly class NotificationService
                 $user=$key['recipient_id'];$id=$key['event_id'];$row=$this->repo->claim($id,$user);
                 if($row===null)return false;
                 $target=$this->repo->target($row['post_id']);$deliver=false;
-                if($target!==null && $this->repo->preferences($user)[$row['kind']]){
+                if($target!==null && $this->repo->preferences($user)[$row['kind']] && ($row['subscription_kind']===null||$this->repo->subscriptionEligible($user,$row['post_id'],$row['subscription_kind']))){
                     try{$access=$this->tx->permissions()->access(new ForumAccessPolicy($user,['*']));$deliver=in_array($target['board_id'],NodePermissionService::allowed($access),true);}
                     catch(ForumException $e){if($e->status!==401)throw $e;}
                 }

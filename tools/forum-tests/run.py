@@ -98,7 +98,7 @@ def mail_link(email, path, base):
                 continue
             with opener.open(mail + '/api/v1/message/' + urllib.parse.quote(item['ID'], safe=''), timeout=5) as res:
                 text = json.load(res).get('Text', '')
-            match = re.search(re.escape(base + path) + r'#token=([a-f0-9]{64})', text)
+            match = re.search(re.escape(base + path) + r'#token=([a-f0-9-]{36}\.[0-9]{1,12}\.[a-f0-9]{64}|[a-f0-9]{64})', text)
             if match:
                 return match.group(0), match.group(1)
         time.sleep(.25)
@@ -712,7 +712,61 @@ class NetworkTests(unittest.TestCase):
         c.call('DELETE',f'/forum/boards/{board}',200,token=admin)
         c.call('DELETE',f'/forum/categories/{category}',200,token=admin)
 
-    def test_10_rate_limit(self):
+    def test_10_watch_delivery(self):
+        c=Client(self.base); admin=c.login(ADMIN,ADMIN_PASSWORD)[0]['data']['access_token']
+        email,user,subscriber=self.activated(c)
+        cat=c.call('POST','/forum/categories',201,{'name':'Mail test category','description':''},token=admin)['id']
+        board=c.call('POST',f'/forum/categories/{cat}/boards',201,{'name':'Mail test board','description':''},token=admin)['id']
+        path=f'/forum/boards/{board}/watch'; settings='/forum/watch-settings'
+        c.call('PUT',path,401,{'enabled':True,'mode':'email'})
+        c.call('PUT',path,422,{'enabled':True,'mode':'bad'},token=subscriber)
+        browser=Client(self.base);browser.login(email,browser=True)
+        browser.call('PUT',path,403,{'enabled':True,'mode':'email'})
+        c.call('PUT',path,200,{'enabled':True,'mode':'email'},token=subscriber)
+        self.assertEqual('email',c.call('GET',settings,token=subscriber)['boards'][0]['mode'])
+        thread=c.call('POST',f'/forum/boards/{board}/threads',201,{'title':'Mail private title','body':'Mail private body'},token=admin)['id']
+        self.assertEqual(1,int(c.call('GET',settings,token=subscriber)['delivery']['pending']))
+        result=c.call('POST','/queue/work',200,{'limit':10},token=admin)
+        self.assertEqual(1,result['forum_mail']['sent']); self.assertEqual(0,result['failed'])
+        url,token=mail_link(email,'/forum/unsubscribe',self.base)
+        self.assertEqual(1,int(c.call('GET',settings,token=subscriber)['delivery']['sent']))
+        self.assertEqual(0,c.call('POST','/queue/work',200,{'limit':10},token=admin)['forum_mail']['sent'])
+        c.call('POST','/forum/unsubscribe',422,{'token':token[:-1]+('0' if token[-1]!='0' else '1')})
+        tpath='/forum/threads/'+thread+'/watch'
+        c.call('PUT',tpath,200,{'enabled':True,'mode':'daily'},token=subscriber)
+        c.call('PUT',settings,200,{'auto_mode':'weekly'},token=subscriber)
+        c.call('POST','/forum/threads/'+thread+'/posts',201,{'body':'Digest update'},token=admin)
+        self.assertEqual(1,int(c.call('GET',settings,token=subscriber)['delivery']['pending']))
+        self.assertEqual(0,c.call('POST','/queue/work',200,{'limit':10},token=admin)['forum_mail']['sent'])
+        c.call('POST','/forum/unsubscribe',200,{'token':token})
+        prefs=c.call('GET',settings,token=subscriber)
+        self.assertEqual('internal',prefs['auto_mode']);self.assertEqual('internal',prefs['boards'][0]['mode'])
+        self.assertEqual(1,int(prefs['delivery']['cancelled']))
+        self.assertEqual('internal',c.call('GET','/forum/threads/'+thread,token=subscriber)['thread']['watch_mode'])
+        # New board topics generate in-app notifications after opting out of email.
+        topic=c.call('POST',f'/forum/boards/{board}/threads',201,{'title':'New board notification','body':'New topic'},token=admin)['id']
+        c.call('POST','/queue/work',200,{'limit':10},token=admin)
+        self.assertTrue(any(n['thread_id']==topic and n['subscription_kind']=='board' for n in c.call('GET','/forum/notifications',token=subscriber)['items']))
+        # Auto-watch never overwrites an explicit mode.
+        c.call('PUT',tpath,200,{'enabled':True,'mode':'none'},token=subscriber)
+        c.call('POST','/forum/threads/'+thread+'/posts',201,{'body':'Own response'},token=subscriber)
+        self.assertEqual('none',c.call('GET','/forum/threads/'+thread,token=subscriber)['thread']['watch_mode'])
+        # An already queued email is invisible and cancelled when the ACL is revoked.
+        other_email,_,other=self.activated(c)
+        c.call('PUT',tpath,200,{'enabled':True,'mode':'email'},token=other)
+        c.call('POST','/forum/threads/'+thread+'/posts',201,{'body':'Pending private message'},token=admin)
+        acl=f'/forum/boards/{board}/permissions'
+        c.call('PUT',acl,200,{'visibility':'hidden','rules':[]},token=admin)
+        self.assertEqual([],c.call('GET',settings,token=other)['boards'])
+        self.assertEqual(0,c.call('GET',settings,token=other)['delivery']['pending'])
+        result=c.call('POST','/queue/work',200,{'limit':10},token=admin)
+        self.assertEqual(1,result['forum_mail']['cancelled']);self.assertEqual(0,result['forum_mail']['sent'])
+        c.call('PUT',acl,200,{'visibility':'public','rules':[]},token=admin)
+        for t in (thread,topic):c.call('POST','/forum/threads/'+t+'/moderate',200,{'action':'delete'},token=admin)
+        c.call('DELETE',f'/forum/boards/{board}',200,token=admin)
+        c.call('DELETE',f'/forum/categories/{cat}',200,token=admin)
+
+    def test_11_rate_limit(self):
         # Run last: exhaust the real IP auth bucket without guessing credentials.
         c = Client(self.base)
         _, headers = c.request('GET', '/auth/me', 401)
@@ -807,9 +861,11 @@ class BrowserTests(unittest.TestCase):
                 expect(page.locator('.read-controls')).to_contain_text('Тема прочитана')
                 page.locator('article').first.get_by_role('button', name='Нравится', exact=True).click()
                 expect(page.locator('article').first).to_contain_text('1 отметок')
-                click('Подписаться'); expect(page.locator('#notice')).to_contain_text('Тема добавлена')
+                click('Подписаться'); expect(page.locator('#notice')).to_contain_text('Подписка сохранена')
                 page.goto(self.base + '/forum/watches')
                 expect(page.get_by_role('link', name='Browser regression topic')).to_be_visible()
+                expect(page.get_by_role('heading',name='Автоматические подписки')).to_be_visible()
+                page.locator('[name=auto_mode]').select_option('daily');click('Сохранить');expect(page.locator('#notice')).to_contain_text('Настройки сохранены')
                 page.goto(self.base + '/forum/search?q=Browser')
                 expect(page.get_by_role('link', name='Browser regression topic')).to_be_visible()
                 # Password reset uses a real email link and revokes the browser session.
