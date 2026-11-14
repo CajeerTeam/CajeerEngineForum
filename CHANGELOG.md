@@ -1,5 +1,11 @@
 # Changelog
 
+## Forum Edition 0.3.2 — Read Tracking
+
+- Durable per-account read watermarks, unread threads and subtree counters, first-unread navigation and explicit thread/board/all acknowledgements.
+- Per-thread monotonic publication sequences survive ordinal reuse; moved/merged messages get new destination sequences. Acknowledgements from stale pages cannot skip newly published replies.
+- ACL-filtered queries, authenticated CSRF-protected writes, monotonic concurrent updates, migration 0023 and integrated upgrade/HTTP/browser regressions.
+
 ## Forum Edition 0.3.1 — Member Profiles
 
 - Persistent profile details, avatar and cover, signatures, custom fields, privacy, member directory and account preferences.

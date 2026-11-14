@@ -10,9 +10,15 @@ final readonly class DiscussionManagementRepository extends Repository
     public function selectedPosts(string $thread,array $ids): array
     { return $this->rows('SELECT id,author_id,ordinal,created_at FROM ce_forum_posts WHERE thread_id=? AND id IN ('.implode(',',array_fill(0,count($ids),'?')).') ORDER BY ordinal',[$thread,...$ids]); }
     public function appendAll(string $source,string $target,int $offset): void
-    { $this->query('UPDATE ce_forum_posts SET thread_id=?,ordinal=ordinal+? WHERE thread_id=?',[$target,$offset,$source]); }
+    {
+        $count=(int)$this->query('SELECT MAX(ordinal) FROM ce_forum_posts WHERE thread_id=?',[$source])->fetchColumn();
+        if ($count<1) throw new \CajeerEngine\Forum\ForumException('Исходная тема пуста.',409);
+        $base=(new PostRepository($this->db))->reserveReadSequence($target,$count)-$count;
+        // Assign before ordinal: MySQL evaluates single-table assignments left to right.
+        $this->query('UPDATE ce_forum_posts SET read_sequence=ordinal+?,thread_id=?,ordinal=ordinal+? WHERE thread_id=?',[$base,$target,$offset,$source]);
+    }
     public function movePost(string $id,string $source,string $target,int $ordinal): void
-    { if ($this->query('UPDATE ce_forum_posts SET thread_id=?,ordinal=? WHERE id=? AND thread_id=?',[$target,$ordinal,$id,$source])->rowCount()!==1) throw new \CajeerEngine\Forum\ForumException('Сообщение перемещено. Повторите запрос.',409); }
+    { $sequence=(new PostRepository($this->db))->reserveReadSequence($target); if ($this->query('UPDATE ce_forum_posts SET thread_id=?,ordinal=?,read_sequence=? WHERE id=? AND thread_id=?',[$target,$ordinal,$sequence,$id,$source])->rowCount()!==1) throw new \CajeerEngine\Forum\ForumException('Сообщение перемещено. Повторите запрос.',409); }
     public function setFirst(string $id,array $post): void
     { $this->query('UPDATE ce_forum_threads SET author_id=?,created_at=? WHERE id=?',[$post['author_id'],$post['created_at'],$id]); }
     public function tags(string $id): array

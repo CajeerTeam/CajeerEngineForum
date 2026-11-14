@@ -33,6 +33,17 @@ final readonly class PostRepository extends Repository
         if ($this->db->driver() !== 'sqlite') $sql .= ' FOR UPDATE';
         return 1 + (int) $this->query($sql, [$thread])->fetchColumn();
     }
-    public function insert(string $id, string $thread, string $actor, string $body, int $ordinal): void { $this->query('INSERT INTO ce_forum_posts(id,thread_id,author_id,body,ordinal) VALUES(?,?,?,?,?)', [$id,$thread,$actor,$body,$ordinal]); }
+    /** Reserve an append range under the caller's thread lock. Never lower the counter. */
+    public function reserveReadSequence(string $thread, int $count=1): int
+    {
+        if (!$this->db->connection()->inTransaction() || $count<1) throw new \LogicException('Read sequence requires a locked thread and positive count');
+        $this->query('UPDATE ce_forum_threads SET read_sequence=read_sequence+? WHERE id=?',[$count,$thread]);
+        return (int)$this->query('SELECT read_sequence FROM ce_forum_threads WHERE id=?',[$thread])->fetchColumn();
+    }
+    public function insert(string $id, string $thread, string $actor, string $body, int $ordinal): void
+    {
+        $sequence=$this->reserveReadSequence($thread);
+        $this->query('INSERT INTO ce_forum_posts(id,thread_id,author_id,body,ordinal,read_sequence) VALUES(?,?,?,?,?,?)',[$id,$thread,$actor,$body,$ordinal,$sequence]);
+    }
     public function edit(string $id, string $body): void { $this->query('UPDATE ce_forum_posts SET body=?,edited_at=CURRENT_TIMESTAMP WHERE id=?', [$body,$id]); }
 }

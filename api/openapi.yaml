@@ -19335,7 +19335,7 @@
             }
           }
         },
-        "description": "Optional authentication via session or API token. Results are filtered by effective node permissions; inaccessible nodes return 404."
+        "description": "Optional authentication via session or API token. Results are filtered by effective node permissions; inaccessible nodes return 404. Authenticated responses include personal read-state indicators: unread_posts on thread lists, unread_threads on board/subtree views, and read_state plus post read_sequence/is_unread in thread detail. GET never advances the watermark."
       }
     },
     "/forum/boards/{id}": {
@@ -19477,7 +19477,7 @@
             }
           }
         },
-        "description": "Optional authentication via session or API token. Results are filtered by effective node permissions; inaccessible nodes return 404."
+        "description": "Optional authentication via session or API token. Results are filtered by effective node permissions; inaccessible nodes return 404. Authenticated responses include personal read-state indicators: unread_posts on thread lists, unread_threads on board/subtree views, and read_state plus post read_sequence/is_unread in thread detail. GET never advances the watermark."
       },
       "patch": {
         "tags": [
@@ -19850,6 +19850,17 @@
               "minimum": 1,
               "default": 1
             }
+          },
+          {
+            "name": "first_unread",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1"
+              ]
+            },
+            "description": "Resolve and return the page containing the first unread post in the same snapshot."
           }
         ],
         "responses": {
@@ -19950,7 +19961,7 @@
             }
           }
         },
-        "description": "Optional authentication via session or API token. Results are filtered by effective node permissions; inaccessible nodes return 404."
+        "description": "Optional authentication via session or API token. Results are filtered by effective node permissions; inaccessible nodes return 404. Authenticated responses include personal read-state indicators: unread_posts on thread lists, unread_threads on board/subtree views, and read_state plus post read_sequence/is_unread in thread detail. GET never advances the watermark."
       }
     },
     "/forum/search": {
@@ -20101,7 +20112,7 @@
             }
           }
         },
-        "description": "Optional authentication via session or API token. Results are filtered by effective node permissions; inaccessible nodes return 404."
+        "description": "Optional authentication via session or API token. Results are filtered by effective node permissions; inaccessible nodes return 404. Authenticated responses include personal read-state indicators: unread_posts on thread lists, unread_threads on board/subtree views, and read_state plus post read_sequence/is_unread in thread detail. GET never advances the watermark."
       }
     },
     "/forum/register": {
@@ -21223,7 +21234,8 @@
               }
             }
           }
-        }
+        },
+        "description": " Authenticated responses include personal read-state indicators: unread_posts on thread lists, unread_threads on board/subtree views, and read_state plus post read_sequence/is_unread in thread detail. GET never advances the watermark."
       }
     },
     "/forum/posts/{id}/report": {
@@ -22335,7 +22347,7 @@
             }
           }
         },
-        "description": "Optional authentication via session or API token. Results are filtered by effective node permissions; inaccessible nodes return 404."
+        "description": "Optional authentication via session or API token. Results are filtered by effective node permissions; inaccessible nodes return 404. Authenticated responses include personal read-state indicators: unread_posts on thread lists, unread_threads on board/subtree views, and read_state plus post read_sequence/is_unread in thread detail. GET never advances the watermark."
       }
     },
     "/forum/members/{id}": {
@@ -22477,7 +22489,7 @@
             }
           }
         },
-        "description": "Optional authentication. Profile visibility, custom field visibility and activity privacy are enforced; topics are also filtered by node ACL."
+        "description": "Optional authentication. Profile visibility, custom field visibility and activity privacy are enforced; topics are also filtered by node ACL. Authenticated responses include personal read-state indicators: unread_posts on thread lists, unread_threads on board/subtree views, and read_state plus post read_sequence/is_unread in thread detail. GET never advances the watermark."
       }
     },
     "/auth/2fa/confirm": {
@@ -28952,6 +28964,318 @@
           }
         },
         "description": "Privacy-protected JPEG image; returns 404 when absent or inaccessible. Never publicly cached. Supports browser session and API token."
+      }
+    },
+    "/forum/unread": {
+      "get": {
+        "tags": [
+          "Forum"
+        ],
+        "operationId": "get_Forum_unread",
+        "summary": "GET /forum/unread",
+        "x-cajeer-route": "api.v1.forum.unread",
+        "x-cajeer-required-scopes": [],
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "BrowserSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data"
+                  ],
+                  "properties": {
+                    "data": {}
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "description": "Authenticated unread threads, ACL-filtered before pagination. Each item has unread_posts."
+      }
+    },
+    "/forum/read-state": {
+      "post": {
+        "tags": [
+          "Forum"
+        ],
+        "operationId": "post_Forum_markRead",
+        "summary": "POST /forum/read-state",
+        "x-cajeer-route": "api.v1.forum.markRead",
+        "x-cajeer-required-scopes": [],
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "BrowserSession": [],
+            "CsrfToken": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "400": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data"
+                  ],
+                  "properties": {
+                    "data": {}
+                  }
+                }
+              }
+            }
+          }
+        },
+        "description": "Advance the current account watermark, never backwards. Thread scope can pass both post_id and sequence from the displayed page; without them marks the entire current thread. Board scope includes readable descendants. All scope marks only readable threads.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "scope"
+                ],
+                "properties": {
+                  "scope": {
+                    "type": "string",
+                    "enum": [
+                      "thread",
+                      "board",
+                      "all"
+                    ]
+                  },
+                  "id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "description": "Required for thread and board."
+                  },
+                  "post_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "sequence": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "format": "int64"
+                  }
+                }
+              }
+            }
+          }
+        }
       }
     }
   },

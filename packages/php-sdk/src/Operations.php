@@ -900,6 +900,27 @@ final class Operations {
         'in' => 'query',
         'required' => false,
       ),
+      2 => 
+      array (
+        'name' => 'first_unread',
+        'in' => 'query',
+        'required' => false,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
+  'get_Forum_unread' => 
+  array (
+    'method' => 'GET',
+    'path' => '/forum/unread',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'page',
+        'in' => 'query',
+        'required' => false,
+      ),
     ),
     'bodyRequired' => false,
   ),
@@ -2127,6 +2148,15 @@ final class Operations {
         'in' => 'path',
         'required' => true,
       ),
+    ),
+    'bodyRequired' => true,
+  ),
+  'post_Forum_markRead' => 
+  array (
+    'method' => 'POST',
+    'path' => '/forum/read-state',
+    'parameters' => 
+    array (
     ),
     'bodyRequired' => true,
   ),

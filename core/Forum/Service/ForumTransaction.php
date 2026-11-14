@@ -29,6 +29,9 @@ final readonly class ForumTransaction
         }
     }
 
+    public function driver(): string { return $this->db->driver(); }
+    public function readState(): \CajeerEngine\Forum\Repository\ReadStateRepository { return new \CajeerEngine\Forum\Repository\ReadStateRepository($this->db); }
+
     public function read(callable $operation): mixed { return $this->db->readSnapshot($operation); }
     public function permissions(): NodePermissionService { return new NodePermissionService($this,new \CajeerEngine\Forum\Repository\PermissionRepository($this->db),new \CajeerEngine\Forum\Repository\BoardRepository($this->db)); }
 

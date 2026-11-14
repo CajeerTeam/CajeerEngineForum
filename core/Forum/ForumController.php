@@ -36,13 +36,15 @@ final readonly class ForumController
     private function offset(Request $r): int { return V::offset($r->query->all()['page'] ?? 1); }
     public function index(Request $r): JsonResponse { return $this->respond(fn () => $this->discussions->index($this->reader($r))); }
     public function board(Request $r,array $p): JsonResponse { return $this->respond(fn () => $this->discussions->board($this->id($p),$this->offset($r),$this->reader($r))); }
-    public function thread(Request $r,array $p): JsonResponse { return $this->respond(fn () => $this->discussions->thread($this->id($p),$this->offset($r),$this->reader($r))); }
+    public function thread(Request $r,array $p): JsonResponse { return $this->respond(fn () => $this->discussions->thread($this->id($p),$this->offset($r),$this->reader($r),($r->query->all()['first_unread']??null)==='1')); }
     public function search(Request $r): JsonResponse { return $this->respond(function () use ($r) {
         $q=$r->query->all();$tag=null;
         if (array_key_exists('tag',$q)) { [, $tags]=\CajeerEngine\Forum\Service\DiscussionManagementService::normalizeMetadata('',[$q['tag']]);$tag=$tags[0]; }
         $term=V::text($q['q']??'','q',100,$tag===null?2:0);
         return $this->discussions->search($term,$this->offset($r),$this->reader($r),$tag);
     }); }
+    public function unread(Request $r): JsonResponse { return $this->respond(fn()=> $this->discussions->readTracking()->unread($this->actor($r),$this->offset($r))); }
+    public function markRead(Request $r): JsonResponse { return $this->respond(fn()=> $this->discussions->readTracking()->mark($this->actor($r),$this->body($r))); }
     public function latest(Request $r): JsonResponse { return $this->respond(fn () => $this->discussions->latest($this->offset($r),$this->reader($r))); }
     public function profile(Request $r,array $p): JsonResponse { return $this->respond(fn () => $this->discussions->profile($this->id($p),$this->offset($r),$this->reader($r))); }
     private function body(Request $r): array { $data=$r->attributes->get('json',[]);return is_array($data)?$data:[]; }

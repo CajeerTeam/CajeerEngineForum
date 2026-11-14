@@ -16,6 +16,25 @@ final readonly class DiscussionService
 
     private function access(?ForumAccessPolicy $actor): array { return $this->tx->permissions()->access($actor??new ForumAccessPolicy('',[])); }
     private function decorated(array $board,array $access): array { $board['permissions']=$access['boards'][$board['id']]; return $board; }
+    public function readTracking(): ReadTrackingService { return new ReadTrackingService($this->tx,$this->tx->readState(),$this->boards,$this->threads); }
+    private function readBoards(array $boards,array $allowed,string $viewer): array
+    {
+        if ($viewer==='') return $boards;
+        $counts=$this->tx->readState()->boardCounts($viewer,$allowed);
+        $topology=array_column($this->boards->topology(),null,'id');
+        $readable=array_fill_keys($allowed,true);$totals=[];
+        // Propagate each nonzero count up at most 16 accessible ancestors.
+        foreach($counts as $id=>$count) {
+            $seen=[];
+            while(isset($readable[$id],$topology[$id]) && !isset($seen[$id]) && count($seen)<16) {
+                $seen[$id]=true;$totals[$id]=($totals[$id]??0)+(int)$count;
+                $id=$topology[$id]['parent_id']??'';
+            }
+        }
+        foreach($boards as &$board) $board['unread_threads']=$totals[$board['id']]??0;
+        unset($board);
+        return $boards;
+    }
     /** Build the full path from the same ACL-protected snapshot as the content. */
     private function breadcrumbs(array $board,array $access): array
     {
@@ -37,7 +56,7 @@ final readonly class DiscussionService
     {
         return $this->db->readSnapshot(function () use ($actor) {
             $access=$this->access($actor);$allowed=NodePermissionService::allowed($access);$categories=NodePermissionService::allowed($access,'thread:read','categories');
-            return ['categories'=>$this->boards->categories($categories), 'boards'=>array_map(fn($b)=>$this->decorated($b,$access),$this->boards->boards($allowed))];
+            return ['categories'=>$this->boards->categories($categories), 'boards'=>$this->readBoards(array_map(fn($b)=>$this->decorated($b,$access),$this->boards->boards($allowed)),$allowed,$actor?->userId??'')];
         });
     }
     public function board(string $id, int $offset, ?ForumAccessPolicy $actor=null): array
@@ -45,15 +64,18 @@ final readonly class DiscussionService
         return $this->db->readSnapshot(function () use ($id,$offset,$actor) {
             $access=$this->access($actor);NodePermissionService::assert($access,$id,'thread:read');
             $board=$this->boards->view($id)??throw new ForumException('Раздел не найден.',404);
-            $children=$this->boards->children($id,NodePermissionService::allowed($access));
+            $allowed=NodePermissionService::allowed($access);$viewer=$actor?->userId??'';
+            $children=$this->boards->children($id,$allowed);
             foreach ($children as &$child) $child['effective_state']=($this->boards->view($child['id'])??$child)['effective_state']??'archived';
             unset($child);
-            return ['board'=>$this->decorated($board,$access),'breadcrumbs'=>$this->breadcrumbs($board,$access),'threads'=>$this->threads->inBoard($id,$offset,$actor?->userId??''),'children'=>array_map(fn($b)=>$this->decorated($b,$access),$children)];
+            $nodes=$this->readBoards([$this->decorated($board,$access),...array_map(fn($b)=>$this->decorated($b,$access),$children)],$allowed,$viewer);
+            $current=array_shift($nodes);
+            return ['board'=>$current,'breadcrumbs'=>$this->breadcrumbs($board,$access),'threads'=>$this->tx->readState()->decorateThreads($this->threads->inBoard($id,$offset,$viewer),$viewer),'children'=>$nodes];
         });
     }
-    public function thread(string $id, int $offset, ?ForumAccessPolicy $actor=null): array
+    public function thread(string $id, int $offset, ?ForumAccessPolicy $actor=null, bool $firstUnread=false): array
     {
-        return $this->db->readSnapshot(function () use ($id,$offset,$actor) {
+        return $this->db->readSnapshot(function () use ($id,$offset,$actor,$firstUnread) {
             $repo=new \CajeerEngine\Forum\Repository\DiscussionManagementRepository($this->db);
             $access=$this->access($actor);$thread=$this->threads->find($id);
             if ($thread===null) {
@@ -63,17 +85,27 @@ final readonly class DiscussionService
             }
             NodePermissionService::assert($access,$thread['board_id'],'thread:read');$thread['tags']=$repo->tags($id);
             $board=$this->boards->view($thread['board_id'])??throw new ForumException('Раздел не найден.',404);
-            return ['thread'=>$thread,'breadcrumbs'=>$this->breadcrumbs($board,$access),'board'=>$this->decorated($board,$access),'posts'=>$this->posts->inThread($id,$offset,$actor?->userId??''),'first_post_id'=>$this->posts->firstId($id)];
+            $viewer=$actor?->userId??'';
+            $state=$viewer===''?null:$this->tx->readState()->summary($viewer,$id);
+            // Resolve the destination and fetch that page in one ACL-protected snapshot.
+            if($firstUnread) $offset=25*(($state['first_unread']['page']??1)-1);
+            $result=['thread'=>$thread,'breadcrumbs'=>$this->breadcrumbs($board,$access),'board'=>$this->decorated($board,$access),'posts'=>$this->posts->inThread($id,$offset,$viewer),'first_post_id'=>$this->posts->firstId($id),'page'=>1+intdiv($offset,25)];
+            if ($state!==null) {
+                $result['read_state']=$state;
+                foreach($result['posts'] as &$post) $post['is_unread']=(int)$post['read_sequence']>$result['read_state']['read_sequence'];
+                unset($post);
+            }
+            return $result;
         });
     }
-    public function search(string $term,int $offset,?ForumAccessPolicy $actor=null,?string $tag=null): array { return $this->db->readSnapshot(fn()=> $this->threads->search($term,$offset,NodePermissionService::allowed($this->access($actor)),$tag)); }
-    public function latest(int $offset,?ForumAccessPolicy $actor=null): array { return $this->db->readSnapshot(fn()=> $this->threads->latest($offset,NodePermissionService::allowed($this->access($actor)),$actor?->userId??'')); }
+    public function search(string $term,int $offset,?ForumAccessPolicy $actor=null,?string $tag=null): array { return $this->db->readSnapshot(fn()=> $this->tx->readState()->decorateThreads($this->threads->search($term,$offset,NodePermissionService::allowed($this->access($actor)),$tag),$actor?->userId??'')); }
+    public function latest(int $offset,?ForumAccessPolicy $actor=null): array { return $this->db->readSnapshot(fn()=> $this->tx->readState()->decorateThreads($this->threads->latest($offset,NodePermissionService::allowed($this->access($actor)),$actor?->userId??''),$actor?->userId??'')); }
     public function profiles(): MemberProfileService { return new MemberProfileService($this->tx,new \CajeerEngine\Forum\Repository\ProfileRepository($this->db)); }
     public function profile(string $id,int $offset,?ForumAccessPolicy $actor=null): array
     {
         return $this->db->readSnapshot(function () use ($id,$offset,$actor) {
             $member=$this->profiles()->publicProfile($id,$actor??new ForumAccessPolicy('',[]));
-            return ['member'=>$member,'threads'=>$member['activity_visible']?$this->threads->byAuthor($id,$offset,NodePermissionService::allowed($this->access($actor))):[]];
+            return ['member'=>$member,'threads'=>$member['activity_visible']?$this->tx->readState()->decorateThreads($this->threads->byAuthor($id,$offset,NodePermissionService::allowed($this->access($actor))),$actor?->userId??''):[]];
         });
     }
     public function management(): DiscussionManagementService { return new DiscussionManagementService($this->tx,$this->boards,$this->threads,$this->posts,new \CajeerEngine\Forum\Repository\DiscussionManagementRepository($this->db)); }

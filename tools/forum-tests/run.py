@@ -586,7 +586,68 @@ class NetworkTests(unittest.TestCase):
         c.call('DELETE','/forum/profile-fields/'+field,200,token=admin)
         c.call('DELETE','/forum/account/images/cover',200,token=token)
 
-    def test_08_rate_limit(self):
+    def test_08_read_tracking(self):
+        c=Client(self.base)
+        admin=c.login(ADMIN,ADMIN_PASSWORD)[0]['data']['access_token']
+        email,_,member=self.activated(c)
+        second_device=Client(self.base).login(email)[0]['data']['access_token']
+        category=c.call('POST','/forum/categories',201,{'name':'Read tracking','description':''},token=admin)['id']
+        parent=c.call('POST',f'/forum/categories/{category}/boards',201,{'name':'Read parent','description':''},token=admin)['id']
+        board=c.call('POST',f'/forum/categories/{category}/boards',201,{'name':'Read child','description':'','parent_id':parent},token=admin)['id']
+        hidden=c.call('POST',f'/forum/categories/{category}/boards',201,{'name':'Hidden read child','description':'','parent_id':parent},token=admin)['id']
+        c.call('PUT',f'/forum/boards/{hidden}/permissions',200,{'visibility':'hidden','rules':[]},token=admin)
+        def topic(b,title): return c.call('POST',f'/forum/boards/{b}/threads',201,{'title':title,'body':'First post'},token=admin)['id']
+        t=topic(board,'Read tracking topic'); secret=topic(hidden,'Secret unread topic')
+        url='/forum/threads/'+t; mark='/forum/read-state'
+        d=c.call('GET',url,token=member); first=d['posts'][0]
+        self.assertEqual(1,d['read_state']['unread_posts'])
+        self.assertEqual(1,c.call('GET',url,token=second_device)['read_state']['unread_posts'])
+        self.assertNotIn('read_state',c.call('GET',url))
+        c.call('GET','/forum/unread',401)
+        c.call('POST',mark,401,{'scope':'thread','id':t})
+        browser_client=Client(self.base); browser_client.login(email,browser=True)
+        browser_client.call('POST',mark,403,{'scope':'thread','id':t})
+        c.call('POST',mark,404,{'scope':'thread','id':secret},token=member)
+        self.assertEqual(1,c.call('GET',f'/forum/boards/{parent}',token=member)['board']['unread_threads'])
+        new=c.call('POST',url+'/posts',201,{'body':'Arrived after page load'},token=admin)['id']
+        ack={'scope':'thread','id':t,'post_id':first['id'],'sequence':int(first['read_sequence'])}
+        result=c.call('POST',mark,200,ack,token=member)
+        self.assertEqual(1,result['unread_posts']);self.assertEqual(new,result['first_unread']['id'])
+        self.assertEqual(1,c.call('GET',url,token=second_device)['read_state']['unread_posts'])
+        self.assertIn(t,[x['id'] for x in c.call('GET','/forum/unread',token=member)])
+        self.assertNotIn(secret,[x['id'] for x in c.call('GET','/forum/unread',token=member)])
+        c.call('POST',mark,200,{'scope':'thread','id':t},token=second_device)
+        self.assertEqual(0,c.call('POST',mark,200,ack,token=member)['unread_posts'])
+        target=topic(board,'Read target')
+        c.call('POST',mark,200,{'scope':'thread','id':target},token=member)
+        old=c.call('GET',url,token=member)['posts'][1]
+        c.call('POST',url+'/transfer',200,{'post_ids':[new],'target_id':target},token=admin)
+        self.assertEqual(1,c.call('GET','/forum/threads/'+target,token=member)['read_state']['unread_posts'])
+        c.call('POST',mark,409,{'scope':'thread','id':t,'post_id':new,'sequence':int(old['read_sequence'])},token=member)
+        # ordinal 2 is reused in the source, but the sequence is not.
+        replacement=c.call('POST',url+'/posts',201,{'body':'Replacement ordinal'},token=admin)['id']
+        self.assertEqual(replacement,c.call('GET',url,token=member)['read_state']['first_unread']['id'])
+        c.call('POST',mark,200,{'scope':'board','id':parent},token=member)
+        self.assertEqual(0,c.call('GET',f'/forum/boards/{parent}',token=member)['board']['unread_threads'])
+        c.call('POST','/forum/threads/'+target+'/merge',200,{'source_ids':[t]},token=admin)
+        self.assertEqual(2,c.call('GET','/forum/threads/'+target,token=member)['read_state']['unread_posts'])
+        target_url='/forum/threads/'+target
+        for i in range(22): c.call('POST',target_url+'/posts',201,{'body':'Page two reply '+str(i)},token=admin)
+        last=c.call('GET',target_url,token=member)['posts'][-1]
+        result=c.call('POST',mark,200,{'scope':'thread','id':target,'post_id':last['id'],'sequence':int(last['read_sequence'])},token=member)
+        self.assertEqual(2,result['first_unread']['page'])
+        jump=c.call('GET',target_url+'?first_unread=1',token=member)
+        self.assertEqual(2,jump['page']); self.assertEqual(result['first_unread']['id'],jump['posts'][0]['id'])
+        c.call('POST',mark,200,{'scope':'all'},token=member)
+        self.assertEqual([],c.call('GET','/forum/unread',token=member))
+        c.call('PUT',f'/forum/boards/{hidden}/permissions',200,{'visibility':'public','rules':[]},token=admin)
+        self.assertEqual(1,c.call('GET','/forum/threads/'+secret,token=member)['read_state']['unread_posts'])
+        c.call('POST','/forum/threads/'+target+'/moderate',200,{'action':'delete'},token=admin)
+        c.call('POST','/forum/threads/'+secret+'/moderate',200,{'action':'delete'},token=admin)
+        for b in (hidden,board,parent): c.call('DELETE',f'/forum/boards/{b}',200,token=admin)
+        c.call('DELETE',f'/forum/categories/{category}',200,token=admin)
+
+    def test_09_rate_limit(self):
         # Run last: exhaust the real IP auth bucket without guessing credentials.
         c = Client(self.base)
         _, headers = c.request('GET', '/auth/me', 401)
@@ -652,11 +713,25 @@ class BrowserTests(unittest.TestCase):
                 fill('title', 'Browser regression topic'); fill('body', XSS); click('Создать тему')
                 heading('Browser regression topic')
                 thread = page.url
+                expect(page.locator('.read-controls')).to_contain_text('Тема прочитана')
                 expect(page.locator('article .body').first).to_have_text(XSS)
                 self.assertEqual(0, page.locator('article .body img, article .body script').count())
                 self.assertIsNone(page.evaluate('window.forumXss'))
                 fill('body', 'Browser reply'); click('Отправить')
                 expect(page.locator('article .body').last).to_have_text('Browser reply')
+                expect(page.locator('.read-controls')).to_contain_text('Тема прочитана')
+                page.goto(self.base+'/forum/unread'); heading('Непрочитанные темы')
+                expect(page.get_by_role('link',name='Browser regression topic',exact=True)).to_have_count(0)
+                page.goto(thread); heading('Browser regression topic')
+                # A second account publishes while the first user's page is closed.
+                writer=Client(self.base); token=writer.login(ADMIN,ADMIN_PASSWORD)[0]['data']['access_token']
+                thread_id=thread.rsplit('/',1)[-1]
+                reply=writer.call('POST','/forum/threads/'+thread_id+'/posts',201,{'body':'New remote reply'},token=token)['id']
+                page.goto(self.base+'/forum/unread'); heading('Непрочитанные темы')
+                page.get_by_role('link',name='Browser regression topic',exact=True).locator('..').get_by_role('link',name='1 новых',exact=True).click()
+                expect(page).to_have_url(re.compile(r'#post-'+reply+r'$'))
+                expect(page.locator('#post-'+reply)).to_contain_text('New remote reply')
+                expect(page.locator('.read-controls')).to_contain_text('Тема прочитана')
                 page.locator('article').first.get_by_role('button', name='Нравится', exact=True).click()
                 expect(page.locator('article').first).to_contain_text('1 отметок')
                 click('Подписаться'); expect(page.locator('#notice')).to_contain_text('Тема добавлена')

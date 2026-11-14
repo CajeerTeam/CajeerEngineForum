@@ -697,6 +697,23 @@ export const operations = {
                 "name": "page",
                 "in": "query",
                 "required": false
+            },
+            {
+                "name": "first_unread",
+                "in": "query",
+                "required": false
+            }
+        ],
+        "bodyRequired": false
+    },
+    "get_Forum_unread": {
+        "method": "GET",
+        "path": "/forum/unread",
+        "parameters": [
+            {
+                "name": "page",
+                "in": "query",
+                "required": false
             }
         ],
         "bodyRequired": false
@@ -1628,6 +1645,12 @@ export const operations = {
                 "required": true
             }
         ],
+        "bodyRequired": true
+    },
+    "post_Forum_markRead": {
+        "method": "POST",
+        "path": "/forum/read-state",
+        "parameters": [],
         "bodyRequired": true
     },
     "post_Forum_mergeThreads": {

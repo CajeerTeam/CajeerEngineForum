@@ -202,6 +202,8 @@ final class RouteRegistry
             ['PUT', '/api/v1/forum/boards/{id}/permissions', 'api.v1.forum.setBoardPermissions', 'forum', 'setBoardPermissions', ['*']],
             ['GET', '/api/v1/forum/categories/{id}/permissions', 'api.v1.forum.categoryPermissions', 'forum', 'categoryPermissions', ['*']],
             ['PUT', '/api/v1/forum/categories/{id}/permissions', 'api.v1.forum.setCategoryPermissions', 'forum', 'setCategoryPermissions', ['*']],
+            ['GET', '/api/v1/forum/unread', 'api.v1.forum.unread', 'forum', 'unread', []],
+            ['POST', '/api/v1/forum/read-state', 'api.v1.forum.markRead', 'forum', 'markRead', []],
             ['GET', '/api/v1/forum/latest', 'api.v1.forum.latest', 'forum', 'latest', null],
             ['GET', '/api/v1/forum/members', 'api.v1.forum.members', 'forum', 'members', null],
             ['GET', '/api/v1/forum/account/profile', 'api.v1.forum.ownProfile', 'forum', 'ownProfile', []],

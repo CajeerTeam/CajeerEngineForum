@@ -181,7 +181,7 @@ def verify_navigation(base,state):
 
 
 def seed_structure(base, state):
-    """Create real 0.3.0 structure before updating, not just after the upgrade."""
+    """Create real 0.3.1 structure before updating, not just after the upgrade."""
     admin, _, _, member = state
     c=Client(base)
     member_group=next(g['id'] for g in c.call('GET','/forum/groups',token=admin) if g['handle']=='forum-member')
@@ -268,6 +268,19 @@ def verify_profiles(base, fixture):
     print('PASS profile privacy, image delivery and legacy user upgrade',flush=True)
 
 
+def verify_read_tracking(base, state):
+    admin, thread, post, _ = state; c=Client(base)
+    url='/forum/threads/'+thread; mark='/forum/read-state'
+    d=c.call('GET',url,token=admin)
+    require(d['read_state']['unread_posts']==2 and d['posts'][0]['id']==post,'Legacy posts must be unread and preserve IDs')
+    first=d['posts'][0]
+    result=c.call('POST',mark,200,{'scope':'thread','id':thread,'post_id':post,'sequence':int(first['read_sequence'])},token=admin)
+    require(result['unread_posts']==1 and result['first_unread']['id']==d['posts'][1]['id'],'Partial acknowledgement failed')
+    c.call('POST',mark,200,{'scope':'thread','id':thread},token=admin)
+    require(c.call('GET',url,token=admin)['read_state']['unread_posts']==0,'Read watermark not persisted')
+    print('PASS physical dist read tracking and legacy sequence backfill',flush=True)
+
+
 def verify_identity(site, env, report, base):
     code = r'require "vendor/autoload.php"; (new CajeerEngine\Installer\InstallerEnvironment(".env"))->write(["FORUM_REGISTRATION"=>"true"], ".env.example");'
     run(site, env, report, 'open-registration', ['php','-r',code])
@@ -323,7 +336,7 @@ def verify_data_integrity(site, env, report, fixture):
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--artifact',type=Path,required=True)
-    parser.add_argument('--previous',type=Path,help='Original 0.3.0 dist; enables real signed upgrade and rollback')
+    parser.add_argument('--previous',type=Path,help='Original 0.3.1 dist; enables real signed upgrade and rollback')
     parser.add_argument('--driver',choices=('sqlite','pgsql'),default='sqlite')
     parser.add_argument('--report',type=Path,required=True)
     args=parser.parse_args(); report=args.report.resolve(); report.mkdir(parents=True,exist_ok=True)
@@ -332,7 +345,7 @@ def main():
         work=Path(tmp); port=free_port()
         # With --previous use the authentic baseline for upgrade, not a relabelled current tree.
         previous=args.previous.resolve() if args.previous else None
-        initial='0.3.0' if previous else current
+        initial='0.3.1' if previous else current
         site=unpack(previous or artifact,work/'live',initial)
         install(site,env,report,'initial',port,args.driver)
         with http(site,env,report,'initial',port,initial) as base:
@@ -346,6 +359,7 @@ def main():
                 verify_readiness(site,env,report,base)
                 verify_data_integrity(site,env,report,fixture)
                 verify_profiles(base,fixture)
+                verify_read_tracking(base,state)
         if previous:
             key=work/'backup.key'; secret=work/'release.secret'; public=work/'release.public'
             run(site,env,report,'backup-key',['php','bin/cajeer','backup:keygen','--key='+str(key)])
@@ -362,6 +376,7 @@ def main():
                 verify_data(base,state); verify_structure(base,fixture); verify_groups(base,state); verify_discussions(base,state); verify_navigation(base,state); verify_identity(site,env,report,base)
                 verify_data_integrity(site,env,report,fixture)
                 verify_profiles(base,fixture)
+                verify_read_tracking(base,state)
             run(site,env,report,'rollback',['php','bin/cajeer','update:rollback','--yes','--json'],timeout=600)
             require(version(site)==initial,'Rollback did not restore release')
             with http(site,env,report,'rollback',port,initial) as base:

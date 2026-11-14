@@ -115,6 +115,34 @@ final class ForumDatabaseTest extends TestCase
                 self::assertSame(1,$integrity->check()['violations']['missing_primary_groups']);
             } finally { $pdo->rollBack(); }
             self::assertTrue($integrity->check()['ok']);
+            // Real transactional publication and cursor writes on both certified DBs.
+            $boards=new \CajeerEngine\Forum\Repository\BoardRepository($db);
+            $threads=new \CajeerEngine\Forum\Repository\ThreadRepository($db);
+            $posts=new \CajeerEngine\Forum\Repository\PostRepository($db);
+            $discussion=new \CajeerEngine\Forum\Service\DiscussionService($db,$tx,$boards,$threads,$posts,new \CajeerEngine\Forum\Repository\MemberRepository($db));
+            $reader=new \CajeerEngine\Forum\Security\ForumAccessPolicy($member,['forum:write']);
+            $thread=$discussion->createThread($actor,$board,'Read tracking','First');
+            $page=$discussion->thread($thread,0,$reader);$first=$page['posts'][0];
+            $reply=$discussion->reply($actor,$thread,'Second');
+            $ack=['scope'=>'thread','id'=>$thread,'post_id'=>$first['id'],'sequence'=>(int)$first['read_sequence']];
+            $read=$discussion->readTracking();
+            self::assertSame(1,$read->mark($reader,$ack)['unread_posts']);
+            self::assertSame($reply,$discussion->thread($thread,0,$reader)['read_state']['first_unread']['id']);
+            self::assertSame(0,$read->mark($reader,['scope'=>'thread','id'=>$thread])['unread_posts']);
+            self::assertSame(0,$read->mark($reader,$ack)['unread_posts']);
+            self::assertSame(2,$discussion->thread($thread,0,$actor)['read_state']['unread_posts']);
+            $target=$discussion->createThread($actor,$board,'Target','First');
+            $read->mark($reader,['scope'=>'thread','id'=>$target]);
+            $discussion->management()->transfer($actor,$thread,[$reply],$target,null,null);
+            self::assertSame(1,$discussion->thread($target,0,$reader)['read_state']['unread_posts']);
+            $replacement=$discussion->reply($actor,$thread,'Replacement');
+            self::assertSame($replacement,$discussion->thread($thread,0,$reader)['read_state']['first_unread']['id']);
+            $read->mark($reader,['scope'=>'board','id'=>$board]);
+            self::assertSame([],$read->unread($reader,0));
+            $discussion->management()->merge($actor,$target,[$thread]);
+            self::assertSame(2,$discussion->thread($target,0,$reader)['read_state']['unread_posts']);
+            self::assertTrue($integrity->check()['ok']);
+
             // Simulate a request authenticated before its role was removed. Services
             // must recheck the DB, not trust the stale wildcard from middleware.
             $oldAdmin=$users->create('stale-admin@example.test','Stale admin','unused-test-hash',['admin']);

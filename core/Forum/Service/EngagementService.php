@@ -38,7 +38,7 @@ final readonly class EngagementService
         $actor->require('forum:write');
         return $this->tx->read(function() use($actor,$offset) {
             $permissions=$this->tx->permissions();$permissions->requireCurrent($actor,'forum:write');
-            return $this->engagement->watches($actor->userId,$offset,NodePermissionService::allowed($permissions->access($actor)));
+            return $this->tx->readState()->decorateThreads($this->engagement->watches($actor->userId,$offset,NodePermissionService::allowed($permissions->access($actor))),$actor->userId);
         });
     }
 }
