@@ -22,3 +22,5 @@
 .notification-entry{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:.75rem}.notification-unread{border-inline-start:3px solid currentColor;padding-inline-start:.75rem}.notification-entry .actions{flex-shrink:0}
 
 .conversation-message{padding:1rem 0;border-bottom:1px solid var(--border,#8884);overflow-wrap:anywhere}.conversation-picker{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center}.conversation-picker .actions{width:100%}.conversation-message .body{white-space:pre-wrap}
+
+.reaction-controls{flex-wrap:wrap}.reaction-controls button[aria-pressed="true"]{outline:2px solid currentColor;outline-offset:2px;font-weight:700}.reputation{margin:1rem 0;padding:1rem;border:1px solid var(--line,#777);border-radius:.5rem}.post details summary{cursor:pointer;padding:.5rem}.reputation .thread-tag{display:inline-block}

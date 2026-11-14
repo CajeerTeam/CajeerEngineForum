@@ -104,11 +104,13 @@ final readonly class DiscussionService
     }
     public function search(string $term,int $offset,?ForumAccessPolicy $actor=null,?string $tag=null): array { return $this->db->readSnapshot(fn()=> $this->tx->readState()->decorateThreads($this->threads->search($term,$offset,NodePermissionService::allowed($this->access($actor)),$tag),$actor?->userId??'')); }
     public function latest(int $offset,?ForumAccessPolicy $actor=null): array { return $this->db->readSnapshot(fn()=> $this->tx->readState()->decorateThreads($this->threads->latest($offset,NodePermissionService::allowed($this->access($actor)),$actor?->userId??''),$actor?->userId??'')); }
+    public function activity(): ActivityService { return new ActivityService($this->tx,new \CajeerEngine\Forum\Repository\ActivityRepository($this->db),$this->profiles()); }
     public function profiles(): MemberProfileService { return new MemberProfileService($this->tx,new \CajeerEngine\Forum\Repository\ProfileRepository($this->db)); }
     public function profile(string $id,int $offset,?ForumAccessPolicy $actor=null): array
     {
         return $this->db->readSnapshot(function () use ($id,$offset,$actor) {
             $member=$this->profiles()->publicProfile($id,$actor??new ForumAccessPolicy('',[]));
+            $member['reputation']=$this->activity()->summary($member,$actor??new ForumAccessPolicy('',[]));
             return ['member'=>$member,'threads'=>$member['activity_visible']?$this->tx->readState()->decorateThreads($this->threads->byAuthor($id,$offset,NodePermissionService::allowed($this->access($actor))),$actor?->userId??''):[]];
         });
     }

@@ -181,7 +181,7 @@ def verify_navigation(base,state):
 
 
 def seed_structure(base, state):
-    """Create real 0.3.4 structure before updating, not just after the upgrade."""
+    """Create real 0.3.5 structure before updating, not just after the upgrade."""
     admin, _, _, member = state
     c=Client(base)
     member_group=next(g['id'] for g in c.call('GET','/forum/groups',token=admin) if g['handle']=='forum-member')
@@ -283,7 +283,7 @@ def verify_read_tracking(base, state):
 
 def verify_notifications(base, state, fixture):
     c=Client(base); admin,thread,post,_=state
-    # The original 0.3.4 topic has no synthetic historical notifications.
+    # The original 0.3.5 topic has no synthetic historical notifications.
     path='/forum/notifications'
     c.call('POST','/queue/work',200,{'limit':10},token=admin)
     c.call('POST',path+'/read',200,{'all':True},token=admin)
@@ -383,10 +383,27 @@ def verify_conversations(base,state):
     print('PASS physical dist private conversations and membership revocation',flush=True)
 
 
+def verify_activity(base,state,fixture):
+    c=Client(base);admin,thread,post,_=state;author=c.call('GET','/auth/me',token=admin)['user_id'];voter=fixture['token']
+    profile='/forum/members/'+author;reaction='/forum/posts/'+post+'/reaction'
+    before=c.call('GET',profile)['member']['reputation']['reputation']
+    for _ in range(2): c.call('PUT',reaction,200,{'enabled':True,'type':'helpful'},token=voter)
+    require(c.call('GET',profile)['member']['reputation']['reputation']==before+2,'Reputation not idempotent')
+    require(c.call('GET','/forum/threads/'+thread,token=voter)['posts'][0]['my_reaction']=='helpful','Typed reaction missing')
+    c.call('PUT',profile+'/relationship',200,{'kind':'follow','enabled':True},token=voter)
+    require(any(x['thread_id']==thread for x in c.call('GET','/forum/activity?scope=following',token=voter)),'Following feed missing')
+    c.call('PUT',profile+'/relationship',200,{'kind':'ignore','enabled':True},token=voter)
+    require(not any(x['thread_id']==thread for x in c.call('GET','/forum/activity?scope=following',token=voter)),'Ignored feed leak')
+    c.call('PUT',reaction,200,{'enabled':False},token=voter)
+    require(c.call('GET',profile)['member']['reputation']['reputation']==before,'Reaction removal not reflected')
+    require(not any(x['thread_id']==fixture['target'] for x in c.call('GET','/forum/activity')),'Private forum activity leaked')
+    print('PASS physical dist reputation and activity',flush=True)
+
+
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--artifact',type=Path,required=True)
-    parser.add_argument('--previous',type=Path,help='Original 0.3.4 dist; enables real signed upgrade and rollback')
+    parser.add_argument('--previous',type=Path,help='Original 0.3.5 dist; enables real signed upgrade and rollback')
     parser.add_argument('--driver',choices=('sqlite','pgsql'),default='sqlite')
     parser.add_argument('--report',type=Path,required=True)
     args=parser.parse_args(); report=args.report.resolve(); report.mkdir(parents=True,exist_ok=True)
@@ -395,7 +412,7 @@ def main():
         work=Path(tmp); port=free_port()
         # With --previous use the authentic baseline for upgrade, not a relabelled current tree.
         previous=args.previous.resolve() if args.previous else None
-        initial='0.3.4' if previous else current
+        initial='0.3.5' if previous else current
         site=unpack(previous or artifact,work/'live',initial)
         install(site,env,report,'initial',port,args.driver)
         with http(site,env,report,'initial',port,initial) as base:
@@ -413,6 +430,7 @@ def main():
                 verify_notifications(base,state,fixture)
                 verify_watches(base,state)
                 verify_conversations(base,state)
+                verify_activity(base,state,fixture)
         if previous:
             key=work/'backup.key'; secret=work/'release.secret'; public=work/'release.public'
             run(site,env,report,'backup-key',['php','bin/cajeer','backup:keygen','--key='+str(key)])
@@ -433,6 +451,7 @@ def main():
                 verify_notifications(base,state,fixture)
                 verify_watches(base,state)
                 verify_conversations(base,state)
+                verify_activity(base,state,fixture)
             run(site,env,report,'rollback',['php','bin/cajeer','update:rollback','--yes','--json'],timeout=600)
             require(version(site)==initial,'Rollback did not restore release')
             with http(site,env,report,'rollback',port,initial) as base:

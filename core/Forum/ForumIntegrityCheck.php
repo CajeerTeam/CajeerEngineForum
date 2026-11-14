@@ -17,6 +17,11 @@ final readonly class ForumIntegrityCheck
             // Run only after schema verification. These checks may scan the discussion corpus,
             // so deliberately keep them out of the per-request readiness endpoint.
             $queries=[
+                'invalid_reaction_type'=> "SELECT COUNT(*) FROM ce_forum_reactions WHERE reaction_type NOT IN ('like','helpful','celebrate')",
+                'invalid_member_relation'=> "SELECT COUNT(*) FROM ce_forum_member_relations WHERE user_id=target_id OR kind NOT IN ('follow','ignore')",
+                'invalid_achievement_rule'=> "SELECT COUNT(*) FROM ce_forum_achievement_rules WHERE code NOT IN ('first_post','active_member','topic_author','helpful_member','veteran') OR threshold<1 OR threshold>1000000 OR enabled NOT IN (0,1)",
+                'missing_achievement_rule'=> "SELECT 5-COUNT(*) FROM ce_forum_achievement_rules WHERE code IN ('first_post','active_member','topic_author','helpful_member','veteran')",
+
                 'empty_threads'=> 'SELECT COUNT(*) FROM ce_forum_threads t WHERE NOT EXISTS (SELECT 1 FROM ce_forum_posts p WHERE p.thread_id=t.id)',
                 'container_threads'=> "SELECT COUNT(*) FROM ce_forum_threads t JOIN ce_forum_boards b ON b.id=t.board_id WHERE b.node_type<>'forum'",
                 'invalid_publication_sequence'=> 'SELECT COUNT(*) FROM ce_forum_posts p JOIN ce_forum_threads t ON t.id=p.thread_id WHERE p.read_sequence<1 OR p.read_sequence>t.read_sequence',

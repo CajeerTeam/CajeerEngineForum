@@ -1,5 +1,11 @@
 # Changelog
 
+## Forum Edition 0.3.6 — Reputation & Activity
+
+- Typed reactions, live public reputation and configurable achievement thresholds.
+- Personal, community and following activity feeds with current ACL and profile privacy; private follow/ignore relationships.
+- Additive migration 0027, profile and thread UI, API/SDK, database and HTTP regressions.
+
 ## Forum Edition 0.3.5 — Private Conversations
 
 - Private and group text conversations, membership-isolated history and invites, owner handoff, edit, unread watermarks, search and archive/mute.

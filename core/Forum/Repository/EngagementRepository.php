@@ -5,7 +5,13 @@ namespace CajeerEngine\Forum\Repository;
 
 final readonly class EngagementRepository extends Repository
 {
-    public function reaction(string $post, string $actor, bool $enabled): bool { return $this->set('ce_forum_reactions', 'post_id', $post, $actor, $enabled); }
+    public function reaction(string $post, string $actor, bool $enabled,string $type='like'): string
+    {
+        $old=$this->row('SELECT reaction_type FROM ce_forum_reactions WHERE post_id=? AND user_id=?',[$post,$actor]);
+        if(!$enabled)return $this->set('ce_forum_reactions','post_id',$post,$actor,false)?'removed':'unchanged';
+        if($old!==null){if($old['reaction_type']===$type)return 'unchanged';$this->query('UPDATE ce_forum_reactions SET reaction_type=? WHERE post_id=? AND user_id=?',[$type,$post,$actor]);return 'changed';}
+        $this->query('INSERT INTO ce_forum_reactions(post_id,user_id,reaction_type) VALUES(?,?,?)',[$post,$actor,$type]);return 'added';
+    }
     public function watch(string $thread, string $actor, bool $enabled): bool { return $this->set('ce_forum_watches', 'thread_id', $thread, $actor, $enabled); }
     private function set(string $table, string $column, string $id, string $actor, bool $enabled): bool
     {

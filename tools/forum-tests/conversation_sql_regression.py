@@ -9,7 +9,7 @@ import uuid
 
 ROOT = Path(__file__).resolve().parents[2]
 uid = lambda: str(uuid.uuid4())
-files = sorted((ROOT/'migrations/sqlite').glob('*.sql'))
+files = sorted(f for f in (ROOT/'migrations/sqlite').glob('*.sql') if f.name[:4]<='0026')
 assert files[-1].name == '0026_forum_conversations.sql'
 source = (ROOT/'core/Forum/Repository/ConversationRepository.php').read_text()
 

@@ -96,14 +96,14 @@ try {
     $db->transaction(function()use($db,$thread,$post,$user){(new ThreadRepository($db))->insert($thread,'22222222-2222-4222-8222-222222222222',$user,'Existing topic');$db->connection()->prepare('INSERT INTO ce_forum_posts(id,thread_id,author_id,body,ordinal) VALUES(?,?,?,?,?)')->execute([$post,$thread,$user,'Existing body',1]);});
     $before=$pdo->query('SELECT migration,checksum FROM ce_migrations ORDER BY migration')->fetchAll();
     $runner=new MigrationRunner($pdo,$root.'/migrations');
-    check(count($runner->status($driver)['pending'])===11,'eleven pending migrations from 0.1.1');
-    check($runner->run($driver)['applied']===11&&$runner->run($driver)['applied']===0,'upgrade once and idempotent rerun');
-    check($pdo->query("SELECT migration,checksum FROM ce_migrations WHERE migration NOT LIKE '0016_%' AND migration NOT LIKE '0017_%' AND migration NOT LIKE '0018_%' AND migration NOT LIKE '0019_%' AND migration NOT LIKE '0020_%' AND migration NOT LIKE '0021_%' AND migration NOT LIKE '0022_%' AND migration NOT LIKE '0023_%' AND migration NOT LIKE '0024_%' AND migration NOT LIKE '0025_%' AND migration NOT LIKE '0026_%' ORDER BY migration")->fetchAll()===$before,'old ledger checksums unchanged');
+    check(count($runner->status($driver)['pending'])===12,'twelve pending migrations from 0.1.1');
+    check($runner->run($driver)['applied']===12&&$runner->run($driver)['applied']===0,'upgrade once and idempotent rerun');
+    check($pdo->query("SELECT migration,checksum FROM ce_migrations WHERE migration NOT LIKE '0016_%' AND migration NOT LIKE '0017_%' AND migration NOT LIKE '0018_%' AND migration NOT LIKE '0019_%' AND migration NOT LIKE '0020_%' AND migration NOT LIKE '0021_%' AND migration NOT LIKE '0022_%' AND migration NOT LIKE '0023_%' AND migration NOT LIKE '0024_%' AND migration NOT LIKE '0025_%' AND migration NOT LIKE '0026_%' AND migration NOT LIKE '0027_%' ORDER BY migration")->fetchAll()===$before,'old ledger checksums unchanged');
     check((new PostRepository($db))->inThread($thread,0)[0]['body']==='Existing body','upgrade preserved existing post');
     check((new ThreadRepository($db))->inBoard('22222222-2222-4222-8222-222222222222',0)[0]['id']===$thread,'board listing after upgrade');
     // Missing applied file is not reported as a healthy migration state.
     $runnerOld=new MigrationRunner($pdo,$old);
-    check(count($runnerOld->status($driver)['failed'])===11,'missing applied migration reported');
+    check(count($runnerOld->status($driver)['failed'])===12,'missing applied migration reported');
     rejects(fn()=>$runnerOld->run($driver),'missing applied migration blocks execution','missing');
     copy($root.'/migrations/'.$driver.'/0016_forum_lookup_indexes.sql',$old.'/'.$driver.'/0016_forum_lookup_indexes.sql');
     copy($root.'/migrations/'.$driver.'/0017_forum_identity.sql',$old.'/'.$driver.'/0017_forum_identity.sql');
@@ -117,7 +117,8 @@ try {
     check((int)$pdo->query('SELECT read_sequence FROM ce_forum_posts')->fetchColumn()===1,'existing post sequence backfilled');
     copy($root.'/migrations/'.$driver.'/0025_forum_watches_delivery.sql',$old.'/'.$driver.'/0025_forum_watches_delivery.sql');
     copy($root.'/migrations/'.$driver.'/0026_forum_conversations.sql',$old.'/'.$driver.'/0026_forum_conversations.sql');
-    $bad=$old.'/'.$driver.'/0027_failure_test.sql';
+    copy($root.'/migrations/'.$driver.'/0027_forum_reputation_activity.sql',$old.'/'.$driver.'/0027_forum_reputation_activity.sql');
+    $bad=$old.'/'.$driver.'/0028_failure_test.sql';
     file_put_contents($bad,'CREATE TABLE forum_rollback_probe(id INTEGER); INSERT INTO nonexistent_forum_probe VALUES (1);');
     rejects(fn()=>$runnerOld->run($driver),'broken SQL migration rolls back');
     check(!$db->tableExists('forum_rollback_probe')&&count($runnerOld->status($driver)['failed'])===1,'failed migration ledger and DDL rollback');

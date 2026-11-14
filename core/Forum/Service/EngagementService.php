@@ -11,18 +11,19 @@ use CajeerEngine\Forum\Security\ForumAccessPolicy;
 final readonly class EngagementService
 {
     public function __construct(private ForumTransaction $tx, private EngagementRepository $engagement, private ThreadRepository $threads) {}
-    public function reaction(ForumAccessPolicy $actor, string $id, bool $enabled): array
+    public function reaction(ForumAccessPolicy $actor, string $id, bool $enabled,mixed $type=null): array
     {
         $id = V::id($id);
+        $type??='like';if(!is_string($type)||!isset(\CajeerEngine\Forum\Repository\ActivityRepository::TYPES[$type]))throw new ForumException('Некорректная реакция.',422);
         $actor->require('forum:write');
-        return $this->tx->write(function () use ($actor,$id,$enabled) {
+        return $this->tx->write(function () use ($actor,$id,$enabled,$type) {
             $thread=$this->threads->lockForPost($id) ?? throw new ForumException('Объект не найден.',404);
             $this->tx->permissions()->assertWrite($actor,$thread['board_id'],'reaction:use');
-            if ($this->engagement->reaction($id,$actor->userId,$enabled)) {
-                $this->tx->notifications()->reaction($actor->userId,$id,$enabled);
-                $this->tx->audit('forum.reaction.set',$actor->userId,['post_id'=>$id,'enabled'=>$enabled]);
+            if (($change=$this->engagement->reaction($id,$actor->userId,$enabled,$type))!=='unchanged') {
+                if($change!=='changed')$this->tx->notifications()->reaction($actor->userId,$id,$enabled);
+                $this->tx->audit('forum.reaction.set',$actor->userId,['post_id'=>$id,'enabled'=>$enabled,'type'=>$enabled?$type:null]);
             }
-            return ['enabled'=>$enabled];
+            return ['enabled'=>$enabled,'type'=>$enabled?$type:null];
         });
     }
     public function watch(ForumAccessPolicy $actor,string $id,bool $enabled,mixed $mode=null): array

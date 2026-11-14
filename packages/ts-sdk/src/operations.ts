@@ -500,6 +500,29 @@ export const operations = {
         ],
         "bodyRequired": false
     },
+    "get_Forum_achievementRules": {
+        "method": "GET",
+        "path": "/forum/achievement-rules",
+        "parameters": [],
+        "bodyRequired": false
+    },
+    "get_Forum_activity": {
+        "method": "GET",
+        "path": "/forum/activity",
+        "parameters": [
+            {
+                "name": "page",
+                "in": "query",
+                "required": false
+            },
+            {
+                "name": "scope",
+                "in": "query",
+                "required": false
+            }
+        ],
+        "bodyRequired": false
+    },
     "get_Forum_board": {
         "method": "GET",
         "path": "/forum/boards/{id}",
@@ -651,6 +674,18 @@ export const operations = {
         ],
         "bodyRequired": false
     },
+    "get_Forum_leaderboard": {
+        "method": "GET",
+        "path": "/forum/leaderboard",
+        "parameters": [
+            {
+                "name": "page",
+                "in": "query",
+                "required": false
+            }
+        ],
+        "bodyRequired": false
+    },
     "get_Forum_members": {
         "method": "GET",
         "path": "/forum/members",
@@ -764,6 +799,35 @@ export const operations = {
             },
             {
                 "name": "kind",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": false
+    },
+    "get_Forum_relations": {
+        "method": "GET",
+        "path": "/forum/member-relations",
+        "parameters": [
+            {
+                "name": "page",
+                "in": "query",
+                "required": false
+            },
+            {
+                "name": "kind",
+                "in": "query",
+                "required": false
+            }
+        ],
+        "bodyRequired": false
+    },
+    "get_Forum_relationship": {
+        "method": "GET",
+        "path": "/forum/members/{id}/relationship",
+        "parameters": [
+            {
+                "name": "id",
                 "in": "path",
                 "required": true
             }
@@ -2303,6 +2367,18 @@ export const operations = {
         ],
         "bodyRequired": true
     },
+    "put_Forum_saveAchievementRule": {
+        "method": "PUT",
+        "path": "/forum/achievement-rules/{code}",
+        "parameters": [
+            {
+                "name": "code",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
+    },
     "put_Forum_saveConversationSettings": {
         "method": "PUT",
         "path": "/forum/conversation-settings",
@@ -2351,6 +2427,18 @@ export const operations = {
         "parameters": [
             {
                 "name": "kind",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
+    },
+    "put_Forum_setRelationship": {
+        "method": "PUT",
+        "path": "/forum/members/{id}/relationship",
+        "parameters": [
+            {
+                "name": "id",
                 "in": "path",
                 "required": true
             }

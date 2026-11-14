@@ -10,7 +10,7 @@ final class RouteRegistry
     /** These public GET/HEAD operations optionally resolve an existing session. */
     public static function optionalAuthentication(string $name): bool
     {
-        return in_array($name,['api.v1.forum.index','api.v1.forum.board','api.v1.forum.thread','api.v1.forum.search','api.v1.forum.latest','api.v1.forum.profile','api.v1.forum.members','api.v1.forum.profileImage'],true);
+        return in_array($name,['api.v1.forum.index','api.v1.forum.board','api.v1.forum.thread','api.v1.forum.search','api.v1.forum.latest','api.v1.forum.profile','api.v1.forum.members','api.v1.forum.profileImage','api.v1.forum.activity','api.v1.forum.leaderboard'],true);
     }
 
     /** @return list<array{0:string,1:string,2:string,3:string,4:string,5:?array}> */
@@ -229,6 +229,13 @@ final class RouteRegistry
             ['PUT', '/api/v1/forum/notification-preferences', 'api.v1.forum.notificationPreferences', 'forum', 'notificationPreferences', []],
             ['GET', '/api/v1/forum/unread', 'api.v1.forum.unread', 'forum', 'unread', []],
             ['POST', '/api/v1/forum/read-state', 'api.v1.forum.markRead', 'forum', 'markRead', []],
+            ['GET', '/api/v1/forum/activity', 'api.v1.forum.activity', 'forum', 'activity', null],
+            ['GET', '/api/v1/forum/leaderboard', 'api.v1.forum.leaderboard', 'forum', 'leaderboard', null],
+            ['GET', '/api/v1/forum/member-relations', 'api.v1.forum.relations', 'forum', 'relations', ['forum:write']],
+            ['GET', '/api/v1/forum/members/{id}/relationship', 'api.v1.forum.relationship', 'forum', 'relationship', ['forum:write']],
+            ['PUT', '/api/v1/forum/members/{id}/relationship', 'api.v1.forum.setRelationship', 'forum', 'setRelationship', ['forum:write']],
+            ['GET', '/api/v1/forum/achievement-rules', 'api.v1.forum.achievementRules', 'forum', 'achievementRules', ['*']],
+            ['PUT', '/api/v1/forum/achievement-rules/{code}', 'api.v1.forum.saveAchievementRule', 'forum', 'saveAchievementRule', ['*']],
             ['GET', '/api/v1/forum/latest', 'api.v1.forum.latest', 'forum', 'latest', null],
             ['GET', '/api/v1/forum/members', 'api.v1.forum.members', 'forum', 'members', null],
             ['GET', '/api/v1/forum/account/profile', 'api.v1.forum.ownProfile', 'forum', 'ownProfile', []],

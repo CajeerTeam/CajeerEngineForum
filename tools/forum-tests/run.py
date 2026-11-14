@@ -824,7 +824,48 @@ class NetworkTests(unittest.TestCase):
         direct=c.call('POST',base,201,{'participant_ids':[b],'title':'Direct message','body':'Private direct','kind':'direct'},token=at)['id']
         c.call('POST',base+'/'+direct+'/invite',403,{'participant_ids':[third]},token=at)
 
-    def test_12_rate_limit(self):
+    def test_12_activity(self):
+        c=Client(self.base); admin=c.login(ADMIN,ADMIN_PASSWORD)[0]['data']['access_token']
+        email=unique_email(); author=c.call('POST','/users',201,{'email':email,'name':'Reputation author','password':PASSWORD,'roles':['forum-member']},token=admin)['id']
+        writer=c.login(email)[0]['data']['access_token']
+        cat=c.call('POST','/forum/categories',201,{'name':'Activity category','description':'test'},token=admin)['id']
+        board=c.call('POST','/forum/categories/'+cat+'/boards',201,{'name':'Activity board','description':'test'},token=admin)['id']
+        thread=c.call('POST','/forum/boards/'+board+'/threads',201,{'title':'Activity test topic','body':'Real publication'},token=writer)['id']
+        path='/forum/threads/'+thread;post=c.call('GET',path)['posts'][0]['id'];reaction='/forum/posts/'+post+'/reaction';profile='/forum/members/'+author
+        relation=profile+'/relationship';feed='/forum/activity?scope=following';acl='/forum/boards/'+board+'/permissions'
+        for _ in range(2): c.call('PUT',reaction,200,{'enabled':True,'type':'helpful'},token=admin)
+        self.assertEqual(2,c.call('GET',profile)['member']['reputation']['reputation'])
+        self.assertEqual('helpful',c.call('GET',path,token=admin)['posts'][0]['my_reaction'])
+        self.assertIn('first_post',c.call('GET',profile)['member']['reputation']['achievements'])
+        c.call('PUT',reaction,200,{'enabled':True,'type':'celebrate'},token=admin)
+        self.assertEqual(1,c.call('GET',profile)['member']['reputation']['reputation'])
+        c.call('PUT',reaction,200,{'enabled':True,'type':'helpful'},token=writer)
+        self.assertEqual(1,c.call('GET',profile)['member']['reputation']['reputation'])
+        c.call('PUT',relation,200,{'enabled':True,'kind':'follow'},token=admin)
+        self.assertTrue(any(x['post_id']==post for x in c.call('GET',feed,token=admin)))
+        c.call('PUT',relation,200,{'enabled':True,'kind':'ignore'},token=admin)
+        self.assertFalse(any(x['post_id']==post for x in c.call('GET',feed,token=admin)))
+        self.assertTrue(c.call('GET',path,token=admin)['posts'][0]['ignored_author'])
+        c.call('PUT',relation,200,{'enabled':False,'kind':'ignore'},token=admin)
+        c.call('PUT',acl,200,{'visibility':'hidden','rules':[]},token=admin)
+        self.assertFalse(any(x['post_id']==post for x in c.call('GET','/forum/activity')))
+        self.assertEqual(0,c.call('GET',profile)['member']['reputation']['reputation'])
+        c.call('PUT',acl,200,{'visibility':'public','rules':[]},token=admin)
+        c.call('PATCH','/forum/account/preferences',200,{'activity_visibility':'private'},token=writer)
+        self.assertIsNone(c.call('GET',profile)['member']['reputation'])
+        self.assertFalse(any(x['post_id']==post for x in c.call('GET',feed,token=admin)))
+        self.assertFalse(any(x['id']==author for x in c.call('GET','/forum/leaderboard')))
+        c.call('PUT','/forum/achievement-rules/first_post',403,{'enabled':True,'threshold':2},token=writer)
+        c.call('PATCH','/forum/account/preferences',200,{'activity_visibility':'public'},token=writer)
+        c.call('PUT','/forum/achievement-rules/first_post',200,{'enabled':True,'threshold':2},token=admin)
+        self.assertNotIn('first_post',c.call('GET',profile)['member']['reputation']['achievements'])
+        c.call('PUT','/forum/achievement-rules/first_post',200,{'enabled':True,'threshold':1},token=admin)
+        c.call('PUT',reaction,200,{'enabled':False},token=admin)
+        self.assertEqual(0,c.call('GET',profile)['member']['reputation']['reputation'])
+        c.call('POST',path+'/moderate',200,{'action':'delete'},token=admin)
+        c.call('DELETE','/forum/boards/'+board,200,token=admin);c.call('DELETE','/forum/categories/'+cat,200,token=admin)
+
+    def test_13_rate_limit(self):
         # Run last: exhaust the real IP auth bucket without guessing credentials.
         c = Client(self.base)
         _, headers = c.request('GET', '/auth/me', 401)
@@ -932,7 +973,11 @@ class BrowserTests(unittest.TestCase):
                 expect(page.locator('#post-'+reply)).to_contain_text('New remote reply')
                 expect(page.locator('.read-controls')).to_contain_text('Тема прочитана')
                 page.locator('article').first.get_by_role('button', name='Нравится', exact=True).click()
-                expect(page.locator('article').first).to_contain_text('1 отметок')
+                expect(page.locator('article').first).to_contain_text('Нравится: 1')
+                page.locator('article').first.get_by_role('button', name='Полезно', exact=True).click()
+                expect(page.locator('article').first).to_contain_text('Полезно: 1')
+                page.locator('article').first.get_by_role('button', name='Нравится', exact=True).click()
+                expect(page.locator('article').first).to_contain_text('Нравится: 1')
                 click('Подписаться'); expect(page.locator('#notice')).to_contain_text('Подписка сохранена')
                 page.goto(self.base + '/forum/watches')
                 expect(page.get_by_role('link', name='Browser regression topic')).to_be_visible()

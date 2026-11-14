@@ -78,6 +78,18 @@ try {
     check((int)$pdo->query("SELECT COUNT(*) FROM ce_audit_log WHERE event='forum.report.resolve'")->fetchColumn()===1,'resolve idempotent audit');
     $engagement->reaction($m,$p,true);$engagement->reaction($m,$p,true);$engagement->watch($m,$t,true);$engagement->watch($m,$t,true);
     check((int)$pdo->query('SELECT COUNT(*) FROM ce_forum_reactions')->fetchColumn()===1 && count($engagement->watches($m,0))===1,'idempotent reaction and watch');
+    // Current score is derived from public posts and one typed reaction per voter.
+    $engagement->reaction($a,$p,true,'helpful');$engagement->reaction($a,$p,true,'helpful');
+    check($discussion->profile($member,0)['member']['reputation']['reputation']===2,'idempotent helpful reaction; self reaction excluded');
+    $engagement->reaction($a,$p,true,'celebrate');
+    check($discussion->profile($member,0)['member']['reputation']['reputation']===1,'reaction replacement adjusts reputation');
+    $activity=$discussion->activity();$activity->setRelation($a,$member,['kind'=>'follow','enabled'=>true]);
+    check(count($activity->feed($a,'following',0))===1,'follow feed contains publication');
+    $activity->setRelation($a,$member,['kind'=>'ignore','enabled'=>true]);
+    check($activity->feed($a,'following',0)===[],'ignored author excluded from feed');
+    $activity->setRelation($a,$member,['kind'=>'ignore','enabled'=>false]);$activity->setRelation($a,$member,['kind'=>'follow','enabled'=>false]);
+    $engagement->reaction($a,$p,false);
+    check($discussion->profile($member,0)['member']['reputation']['reputation']===0,'reaction removal adjusts reputation');
     // Failure injection at audit write: both thread and first post must roll back.
     $inject=function(string $event)use($pdo,$driver):void{
         if(!in_array($event,['forum.thread.create','forum.post.reply','forum.thread.merge','forum.thread.bulk'],true))throw new LogicException('Invalid failure event');
@@ -233,7 +245,7 @@ try {
     check((new \CajeerEngine\Forum\ForumIntegrityCheck($db))->check()['ok'],'forum data integrity after concurrent moderation');
 
     if($driver==='sqlite')check($pdo->query('PRAGMA foreign_key_check')->fetchAll()===[],'foreign keys intact');
-    $v=new ForumVersion($root);check($v->current()==='0.3.5' && $v->upstream()==='1.3.0','independent product/core versions');
+    $v=new ForumVersion($root);check($v->current()==='0.3.6' && $v->upstream()==='1.3.0','independent product/core versions');
     echo "Forum core regression passed\n";
 } finally {
     unset($db,$discussion,$engagement,$moderation,$registration,$pdo,$runner);

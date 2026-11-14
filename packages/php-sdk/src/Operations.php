@@ -648,6 +648,36 @@ final class Operations {
     ),
     'bodyRequired' => false,
   ),
+  'get_Forum_achievementRules' => 
+  array (
+    'method' => 'GET',
+    'path' => '/forum/achievement-rules',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => false,
+  ),
+  'get_Forum_activity' => 
+  array (
+    'method' => 'GET',
+    'path' => '/forum/activity',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'page',
+        'in' => 'query',
+        'required' => false,
+      ),
+      1 => 
+      array (
+        'name' => 'scope',
+        'in' => 'query',
+        'required' => false,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
   'get_Forum_board' => 
   array (
     'method' => 'GET',
@@ -840,6 +870,21 @@ final class Operations {
     ),
     'bodyRequired' => false,
   ),
+  'get_Forum_leaderboard' => 
+  array (
+    'method' => 'GET',
+    'path' => '/forum/leaderboard',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'page',
+        'in' => 'query',
+        'required' => false,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
   'get_Forum_members' => 
   array (
     'method' => 'GET',
@@ -984,6 +1029,42 @@ final class Operations {
       1 => 
       array (
         'name' => 'kind',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
+  'get_Forum_relations' => 
+  array (
+    'method' => 'GET',
+    'path' => '/forum/member-relations',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'page',
+        'in' => 'query',
+        'required' => false,
+      ),
+      1 => 
+      array (
+        'name' => 'kind',
+        'in' => 'query',
+        'required' => false,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
+  'get_Forum_relationship' => 
+  array (
+    'method' => 'GET',
+    'path' => '/forum/members/{id}/relationship',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
         'in' => 'path',
         'required' => true,
       ),
@@ -3018,6 +3099,21 @@ final class Operations {
     ),
     'bodyRequired' => true,
   ),
+  'put_Forum_saveAchievementRule' => 
+  array (
+    'method' => 'PUT',
+    'path' => '/forum/achievement-rules/{code}',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'code',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => true,
+  ),
   'put_Forum_saveConversationSettings' => 
   array (
     'method' => 'PUT',
@@ -3081,6 +3177,21 @@ final class Operations {
       0 => 
       array (
         'name' => 'kind',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => true,
+  ),
+  'put_Forum_setRelationship' => 
+  array (
+    'method' => 'PUT',
+    'path' => '/forum/members/{id}/relationship',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
         'in' => 'path',
         'required' => true,
       ),

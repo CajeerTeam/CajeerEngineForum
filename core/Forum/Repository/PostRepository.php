@@ -7,9 +7,20 @@ final readonly class PostRepository extends Repository
 {
     public function inThread(string $id, int $offset,string $viewer=''): array
     {
-        $rows=$this->rows("SELECT p.*,u.name AS author,u.status AS author_status, m.display_name,m.signature,COALESCE(pref.profile_visibility,'public') AS profile_visibility,CASE WHEN img.user_id IS NULL THEN 0 ELSE 1 END AS has_avatar,(SELECT COUNT(*) FROM ce_forum_reactions a WHERE a.post_id=p.id) AS likes FROM ce_forum_posts p LEFT JOIN ce_users u ON u.id=p.author_id LEFT JOIN ce_forum_member_profiles m ON m.user_id=u.id LEFT JOIN ce_forum_member_preferences pref ON pref.user_id=u.id LEFT JOIN ce_forum_profile_images img ON img.user_id=u.id AND img.kind='avatar' WHERE p.thread_id=? ORDER BY p.ordinal LIMIT 25 OFFSET ".$offset,[$id]);
+        $rows=$this->rows("SELECT p.*,u.name AS author,u.status AS author_status, m.display_name,m.signature,COALESCE(pref.profile_visibility,'public') AS profile_visibility,CASE WHEN img.user_id IS NULL THEN 0 ELSE 1 END AS has_avatar,(SELECT COUNT(*) FROM ce_forum_reactions a WHERE a.post_id=p.id AND a.reaction_type='like') AS likes FROM ce_forum_posts p LEFT JOIN ce_users u ON u.id=p.author_id LEFT JOIN ce_forum_member_profiles m ON m.user_id=u.id LEFT JOIN ce_forum_member_preferences pref ON pref.user_id=u.id LEFT JOIN ce_forum_profile_images img ON img.user_id=u.id AND img.kind='avatar' WHERE p.thread_id=? ORDER BY p.ordinal LIMIT 25 OFFSET ".$offset,[$id]);
         $show=$viewer===''|| (int)(new ProfileRepository($this->db))->preferences($viewer)['show_signatures']===1;
+        $counts=[];$mine=[];$ignored=[];
+        if($rows){
+            $ids=array_column($rows,'id');$in=implode(',',array_fill(0,count($ids),'?'));
+            foreach($this->rows("SELECT post_id,reaction_type,COUNT(*) AS amount FROM ce_forum_reactions WHERE post_id IN ($in) GROUP BY post_id,reaction_type",$ids) as $r)$counts[$r['post_id']][$r['reaction_type']]=(int)$r['amount'];
+            if($viewer!==''){
+                foreach($this->rows("SELECT post_id,reaction_type FROM ce_forum_reactions WHERE user_id=? AND post_id IN ($in)",[$viewer,...$ids]) as $r)$mine[$r['post_id']]=$r['reaction_type'];
+                $ignored=array_fill_keys(array_column($this->rows("SELECT target_id FROM ce_forum_member_relations WHERE user_id=? AND kind='ignore'",[$viewer]),'target_id'),true);
+            }
+        }
         foreach($rows as &$row){
+            $row['reactions']=$counts[$row['id']]??[];$row['my_reaction']=$mine[$row['id']]??null;
+            $row['ignored_author']=isset($ignored[$row['author_id']??'']);
             $visible=$row['author_status']==='active' && \CajeerEngine\Forum\Service\MemberProfileService::visible($row['profile_visibility'],$viewer,(string)$row['author_id']);
             $row['author_profile_visible']=$visible;
             if($visible && $row['display_name'])$row['author']=$row['display_name'];

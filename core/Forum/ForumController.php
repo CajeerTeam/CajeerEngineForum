@@ -43,6 +43,13 @@ final readonly class ForumController
         $term=V::text($q['q']??'','q',100,$tag===null?2:0);
         return $this->discussions->search($term,$this->offset($r),$this->reader($r),$tag);
     }); }
+    public function activity(Request $r): JsonResponse { return $this->respond(fn()=> $this->discussions->activity()->feed($this->reader($r),$r->query->all()['scope']??'all',$this->offset($r))); }
+    public function leaderboard(Request $r): JsonResponse { return $this->respond(fn()=> $this->discussions->activity()->leaderboard($this->reader($r),$this->offset($r))); }
+    public function relations(Request $r): JsonResponse { return $this->respond(fn()=> $this->discussions->activity()->relations($this->actor($r),$r->query->all()['kind']??'follow',$this->offset($r))); }
+    public function relationship(Request $r,array $p): JsonResponse { return $this->respond(fn()=> $this->discussions->activity()->relationship($this->actor($r),$this->id($p))); }
+    public function setRelationship(Request $r,array $p): JsonResponse { return $this->respond(fn()=> $this->discussions->activity()->setRelation($this->actor($r),$this->id($p),$this->body($r))); }
+    public function achievementRules(Request $r): JsonResponse { return $this->respond(fn()=> $this->discussions->activity()->rules($this->actor($r))); }
+    public function saveAchievementRule(Request $r,array $p): JsonResponse { return $this->respond(fn()=> $this->discussions->activity()->saveRule($this->actor($r),$p['code']??null,$this->body($r))); }
     public function conversations(Request $r): JsonResponse { return $this->respond(fn()=> $this->discussions->conversations()->inbox($this->actor($r),$this->offset($r),($r->query->all()['archived']??null)==='1',($r->query->all()['notifications']??null)==='1',$r->query->all()['q']??'')); }
     public function createConversation(Request $r): JsonResponse { return $this->respond(fn()=> $this->discussions->conversations()->create($this->actor($r),$this->body($r)),201); }
     public function conversation(Request $r,array $p): JsonResponse { return $this->respond(fn()=> $this->discussions->conversations()->view($this->actor($r),$this->id($p),$this->offset($r))); }
@@ -95,7 +102,7 @@ final readonly class ForumController
     public function createThread(Request $r,array $p): JsonResponse { return $this->respond(fn () => ['id'=>$this->discussions->createThread($this->actor($r),$this->id($p),$this->text($r,'title',180,3),$this->text($r,'body',20000))],201); }
     public function reply(Request $r,array $p): JsonResponse { return $this->respond(fn () => ['id'=>$this->discussions->reply($this->actor($r),$this->id($p),$this->text($r,'body',20000))],201); }
     public function edit(Request $r,array $p): JsonResponse { return $this->respond(fn () => ['id'=>$this->discussions->edit($this->actor($r),$this->id($p),$this->text($r,'body',20000))]); }
-    public function reaction(Request $r,array $p): JsonResponse { return $this->respond(fn () => $this->engagement->reaction($this->actor($r),$this->id($p),V::enabled($this->field($r,'enabled')))); }
+    public function reaction(Request $r,array $p): JsonResponse { return $this->respond(fn () => $this->engagement->reaction($this->actor($r),$this->id($p),V::enabled($this->field($r,'enabled')),$this->field($r,'type'))); }
     public function watch(Request $r,array $p): JsonResponse { return $this->respond(fn () => $this->engagement->watch($this->actor($r),$this->id($p),V::enabled($this->field($r,'enabled')),$this->field($r,'mode'))); }
     public function boardWatch(Request $r,array $p): JsonResponse { return $this->respond(fn()=> $this->discussions->watchDelivery()->set($this->actor($r),'board',$this->id($p),V::enabled($this->field($r,'enabled')),$this->field($r,'mode'))); }
     public function watchSettings(Request $r): JsonResponse { return $this->respond(fn()=> $this->discussions->watchDelivery()->settings($this->actor($r),$this->offset($r))); }
