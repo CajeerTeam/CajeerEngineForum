@@ -152,6 +152,16 @@ def verify_rich_content(base,state):
     print('PASS physical dist rich content and legacy migration',flush=True)
 
 
+def verify_attachments(base,state,fixture):
+    c=Client(base);token=state[0];raw=b'Physical distribution attachment bytes.\n'
+    a=c.upload_attachment('release.txt',raw,token);aid=a['id']
+    path='/forum/threads/'+fixture['target'];post=c.call('POST',path+'/posts',201,{'body':'Release attachment','attachment_ids':[aid]},token=token)['id']
+    item=next(p for p in c.call('GET',path,token=token)['posts'] if p['id']==post)
+    require(item['attachments'][0]['id']==aid and c.download_attachment(aid,fixture['token'])==raw,'Attachment bytes or ACL changed')
+    c.call('GET','/forum/attachments/'+aid+'/download',404)
+    print('PASS physical dist private attachment upload, binding and download ACL',flush=True)
+
+
 def verify_groups(base,state):
     token, _, _, member=state; c=Client(base)
     groups=c.call('GET','/forum/groups',token=token)
@@ -193,7 +203,7 @@ def verify_navigation(base,state):
 
 
 def seed_structure(base, state):
-    """Create real 0.4.0 structure before updating, not just after the upgrade."""
+    """Create real 0.4.1 structure before updating, not just after the upgrade."""
     admin, _, _, member = state
     c=Client(base)
     member_group=next(g['id'] for g in c.call('GET','/forum/groups',token=admin) if g['handle']=='forum-member')
@@ -295,7 +305,7 @@ def verify_read_tracking(base, state):
 
 def verify_notifications(base, state, fixture):
     c=Client(base); admin,thread,post,_=state
-    # The original 0.4.0 topic has no synthetic historical notifications.
+    # The original 0.4.1 topic has no synthetic historical notifications.
     path='/forum/notifications'
     c.call('POST','/queue/work',200,{'limit':10},token=admin)
     c.call('POST',path+'/read',200,{'all':True},token=admin)
@@ -463,7 +473,7 @@ def community_snapshot(base,f):
     for message in private['messages']:
         if 'body_format' in message:
             require(message['body_format']=='plain' and isinstance(message['body_html'],str),'Legacy private format changed')
-            for key in ('body_format','body_html','renderer_version'): message.pop(key,None)
+            for key in ('body_format','body_html','renderer_version','attachments'): message.pop(key,None)
     return {'profile':own['profile'],'preferences':own['preferences'],'fields':own['values'],'avatar':avatar,
             'read':thread['read_state'],'watch':thread['thread']['watch_mode'],'posts':[(p['id'],p['body']) for p in thread['posts']],
             'delivery':c.call('GET','/forum/watch-settings',token=token)['delivery'],
@@ -506,7 +516,7 @@ def verify_community_live(base,f):
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--artifact',type=Path,required=True)
-    parser.add_argument('--previous',type=Path,help='Original 0.4.0 dist; enables real signed upgrade and rollback')
+    parser.add_argument('--previous',type=Path,help='Original 0.4.1 dist; enables real signed upgrade and rollback')
     parser.add_argument('--driver',choices=('sqlite','pgsql'),default='sqlite')
     parser.add_argument('--report',type=Path,required=True)
     args=parser.parse_args(); report=args.report.resolve(); report.mkdir(parents=True,exist_ok=True)
@@ -515,7 +525,7 @@ def main():
         work=Path(tmp); port=free_port()
         # With --previous use the authentic baseline for upgrade, not a relabelled current tree.
         previous=args.previous.resolve() if args.previous else None
-        initial='0.4.0' if previous else current
+        initial='0.4.1' if previous else current
         site=unpack(previous or artifact,work/'live',initial)
         install(site,env,report,'initial',port,args.driver)
         with http(site,env,report,'initial',port,initial) as base:
@@ -538,6 +548,7 @@ def main():
                 verify_conversations(base,state)
                 verify_activity(base,state,fixture)
                 verify_rich_content(base,state)
+                verify_attachments(base,state,fixture)
         if previous:
             key=work/'backup.key'; secret=work/'release.secret'; public=work/'release.public'
             run(site,env,report,'backup-key',['php','bin/cajeer','backup:keygen','--key='+str(key)])
@@ -560,6 +571,7 @@ def main():
                 verify_conversations(base,state)
                 verify_activity(base,state,fixture)
                 verify_rich_content(base,state)
+                verify_attachments(base,state,fixture)
             run(site,env,report,'rollback',['php','bin/cajeer','update:rollback','--yes','--json'],timeout=600)
             require(version(site)==initial,'Rollback did not restore release')
             with http(site,env,report,'rollback',port,initial) as base:

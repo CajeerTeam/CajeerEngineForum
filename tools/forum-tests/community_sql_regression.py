@@ -37,8 +37,8 @@ def snapshot(db):
 with tempfile.TemporaryDirectory(prefix='forum-community-sql-') as directory:
     root=Path(directory);db=connection(root/'live.sqlite')
     files=sorted((ROOT/'migrations/sqlite').glob('*.sql'))
-    assert files[-1].name=='0028_forum_rich_content.sql'
-    for f in files[:-1]:db.executescript(f.read_text())
+    assert files[-2].name=='0028_forum_rich_content.sql' and files[-1].name=='0029_forum_attachments.sql'
+    for f in files[:-2]:db.executescript(f.read_text())
     a,b,thread,post,reply,event,conversation,message,delivery=[uid() for _ in range(9)]
     board='22222222-2222-4222-8222-222222222222'
     for user in (a,b):db.execute('INSERT INTO ce_users(id,email,name,password_hash,email_verified_at) VALUES(?,?,?,?,CURRENT_TIMESTAMP)',(user,user+'@example.test','Member','test'))
@@ -57,7 +57,7 @@ with tempfile.TemporaryDirectory(prefix='forum-community-sql-') as directory:
     for user,read,muted in [(a,1,0),(b,0,1)]:db.execute('INSERT INTO ce_forum_conversation_participants(conversation_id,user_id,joined_sequence,read_sequence,muted) VALUES(?,?,1,?,?)',(conversation,user,read,muted))
     db.execute('INSERT INTO ce_forum_conversation_messages(id,conversation_id,author_id,message_sequence,body,created_at) VALUES(?,?,?,1,?,1)',(message,conversation,a,'Private message'))
     db.execute("INSERT INTO ce_forum_member_relations(user_id,target_id,kind) VALUES(?,?,'follow')",(b,a));db.commit()
-    db.executescript(files[-1].read_text())
+    db.executescript(files[-2].read_text());db.executescript(files[-1].read_text())
     assert db.execute('SELECT body,body_format FROM ce_forum_posts WHERE id=?',(post,)).fetchone()==('First','plain')
     assert db.execute('SELECT body,body_format FROM ce_forum_conversation_messages WHERE id=?',(message,)).fetchone()==('Private message','plain')
     # Exercise the actual edit SQL, including the compatibility path omitting a format.

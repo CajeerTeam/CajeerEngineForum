@@ -17,6 +17,9 @@ final readonly class ForumIntegrityCheck
             // Run only after schema verification. These checks may scan the discussion corpus,
             // so deliberately keep them out of the per-request readiness endpoint.
             $queries=[
+                'oversized_post_attachments'=> 'SELECT COUNT(*) FROM (SELECT post_id FROM ce_forum_attachments WHERE post_id IS NOT NULL GROUP BY post_id HAVING COUNT(*)>10 OR SUM(size_bytes)>52428800) AS oversized_posts',
+                'oversized_message_attachments'=> 'SELECT COUNT(*) FROM (SELECT message_id FROM ce_forum_attachments WHERE message_id IS NOT NULL GROUP BY message_id HAVING COUNT(*)>10 OR SUM(size_bytes)>52428800) AS oversized_messages',
+                'invalid_attachment_state'=> 'SELECT COUNT(*) FROM ce_forum_attachments WHERE (post_id IS NOT NULL AND message_id IS NOT NULL) OR (post_id IS NULL AND message_id IS NULL AND expires_at<=created_at) OR ((post_id IS NOT NULL OR message_id IS NOT NULL) AND expires_at<>0)',
                 'invalid_post_format'=> "SELECT COUNT(*) FROM ce_forum_posts WHERE body_format NOT IN ('plain','markdown','bbcode')",
                 'invalid_conversation_format'=> "SELECT COUNT(*) FROM ce_forum_conversation_messages WHERE body_format NOT IN ('plain','markdown','bbcode')",
                 'invalid_notification_recipient'=> 'SELECT COUNT(*) FROM ce_forum_notifications WHERE actor_id=recipient_id',
@@ -62,6 +65,17 @@ final readonly class ForumIntegrityCheck
             }
             $images->closeCursor();
             if ($badImages!==0) $violations['invalid_profile_images']=$badImages;
+            $badFiles=0;
+            $cursor=null;
+            do {
+                $page=$pdo->prepare('SELECT id,size_bytes,sha256 FROM ce_forum_attachments'.($cursor===null?'':' WHERE id>?').' ORDER BY id LIMIT 100');
+                $page->execute($cursor===null?[]:[$cursor]);$metadata=$page->fetchAll(\PDO::FETCH_ASSOC);$page->closeCursor();
+                $payload=$pdo->prepare('SELECT file_data FROM ce_forum_attachments WHERE id=?');
+                foreach($metadata as $file){$cursor=$file['id'];$payload->execute([$cursor]);$bytes=base64_decode((string)$payload->fetchColumn(),true);$payload->closeCursor();
+                    if($bytes===false||strlen($bytes)!==(int)$file['size_bytes']||!hash_equals((string)$file['sha256'],hash('sha256',$bytes)))++$badFiles;
+                }
+            }while(count($metadata)===100);
+            if($badFiles!==0)$violations['invalid_attachment_bytes']=$badFiles;
             $invalid=0;
             foreach ($pdo->query('SELECT r.handle,r.permissions FROM ce_forum_groups g JOIN ce_roles r ON r.id=g.role_id')->fetchAll(\PDO::FETCH_ASSOC) as $group) {
                 $permissions=json_decode((string)$group['permissions'],true);

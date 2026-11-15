@@ -244,8 +244,31 @@ try {
     expectStatus(404,fn()=> $moderation->resolve($a,$raceReport));
     check((new \CajeerEngine\Forum\ForumIntegrityCheck($db))->check()['ok'],'forum data integrity after concurrent moderation');
 
+    // Exercise actual service, transaction, live ACL, and quotas on both DB drivers.
+    $files=$discussion->attachments();$previousMax=getenv('FORUM_ATTACHMENT_MAX_MB');$previousQuota=getenv('FORUM_ATTACHMENT_QUOTA_MB');$previousGroup=getenv('FORUM_ATTACHMENT_GROUP_LIMITS');
+    try {
+        putenv('FORUM_ATTACHMENT_MAX_MB=1');putenv('FORUM_ATTACHMENT_QUOTA_MB=1');putenv('FORUM_ATTACHMENT_GROUP_LIMITS={}');
+        $blob=str_repeat("Attachment quota test.\n",30000);
+        $file=$files->upload($m,'report.txt',$blob);$aid=$file['id'];
+        expectStatus(409,fn()=>$files->upload($m,'overflow.txt',$blob));
+        expectStatus(404,fn()=>$files->get($a,$aid));
+        expectStatus(404,fn()=>$discussion->createThread($a,$board,'Foreign attachment','Denied','plain',[$aid]));
+        check($files->get($m,$aid,true)['data']===$blob,'pending bytes preserved after failed publication');
+        $fileThread=$discussion->createThread($m,$board,'Attachment regression','File message','plain',[$aid]);
+        $filePost=$discussion->thread($fileThread,0)['posts'][0];
+        check($filePost['attachments'][0]['id']===$aid&&$files->get(new ForumAccessPolicy('',[]),$aid,true)['data']===$blob,'public attachment bytes and metadata');
+        expectStatus(404,fn()=>$discussion->reply($m,$fileThread,'Reuse','plain',[$aid]));
+        $moderation->moderate($a,$fileThread,'delete');expectStatus(404,fn()=>$files->get($m,$aid));
+        $expired=$files->upload($m,'expired.txt','Expiry test file')['id'];
+        $pdo->prepare('UPDATE ce_forum_attachments SET created_at=?,expires_at=? WHERE id=?')->execute([time()-86401,time()-1,$expired]);
+        check($files->cleanup()===1,'expired pending file removed by service');
+        expectStatus(404,fn()=>$files->get($m,$expired));
+    } finally {
+        foreach(['FORUM_ATTACHMENT_MAX_MB'=>$previousMax,'FORUM_ATTACHMENT_QUOTA_MB'=>$previousQuota,'FORUM_ATTACHMENT_GROUP_LIMITS'=>$previousGroup] as $key=>$value)putenv($value===false?$key:$key.'='.$value);
+    }
+
     if($driver==='sqlite')check($pdo->query('PRAGMA foreign_key_check')->fetchAll()===[],'foreign keys intact');
-    $v=new ForumVersion($root);check($v->current()==='0.4.1' && $v->upstream()==='1.3.0','independent product/core versions');
+    $v=new ForumVersion($root);check($v->current()==='0.4.2' && $v->upstream()==='1.3.0','independent product/core versions');
     echo "Forum core regression passed\n";
 } finally {
     unset($db,$discussion,$engagement,$moderation,$registration,$pdo,$runner);

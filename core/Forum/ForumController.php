@@ -101,11 +101,31 @@ final readonly class ForumController
     },201); }
     private function contentFormat(Request $r): ?string
     { $body=$this->body($r);return array_key_exists('body_format',$body)?\CajeerEngine\Forum\Content\ForumContentRenderer::format($body['body_format']):null; }
+    public function attachments(Request $r): JsonResponse {return $this->respond(fn()=>$this->discussions->attachments()->pending($this->actor($r)));}
+    public function uploadAttachment(Request $r): JsonResponse
+    {
+        return $this->respond(function()use($r){
+            $actor=$this->actor($r);$actor->require('forum:write');$file=$r->files->get('file');
+            if(!$file instanceof \Symfony\Component\HttpFoundation\File\UploadedFile||!$file->isValid())throw new ForumException('Требуется файл multipart.',422);
+            if($file->getSize()>26214400)throw new ForumException('Файл слишком большой.',413);
+            $data=file_get_contents($file->getPathname());if($data===false)throw new ForumException('Не удалось прочитать файл.',422);
+            return $this->discussions->attachments()->upload($actor,$file->getClientOriginalName(),$data);
+        },201);
+    }
+    public function attachment(Request $r,array $p): JsonResponse {return $this->respond(fn()=>$this->discussions->attachments()->get($this->reader($r),$this->id($p)));}
+    public function deleteAttachment(Request $r,array $p): JsonResponse {return $this->respond(fn()=>$this->discussions->attachments()->remove($this->actor($r),$this->id($p)));}
+    public function downloadAttachment(Request $r,array $p): Response
+    {
+        $headers=['Cache-Control'=>'private, no-store','Vary'=>'Cookie, Authorization, X-API-Token','X-Content-Type-Options'=>'nosniff'];
+        try{$a=$this->discussions->attachments()->get($this->reader($r),$this->id($p),true);
+            return new Response($a['data'],200,$headers+['Content-Type'=>'application/octet-stream','Content-Length'=>(string)$a['size_bytes'],'Content-Disposition'=>"attachment; filename=\"download\"; filename*=UTF-8''".rawurlencode($a['filename']),'Content-Security-Policy'=>"default-src 'none'; sandbox"]);
+        }catch(ForumException $e){return new JsonResponse(['error'=>['code'=>'forum_error','message'=>$e->getMessage()]],$e->status,$headers);}
+    }
     public function previewContent(Request $r): JsonResponse
     { return $this->respond(function()use($r){$this->actor($r)->require('forum:write');$format=$this->contentFormat($r)??'plain';$body=\CajeerEngine\Forum\Content\ForumContentRenderer::source($this->field($r,'body'),$format,true);return \CajeerEngine\Forum\Content\ForumContentRenderer::render($body,$format);}); }
-    public function createThread(Request $r,array $p): JsonResponse { return $this->respond(fn () => ['id'=>$this->discussions->createThread($this->actor($r),$this->id($p),$this->text($r,'title',180,3),$this->field($r,'body'),$this->contentFormat($r)??'plain')],201); }
-    public function reply(Request $r,array $p): JsonResponse { return $this->respond(fn () => ['id'=>$this->discussions->reply($this->actor($r),$this->id($p),$this->field($r,'body'),$this->contentFormat($r))],201); }
-    public function edit(Request $r,array $p): JsonResponse { return $this->respond(fn () => ['id'=>$this->discussions->edit($this->actor($r),$this->id($p),$this->field($r,'body'),$this->contentFormat($r))]); }
+    public function createThread(Request $r,array $p): JsonResponse { return $this->respond(fn () => ['id'=>$this->discussions->createThread($this->actor($r),$this->id($p),$this->text($r,'title',180,3),$this->field($r,'body'),$this->contentFormat($r)??'plain',$this->field($r,'attachment_ids')??[])],201); }
+    public function reply(Request $r,array $p): JsonResponse { return $this->respond(fn () => ['id'=>$this->discussions->reply($this->actor($r),$this->id($p),$this->field($r,'body'),$this->contentFormat($r),$this->field($r,'attachment_ids')??[])],201); }
+    public function edit(Request $r,array $p): JsonResponse { return $this->respond(fn () => ['id'=>$this->discussions->edit($this->actor($r),$this->id($p),$this->field($r,'body'),$this->contentFormat($r),$this->field($r,'attachment_ids')??[])]); }
     public function reaction(Request $r,array $p): JsonResponse { return $this->respond(fn () => $this->engagement->reaction($this->actor($r),$this->id($p),V::enabled($this->field($r,'enabled')),$this->field($r,'type'))); }
     public function watch(Request $r,array $p): JsonResponse { return $this->respond(fn () => $this->engagement->watch($this->actor($r),$this->id($p),V::enabled($this->field($r,'enabled')),$this->field($r,'mode'))); }
     public function boardWatch(Request $r,array $p): JsonResponse { return $this->respond(fn()=> $this->discussions->watchDelivery()->set($this->actor($r),'board',$this->id($p),V::enabled($this->field($r,'enabled')),$this->field($r,'mode'))); }

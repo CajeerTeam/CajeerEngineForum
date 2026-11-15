@@ -16,6 +16,7 @@ final readonly class DiscussionService
 
     private function access(?ForumAccessPolicy $actor): array { return $this->tx->permissions()->access($actor??new ForumAccessPolicy('',[])); }
     private function decorated(array $board,array $access): array { $board['permissions']=$access['boards'][$board['id']]; return $board; }
+    public function attachments(): AttachmentService { return $this->tx->attachments(); }
     public function conversations(): ConversationService { return $this->tx->conversations(); }
     public function watchDelivery(): WatchService { return $this->tx->watches(); }
     public function notifications(): NotificationService { return $this->tx->notifications(); }
@@ -94,6 +95,7 @@ final readonly class DiscussionService
             // Resolve the destination and fetch that page in one ACL-protected snapshot.
             if($firstUnread) $offset=25*(($state['first_unread']['page']??1)-1);
             $result=['thread'=>$thread,'breadcrumbs'=>$this->breadcrumbs($board,$access),'board'=>$this->decorated($board,$access),'posts'=>$this->posts->inThread($id,$offset,$viewer),'first_post_id'=>$this->posts->firstId($id),'page'=>1+intdiv($offset,25)];
+            $result['posts']=$this->tx->attachments()->decorate('post',$result['posts']);
             if ($state!==null) {
                 $result['read_state']=$state;
                 foreach($result['posts'] as &$post) $post['is_unread']=(int)$post['read_sequence']>$result['read_state']['read_sequence'];
@@ -117,26 +119,27 @@ final readonly class DiscussionService
     public function management(): DiscussionManagementService { return new DiscussionManagementService($this->tx,$this->boards,$this->threads,$this->posts,new \CajeerEngine\Forum\Repository\DiscussionManagementRepository($this->db)); }
     public function groups(): GroupService { return $this->tx->groups(); }
     public function permissions(): NodePermissionService { return $this->tx->permissions(); }
-    public function createThread(ForumAccessPolicy $actor, string $board, string $title, mixed $body, string $format='plain'): string
+    public function createThread(ForumAccessPolicy $actor, string $board, string $title, mixed $body, string $format='plain', mixed $attachments=[]): string
     {
         $board = V::id($board); $title = V::text($title,'title',180,3); $body = \CajeerEngine\Forum\Content\ForumContentRenderer::source($body,$format);
         $actor->require('forum:write');
-        return $this->tx->write(function () use ($actor,$board,$title,$body,$format) {
+        return $this->tx->write(function () use ($actor,$board,$title,$body,$format,$attachments) {
             $this->permissions()->assertWrite($actor,$board,'thread:create');
             $this->boards->writable($board);
             $id = Uuid::v4(); $post = Uuid::v4();
             $this->threads->insert($id,$board,$actor->userId,$title);
             $this->posts->insert($post,$id,$actor->userId,$body,1,$format);
+            $this->tx->attachments()->attach($actor->userId,'post',$post,$attachments);
             $this->tx->notifications()->published($actor->userId,$id,$post,$body,false,$format);
             $this->tx->audit('forum.thread.create',$actor->userId,['thread_id'=>$id,'board_id'=>$board,'post_id'=>$post]);
             return $id;
         });
     }
-    public function reply(ForumAccessPolicy $actor, string $id, mixed $body, ?string $format=null): string
+    public function reply(ForumAccessPolicy $actor, string $id, mixed $body, ?string $format=null, mixed $attachments=[]): string
     {
         $id = V::id($id); $body = \CajeerEngine\Forum\Content\ForumContentRenderer::source($body,$format??'plain');
         $actor->require('forum:write');
-        return $this->tx->write(function () use ($actor,$id,$body,$format) {
+        return $this->tx->write(function () use ($actor,$id,$body,$format,$attachments) {
             $thread = $this->threads->lockThread($id) ?? throw new ForumException('Тема не найдена.',404);
             $this->permissions()->assertWrite($actor,$thread['board_id'],'post:reply');
             $this->boards->writable($thread['board_id']);
@@ -144,16 +147,17 @@ final readonly class DiscussionService
             $post = Uuid::v4();
             $this->posts->insert($post,$id,$actor->userId,$body,$this->posts->nextOrdinal($id),$format??'plain');
             $this->threads->touch($id);
+            $this->tx->attachments()->attach($actor->userId,'post',$post,$attachments);
             $this->tx->notifications()->published($actor->userId,$id,$post,$body,true,$format??'plain');
             $this->tx->audit('forum.post.reply',$actor->userId,['thread_id'=>$id,'post_id'=>$post]);
             return $post;
         });
     }
-    public function edit(ForumAccessPolicy $actor, string $id, mixed $body, ?string $format=null): string
+    public function edit(ForumAccessPolicy $actor, string $id, mixed $body, ?string $format=null, mixed $attachments=[]): string
     {
         $id = V::id($id);
         $actor->require('forum:write');
-        return $this->tx->write(function () use ($actor,$id,$body,$format) {
+        return $this->tx->write(function () use ($actor,$id,$body,$format,$attachments) {
             $thread = $this->threads->lockForPost($id) ?? throw new ForumException('Сообщение не найдено.',404);
             $post = $this->posts->findForWrite($id) ?? throw new ForumException('Сообщение не найдено.',404);
             $this->permissions()->assertWrite($actor,$thread['board_id'],$post['author_id']===$actor->userId && (int)$thread['locked']===0?'post:edit_own':'post:edit_any');
@@ -161,6 +165,7 @@ final readonly class DiscussionService
             $actor->assertEdit($post,$thread);
             $format=$format??$post['body_format'];$body=\CajeerEngine\Forum\Content\ForumContentRenderer::source($body,$format);
             $this->posts->edit($id,$body,$format);
+            $this->tx->attachments()->attach($actor->userId,'post',$id,$attachments);
             $this->tx->audit('forum.post.edit',$actor->userId,['thread_id'=>$thread['id'],'post_id'=>$id]);
             return $id;
         });

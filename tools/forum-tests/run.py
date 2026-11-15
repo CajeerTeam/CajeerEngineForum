@@ -79,6 +79,18 @@ class Client:
         data, _ = self.request(*args, **kwargs)
         return data.get('data', data.get('error'))
 
+    def upload_attachment(self, filename, content, token=None, status=201, headers=None):
+        boundary='forum-'+uuid.uuid4().hex
+        raw=(f'--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="{filename}"\r\nContent-Type: application/octet-stream\r\n\r\n').encode()+content+f'\r\n--{boundary}--\r\n'.encode()
+        return self.call('POST','/forum/attachments',status,token=token,raw=raw,headers={'Content-Type':'multipart/form-data; boundary='+boundary,**(headers or {})})
+
+    def download_attachment(self, aid, token=None):
+        h={'Authorization':'Bearer '+token} if token else {}
+        with self.opener.open(urllib.request.Request(self.base+'/api/v1/forum/attachments/'+aid+'/download',headers=h),timeout=20) as res:
+            assert res.status==200 and res.headers.get_content_type()=='application/octet-stream'
+            assert res.headers['Content-Disposition'].startswith('attachment;') and res.headers['Cache-Control'].find('no-store')>=0
+            return res.read()
+
     def login(self, email, password=PASSWORD, code=None, status=201, browser=False):
         body = {'email': email, 'password': password}
         if code is not None:
@@ -904,6 +916,29 @@ class NetworkTests(unittest.TestCase):
         self.assertEqual('<strong>Private</strong>',c.call('GET','/forum/conversations/'+conv,token=recipient)['messages'][0]['body_html'])
         c.call('GET','/forum/conversations/'+conv,401)
         c.call('POST',path+'/moderate',200,{'action':'delete'},token=admin)
+
+    def test_15_attachments(self):
+        c=Client(self.base); admin=c.login(ADMIN,ADMIN_PASSWORD)[0]['data']['access_token']
+        email=unique_email(); member=c.call('POST','/users',201,{'email':email,'name':'Attachment member','password':PASSWORD,'roles':['forum-member']},token=admin)['id']; other=c.login(email)[0]['data']['access_token']
+        raw=b'Attachment test content.\n'; a=c.upload_attachment('report.txt',raw,admin); aid=a['id']; path='/forum/attachments/'+aid
+        self.assertEqual(hashlib.sha256(raw).hexdigest(),a['sha256']);self.assertEqual(raw,c.download_attachment(aid,admin))
+        c.call('GET',path,404,token=other);c.call('GET',path+'/download',404);c.upload_attachment('wrong.php.txt',raw,admin,415)
+        public=c.call('GET','/forum')['boards'][0]['id']; before=c.call('GET','/forum/boards/'+public)['threads']
+        c.call('POST','/forum/boards/'+public+'/threads',404,{'title':'Foreign attachment','body':'Denied','attachment_ids':[aid]},token=other)
+        self.assertEqual(before,c.call('GET','/forum/boards/'+public)['threads'])
+        thread=c.call('POST','/forum/boards/'+public+'/threads',201,{'title':'Attachment test','body':'File','attachment_ids':[aid]},token=admin)['id']; url='/forum/threads/'+thread
+        post=c.call('GET',url)['posts'][0];self.assertEqual(aid,post['attachments'][0]['id']);self.assertEqual(raw,c.download_attachment(aid))
+        c.call('POST',url+'/posts',404,{'body':'Cannot reuse','attachment_ids':[aid]},token=admin)
+        cat=c.call('POST','/forum/categories',201,{'name':'Attachment hidden','description':''},token=admin)['id']; hidden=c.call('POST','/forum/categories/'+cat+'/boards',201,{'name':'Attachment hidden board','description':''},token=admin)['id']
+        c.call('PUT','/forum/categories/'+cat+'/permissions',200,{'visibility':'hidden','rules':[]},token=admin)
+        c.call('POST','/forum/thread-actions/bulk',200,{'thread_ids':[thread],'action':'move','board_id':hidden},token=admin)
+        c.call('GET',path+'/download',404,token=other);self.assertEqual(raw,c.download_attachment(aid,admin))
+        private=c.upload_attachment('private.txt',raw,admin)['id']; conv=c.call('POST','/forum/conversations',201,{'kind':'direct','title':'File conversation','participant_ids':[member],'body':'Private file','attachment_ids':[private]},token=admin)['id'];cp='/forum/conversations/'+conv
+        self.assertEqual(private,c.call('GET',cp,token=other)['messages'][0]['attachments'][0]['id']);self.assertEqual(raw,c.download_attachment(private,other));c.call('GET','/forum/attachments/'+private+'/download',404)
+        c.call('POST',cp+'/leave',200,token=other);c.call('GET','/forum/attachments/'+private+'/download',404,token=other)
+        c.call('DELETE',path,200,token=admin);c.call('GET',path,404,token=admin)
+        pending=c.upload_attachment('pending.txt',raw,admin)['id'];self.assertIn(pending,[x['id'] for x in c.call('GET','/forum/attachments',token=admin)['items']]);c.call('DELETE','/forum/attachments/'+pending,200,token=admin)
+        c.call('POST',url+'/moderate',200,{'action':'delete'},token=admin)
 
     def test_99_rate_limit(self):
         # Run last: exhaust the real IP auth bucket without guessing credentials.

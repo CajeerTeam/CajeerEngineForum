@@ -26,7 +26,7 @@ final class QueueWorker
         $root=$this->webhooks->rootPath();$metrics=new \CajeerEngine\Observability\Metrics($root);\CajeerEngine\Observability\OperationsMonitor::marker($root,'worker','running');
         $processed=0;$failed=0;$errors=[];$lost=0;$signals=PHP_SAPI==='cli'&&function_exists('pcntl_signal')&&function_exists('pcntl_alarm');
         if($signals){$async=pcntl_async_signals(true);$old=[];foreach([SIGTERM,SIGINT,SIGALRM]as $s)$old[$s]=pcntl_signal_get_handler($s);pcntl_signal(SIGTERM,fn()=> $this->stop());pcntl_signal(SIGINT,fn()=> $this->stop());pcntl_signal(SIGALRM,static function(){throw new \RuntimeException('Job execution timeout');});}
-        $forumProcessed=0;$mailStats=['sent'=>0,'failed'=>0,'cancelled'=>0];
+        $forumProcessed=0;$attachmentsCleaned=0;$mailStats=['sent'=>0,'failed'=>0,'cancelled'=>0];
         try {
             // Poll the database outbox even when the external queue is empty. No enqueue/commit gap.
             if (($queue===null || $queue==='default') && $this->database!==null && $this->database->tableExists('ce_forum_notifications')) {
@@ -44,6 +44,10 @@ final class QueueWorker
                     if($mailStats['failed']>0){$failed+=$mailStats['failed'];$errors[]=['name'=>'forum.mail.dispatch','error'=>'SMTP delivery failed; retry scheduled'];}
                 }catch(\Throwable $e){$failed++;$errors[]=['name'=>'forum.mail.dispatch','error'=>'Forum mail processing failed'];}
             }
+            if (($queue===null || $queue==='default') && $this->database!==null && $this->database->tableExists('ce_forum_attachments') && !$this->stopping) {
+                try{$tx=new \CajeerEngine\Forum\Service\ForumTransaction($this->database,new \CajeerEngine\Database\Repository\AuditLogRepository($this->database));$attachmentsCleaned=$tx->attachments()->cleanup();}
+                catch(\Throwable $e){$failed++;$errors[]=['name'=>'forum.attachments.cleanup','error'=>'Attachment cleanup failed'];}
+            }
             for($i=0;$i<max(1,min(1000,$limit))&&!$this->stopping;$i++) {
                 $job=$this->queue->pop($queue);if($job===null)break;$context=new JobContext($job,$this->queue);$started=hrtime(true);$wall=microtime(true);$trace=\CajeerEngine\Observability\TraceScope::child();$previousTrace=\CajeerEngine\Observability\TraceScope::enter($trace);$outcome='failure';
                 try {
@@ -56,7 +60,7 @@ final class QueueWorker
             }
         }finally{if($signals){pcntl_alarm(0);foreach($old as $s=>$handler)pcntl_signal($s,$handler);pcntl_async_signals($async);}}
         \CajeerEngine\Observability\OperationsMonitor::marker($root,'worker',$failed?'failure':'success');
-        return ['processed'=>$processed,'forum_notifications_processed'=>$forumProcessed,'forum_mail'=>$mailStats,'failed'=>$failed,'lost_reservations'=>$lost,'stopping'=>$this->stopping,'errors'=>$errors,'diagnostics'=>$this->queue->diagnostics()];
+        return ['processed'=>$processed,'forum_notifications_processed'=>$forumProcessed,'forum_mail'=>$mailStats,'forum_attachments_cleaned'=>$attachmentsCleaned,'failed'=>$failed,'lost_reservations'=>$lost,'stopping'=>$this->stopping,'errors'=>$errors,'diagnostics'=>$this->queue->diagnostics()];
     }
     private function logMessage(array $payload,JobContext $context): void
     {

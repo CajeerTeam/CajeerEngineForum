@@ -1,5 +1,12 @@
 # Changelog
 
+## Forum Edition 0.4.2 — Attachment Pipeline
+
+- Private multipart uploads, MIME and extension validation, per-user/group quotas, SHA-256 verified downloads.
+- Atomic attachment binding to topics, replies and conversations, with live node ACL or membership checks and automatic expiry cleanup.
+- Browser attachment selection, pending upload recovery, and deletion with current edit permissions.
+- Migration 0029 on SQLite, PostgreSQL and MySQL; preserves existing messages and UUIDs.
+
 ## Forum Edition 0.4.1 — Rich Text Editor
 
 - Add plain, Markdown and BBCode source formats to forum posts and conversation messages; preserve legacy content literally.

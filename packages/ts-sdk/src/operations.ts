@@ -77,6 +77,18 @@ export const operations = {
         ],
         "bodyRequired": false
     },
+    "delete_Forum_deleteAttachment": {
+        "method": "DELETE",
+        "path": "/forum/attachments/{id}",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": false
+    },
     "delete_Forum_deleteBoard": {
         "method": "DELETE",
         "path": "/forum/boards/{id}",
@@ -523,6 +535,24 @@ export const operations = {
         ],
         "bodyRequired": false
     },
+    "get_Forum_attachment": {
+        "method": "GET",
+        "path": "/forum/attachments/{id}",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": false
+    },
+    "get_Forum_attachments": {
+        "method": "GET",
+        "path": "/forum/attachments",
+        "parameters": [],
+        "bodyRequired": false
+    },
     "get_Forum_board": {
         "method": "GET",
         "path": "/forum/boards/{id}",
@@ -634,6 +664,18 @@ export const operations = {
                 "name": "q",
                 "in": "query",
                 "required": false
+            }
+        ],
+        "bodyRequired": false
+    },
+    "get_Forum_downloadAttachment": {
+        "method": "GET",
+        "path": "/forum/attachments/{id}/download",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
             }
         ],
         "bodyRequired": false
@@ -2072,6 +2114,12 @@ export const operations = {
     "post_Forum_unsubscribeEmail": {
         "method": "POST",
         "path": "/forum/unsubscribe",
+        "parameters": [],
+        "bodyRequired": true
+    },
+    "post_Forum_uploadAttachment": {
+        "method": "POST",
+        "path": "/forum/attachments",
         "parameters": [],
         "bodyRequired": true
     },

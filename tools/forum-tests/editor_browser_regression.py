@@ -48,6 +48,20 @@ def main():
         assert '[b]Bold[/b]' in body and '[code=php]' in body and '\\'+ref in body
         click('Предпросмотр');expect(page.locator('.rich-preview pre code')).to_have_text(ref)
         assert page.locator('.rich-preview .content-reference').count()==0
+        # Real browser multipart and attachment picker; transport is isolated.
+        reset();source('File message','plain')
+        page.evaluate("""()=>{window.fetch=async(url,options={})=>{
+          if(url.endsWith('/attachments')&&options.method==='POST'){
+            const file=options.body.get('file');window.uploaded={name:file.name,body:await file.text(),csrf:options.headers['X-CSRF-Token']};
+            return {ok:true,json:async()=>({data:{id:'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',filename:file.name,size_bytes:file.size,download_url:'/api/v1/forum/attachments/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/download'}})};
+          }
+          return {ok:true,json:async()=>await window.localPreview(options.body)};
+        }}""")
+        page.locator('input[type=file]').set_input_files({'name':'report.txt','mimeType':'text/plain','buffer':b'Attachment browser test'})
+        click('Загрузить файлы');expect(page.get_by_role('link',name='report.txt')).to_be_visible()
+        assert page.evaluate('window.uploaded')=={'name':'report.txt','body':'Attachment browser test','csrf':'test'}
+        click('Отправить');expect(page.locator('#app > .rich-content')).to_have_text('File message')
+        assert page.evaluate('window.submitted.attachment_ids')==['aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa']
         assert not errors,errors
         browser.close()
     print('PASS real browser editor + PHP renderer: Markdown, XSS, WYSIWYG bold, submission, conversion, opaque code and escapes')

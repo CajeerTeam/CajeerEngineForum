@@ -102,6 +102,21 @@ final class Operations {
     ),
     'bodyRequired' => false,
   ),
+  'delete_Forum_deleteAttachment' => 
+  array (
+    'method' => 'DELETE',
+    'path' => '/forum/attachments/{id}',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
   'delete_Forum_deleteBoard' => 
   array (
     'method' => 'DELETE',
@@ -678,6 +693,30 @@ final class Operations {
     ),
     'bodyRequired' => false,
   ),
+  'get_Forum_attachment' => 
+  array (
+    'method' => 'GET',
+    'path' => '/forum/attachments/{id}',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
+  'get_Forum_attachments' => 
+  array (
+    'method' => 'GET',
+    'path' => '/forum/attachments',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => false,
+  ),
   'get_Forum_board' => 
   array (
     'method' => 'GET',
@@ -818,6 +857,21 @@ final class Operations {
         'name' => 'q',
         'in' => 'query',
         'required' => false,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
+  'get_Forum_downloadAttachment' => 
+  array (
+    'method' => 'GET',
+    'path' => '/forum/attachments/{id}/download',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
       ),
     ),
     'bodyRequired' => false,
@@ -2692,6 +2746,15 @@ final class Operations {
   array (
     'method' => 'POST',
     'path' => '/forum/unsubscribe',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => true,
+  ),
+  'post_Forum_uploadAttachment' => 
+  array (
+    'method' => 'POST',
+    'path' => '/forum/attachments',
     'parameters' => 
     array (
     ),
