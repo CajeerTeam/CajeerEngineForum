@@ -28,7 +28,7 @@ usage = sql('SELECT COUNT(*) AS files,COALESCE(SUM(size_bytes),0)')
 with tempfile.TemporaryDirectory(prefix='forum-attachment-') as directory:
     db = sqlite3.connect(Path(directory) / 'live.sqlite')
     db.execute('PRAGMA foreign_keys=ON')
-    migrations = sorted((ROOT / 'migrations/sqlite').glob('*.sql'))
+    migrations = sorted(p for p in (ROOT / 'migrations/sqlite').glob('*.sql') if p.name[:4]<='0029')
     assert migrations[-1].name == '0029_forum_attachments.sql'
     for path in migrations[:-1]:
         db.executescript(path.read_text())

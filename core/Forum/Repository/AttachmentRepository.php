@@ -16,6 +16,8 @@ final readonly class AttachmentRepository extends Repository
     }
     public function insert(array $a,string $data): void
     {$this->query('INSERT INTO ce_forum_attachments(id,owner_id,filename,mime,size_bytes,sha256,file_data,created_at,expires_at) VALUES (?,?,?,?,?,?,?,?,?)',[$a['id'],$a['owner_id'],$a['filename'],$a['mime'],$a['size_bytes'],$a['sha256'],base64_encode($data),$a['created_at'],$a['expires_at']]);}
+    public function restoreBytes(string $id,string $data): void
+    {$this->query('UPDATE ce_forum_attachments SET file_data=? WHERE id=?',[base64_encode($data),$id]);}
     public function usage(string $user): array
     {return $this->row('SELECT COUNT(*) AS files,COALESCE(SUM(size_bytes),0) AS bytes FROM ce_forum_attachments WHERE owner_id=?',[$user])??['files'=>0,'bytes'=>0];}
     public function primaryGroup(string $user): ?string

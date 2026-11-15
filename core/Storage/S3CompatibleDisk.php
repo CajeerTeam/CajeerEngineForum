@@ -43,6 +43,12 @@ final readonly class S3CompatibleDisk implements StorageDiskInterface
         return $response['body'];
     }
 
+    public function getBounded(string $path,int $maxBytes): string
+    {
+        if($maxBytes<1||$maxBytes>104857600)throw new \InvalidArgumentException('Invalid S3 read limit');
+        $response=$this->request('GET',$path,'',[],$maxBytes);return $response['body'];
+    }
+
     public function exists(string $path): bool
     {
         try {
@@ -95,7 +101,7 @@ final readonly class S3CompatibleDisk implements StorageDiskInterface
     }
 
     /** @return array{status:int,headers:list<string>,body:string} */
-    private function request(string $method, string $path, string $body = '', array $extraHeaders = []): array
+    private function request(string $method, string $path, string $body = '', array $extraHeaders = [], ?int $maxBytes = null): array
     {
         $method = strtoupper($method);
         $path = $this->normalizePath($path);
@@ -159,7 +165,7 @@ final readonly class S3CompatibleDisk implements StorageDiskInterface
             ],
         ]);
 
-        $result = @file_get_contents($url, false, $context);
+        $result = $maxBytes===null?@file_get_contents($url,false,$context):@file_get_contents($url,false,$context,0,$maxBytes+1);
         /** @var list<string> $responseHeaders */
         $responseHeaders = $http_response_header ?? [];
         $status = $this->statusCode($responseHeaders);
@@ -170,6 +176,7 @@ final readonly class S3CompatibleDisk implements StorageDiskInterface
             throw new \RuntimeException('S3 request failed: HTTP ' . $status . ' ' . $method . ' ' . $url . ' ' . trim($result));
         }
 
+        if($maxBytes!==null&&strlen($result)>$maxBytes)throw new \RuntimeException('S3 object exceeds byte limit');
         return ['status' => $status, 'headers' => $responseHeaders, 'body' => $result];
     }
 

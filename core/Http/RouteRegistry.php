@@ -10,7 +10,7 @@ final class RouteRegistry
     /** These public GET/HEAD operations optionally resolve an existing session. */
     public static function optionalAuthentication(string $name): bool
     {
-        return in_array($name,['api.v1.forum.index','api.v1.forum.board','api.v1.forum.thread','api.v1.forum.search','api.v1.forum.latest','api.v1.forum.profile','api.v1.forum.members','api.v1.forum.profileImage','api.v1.forum.attachment','api.v1.forum.downloadAttachment','api.v1.forum.activity','api.v1.forum.leaderboard'],true);
+        return in_array($name,['api.v1.forum.index','api.v1.forum.board','api.v1.forum.thread','api.v1.forum.search','api.v1.forum.latest','api.v1.forum.profile','api.v1.forum.members','api.v1.forum.profileImage','api.v1.forum.attachment','api.v1.forum.downloadAttachment','api.v1.forum.attachmentImage','api.v1.forum.activity','api.v1.forum.leaderboard'],true);
     }
 
     /** @return list<array{0:string,1:string,2:string,3:string,4:string,5:?array}> */
@@ -173,6 +173,10 @@ final class RouteRegistry
             ['POST', '/api/v1/forum/attachments', 'api.v1.forum.uploadAttachment', 'forum', 'uploadAttachment', ['forum:write']],
             ['GET', '/api/v1/forum/attachments/{id}', 'api.v1.forum.attachment', 'forum', 'attachment', null],
             ['GET', '/api/v1/forum/attachments/{id}/download', 'api.v1.forum.downloadAttachment', 'forum', 'downloadAttachment', null],
+            ['GET', '/api/v1/forum/attachments/{id}/image/{variant}', 'api.v1.forum.attachmentImage', 'forum', 'attachmentImage', null],
+            ['GET', '/api/v1/forum/media/status', 'api.v1.forum.mediaStatus', 'forum', 'mediaStatus', ['*']],
+            ['POST', '/api/v1/forum/attachments/{id}/restore-original', 'api.v1.forum.restoreAttachmentOriginal', 'forum', 'restoreAttachmentOriginal', ['*']],
+            ['POST', '/api/v1/forum/attachments/{id}/image/retry', 'api.v1.forum.retryAttachmentImage', 'forum', 'retryAttachmentImage', ['*']],
             ['DELETE', '/api/v1/forum/attachments/{id}', 'api.v1.forum.deleteAttachment', 'forum', 'deleteAttachment', ['forum:write']],
             ['POST', '/api/v1/forum/content/preview', 'api.v1.forum.previewContent', 'forum', 'previewContent', ['forum:write']],
             ['POST', '/api/v1/forum/boards/{id}/threads', 'api.v1.forum.createThread', 'forum', 'createThread', ['forum:write']],

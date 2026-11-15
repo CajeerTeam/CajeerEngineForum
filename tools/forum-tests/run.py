@@ -91,6 +91,13 @@ class Client:
             assert res.headers['Content-Disposition'].startswith('attachment;') and res.headers['Cache-Control'].find('no-store')>=0
             return res.read()
 
+    def image_variant(self, aid, variant='thumbnail', token=None):
+        h={'Authorization':'Bearer '+token} if token else {}
+        with self.opener.open(urllib.request.Request(self.base+'/api/v1/forum/attachments/'+aid+'/image/'+variant,headers=h),timeout=20) as res:
+            assert res.status==200 and res.headers.get_content_type() in ('image/png','image/jpeg')
+            assert res.headers['Content-Disposition']=='inline' and 'no-store' in res.headers['Cache-Control']
+            return res.read()
+
     def login(self, email, password=PASSWORD, code=None, status=201, browser=False):
         body = {'email': email, 'password': password}
         if code is not None:
@@ -939,6 +946,31 @@ class NetworkTests(unittest.TestCase):
         c.call('DELETE',path,200,token=admin);c.call('GET',path,404,token=admin)
         pending=c.upload_attachment('pending.txt',raw,admin)['id'];self.assertIn(pending,[x['id'] for x in c.call('GET','/forum/attachments',token=admin)['items']]);c.call('DELETE','/forum/attachments/'+pending,200,token=admin)
         c.call('POST',url+'/moderate',200,{'action':'delete'},token=admin)
+
+    def test_16_media(self):
+        c=Client(self.base);admin=c.login(ADMIN,ADMIN_PASSWORD)[0]['data']['access_token']
+        email=unique_email();member=c.call('POST','/users',201,{'email':email,'name':'Media member','password':PASSWORD,'roles':['forum-member']},token=admin)['id'];other=c.login(email)[0]['data']['access_token']
+        raw=profile_png();aid=c.upload_attachment('photo.png',raw,admin)['id'];path='/forum/attachments/'+aid
+        for _ in range(4):
+            c.call('POST','/queue/work',200,{'limit':10},token=admin)
+            if c.call('GET',path,token=admin)['variants']:break
+        variants=c.call('GET',path,token=admin)['variants'];self.assertEqual(set(variants),{'thumbnail','medium','large'})
+        self.assertEqual((2,2),(variants['thumbnail']['width'],variants['thumbnail']['height']))
+        self.assertTrue(c.image_variant(aid,token=admin).startswith(b'\x89PNG'));self.assertEqual(raw,c.download_attachment(aid,admin))
+        c.call('GET',path+'/image/thumbnail',404,token=other);c.call('GET',path+'/image/thumbnail',404)
+        public=c.call('GET','/forum')['boards'][0]['id'];thread=c.call('POST','/forum/boards/'+public+'/threads',201,{'title':'Image publication','body':'image{'+aid+'}','attachment_ids':[aid]},token=admin)['id'];url='/forum/threads/'+thread
+        self.assertEqual(aid,c.call('GET',url)['posts'][0]['attachments'][0]['id']);self.assertTrue(c.image_variant(aid).startswith(b'\x89PNG'))
+        cat=c.call('POST','/forum/categories',201,{'name':'Media hidden','description':''},token=admin)['id'];hidden=c.call('POST','/forum/categories/'+cat+'/boards',201,{'name':'Media hidden board','description':''},token=admin)['id'];c.call('PUT','/forum/categories/'+cat+'/permissions',200,{'visibility':'hidden','rules':[]},token=admin)
+        c.call('POST','/forum/thread-actions/bulk',200,{'thread_ids':[thread],'action':'move','board_id':hidden},token=admin);c.call('GET',path+'/image/large',404,token=other)
+        c.call('GET','/forum/media/status',403,token=other);self.assertTrue(c.call('GET','/forum/media/status',token=admin)['processor_available'])
+        c.call('POST',path+'/image/retry',200,token=admin);c.call('POST','/queue/work',200,{'limit':10},token=admin);self.assertTrue(c.image_variant(aid,token=admin))
+        private=c.upload_attachment('private.png',raw,admin)['id'];conv=c.call('POST','/forum/conversations',201,{'kind':'direct','title':'Image conversation','participant_ids':[member],'body':'image{'+private+'}','attachment_ids':[private]},token=admin)['id'];cp='/forum/conversations/'+conv
+        for _ in range(4):
+            c.call('POST','/queue/work',200,{'limit':10},token=admin)
+            if c.call('GET','/forum/attachments/'+private,token=admin)['variants']:break
+        self.assertTrue(c.image_variant(private,token=other));c.call('GET','/forum/attachments/'+private+'/image/thumbnail',404)
+        c.call('POST',cp+'/leave',200,token=other);c.call('GET','/forum/attachments/'+private+'/image/thumbnail',404,token=other)
+        c.call('POST',url+'/moderate',200,{'action':'delete'},token=admin);c.call('GET',path+'/image/thumbnail',404,token=admin)
 
     def test_99_rate_limit(self):
         # Run last: exhaust the real IP auth bucket without guessing credentials.

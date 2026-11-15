@@ -32,7 +32,7 @@ $workspace = sys_get_temp_dir() . '/ce-release-test-' . bin2hex(random_bytes(8))
 mkdir($workspace, 0700);
 try {
     $builder = new ReleaseBuilder($root);
-    foreach (['tools/forum-identity-regression.php','tools/forum-tests/run.py','tools/forum-tests/release_acceptance.py','tools/forum-tests/install.php','tools/forum-tests/router.php','tools/forum-tests/requirements.txt','tools/forum-tests/watch_sql_regression.py','tools/forum-tests/activity_sql_regression.py','tools/forum-tests/community_sql_regression.py','tools/forum-tests/conversation_sql_regression.py','tools/forum-tests/smtp_regression.py','tests/Forum/ForumDatabaseTest.php'] as $testFile) {
+    foreach (['tools/forum-identity-regression.php','tools/forum-tests/run.py','tools/forum-tests/release_acceptance.py','tools/forum-tests/install.php','tools/forum-tests/router.php','tools/forum-tests/requirements.txt','tools/forum-tests/watch_sql_regression.py','tools/forum-tests/activity_sql_regression.py','tools/forum-tests/community_sql_regression.py','tools/forum-tests/conversation_sql_regression.py','tools/forum-tests/smtp_regression.py','tools/forum-tests/media_sql_regression.py','tests/Forum/ForumDatabaseTest.php'] as $testFile) {
         ensure(in_array($testFile,$builder->plan('source')['files'],true) && !in_array($testFile,$builder->plan('dist')['files'],true),'source-only regression: '.$testFile);
     }
     $one = $builder->build(false, 'source', $workspace . '/one');

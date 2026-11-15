@@ -708,6 +708,27 @@ final class Operations {
     ),
     'bodyRequired' => false,
   ),
+  'get_Forum_attachmentImage' => 
+  array (
+    'method' => 'GET',
+    'path' => '/forum/attachments/{id}/image/{variant}',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+      1 => 
+      array (
+        'name' => 'variant',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
   'get_Forum_attachments' => 
   array (
     'method' => 'GET',
@@ -936,6 +957,15 @@ final class Operations {
         'in' => 'query',
         'required' => false,
       ),
+    ),
+    'bodyRequired' => false,
+  ),
+  'get_Forum_mediaStatus' => 
+  array (
+    'method' => 'GET',
+    'path' => '/forum/media/status',
+    'parameters' => 
+    array (
     ),
     'bodyRequired' => false,
   ),
@@ -2701,6 +2731,36 @@ final class Operations {
   array (
     'method' => 'POST',
     'path' => '/forum/reports/{id}/resolve',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
+  'post_Forum_restoreAttachmentOriginal' => 
+  array (
+    'method' => 'POST',
+    'path' => '/forum/attachments/{id}/restore-original',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
+  'post_Forum_retryAttachmentImage' => 
+  array (
+    'method' => 'POST',
+    'path' => '/forum/attachments/{id}/image/retry',
     'parameters' => 
     array (
       0 => 

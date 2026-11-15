@@ -52,11 +52,11 @@ final readonly class AttachmentService
             if($this->repo->pendingCount($actor->userId)>=$limits['pending_files'])throw new ForumException('Слишком много временных файлов.',409);
             if((int)$usage['files']>=$limits['quota_files']||(int)$usage['bytes']+$meta['size_bytes']>$limits['quota_bytes'])throw new ForumException('Квота вложений исчерпана.',409);
             $now=time();$a=$meta+['id'=>Uuid::v4(),'owner_id'=>$actor->userId,'created_at'=>$now,'expires_at'=>$now+$limits['pending_seconds']];
-            $this->repo->insert($a,$data);$this->tx->audit('forum.attachment.upload',$actor->userId,['attachment_id'=>$a['id'],'size_bytes'=>$a['size_bytes']]);return self::publicMeta($a);
+            $this->repo->insert($a,$data);$this->tx->media()->enqueue($a);$this->tx->audit('forum.attachment.upload',$actor->userId,['attachment_id'=>$a['id'],'size_bytes'=>$a['size_bytes']]);return $this->tx->media()->decorate([self::publicMeta($a)])[0];
         });
     }
     public function pending(ForumAccessPolicy $actor): array
-    {return $this->tx->read(function()use($actor){$this->tx->permissions()->requireCurrent($actor,'forum:write');return ['items'=>array_map(self::publicMeta(...),$this->repo->pending($actor->userId,time())),'usage'=>array_map('intval',$this->repo->usage($actor->userId)),'limits'=>$this->limitsFor($actor->userId)];});}
+    {return $this->tx->read(function()use($actor){$this->tx->permissions()->requireCurrent($actor,'forum:write');return ['items'=>$this->tx->media()->decorate(array_map(self::publicMeta(...),$this->repo->pending($actor->userId,time()))),'usage'=>array_map('intval',$this->repo->usage($actor->userId))+['variant_bytes'=>$this->tx->media()->usage($actor->userId)],'limits'=>$this->limitsFor($actor->userId)+['variant_quota_bytes'=>ForumMediaService::variantQuota()]];});}
     /** Called inside publication/edit transaction, after current principal and target are locked. */
     public function attach(string $user,string $kind,string $target,mixed $ids): void
     {
@@ -70,7 +70,7 @@ final readonly class AttachmentService
     }
     public function decorate(string $kind,array $messages): array
     {
-        $by=[];$key=$kind==='post'?'post_id':'message_id';foreach($this->repo->attached($kind,array_column($messages,'id')) as $a)$by[$a[$key]][]=self::publicMeta($a);
+        $by=[];$key=$kind==='post'?'post_id':'message_id';$files=$this->repo->attached($kind,array_column($messages,'id'));$meta=$this->tx->media()->decorate(array_map(self::publicMeta(...),$files));foreach($files as $i=>$a)$by[$a[$key]][]=$meta[$i];
         foreach($messages as &$m)$m['attachments']=$by[$m['id']]??[];unset($m);return $messages;
     }
     private function authorize(ForumAccessPolicy $actor,array $a): void
@@ -81,9 +81,14 @@ final readonly class AttachmentService
     }
     public function get(ForumAccessPolicy $actor,string $id,bool $download=false): array
     {
-        return $this->tx->read(function()use($actor,$id,$download){$a=$this->repo->find($id)??throw new ForumException('Вложение не найдено.',404);try{$this->authorize($actor,$a);}catch(ForumException $e){if(in_array($e->status,[401,403],true))throw new ForumException('Вложение не найдено.',404);throw $e;}$meta=self::publicMeta($a);if(!$download)return $meta;
+        return $this->tx->read(function()use($actor,$id,$download){$a=$this->repo->find($id)??throw new ForumException('Вложение не найдено.',404);try{$this->authorize($actor,$a);}catch(ForumException $e){if(in_array($e->status,[401,403],true))throw new ForumException('Вложение не найдено.',404);throw $e;}$meta=$this->tx->media()->decorate([self::publicMeta($a)])[0];if(!$download)return $meta;
             $stored=$this->repo->bytes($id);$data=base64_decode($stored['file_data']??'',true);if($data===false||strlen($data)!==(int)$a['size_bytes']||!hash_equals($a['sha256'],hash('sha256',$data)))throw new ForumException('Файл повреждён.',503);return $meta+['data'=>$data];});
     }
+    public function image(ForumAccessPolicy $actor,string $id,string $variant): array
+    {return $this->tx->read(function()use($actor,$id,$variant){$a=$this->repo->find($id)??throw new ForumException('Вложение не найдено.',404);try{$this->authorize($actor,$a);}catch(ForumException $e){if(in_array($e->status,[401,403],true))throw new ForumException('Вложение не найдено.',404);throw $e;}return $this->tx->media()->image($id,$variant);});}
+    public function mediaStats(ForumAccessPolicy $actor): array {return $this->tx->media()->stats($actor);}
+    public function restoreOriginal(ForumAccessPolicy $actor,string $id): array {return $this->tx->media()->restoreOriginal($actor,$id);}
+    public function retryImage(ForumAccessPolicy $actor,string $id): array {return $this->tx->media()->retryImage($actor,$id);}
     public function remove(ForumAccessPolicy $actor,string $id): array
     {
         return $this->tx->write(function()use($actor,$id){

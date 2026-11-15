@@ -162,6 +162,26 @@ def verify_attachments(base,state,fixture):
     print('PASS physical dist private attachment upload, binding and download ACL',flush=True)
 
 
+def seed_media(base,fixture):
+    c=Client(base);token=fixture['token'];raw=profile_png();aid=c.upload_attachment('baseline.png',raw,token)['id'];tid=c.call('POST','/forum/boards/'+fixture['board']+'/threads',201,{'title':'Baseline private media','body':'image{'+aid+'}','attachment_ids':[aid]},token=token)['id']
+    require(c.download_attachment(aid,token)==raw,'Baseline original upload failed')
+    return {'id':aid,'thread':tid,'raw':raw}
+
+
+def verify_media(base,state,fixture,media,variants=True):
+    c=Client(base);aid=media['id'];token=fixture['token'];path='/forum/attachments/'+aid
+    require(c.download_attachment(aid,token)==media['raw'],'Original image changed across upgrade/rollback')
+    require(c.call('GET','/forum/threads/'+media['thread'],token=token)['posts'][0]['attachments'][0]['id']==aid,'Image binding changed')
+    if variants:
+        for _ in range(5):
+            c.call('POST','/queue/work',200,{'limit':10},token=state[0])
+            if c.call('GET',path,token=token)['variants']:break
+        meta=c.call('GET',path,token=token)['variants'];require(set(meta)=={'thumbnail','medium','large'},'Legacy image variants not generated')
+        require(c.image_variant(aid,token=token).startswith(b'\x89PNG'),'Invalid raster derivative');c.call('GET',path+'/image/thumbnail',404)
+        require(c.call('GET','/forum/media/status',token=state[0])['processor_available'],'Missing media processor')
+    print('PASS physical dist original and private image variants' if variants else 'PASS restored original image',flush=True)
+
+
 def verify_groups(base,state):
     token, _, _, member=state; c=Client(base)
     groups=c.call('GET','/forum/groups',token=token)
@@ -203,7 +223,7 @@ def verify_navigation(base,state):
 
 
 def seed_structure(base, state):
-    """Create real 0.4.1 structure before updating, not just after the upgrade."""
+    """Create real 0.4.2 structure before updating, not just after the upgrade."""
     admin, _, _, member = state
     c=Client(base)
     member_group=next(g['id'] for g in c.call('GET','/forum/groups',token=admin) if g['handle']=='forum-member')
@@ -305,7 +325,7 @@ def verify_read_tracking(base, state):
 
 def verify_notifications(base, state, fixture):
     c=Client(base); admin,thread,post,_=state
-    # The original 0.4.1 topic has no synthetic historical notifications.
+    # The original 0.4.2 topic has no synthetic historical notifications.
     path='/forum/notifications'
     c.call('POST','/queue/work',200,{'limit':10},token=admin)
     c.call('POST',path+'/read',200,{'all':True},token=admin)
@@ -516,7 +536,7 @@ def verify_community_live(base,f):
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--artifact',type=Path,required=True)
-    parser.add_argument('--previous',type=Path,help='Original 0.4.1 dist; enables real signed upgrade and rollback')
+    parser.add_argument('--previous',type=Path,help='Original 0.4.2 dist; enables real signed upgrade and rollback')
     parser.add_argument('--driver',choices=('sqlite','pgsql'),default='sqlite')
     parser.add_argument('--report',type=Path,required=True)
     args=parser.parse_args(); report=args.report.resolve(); report.mkdir(parents=True,exist_ok=True)
@@ -525,13 +545,14 @@ def main():
         work=Path(tmp); port=free_port()
         # With --previous use the authentic baseline for upgrade, not a relabelled current tree.
         previous=args.previous.resolve() if args.previous else None
-        initial='0.4.1' if previous else current
+        initial='0.4.2' if previous else current
         site=unpack(previous or artifact,work/'live',initial)
         install(site,env,report,'initial',port,args.driver)
         with http(site,env,report,'initial',port,initial) as base:
             state=seed(base); verify_data(base,state)
             fixture=seed_structure(base,state); verify_structure(base,fixture)
             community=seed_community(base,state)
+            media=seed_media(base,fixture)
             verify_community(base,community)
             if not previous:
                 verify_community_live(base,community)
@@ -549,6 +570,7 @@ def main():
                 verify_activity(base,state,fixture)
                 verify_rich_content(base,state)
                 verify_attachments(base,state,fixture)
+                verify_media(base,state,fixture,media)
         if previous:
             key=work/'backup.key'; secret=work/'release.secret'; public=work/'release.public'
             run(site,env,report,'backup-key',['php','bin/cajeer','backup:keygen','--key='+str(key)])
@@ -572,10 +594,11 @@ def main():
                 verify_activity(base,state,fixture)
                 verify_rich_content(base,state)
                 verify_attachments(base,state,fixture)
+                verify_media(base,state,fixture,media)
             run(site,env,report,'rollback',['php','bin/cajeer','update:rollback','--yes','--json'],timeout=600)
             require(version(site)==initial,'Rollback did not restore release')
             with http(site,env,report,'rollback',port,initial) as base:
-                verify_data(base,state); verify_structure(base,fixture); verify_community(base,community)
+                verify_data(base,state); verify_structure(base,fixture); verify_community(base,community); verify_media(base,state,fixture,media,False)
             # Inject actual failing SQL into a separately built, correctly signed target.
             broken=unpack(artifact,work/'broken',current)
             (broken/'migrations'/args.driver/'9999_acceptance_failure.sql').write_text('CREATE TABLE ce_acceptance_failure(id INTEGER); THIS IS INVALID SQL;\n')
@@ -586,7 +609,7 @@ def main():
             failed=json.loads(run(site,env,report,'failed-upgrade',['php','bin/cajeer','update:apply','--package='+str(pkg),'--json'],expected=1,timeout=600))
             require(failed['state']=='rolled_back' and version(site)==initial and not (site/'storage/app/updates/active.json').exists(), 'Automatic rollback failed')
             with http(site,env,report,'failed-rollback',port,initial) as base:
-                verify_data(base,state); verify_structure(base,fixture); verify_community(base,community)
+                verify_data(base,state); verify_structure(base,fixture); verify_community(base,community); verify_media(base,state,fixture,media,False)
         print('PASS physical dist acceptance',flush=True)
 
 

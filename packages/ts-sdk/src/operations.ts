@@ -547,6 +547,23 @@ export const operations = {
         ],
         "bodyRequired": false
     },
+    "get_Forum_attachmentImage": {
+        "method": "GET",
+        "path": "/forum/attachments/{id}/image/{variant}",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            },
+            {
+                "name": "variant",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": false
+    },
     "get_Forum_attachments": {
         "method": "GET",
         "path": "/forum/attachments",
@@ -726,6 +743,12 @@ export const operations = {
                 "required": false
             }
         ],
+        "bodyRequired": false
+    },
+    "get_Forum_mediaStatus": {
+        "method": "GET",
+        "path": "/forum/media/status",
+        "parameters": [],
         "bodyRequired": false
     },
     "get_Forum_members": {
@@ -2078,6 +2101,30 @@ export const operations = {
     "post_Forum_resolve": {
         "method": "POST",
         "path": "/forum/reports/{id}/resolve",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": false
+    },
+    "post_Forum_restoreAttachmentOriginal": {
+        "method": "POST",
+        "path": "/forum/attachments/{id}/restore-original",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": false
+    },
+    "post_Forum_retryAttachmentImage": {
+        "method": "POST",
+        "path": "/forum/attachments/{id}/image/retry",
         "parameters": [
             {
                 "name": "id",

@@ -36,7 +36,7 @@ def snapshot(db):
 
 with tempfile.TemporaryDirectory(prefix='forum-community-sql-') as directory:
     root=Path(directory);db=connection(root/'live.sqlite')
-    files=sorted((ROOT/'migrations/sqlite').glob('*.sql'))
+    files=sorted(p for p in (ROOT/'migrations/sqlite').glob('*.sql') if p.name[:4]<='0029')
     assert files[-2].name=='0028_forum_rich_content.sql' and files[-1].name=='0029_forum_attachments.sql'
     for f in files[:-2]:db.executescript(f.read_text())
     a,b,thread,post,reply,event,conversation,message,delivery=[uid() for _ in range(9)]
@@ -57,7 +57,7 @@ with tempfile.TemporaryDirectory(prefix='forum-community-sql-') as directory:
     for user,read,muted in [(a,1,0),(b,0,1)]:db.execute('INSERT INTO ce_forum_conversation_participants(conversation_id,user_id,joined_sequence,read_sequence,muted) VALUES(?,?,1,?,?)',(conversation,user,read,muted))
     db.execute('INSERT INTO ce_forum_conversation_messages(id,conversation_id,author_id,message_sequence,body,created_at) VALUES(?,?,?,1,?,1)',(message,conversation,a,'Private message'))
     db.execute("INSERT INTO ce_forum_member_relations(user_id,target_id,kind) VALUES(?,?,'follow')",(b,a));db.commit()
-    db.executescript(files[-2].read_text());db.executescript(files[-1].read_text())
+    db.executescript(files[-2].read_text());db.executescript(files[-1].read_text());db.executescript((ROOT/'migrations/sqlite/0030_forum_media_storage.sql').read_text())
     assert db.execute('SELECT body,body_format FROM ce_forum_posts WHERE id=?',(post,)).fetchone()==('First','plain')
     assert db.execute('SELECT body,body_format FROM ce_forum_conversation_messages WHERE id=?',(message,)).fetchone()==('Private message','plain')
     # Exercise the actual edit SQL, including the compatibility path omitting a format.

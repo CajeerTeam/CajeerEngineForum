@@ -1,5 +1,11 @@
 # Changelog
 
+## Forum Edition 0.4.3 — Media & Storage
+
+- Private sanitized thumbnail, medium and large derivatives, inline attachment markers and keyboard-accessible image galleries.
+- Durable asynchronous processing, retries, verified private S3 original replicas and tombstone cleanup.
+- Media diagnostics and recovery, migration 0030, original attachment bytes preserved.
+
 ## Forum Edition 0.4.2 — Attachment Pipeline
 
 - Private multipart uploads, MIME and extension validation, per-user/group quotas, SHA-256 verified downloads.

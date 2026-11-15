@@ -121,6 +121,15 @@ final readonly class ForumController
             return new Response($a['data'],200,$headers+['Content-Type'=>'application/octet-stream','Content-Length'=>(string)$a['size_bytes'],'Content-Disposition'=>"attachment; filename=\"download\"; filename*=UTF-8''".rawurlencode($a['filename']),'Content-Security-Policy'=>"default-src 'none'; sandbox"]);
         }catch(ForumException $e){return new JsonResponse(['error'=>['code'=>'forum_error','message'=>$e->getMessage()]],$e->status,$headers);}
     }
+    public function attachmentImage(Request $r,array $p): Response
+    {
+        $headers=['Cache-Control'=>'private, no-store','Vary'=>'Cookie, Authorization, X-API-Token','X-Content-Type-Options'=>'nosniff','Content-Security-Policy'=>"default-src 'none'; sandbox"];
+        try{$v=$this->discussions->attachments()->image($this->reader($r),$this->id($p),(string)($p['variant']??''));return new Response($v['data'],200,$headers+['Content-Type'=>$v['mime'],'Content-Length'=>(string)$v['size_bytes'],'Content-Disposition'=>'inline']);}
+        catch(ForumException $e){return new JsonResponse(['error'=>['code'=>'forum_error','message'=>$e->getMessage()]],$e->status,$headers);}
+    }
+    public function mediaStatus(Request $r): JsonResponse {return $this->respond(fn()=>$this->discussions->attachments()->mediaStats($this->actor($r)));}
+    public function restoreAttachmentOriginal(Request $r,array $p): JsonResponse {return $this->respond(fn()=>$this->discussions->attachments()->restoreOriginal($this->actor($r),$this->id($p)));}
+    public function retryAttachmentImage(Request $r,array $p): JsonResponse {return $this->respond(fn()=>$this->discussions->attachments()->retryImage($this->actor($r),$this->id($p)));}
     public function previewContent(Request $r): JsonResponse
     { return $this->respond(function()use($r){$this->actor($r)->require('forum:write');$format=$this->contentFormat($r)??'plain';$body=\CajeerEngine\Forum\Content\ForumContentRenderer::source($this->field($r,'body'),$format,true);return \CajeerEngine\Forum\Content\ForumContentRenderer::render($body,$format);}); }
     public function createThread(Request $r,array $p): JsonResponse { return $this->respond(fn () => ['id'=>$this->discussions->createThread($this->actor($r),$this->id($p),$this->text($r,'title',180,3),$this->field($r,'body'),$this->contentFormat($r)??'plain',$this->field($r,'attachment_ids')??[])],201); }

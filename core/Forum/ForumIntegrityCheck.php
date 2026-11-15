@@ -17,6 +17,8 @@ final readonly class ForumIntegrityCheck
             // Run only after schema verification. These checks may scan the discussion corpus,
             // so deliberately keep them out of the per-request readiness endpoint.
             $queries=[
+                'invalid_media_state'=> "SELECT COUNT(*) FROM ce_forum_media_state s JOIN ce_forum_attachments a ON a.id=s.attachment_id WHERE a.mime NOT IN ('image/jpeg','image/png','image/webp') OR (s.state='ready' AND (SELECT COUNT(*) FROM ce_forum_media_variants v WHERE v.attachment_id=s.attachment_id)<>3)",
+                'missing_media_state'=> "SELECT COUNT(*) FROM ce_forum_attachments a WHERE a.mime IN ('image/jpeg','image/png','image/webp') AND NOT EXISTS (SELECT 1 FROM ce_forum_media_state s WHERE s.attachment_id=a.id)",
                 'oversized_post_attachments'=> 'SELECT COUNT(*) FROM (SELECT post_id FROM ce_forum_attachments WHERE post_id IS NOT NULL GROUP BY post_id HAVING COUNT(*)>10 OR SUM(size_bytes)>52428800) AS oversized_posts',
                 'oversized_message_attachments'=> 'SELECT COUNT(*) FROM (SELECT message_id FROM ce_forum_attachments WHERE message_id IS NOT NULL GROUP BY message_id HAVING COUNT(*)>10 OR SUM(size_bytes)>52428800) AS oversized_messages',
                 'invalid_attachment_state'=> 'SELECT COUNT(*) FROM ce_forum_attachments WHERE (post_id IS NOT NULL AND message_id IS NOT NULL) OR (post_id IS NULL AND message_id IS NULL AND expires_at<=created_at) OR ((post_id IS NOT NULL OR message_id IS NOT NULL) AND expires_at<>0)',
@@ -76,6 +78,13 @@ final readonly class ForumIntegrityCheck
                 }
             }while(count($metadata)===100);
             if($badFiles!==0)$violations['invalid_attachment_bytes']=$badFiles;
+            $badVariants=0;$cursor=null;
+            do{$stmt=$pdo->prepare('SELECT attachment_id,variant,mime,width,height,size_bytes,sha256 FROM ce_forum_media_variants'.($cursor===null?'':' WHERE attachment_id>?').' ORDER BY attachment_id,variant LIMIT 300');$stmt->execute($cursor===null?[]:[$cursor]);$rows=$stmt->fetchAll(\PDO::FETCH_ASSOC);$stmt->closeCursor();
+                // Fetch complete sets for the last ID, so pagination cannot skip its variants.
+                if($rows){$last=$rows[count($rows)-1]['attachment_id'];$rows=array_values(array_filter($rows,static fn($r)=>$r['attachment_id']!==$last));$stmt=$pdo->prepare('SELECT attachment_id,variant,mime,width,height,size_bytes,sha256 FROM ce_forum_media_variants WHERE attachment_id=?');$stmt->execute([$last]);$rows=array_merge($rows,$stmt->fetchAll(\PDO::FETCH_ASSOC));$stmt->closeCursor();$cursor=$last;}
+                $payload=$pdo->prepare('SELECT file_data FROM ce_forum_media_variants WHERE attachment_id=? AND variant=?');foreach($rows as $v){$payload->execute([$v['attachment_id'],$v['variant']]);$bytes=base64_decode((string)$payload->fetchColumn(),true);$payload->closeCursor();if($bytes===false||!\CajeerEngine\Forum\Content\ForumImageProcessor::valid($v,$bytes))++$badVariants;}
+            }while($rows);
+            if($badVariants)$violations['invalid_media_variant_bytes']=$badVariants;
             $invalid=0;
             foreach ($pdo->query('SELECT r.handle,r.permissions FROM ce_forum_groups g JOIN ce_roles r ON r.id=g.role_id')->fetchAll(\PDO::FETCH_ASSOC) as $group) {
                 $permissions=json_decode((string)$group['permissions'],true);
