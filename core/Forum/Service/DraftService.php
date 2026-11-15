@@ -15,6 +15,9 @@ final readonly class DraftService
     public static function revision(mixed $value,bool $zero=false): int
     {if(!is_int($value)||$value<($zero?0:1)||$value>2147483646)throw new ForumException('Некорректная версия.',422);return $value;}
     public static function reason(mixed $value): string {return V::text($value??'','edit_reason',300,0);}
+    /** A lost HTTP response may be retried, but only for the identical next version. */
+    public static function isSaveReplay(array $row,int $expected,string $payload): bool
+    {return $row['result_json']===null&&(int)$row['revision_number']===$expected+1&&$row['payload']===$payload;}
     private function publicRow(array $row): array
     {return ['id'=>$row['id'],'scope'=>$row['scope'],'target_id'=>$row['target_id'],'revision_number'=>(int)$row['revision_number'],'payload'=>(object)json_decode($row['payload'],true,32,JSON_THROW_ON_ERROR),'result'=>$row['result_json']===null?null:json_decode($row['result_json'],true,32,JSON_THROW_ON_ERROR),'updated_at'=>(int)$row['updated_at'],'expires_at'=>(int)$row['expires_at']];}
     private function active(?array $row): array
@@ -64,12 +67,14 @@ final readonly class DraftService
             $user=$actor->userId;$row=$this->repo->lockDraft($id,$user);$this->tx->permissions()->requireCurrent($actor,'forum:write',true);
             // Recheck after the user lock for concurrent first saves with the same client ID.
             if(!$row)$row=$this->repo->lockDraft($id,$user);
-            if($row&&($row['result_json']!==null||$row['scope']!==$scope||$row['target_id']!==$target||(int)$row['revision_number']!==$expected||(int)$row['expires_at']<=time()))throw new ForumException('Черновик изменён или опубликован. Обновите его.',409);
+            $json=json_encode($payload,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE);
+            $replay=$row&&self::isSaveReplay($row,$expected,$json);
+            if($row&&($row['result_json']!==null||$row['scope']!==$scope||$row['target_id']!==$target||(!$replay&&(int)$row['revision_number']!==$expected)||(int)$row['expires_at']<=time()))throw new ForumException('Черновик изменён или опубликован. Обновите его.',409);
             if(!$row&&$expected!==0)throw new ForumException('Черновик не найден.',404);
             if(!$row&&$this->repo->countActive($user)>=100)throw new ForumException('Достигнут лимит черновиков.',409);
-            $this->context($actor,$scope,$target);$now=time();$expires=$now+2592000;$ids=$payload['attachment_ids'];sort($ids);
+            $this->context($actor,$scope,$target);$now=time();$expires=$replay?(int)$row['expires_at']:$now+2592000;$ids=$payload['attachment_ids'];sort($ids);
             foreach($ids as $file){$a=$this->files->lockItem($file);if(!$a||$a['owner_id']!==$user||$a['post_id']!==null||$a['message_id']!==null||(int)$a['expires_at']<=$now)throw new ForumException('Временное вложение недоступно.',404);$this->repo->extendAttachment($file,$user,$expires);}
-            $json=json_encode($payload,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE);
+            if($replay)return $this->publicRow($row);
             if(!$row)$this->repo->insert(['id'=>$id,'user_id'=>$user,'scope'=>$scope,'target_id'=>$target,'payload'=>$json,'updated_at'=>$now,'expires_at'=>$expires]);
             elseif(!$this->repo->save($id,$user,$expected,$json,$now,$expires))throw new ForumException('Черновик изменён.',409);
             return $this->publicRow($this->repo->find($id,$user));

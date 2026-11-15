@@ -20958,7 +20958,8 @@
               }
             }
           }
-        }
+        },
+        "description": "Edits are versioned, including attachment-only edits. expected_revision rejects stale edits with 409."
       }
     },
     "/forum/posts/{id}/reaction": {
@@ -35715,7 +35716,8 @@
               "format": "uuid"
             }
           }
-        ]
+        ],
+        "description": "Deleting a published attachment advances the parent message revision. Text history does not restore deleted files."
       }
     },
     "/forum/attachments/{id}/download": {
@@ -37923,7 +37925,8 @@
               }
             }
           }
-        }
+        },
+        "description": "Save with optimistic revision. An identical canonical payload replay for the immediately preceding version returns the existing saved version; divergent or older versions return 409."
       },
       "delete": {
         "tags": [

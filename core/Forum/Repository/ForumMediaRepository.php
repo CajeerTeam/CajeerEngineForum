@@ -17,16 +17,16 @@ final readonly class ForumMediaRepository extends Repository
     {
         $this->query('DELETE FROM ce_forum_media_variants WHERE attachment_id=?',[$id]);
         foreach($variants as $name=>$v)$this->query('INSERT INTO ce_forum_media_variants(attachment_id,variant,mime,width,height,size_bytes,sha256,file_data) VALUES (?,?,?,?,?,?,?,?)',[$id,$name,$v['mime'],$v['width'],$v['height'],$v['size_bytes'],$v['sha256'],base64_encode($v['data'])]);
-        $this->query("UPDATE ce_forum_media_state SET state='ready',due_at=0,lease_token=NULL WHERE attachment_id=?",[$id]);
+        $this->query("UPDATE ce_forum_media_state SET state='ready',attempts=0,due_at=0,lease_token=NULL WHERE attachment_id=?",[$id]);
     }
     public function retryImage(string $id): void
-    { $this->query("UPDATE ce_forum_media_state SET state='pending',attempts=0,due_at=0,lease_token=NULL WHERE attachment_id=?",[$id]); }
+    { $this->query('DELETE FROM ce_forum_media_variants WHERE attachment_id=?',[$id]);$this->query("UPDATE ce_forum_media_state SET state='pending',attempts=0,due_at=0,lease_token=NULL WHERE attachment_id=?",[$id]); }
     public function failImage(string $id,int $attempts,int $due): void
     { $this->query("UPDATE ce_forum_media_state SET attempts=?,due_at=?,state=?,lease_token=NULL WHERE attachment_id=? AND state='pending'",[$attempts,$due,$attempts>=5?'failed':'pending',$id]); }
     public function variants(array $ids): array
-    { if(!$ids)return [];return $this->rows('SELECT attachment_id,variant,mime,width,height,size_bytes,sha256 FROM ce_forum_media_variants WHERE '.$this->boardFilter('attachment_id',$ids).' ORDER BY width,height,variant'); }
+    { if(!$ids)return [];return $this->rows('SELECT v.attachment_id,v.variant,v.mime,v.width,v.height,v.size_bytes,v.sha256 FROM ce_forum_media_variants v JOIN ce_forum_media_state s ON s.attachment_id=v.attachment_id WHERE s.state=\'ready\' AND '.$this->boardFilter('v.attachment_id',$ids).' ORDER BY v.width,v.height,v.variant'); }
     public function variant(string $id,string $name): ?array
-    { return $this->row('SELECT * FROM ce_forum_media_variants WHERE attachment_id=? AND variant=?',[$id,$name]); }
+    { return $this->row('SELECT v.* FROM ce_forum_media_variants v JOIN ce_forum_media_state s ON s.attachment_id=v.attachment_id WHERE s.state=\'ready\' AND v.attachment_id=? AND v.variant=?',[$id,$name]); }
     public function lockOwner(string $user): bool
     {
         if($this->db->driver()==='sqlite')return $this->query('UPDATE ce_users SET id=id WHERE id=?',[$user])->rowCount()===1;

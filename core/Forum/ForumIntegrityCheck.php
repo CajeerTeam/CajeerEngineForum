@@ -20,7 +20,8 @@ final readonly class ForumIntegrityCheck
                 'invalid_post_revision'=> 'SELECT COUNT(*) FROM ce_forum_posts p WHERE (p.revision_number<>(SELECT COUNT(*) FROM ce_forum_post_revisions r WHERE r.post_id=p.id) OR p.revision_number<>(SELECT MAX(r.revision_number) FROM ce_forum_post_revisions r WHERE r.post_id=p.id) OR NOT EXISTS (SELECT 1 FROM ce_forum_post_revisions r WHERE r.post_id=p.id AND r.revision_number=p.revision_number AND r.body=p.body AND r.body_format=p.body_format))',
                 'invalid_message_revision'=> 'SELECT COUNT(*) FROM ce_forum_conversation_messages p WHERE (p.revision_number<>(SELECT COUNT(*) FROM ce_forum_conversation_revisions r WHERE r.message_id=p.id) OR p.revision_number<>(SELECT MAX(r.revision_number) FROM ce_forum_conversation_revisions r WHERE r.message_id=p.id) OR NOT EXISTS (SELECT 1 FROM ce_forum_conversation_revisions r WHERE r.message_id=p.id AND r.revision_number=p.revision_number AND r.body=p.body AND r.body_format=p.body_format))',
                 'invalid_draft_expiry'=> 'SELECT COUNT(*) FROM ce_forum_drafts WHERE expires_at<=updated_at OR revision_number<1',
-                'invalid_poll_options'=> 'SELECT COUNT(*) FROM ce_forum_polls p WHERE (SELECT COUNT(*) FROM ce_forum_poll_options o WHERE o.thread_id=p.thread_id)<2 OR (SELECT COUNT(*) FROM ce_forum_poll_options o WHERE o.thread_id=p.thread_id)<p.max_choices',
+                'invalid_media_variant_dimensions'=> "SELECT COUNT(*) FROM ce_forum_media_variants WHERE (variant='thumbnail' AND (width>240 OR height>240)) OR (variant='medium' AND (width>960 OR height>960))",
+                'invalid_poll_options'=> 'SELECT COUNT(*) FROM ce_forum_polls p WHERE (SELECT COUNT(*) FROM ce_forum_poll_options o WHERE o.thread_id=p.thread_id)<2 OR (SELECT COUNT(*) FROM ce_forum_poll_options o WHERE o.thread_id=p.thread_id)>20 OR (SELECT COUNT(*) FROM ce_forum_poll_options o WHERE o.thread_id=p.thread_id)<p.max_choices',
                 'invalid_poll_votes'=> 'SELECT COUNT(*) FROM (SELECT v.thread_id,v.user_id FROM ce_forum_poll_votes v JOIN ce_forum_polls p ON p.thread_id=v.thread_id GROUP BY v.thread_id,v.user_id,p.max_choices HAVING COUNT(*)>p.max_choices) AS excess_votes',
                 'invalid_question_type'=> 'SELECT COUNT(*) FROM ce_forum_questions q JOIN ce_forum_polls p ON p.thread_id=q.thread_id',
                 'invalid_accepted_answer'=> 'SELECT COUNT(*) FROM ce_forum_questions q JOIN ce_forum_posts p ON p.id=q.accepted_post_id WHERE p.thread_id<>q.thread_id OR p.ordinal=(SELECT MIN(p2.ordinal) FROM ce_forum_posts p2 WHERE p2.thread_id=q.thread_id)',
@@ -94,6 +95,21 @@ final readonly class ForumIntegrityCheck
                 $payload=$pdo->prepare('SELECT file_data FROM ce_forum_media_variants WHERE attachment_id=? AND variant=?');foreach($rows as $v){$payload->execute([$v['attachment_id'],$v['variant']]);$bytes=base64_decode((string)$payload->fetchColumn(),true);$payload->closeCursor();if($bytes===false||!\CajeerEngine\Forum\Content\ForumImageProcessor::valid($v,$bytes))++$badVariants;}
             }while($rows);
             if($badVariants)$violations['invalid_media_variant_bytes']=$badVariants;
+            // Validate serialized content in small pages; never include draft text or keys in diagnostics.
+            $badDrafts=0;$owner=null;$id=null;
+            do {
+                $stmt=$pdo->prepare('SELECT user_id,id,scope,target_id,payload,result_json FROM ce_forum_drafts'.($owner===null?'':' WHERE user_id>? OR (user_id=? AND id>?)').' ORDER BY user_id,id LIMIT 50');
+                $stmt->execute($owner===null?[]:[$owner,$owner,$id]);$rows=$stmt->fetchAll(\PDO::FETCH_ASSOC);$stmt->closeCursor();
+                foreach($rows as $row){$owner=$row['user_id'];$id=$row['id'];if(!\CajeerEngine\Forum\Content\ContentIntegrity::draft($row))++$badDrafts;}
+            }while(count($rows)===50);
+            if($badDrafts)$violations['invalid_draft_payload']=$badDrafts;
+            $badReplicas=0;$id=null;
+            do {
+                $stmt=$pdo->prepare('SELECT r.attachment_id,r.destination,r.object_key,a.sha256 FROM ce_forum_media_replicas r LEFT JOIN ce_forum_attachments a ON a.id=r.attachment_id'.($id===null?'':' WHERE r.attachment_id>?').' ORDER BY r.attachment_id LIMIT 100');
+                $stmt->execute($id===null?[]:[$id]);$rows=$stmt->fetchAll(\PDO::FETCH_ASSOC);$stmt->closeCursor();
+                foreach($rows as $row){$id=$row['attachment_id'];if(!\CajeerEngine\Forum\Content\ContentIntegrity::replica($row))++$badReplicas;}
+            }while(count($rows)===100);
+            if($badReplicas)$violations['invalid_media_replica_key']=$badReplicas;
             $invalid=0;
             foreach ($pdo->query('SELECT r.handle,r.permissions FROM ce_forum_groups g JOIN ce_roles r ON r.id=g.role_id')->fetchAll(\PDO::FETCH_ASSOC) as $group) {
                 $permissions=json_decode((string)$group['permissions'],true);

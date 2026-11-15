@@ -1,5 +1,13 @@
 # Changelog
 
+## Forum Edition 0.5.0 — Content Platform Stable
+
+- Retry identical draft saves safely after a lost response; freeze the composer during publication.
+- Advance revision fences on attachment-only edits/removals; do not restore deleted file bytes from text revisions.
+- Invalidate stale raster variants on regeneration and enforce per-variant bounds.
+- Extend content integrity and physical upgrade/rollback acceptance for real 0.4.5 drafts, revisions, polls, answers and files.
+- No new migrations; all existing content IDs and migration checksums are preserved.
+
 ## Forum Edition 0.4.5 — Drafts & Revision History
 
 - Private server drafts for topics, replies and conversations, autosave, attachment lifetime and idempotent publication.

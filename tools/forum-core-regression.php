@@ -271,7 +271,8 @@ try {
     $drafts=$discussion->drafts();$did=Uuid::v4();$data=['scope'=>'thread','target_id'=>$board,'revision_number'=>0,'payload'=>['title'=>'Draft integration','body'=>'**Draft body**','body_format'=>'markdown','attachment_ids'=>[]]];
     $saved=$drafts->save($m,$did,$data);check($saved['revision_number']===1,'draft saved');
     expectStatus(404,fn()=>$drafts->get($a,$did));
-    expectStatus(409,fn()=>$drafts->save($m,$did,$data));
+    check($drafts->save($m,$did,$data)==$saved,'idempotent draft save replay');
+    $conflict=$data;$conflict['payload']['body']='Conflicting text';expectStatus(409,fn()=>$drafts->save($m,$did,$conflict));
     $data['revision_number']=1;$data['payload']['body']='New draft text';$saved=$drafts->save($m,$did,$data);
     $published=$drafts->publish($m,$did,2,$discussion);check($drafts->publish($m,$did,2,$discussion)===$published,'idempotent draft publication');
     $dp=$discussion->thread($published['id'],0,$m)['posts'][0];check($dp['body']==='New draft text'&&$dp['revision_number']===1,'draft text published with initial revision');
@@ -284,7 +285,7 @@ try {
     check((int)$pdo->query("SELECT COUNT(*) FROM ce_forum_post_revisions WHERE post_id=".$pdo->quote($dp['id']))->fetchColumn()===0,'revision cascade');
 
     if($driver==='sqlite')check($pdo->query('PRAGMA foreign_key_check')->fetchAll()===[],'foreign keys intact');
-    $v=new ForumVersion($root);check($v->current()==='0.4.5' && $v->upstream()==='1.3.0','independent product/core versions');
+    $v=new ForumVersion($root);check($v->current()==='0.5.0' && $v->upstream()==='1.3.0','independent product/core versions');
     echo "Forum core regression passed\n";
 } finally {
     unset($db,$discussion,$engagement,$moderation,$registration,$pdo,$runner);

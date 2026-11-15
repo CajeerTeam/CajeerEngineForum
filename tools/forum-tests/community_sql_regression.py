@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """Community integrity and recovery on real SQLite; executes production audit SQL and PHP image validator."""
 import json
+import base64
+import hashlib
+import time
 from pathlib import Path
 import re
 import sqlite3
@@ -26,11 +29,16 @@ def audit(db):
     images=db.execute('SELECT kind,image_data FROM ce_forum_profile_images').fetchall()
     code=r'''require "core/Forum/Security/ProfileImage.php"; $rows=json_decode(stream_get_contents(STDIN),true,512,JSON_THROW_ON_ERROR);$bad=0;foreach($rows as [$kind,$data])if(CajeerEngine\Forum\Security\ProfileImage::decodeStored($kind,$data)===null)$bad++;echo $bad;'''
     result['invalid_profile_images']=int(subprocess.check_output(['php','-r',code],input=json.dumps(images).encode(),cwd=ROOT))
+    # The same PHP validators used by the offline integrity gate; no private text in the report.
+    drafts=[dict(zip(['scope','target_id','payload','result_json'],r)) for r in db.execute('SELECT scope,target_id,payload,result_json FROM ce_forum_drafts')]
+    replicas=[dict(zip(['attachment_id','destination','object_key','sha256'],r)) for r in db.execute('SELECT r.attachment_id,r.destination,r.object_key,a.sha256 FROM ce_forum_media_replicas r LEFT JOIN ce_forum_attachments a ON a.id=r.attachment_id')]
+    code=r'''require "core/Forum/ForumException.php";require "core/Forum/Content/ForumContentRenderer.php";require "core/Forum/Content/ContentIntegrity.php";$rows=json_decode(stream_get_contents(STDIN),true,32,JSON_THROW_ON_ERROR);$bad=["invalid_draft_payload"=>0,"invalid_media_replica_key"=>0];foreach($rows[0] as $row)if(!\CajeerEngine\Forum\Content\ContentIntegrity::draft($row))++$bad["invalid_draft_payload"];foreach($rows[1] as $row)if(!\CajeerEngine\Forum\Content\ContentIntegrity::replica($row))++$bad["invalid_media_replica_key"];echo json_encode($bad);'''
+    result.update(json.loads(subprocess.check_output(['php','-r',code],input=json.dumps([drafts,replicas]).encode(),cwd=ROOT)))
     return {k:v for k,v in result.items() if v}
 
 
 def snapshot(db):
-    tables=['ce_forum_member_profiles','ce_forum_member_preferences','ce_forum_profile_images','ce_forum_threads','ce_forum_posts','ce_forum_read_state','ce_forum_notifications','ce_forum_watches','ce_forum_mail_delivery','ce_forum_conversations','ce_forum_conversation_participants','ce_forum_conversation_messages','ce_forum_reactions','ce_forum_member_relations','ce_forum_achievement_rules','ce_forum_post_revisions','ce_forum_conversation_revisions','ce_forum_drafts']
+    tables=['ce_forum_member_profiles','ce_forum_member_preferences','ce_forum_profile_images','ce_forum_threads','ce_forum_posts','ce_forum_read_state','ce_forum_notifications','ce_forum_watches','ce_forum_mail_delivery','ce_forum_conversations','ce_forum_conversation_participants','ce_forum_conversation_messages','ce_forum_reactions','ce_forum_member_relations','ce_forum_achievement_rules','ce_forum_post_revisions','ce_forum_conversation_revisions','ce_forum_drafts','ce_forum_attachments','ce_forum_media_state','ce_forum_media_variants','ce_forum_media_replicas','ce_forum_polls','ce_forum_poll_options','ce_forum_poll_votes','ce_forum_questions','ce_forum_answer_votes','ce_forum_answer_notifications']
     return {t:sorted(db.execute('SELECT * FROM '+t).fetchall(),key=repr) for t in tables}
 
 
@@ -74,8 +82,32 @@ with tempfile.TemporaryDirectory(prefix='forum-community-sql-') as directory:
         else: raise AssertionError('invalid format accepted')
     db.commit()
     db.executescript((ROOT/'migrations/sqlite/0032_forum_drafts_revisions.sql').read_text())
+    # Build a full content graph on the current schema and verify its bytes/relationships
+    # survive a single real SQLite backup/restore, not separate disconnected fixtures.
+    now=int(time.time());question,qfirst,answer,image,pending,draft,receipt,private_file=[uid() for _ in range(8)]
+    db.execute("INSERT INTO ce_forum_polls(thread_id,question,max_choices,allow_change,visibility) VALUES(?,?,1,1,'always')",(thread,'Choice'))
+    for n,label in [(1,'One'),(2,'Two')]:db.execute('INSERT INTO ce_forum_poll_options VALUES(?,?,?)',(thread,n,label))
+    db.execute('INSERT INTO ce_forum_poll_votes(thread_id,option_no,user_id) VALUES(?,?,?)',(thread,2,b))
+    db.execute('INSERT INTO ce_forum_threads(id,board_id,author_id,title,read_sequence) VALUES(?,?,?,?,2)',(question,board,a,'Question'))
+    for pid,author,body,seq in [(qfirst,a,'Question',1),(answer,b,'Answer',2)]:
+        db.execute('INSERT INTO ce_forum_posts(id,thread_id,author_id,body,ordinal,read_sequence) VALUES(?,?,?,?,?,?)',(pid,question,author,body,seq,seq))
+        db.execute("INSERT INTO ce_forum_post_revisions(post_id,revision_number,body,body_format,editor_id,edit_reason,created_at) VALUES(?,1,?,'plain',?,'',?)",(pid,body,author,now))
+    db.execute('INSERT INTO ce_forum_questions VALUES(?,?)',(question,answer));db.execute('INSERT INTO ce_forum_answer_votes VALUES(?,?)',(answer,a))
+    db.execute('INSERT INTO ce_forum_answer_notifications(event_id,recipient_id,actor_id,post_id,state) VALUES(?,?,?,?,1)',(uid(),b,a,answer))
+    jpeg=base64.b64decode(JPEG);sha=hashlib.sha256(jpeg).hexdigest()
+    db.execute('INSERT INTO ce_forum_attachments(id,owner_id,post_id,filename,mime,size_bytes,sha256,file_data,created_at,expires_at) VALUES(?,?,?,?,?,?,?,?,?,0)',(image,a,post,'stable.jpg','image/jpeg',len(jpeg),sha,JPEG,now))
+    db.execute("INSERT INTO ce_forum_media_state(attachment_id,state) VALUES(?,'ready')",(image,))
+    for name in ('thumbnail','medium','large'):db.execute('INSERT INTO ce_forum_media_variants VALUES(?,?,?,?,?,?,?,?)',(image,name,'image/jpeg',2,2,len(jpeg),sha,JPEG))
+    db.execute("INSERT INTO ce_forum_media_replicas(attachment_id,destination,object_key,state,due_at) VALUES(?,?,?,'ready',?)",(image,'a'*64,'forum-media/stable/'+image+'/'+sha,now+86400))
+    raw=b'Content fixture';encoded=base64.b64encode(raw).decode();digest=hashlib.sha256(raw).hexdigest()
+    db.execute('INSERT INTO ce_forum_attachments(id,owner_id,filename,mime,size_bytes,sha256,file_data,created_at,expires_at) VALUES(?,?,?,?,?,?,?,?,?)',(pending,a,'pending.txt','text/plain',len(raw),digest,encoded,now,now+2592000))
+    db.execute('INSERT INTO ce_forum_attachments(id,owner_id,message_id,filename,mime,size_bytes,sha256,file_data,created_at,expires_at) VALUES(?,?,?,?,?,?,?,?,?,0)',(private_file,a,message,'private.txt','text/plain',len(raw),digest,encoded,now))
+    db.execute('INSERT INTO ce_forum_drafts(id,user_id,scope,target_id,revision_number,payload,updated_at,expires_at) VALUES(?,?,?,?,1,?,?,?)',(draft,a,'reply',question,json.dumps({'body':'Pending','body_format':'markdown','attachment_ids':[pending]}),now,now+2592000))
+    db.execute('INSERT INTO ce_forum_drafts(id,user_id,scope,target_id,revision_number,payload,result_json,updated_at,expires_at) VALUES(?,?,?,?,1,?,?,?,?)',(receipt,a,'thread',board,'{}',json.dumps({'id':thread}),now,now+2592000))
+    db.commit()
     assert audit(db)=={},audit(db)
     before=snapshot(db)
+
     # Exercise SQLite's actual backup/restore, including pending queue data and private history.
     backup=connection(root/'backup.sqlite');db.backup(backup)
     db.execute('DELETE FROM ce_forum_reactions WHERE post_id=?',(post,))
@@ -87,8 +119,13 @@ with tempfile.TemporaryDirectory(prefix='forum-community-sql-') as directory:
     db.execute("UPDATE ce_forum_profile_images SET image_data='not-an-image' WHERE user_id=?",(a,))
     db.execute("INSERT INTO ce_forum_conversation_limits(user_id,action,window_start,hits) VALUES(?,'bogus',1,1)",(a,))
     assert audit(db)=={'invalid_conversation_limits':1,'invalid_profile_images':1},audit(db)
+    db.rollback()
+    db.execute("UPDATE ce_forum_drafts SET payload='{' WHERE id=?",(draft,))
+    db.execute("UPDATE ce_forum_media_replicas SET object_key='bad' WHERE attachment_id=?",(image,))
+    db.execute("UPDATE ce_forum_media_variants SET width=241 WHERE attachment_id=? AND variant='thumbnail'",(image,))
+    assert audit(db)=={'invalid_draft_payload':1,'invalid_media_replica_key':1,'invalid_media_variant_dimensions':1},audit(db)
     db.commit();backup.backup(db);backup.close()
     assert snapshot(db)==before and audit(db)=={}
     assert db.execute('PRAGMA foreign_key_check').fetchall()==[] and db.execute('PRAGMA integrity_check').fetchone()==('ok',)
     db.close()
-    print(f'PASS {len(files)} migrations; community audit, restored JPEG, corrupt notifications/limits, SQLite backup/restore and data equality')
+    print('PASS 31 migrations; community + content graph, draft/replica/variant corruption, SQLite backup/restore and complete data equality')

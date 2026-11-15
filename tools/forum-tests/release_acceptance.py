@@ -213,6 +213,68 @@ def verify_drafts_revisions(base,state):
     revisions=c.call('GET',pp+'/revisions',token=token);require([r['revision_number'] for r in revisions]==[3,2,1] and revisions[0]['body']=='Release draft','Revision restore failed')
     print('PASS physical dist draft publication and revision migration/restore',flush=True)
 
+def content_snapshot(base, f, token, admin):
+    """Read persisted content through the production API (not a relabelled fixture)."""
+    c=Client(base);poll='/forum/threads/'+f['poll'];question='/forum/threads/'+f['question']
+    post=c.call('GET',poll,token=token)['posts'][0]
+    require(post['id']==f['post'] and post['attachments'][0]['id']==f['image'],'Published draft/image binding lost')
+    require('<strong>Edited poll</strong>' in post['body_html'],'Formatted rendering lost')
+    draft=c.call('GET','/forum/drafts/'+f['pending'],token=token)
+    receipt=c.call('GET','/forum/drafts/'+f['published'],token=token)
+    require(receipt['result']['id']==f['poll'],'Publication receipt lost')
+    require(c.call('POST','/forum/drafts/'+f['published']+'/publish',200,{'revision_number':1},token=token)==receipt['result'],'Receipt replay created duplicate')
+    private='/forum/conversations/'+f['conversation']
+    msg=c.call('GET',private,token=token)['messages'][0]
+    require(msg['id']==f['message'] and msg['attachments'][0]['id']==f['private_file'],'Private attachment binding lost')
+    history='/forum/posts/'+f['post']+'/revisions'
+    private_history=private+'/messages/'+f['message']+'/revisions'
+    c.call('GET',poll,404);c.call('GET',question,404);c.call('GET','/forum/attachments/'+f['image']+'/image/thumbnail',404)
+    c.call('GET','/forum/drafts/'+f['pending'],404,token=admin)
+    c.call('GET',private_history,403,token=admin)
+    c.call('GET','/forum/attachments/'+f['private_file']+'/download',404)
+    return {'post':{k:post[k] for k in ('id','body','body_format','revision_number')},
+            'history':c.call('GET',history,token=token),'poll':c.call('GET',poll,token=token)['interaction']['poll'],
+            'question':c.call('GET',question,token=token)['interaction']['question'],
+            'answers':[(x['id'],x['score']) for x in c.call('GET',question+'/answers',token=token)],
+            'draft':draft,'receipt':receipt,'private_history':c.call('GET',private_history,token=token),
+            'image':c.download_attachment(f['image'],token),'preview':c.image_variant(f['image'],token=token),
+            'pending_file':c.download_attachment(f['pending_file'],token),'private_file':c.download_attachment(f['private_file'],token)}
+
+
+def seed_content(base, state, fixture):
+    import uuid
+    c=Client(base);admin=state[0];token=fixture['token'];board=fixture['board'];create='/forum/boards/'+board+'/threads'
+    image=c.upload_attachment('stable.png',profile_png(),token)['id']
+    published=str(uuid.uuid4());path='/forum/drafts/'+published
+    c.call('PUT',path,200,{'scope':'thread','target_id':board,'revision_number':0,'payload':{'title':'Content stable poll','body':'**Original poll** image{'+image+'}','body_format':'markdown','attachment_ids':[image],'kind':'poll','poll':{'question':'Stable choice','options':['One','Two'],'max_choices':1,'allow_change':True,'visibility':'always'}}},token=token)
+    poll=c.call('POST',path+'/publish',200,{'revision_number':1},token=token)['id'];pp='/forum/threads/'+poll
+    post=c.call('GET',pp,token=token)['first_post_id']
+    c.call('PATCH','/forum/posts/'+post,200,{'body':'**Edited poll** image{'+image+'}','expected_revision':1,'edit_reason':'Release snapshot'},token=token)
+    c.call('PUT',pp+'/poll/vote',200,{'choices':[2]},token=admin)
+    question=c.call('POST',create,201,{'title':'Content stable question','body':'Question','kind':'question'},token=token)['id'];qp='/forum/threads/'+question
+    answer=c.call('POST',qp+'/posts',201,{'body':'[b]Stable answer[/b]','body_format':'bbcode'},token=admin)['id']
+    c.call('PUT','/forum/posts/'+answer+'/answer-vote',200,{'enabled':True},token=token)
+    c.call('PUT',qp+'/accepted-answer',200,{'post_id':answer},token=token)
+    pending_file=c.upload_attachment('pending.txt',b'Pending content snapshot',token)['id'];pending=str(uuid.uuid4())
+    c.call('PUT','/forum/drafts/'+pending,200,{'scope':'reply','target_id':question,'revision_number':0,'payload':{'body':'Pending answer','body_format':'markdown','attachment_ids':[pending_file]}},token=token)
+    private_file=c.upload_attachment('private.txt',b'Private content snapshot',token)['id'];admin_id=c.call('GET','/auth/me',token=admin)['user_id']
+    private=c.call('POST','/forum/conversations',201,{'kind':'direct','title':'Content snapshot','participant_ids':[admin_id],'body':'[b]Private original[/b]','body_format':'bbcode','attachment_ids':[private_file]},token=token)
+    c.call('PATCH','/forum/conversations/'+private['id']+'/messages/'+private['message_id'],200,{'body':'[b]Private edited[/b]','expected_revision':1},token=token)
+    for _ in range(8):
+        c.call('POST','/queue/work',200,{'limit':10},token=admin)
+        if c.call('GET','/forum/attachments/'+image,token=token)['variants']:break
+    else:raise AssertionError('Baseline derivative was not generated')
+    f={'poll':poll,'post':post,'image':image,'published':published,'pending':pending,'pending_file':pending_file,'question':question,'conversation':private['id'],'message':private['message_id'],'private_file':private_file}
+    f['snapshot']=content_snapshot(base,f,token,admin)
+    print('PASS seeded full content platform before upgrade',flush=True)
+    return f
+
+
+def verify_content(base, state, fixture, f):
+    require(content_snapshot(base,f,fixture['token'],state[0])==f['snapshot'],'Content platform snapshot changed across update/rollback')
+    print('PASS content platform snapshot: drafts, receipts, revisions, poll votes, Q&A, originals, derivatives and private history',flush=True)
+
+
 def verify_groups(base,state):
     token, _, _, member=state; c=Client(base)
     groups=c.call('GET','/forum/groups',token=token)
@@ -254,7 +316,7 @@ def verify_navigation(base,state):
 
 
 def seed_structure(base, state):
-    """Create real 0.4.4 structure before updating, not just after the upgrade."""
+    """Create real 0.4.5 structure before updating, not just after the upgrade."""
     admin, _, _, member = state
     c=Client(base)
     member_group=next(g['id'] for g in c.call('GET','/forum/groups',token=admin) if g['handle']=='forum-member')
@@ -356,7 +418,7 @@ def verify_read_tracking(base, state):
 
 def verify_notifications(base, state, fixture):
     c=Client(base); admin,thread,post,_=state
-    # The original 0.4.4 topic has no synthetic historical notifications.
+    # The original 0.4.5 topic has no synthetic historical notifications.
     path='/forum/notifications'
     c.call('POST','/queue/work',200,{'limit':10},token=admin)
     c.call('POST',path+'/read',200,{'all':True},token=admin)
@@ -567,7 +629,7 @@ def verify_community_live(base,f):
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--artifact',type=Path,required=True)
-    parser.add_argument('--previous',type=Path,help='Original 0.4.4 dist; enables real signed upgrade and rollback')
+    parser.add_argument('--previous',type=Path,help='Original 0.4.5 dist; enables real signed upgrade and rollback')
     parser.add_argument('--driver',choices=('sqlite','pgsql'),default='sqlite')
     parser.add_argument('--report',type=Path,required=True)
     args=parser.parse_args(); report=args.report.resolve(); report.mkdir(parents=True,exist_ok=True)
@@ -576,14 +638,16 @@ def main():
         work=Path(tmp); port=free_port()
         # With --previous use the authentic baseline for upgrade, not a relabelled current tree.
         previous=args.previous.resolve() if args.previous else None
-        initial='0.4.4' if previous else current
+        initial='0.4.5' if previous else current
         site=unpack(previous or artifact,work/'live',initial)
         install(site,env,report,'initial',port,args.driver)
         with http(site,env,report,'initial',port,initial) as base:
             state=seed(base); verify_data(base,state)
             fixture=seed_structure(base,state); verify_structure(base,fixture)
-            community=seed_community(base,state)
             media=seed_media(base,fixture)
+            content=seed_content(base,state,fixture)
+            # Seed community last: its pending notifications/digests are part of the snapshot.
+            community=seed_community(base,state)
             verify_community(base,community)
             if not previous:
                 verify_community_live(base,community)
@@ -617,6 +681,7 @@ def main():
             update=json.loads(run(site,env,report,'upgrade',['php','bin/cajeer','update:apply','--package='+str(package),'--json'],timeout=600))
             require(update['state']=='committed' and version(site)==current,'Update not committed')
             with http(site,env,report,'updated',port,current) as base:
+                verify_content(base,state,fixture,content)
                 verify_data(base,state); verify_structure(base,fixture); verify_community(base,community); verify_community_live(base,community); verify_groups(base,state); verify_discussions(base,state); verify_navigation(base,state); verify_identity(site,env,report,base)
                 verify_data_integrity(site,env,report,fixture)
                 verify_profiles(base,fixture)
@@ -633,7 +698,7 @@ def main():
             run(site,env,report,'rollback',['php','bin/cajeer','update:rollback','--yes','--json'],timeout=600)
             require(version(site)==initial,'Rollback did not restore release')
             with http(site,env,report,'rollback',port,initial) as base:
-                verify_data(base,state); verify_structure(base,fixture); verify_community(base,community); verify_media(base,state,fixture,media,False)
+                verify_data(base,state); verify_structure(base,fixture); verify_community(base,community); verify_media(base,state,fixture,media,False); verify_content(base,state,fixture,content)
             # Inject actual failing SQL into a separately built, correctly signed target.
             broken=unpack(artifact,work/'broken',current)
             (broken/'migrations'/args.driver/'9999_acceptance_failure.sql').write_text('CREATE TABLE ce_acceptance_failure(id INTEGER); THIS IS INVALID SQL;\n')
@@ -644,7 +709,7 @@ def main():
             failed=json.loads(run(site,env,report,'failed-upgrade',['php','bin/cajeer','update:apply','--package='+str(pkg),'--json'],expected=1,timeout=600))
             require(failed['state']=='rolled_back' and version(site)==initial and not (site/'storage/app/updates/active.json').exists(), 'Automatic rollback failed')
             with http(site,env,report,'failed-rollback',port,initial) as base:
-                verify_data(base,state); verify_structure(base,fixture); verify_community(base,community); verify_media(base,state,fixture,media,False)
+                verify_data(base,state); verify_structure(base,fixture); verify_community(base,community); verify_media(base,state,fixture,media,False); verify_content(base,state,fixture,content)
         print('PASS physical dist acceptance',flush=True)
 
 

@@ -195,7 +195,7 @@ final readonly class DiscussionService
             $this->boards->writable($thread['board_id']);
             $actor->assertEdit($post,$thread);
             $format=$format??$post['body_format'];$body=\CajeerEngine\Forum\Content\ForumContentRenderer::source($body,$format);
-            $this->tx->revisions()->advance('post',$post,$body,$format,$actor->userId,$expectedRevision,$reason,$forceRevision);
+            $this->tx->revisions()->advance('post',$post,$body,$format,$actor->userId,$expectedRevision,$reason,$forceRevision||$attachments!==[]);
             $this->posts->edit($id,$body,$format);
             $this->tx->attachments()->attach($actor->userId,'post',$id,$attachments);
             $this->tx->audit('forum.post.edit',$actor->userId,['thread_id'=>$thread['id'],'post_id'=>$id]);

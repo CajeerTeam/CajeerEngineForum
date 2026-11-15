@@ -97,6 +97,12 @@ final readonly class AttachmentService
             elseif($a['message_id']!==null){$this->conversations->lockWrites();$this->tx->permissions()->requireCurrent($actor,'forum:write',true);$m=$this->repo->message($a['message_id'])??throw new ForumException('Вложение не найдено.',404);$c=$this->conversations->membership($m['conversation_id'],$actor->userId);$this->conversations->message($m['conversation_id'],$m['id'],(int)$c['joined_sequence']);if($m['author_id']!==$actor->userId)throw new ForumException('Недостаточно прав.',403);}
             else{$this->tx->permissions()->requireCurrent($actor,'forum:write',true);if($a['owner_id']!==$actor->userId)throw new ForumException('Вложение не найдено.',404);}
             $locked=$this->repo->lockItem($id);if(!$locked||$locked['post_id']!==$a['post_id']||$locked['message_id']!==$a['message_id'])throw new ForumException('Вложение изменилось.',409);
+            if($a['post_id']!==null||$a['message_id']!==null){
+                $kind=$a['post_id']!==null?'post':'message';
+                $content=$kind==='post'?$this->repo->postContent($a['post_id']):$this->conversations->message($m['conversation_id'],$m['id'],(int)$c['joined_sequence']);
+                if(!$content)throw new ForumException('Сообщение не найдено.',404);
+                $this->tx->revisions()->advance($kind,$content,$content['body'],$content['body_format'],$actor->userId,null,'Remove attachment',true);
+            }
             $this->repo->delete($id);$this->tx->audit('forum.attachment.delete',$actor->userId,['attachment_id'=>$id]);return ['deleted'=>true];
         });
     }

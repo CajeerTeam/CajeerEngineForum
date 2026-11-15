@@ -24,3 +24,20 @@ foreach([['[b][/b]','bbcode'],['','markdown'],[str_repeat('я',20001),'markdown'
     try{R::source($source,$format);throw new RuntimeException('invalid source accepted');}catch(CajeerEngine\Forum\ForumException){echo "PASS invalid source rejected\n";}
 }
 echo "Forum content regression passed\n";
+
+// Real replay predicates and persisted JSON/replica validation.
+require __DIR__.'/../core/Forum/Service/DraftService.php';
+require __DIR__.'/../core/Forum/Content/ContentIntegrity.php';
+use CajeerEngine\Forum\Content\ContentIntegrity as I;
+use CajeerEngine\Forum\Service\DraftService as D;
+$payload=json_encode(['body'=>'**draft**','body_format'=>'markdown','attachment_ids'=>[]],JSON_THROW_ON_ERROR);
+$row=['scope'=>'reply','target_id'=>$id,'payload'=>$payload,'result_json'=>null,'revision_number'=>2];
+verify(I::draft($row),'valid draft payload');
+verify(D::isSaveReplay($row,1,$payload)&&!D::isSaveReplay($row,0,$payload)&&!D::isSaveReplay($row,1,'{}'),'exact one-version save replay');
+$bad=$row;$bad['payload']='{';verify(!I::draft($bad),'corrupt draft JSON rejected');
+$bad=$row;$bad['payload']='{"body":"x","body_format":"html","attachment_ids":[]}';verify(!I::draft($bad),'invalid draft format rejected');
+$bad=$row;$bad['payload']=json_encode(['body'=>'x','body_format'=>'plain','attachment_ids'=>[$id,$id]]);verify(!I::draft($bad),'duplicate draft attachments rejected');
+$receipt=$row;$receipt['payload']='{}';$receipt['result_json']=json_encode(['id'=>$id,'thread_id'=>$id,'page'=>2]);verify(I::draft($receipt)&&!D::isSaveReplay($receipt,1,'{}'),'valid completed receipt is not editable');
+$receipt['result_json']=json_encode(['id'=>$id,'thread_id'=>'wrong','page'=>2]);verify(!I::draft($receipt),'receipt target mismatch rejected');
+$replica=['attachment_id'=>$id,'destination'=>str_repeat('a',64),'sha256'=>str_repeat('b',64),'object_key'=>'forum-media/stable/'.$id.'/'.str_repeat('b',64)];
+verify(I::replica($replica),'valid replica key');$replica['sha256']=null;verify(I::replica($replica),'valid remote deletion tombstone');$replica['object_key'].='/extra';verify(!I::replica($replica),'invalid replica key rejected');

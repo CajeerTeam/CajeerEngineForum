@@ -83,6 +83,13 @@ try:
         for name,v in variants.items():db.execute(sql('INSERT INTO ce_forum_media_variants('),(aid,name,v['mime'],v['width'],v['height'],v['size_bytes'],v['sha256'],v['data']))
         db.execute(sql('UPDATE ce_forum_media_state SET state=\'ready\''),(aid,));db.commit()
         backup=sqlite3.connect(':memory:');db.backup(backup);assert backup.execute('SELECT COUNT(*) FROM ce_forum_media_variants').fetchone()==(3,)
+        wrong={**variants['large'],'variant':'thumbnail'}
+        assert php(r'$v=json_decode(stream_get_contents(STDIN),true);echo \CajeerEngine\Forum\Content\ForumImageProcessor::valid($v,base64_decode($v["data"]))?"yes":"no";',json.dumps(wrong).encode(),env)==b'no'
+        read_variant=re.search(r"return \$this->row\('(.+?)',\[\$id,\$name\]\);",repo).group(1).replace("\\'","'")
+        assert db.execute(read_variant,(aid,'thumbnail')).fetchone() is not None
+        db.execute("UPDATE ce_forum_media_state SET state='pending' WHERE attachment_id=?",(aid,));assert db.execute(read_variant,(aid,'thumbnail')).fetchone() is None;db.rollback()
+        db.execute(sql('DELETE FROM ce_forum_media_variants WHERE attachment_id='),(aid,));db.execute(sql("UPDATE ce_forum_media_state SET state='pending',attempts=0"),(aid,));assert db.execute(read_variant,(aid,'thumbnail')).fetchone() is None;db.rollback()
+        print('PASS stale derivative visibility, regeneration invalidation and named size cap')
         try:db.execute('UPDATE ce_forum_media_variants SET width=1601');raise AssertionError('invalid width accepted')
         except sqlite3.IntegrityError:db.rollback()
         # With PDO available (CI), exercise the actual background service against the signed local S3 server.
