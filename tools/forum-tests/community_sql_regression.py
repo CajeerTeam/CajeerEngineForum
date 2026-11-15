@@ -81,7 +81,7 @@ with tempfile.TemporaryDirectory(prefix='forum-community-sql-') as directory:
         except sqlite3.IntegrityError: pass
         else: raise AssertionError('invalid format accepted')
     db.commit()
-    db.executescript((ROOT/'migrations/sqlite/0032_forum_drafts_revisions.sql').read_text());db.executescript((ROOT/'migrations/sqlite/0033_forum_soft_delete.sql').read_text());db.executescript((ROOT/'migrations/sqlite/0034_forum_moderation_center.sql').read_text());db.executescript((ROOT/'migrations/sqlite/0035_forum_sanctions.sql').read_text())
+    db.executescript((ROOT/'migrations/sqlite/0032_forum_drafts_revisions.sql').read_text());db.executescript((ROOT/'migrations/sqlite/0033_forum_soft_delete.sql').read_text());db.executescript((ROOT/'migrations/sqlite/0034_forum_moderation_center.sql').read_text());db.executescript((ROOT/'migrations/sqlite/0035_forum_sanctions.sql').read_text());db.executescript((ROOT/'migrations/sqlite/0036_forum_antispam.sql').read_text())
     # Build a full content graph on the current schema and verify its bytes/relationships
     # survive a single real SQLite backup/restore, not separate disconnected fixtures.
     now=int(time.time());question,qfirst,answer,image,pending,draft,receipt,private_file=[uid() for _ in range(8)]
@@ -128,4 +128,4 @@ with tempfile.TemporaryDirectory(prefix='forum-community-sql-') as directory:
     assert snapshot(db)==before and audit(db)=={}
     assert db.execute('PRAGMA foreign_key_check').fetchall()==[] and db.execute('PRAGMA integrity_check').fetchone()==('ok',)
     db.close()
-    print('PASS 33 migrations; community + content graph, draft/replica/variant corruption, SQLite backup/restore and complete data equality')
+    print('PASS 35 migrations; community + content graph, draft/replica/variant corruption, SQLite backup/restore and complete data equality')

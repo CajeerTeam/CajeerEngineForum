@@ -1215,6 +1215,12 @@ export const operations = {
         ],
         "bodyRequired": false
     },
+    "get_Forum_spamStats": {
+        "method": "GET",
+        "path": "/forum/antispam/status",
+        "parameters": [],
+        "bodyRequired": false
+    },
     "get_Forum_thread": {
         "method": "GET",
         "path": "/forum/threads/{id}",

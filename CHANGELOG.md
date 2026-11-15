@@ -1,3 +1,9 @@
+## 0.5.4 — Anti-Spam & Abuse Protection
+
+- Transactional account and registration limits, flood protection for publications, edits, private messages, reports, uploads and votes.
+- Duplicate/link/mention screening routes suspicious public submissions to the existing review queue; configured blocked domains are rejected.
+- Aggregate diagnostics and bounded expiry cleanup.
+
 ## 0.5.3 — Warnings & Sanctions
 
 - Issue and revoke warnings and time-limited restrictions, with current board ACL and protected administrators.

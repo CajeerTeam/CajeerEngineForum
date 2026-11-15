@@ -16,6 +16,7 @@ final readonly class DiscussionService
 
     private function access(?ForumAccessPolicy $actor): array { return $this->tx->permissions()->access($actor??new ForumAccessPolicy('',[])); }
     private function decorated(array $board,array $access): array { $board['permissions']=$access['boards'][$board['id']]; return $board; }
+    public function antiSpam(): AntiSpamService {return $this->tx->antiSpam();}
     public function sanctions(): SanctionService {return $this->tx->sanctions();}
     public function moderationQueue(): ModerationQueueService { return $this->tx->moderationQueue(); }
     public function drafts(): DraftService { return $this->tx->drafts(); }
@@ -157,6 +158,7 @@ final readonly class DiscussionService
             $this->permissions()->assertWrite($actor,$board,'thread:create');
             $this->boards->writable($board);
             if(!$reviewed&&$this->moderationQueue()->requires($actor,$board))throw new ForumException('Публикация требует предварительной проверки.',409);
+            if(!$reviewed&&$this->tx->antiSpam()->publication($actor->userId,'thread',$body,$format,$this->access($actor)['boards'][$board]['thread:moderate']??false,$title)!==null)throw new ForumException('Публикация требует предварительной проверки.',409);
             $id = Uuid::v4(); $post = Uuid::v4();
             $this->threads->insert($id,$board,$actor->userId,$title);
             $this->polls()->initialize($id,$kind,$poll);
@@ -178,6 +180,7 @@ final readonly class DiscussionService
             $this->boards->writable($thread['board_id']);
             if(!$reviewed&&$this->moderationQueue()->requires($actor,$thread['board_id']))throw new ForumException('Публикация требует предварительной проверки.',409);
             if ((int) $thread['locked'] !== 0) throw new ForumException('Тема закрыта.',409);
+            if(!$reviewed&&$this->tx->antiSpam()->publication($actor->userId,'reply',$body,$format??'plain',$this->access($actor)['boards'][$thread['board_id']]['thread:moderate']??false)!==null)throw new ForumException('Публикация требует предварительной проверки.',409);
             $post = Uuid::v4();
             $this->posts->insert($post,$id,$actor->userId,$body,$this->posts->nextOrdinal($id),$format??'plain');
             $this->tx->revisions()->initial('post',$post,$body,$format??'plain',$actor->userId);
@@ -199,6 +202,7 @@ final readonly class DiscussionService
             $this->boards->writable($thread['board_id']);
             $actor->assertEdit($post,$thread);
             $format=$format??$post['body_format'];$body=\CajeerEngine\Forum\Content\ForumContentRenderer::source($body,$format);
+            $this->tx->antiSpam()->publication($actor->userId,'edit',$body,$format,$this->access($actor)['boards'][$thread['board_id']]['thread:moderate']??false);
             $this->tx->revisions()->advance('post',$post,$body,$format,$actor->userId,$expectedRevision,$reason,$forceRevision||$attachments!==[]);
             $this->posts->edit($id,$body,$format);
             $this->tx->attachments()->attach($actor->userId,'post',$id,$attachments);

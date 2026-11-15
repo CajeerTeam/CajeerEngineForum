@@ -15,6 +15,8 @@ final readonly class RegistrationService
     {
         return getenv('FORUM_REQUIRE_EMAIL_VERIFICATION') !== 'false';
     }
+    public function checkAttempt(string $ip,mixed $trap): void
+    { $this->tx->antiSpam()->registration($ip);if($trap!==null&&$trap!=='')throw new ForumException('Регистрация невозможна.',422); }
     public function register(string $email, string $name, string $password): string
     {
         $email = V::text($email,'email',254); $name = V::text($name,'name',60,2); $password = V::password($password);

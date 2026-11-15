@@ -1113,6 +1113,25 @@ class NetworkTests(unittest.TestCase):
         appeal=c.call('POST',sp+ban+'/appeal',201,{'body':'Please reconsider'},token=member);self.assertEqual(appeal,c.call('POST',sp+ban+'/appeal',201,{'body':'Please reconsider'},token=member));c.call('POST',sp+ban+'/appeal',409,{'body':'Different appeal'},token=member)
         c.call('POST',sp+ban+'/appeal/decision',200,{'status':'accepted','reason':'Restored access'},token=admin);self.assertFalse(c.call('GET','/auth/me',token=member)['suspended']);c.call('POST',topic+'/posts',201,{'body':'Allowed again'},token=member)
 
+    def test_22_antispam(self):
+        c=Client(self.base);admin=c.login(ADMIN,ADMIN_PASSWORD)[0]['data']['access_token'];email=unique_email()
+        c.call('POST','/users',201,{'email':email,'name':'Spam regression member','password':PASSWORD,'roles':['forum-member']},token=admin)
+        member=c.login(email)[0]['data']['access_token'];board=c.call('GET','/forum')['boards'][0]['id'];path='/forum/boards/'+board+'/threads'
+        c.call('GET','/forum/antispam/status',403,token=member)
+        c.call('POST','/forum/register',422,{'name':'Bot','email':unique_email(),'password':PASSWORD,'website':'filled'})
+        text='This is a deliberately long repeated content example for the anti-spam regression, with more than eighty characters.'
+        first=c.call('POST',path,201,{'title':'Initial clean content','body':text},token=member)['id']
+        duplicate=c.call('POST',path,201,{'title':'Duplicate content','body':text},token=member);self.assertTrue(duplicate['pending_review'])
+        submission=duplicate['submission_id'];c.call('GET','/forum/threads/'+submission,404)
+        case='/forum/moderation/cases/submission/'+submission;detail=c.call('GET',case,token=admin);self.assertTrue(any('antispam: duplicate' in str(event) for event in detail['history']))
+        result=c.call('POST',case,200,{'action':'approve','revision_number':1},token=admin);self.assertEqual('approved',result['status']);c.call('GET','/forum/threads/'+result['result_id'],200)
+        draft='/forum/drafts/'+str(uuid.uuid4());c.call('PUT',draft,200,{'scope':'thread','target_id':board,'revision_number':0,'payload':{'title':'Link spam','body':'https://one.example/a https://two.example/b https://three.example/c'}},token=member)
+        queued=c.call('POST',draft+'/publish',200,{'revision_number':1},token=member);self.assertTrue(queued['pending_review']);self.assertEqual(queued,c.call('POST',draft+'/publish',200,{'revision_number':1},token=member))
+        post=c.call('GET','/forum/threads/'+first)['first_post_id'];c.call('PATCH','/forum/posts/'+post,422,{'body':'https://one.example/a https://two.example/b https://three.example/c'},token=member)
+        for n in range(7):c.call('POST',path,201,{'title':'Budget topic '+str(n),'body':'Budget body '+str(n)},token=member)
+        c.call('POST',path,429,{'title':'Exceeds budget','body':'Over limit'},token=member)
+        stats=c.call('GET','/forum/antispam/status',200,token=admin);self.assertTrue(any(x['reason']=='duplicate' for x in stats['review_reasons']))
+
     def test_99_rate_limit(self):
         # Run last: exhaust the real IP auth bucket without guessing credentials.
         c = Client(self.base)

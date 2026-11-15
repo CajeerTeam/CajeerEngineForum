@@ -190,6 +190,7 @@ final class RouteRegistry
             ['POST', '/api/v1/forum/unsubscribe', 'api.v1.forum.unsubscribeEmail', 'forum', 'unsubscribeEmail', null],
             ['GET', '/api/v1/forum/watches', 'api.v1.forum.watches', 'forum', 'watches', ['forum:write']],
             ['POST', '/api/v1/forum/posts/{id}/report', 'api.v1.forum.report', 'forum', 'report', ['forum:write']],
+            ['GET', '/api/v1/forum/antispam/status', 'api.v1.forum.spamStats', 'forum', 'spamStats', ['*']],
             ['GET', '/api/v1/forum/sanctions', 'api.v1.forum.mySanctions', 'forum', 'mySanctions', []],
             ['GET', '/api/v1/forum/members/{id}/sanctions', 'api.v1.forum.memberSanctions', 'forum', 'memberSanctions', ['forum:moderate']],
             ['POST', '/api/v1/forum/members/{id}/sanctions', 'api.v1.forum.issueSanction', 'forum', 'issueSanction', ['forum:moderate']],

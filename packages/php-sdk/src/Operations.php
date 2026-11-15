@@ -1545,6 +1545,15 @@ final class Operations {
     ),
     'bodyRequired' => false,
   ),
+  'get_Forum_spamStats' => 
+  array (
+    'method' => 'GET',
+    'path' => '/forum/antispam/status',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => false,
+  ),
   'get_Forum_thread' => 
   array (
     'method' => 'GET',

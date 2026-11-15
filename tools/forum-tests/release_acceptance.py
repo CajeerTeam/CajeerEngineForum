@@ -105,7 +105,7 @@ def install(site, env, report, label, port, driver):
     result = json.loads(run(site, env, report, label+'-install', args))
     require(result['ok'] and result['final']['ok'], 'Install not ready')
     # Explicit local cache makes baseline and current installations reproducible.
-    code = r'require "vendor/autoload.php"; (new CajeerEngine\Installer\InstallerEnvironment(".env"))->write(["CACHE_DRIVER"=>"file", "FORUM_REGISTRATION"=>"false", "FORUM_REQUIRE_EMAIL_VERIFICATION"=>"true", "FORUM_SMTP_HOST"=>"127.0.0.1", "FORUM_SMTP_PORT"=>"1025", "FORUM_SMTP_SECURITY"=>"plain", "FORUM_SMTP_FROM"=>"forum@example.test", "FORUM_SMTP_USERNAME"=>"", "FORUM_SMTP_PASSWORD"=>"", "RATE_LIMIT_AUTH"=>"80", "RATE_LIMIT_GLOBAL"=>"1000"], ".env.example");'
+    code = r'require "vendor/autoload.php"; (new CajeerEngine\Installer\InstallerEnvironment(".env"))->write(["CACHE_DRIVER"=>"file", "FORUM_REGISTRATION"=>"false", "FORUM_REQUIRE_EMAIL_VERIFICATION"=>"true", "FORUM_SMTP_HOST"=>"127.0.0.1", "FORUM_SMTP_PORT"=>"1025", "FORUM_SMTP_SECURITY"=>"plain", "FORUM_SMTP_FROM"=>"forum@example.test", "FORUM_SMTP_USERNAME"=>"", "FORUM_SMTP_PASSWORD"=>"", "FORUM_SPAM_NEW_PRIVATE_10MIN"=>"100", "FORUM_SPAM_NEW_THREADS_HOUR"=>"100", "FORUM_SPAM_THREADS_HOUR"=>"100", "FORUM_SPAM_NEW_REPLIES_10MIN"=>"200", "FORUM_SPAM_REPLIES_10MIN"=>"200", "RATE_LIMIT_AUTH"=>"80", "RATE_LIMIT_GLOBAL"=>"1000"], ".env.example");'
     run(site, env, report, label+'-configure', ['php', '-r', code])
     ready = json.loads(run(site, env, report, label+'-install-check', ['php','bin/cajeer','install:check','--json']))
     require(ready['configured_ready'], 'Install check not ready')
@@ -289,6 +289,16 @@ def verify_moderation(base,state,fixture):
         report=c.call('POST','/forum/posts/'+data['first_post_id']+'/report',201,{'reason':'Acceptance evidence','category':'other'},token=admin)['id'];rp='/forum/moderation/cases/report/'+report;require(c.call('GET',rp,token=admin)['item']['snapshot_body']=='**Pending review**','Report snapshot missing');c.call('POST',rp,200,{'action':'resolve','revision_number':1,'reason':'Accepted evidence','disposition':'resolved'},token=admin)
     finally:c.call('PUT',policy,200,{'review_required':False},token=admin)
     print('PASS moderation queue, approval, attachment and report evidence',flush=True)
+
+def verify_antispam(base,state):
+    admin=state[0];c=Client(base);email=unique_email();c.call('POST','/users',201,{'email':email,'name':'Acceptance spam member','password':PASSWORD,'roles':['forum-member']},token=admin)
+    member=c.login(email)[0]['data']['access_token'];board=c.call('GET','/forum')['boards'][0]['id'];path='/forum/boards/'+board+'/threads'
+    text='Acceptance duplicate publication content with enough characters to be fingerprinted by the real anti-spam service.'
+    c.call('POST',path,201,{'title':'Acceptance clean','body':text},token=member)
+    queued=c.call('POST',path,201,{'title':'Acceptance duplicate','body':text},token=member);require(queued.get('pending_review'), 'Duplicate bypassed moderation')
+    c.call('GET','/forum/threads/'+queued['submission_id'],404);case='/forum/moderation/cases/submission/'+queued['submission_id'];row=c.call('GET',case,token=admin)['item'];c.call('POST',case,200,{'action':'reject','revision_number':row['revision_number'],'reason':'Duplicate'},token=admin)
+    require(any(x['reason']=='duplicate' for x in c.call('GET','/forum/antispam/status',token=admin)['review_reasons']),'Missing spam diagnostics')
+
 
 def verify_sanctions(base,state):
     c=Client(base);admin=state[0];email=unique_email();c.call('POST','/users',201,{'email':email,'name':'Acceptance sanction member','password':PASSWORD,'roles':['forum-member']},token=admin)
@@ -664,7 +674,7 @@ def verify_community_live(base,f):
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--artifact',type=Path,required=True)
-    parser.add_argument('--previous',type=Path,help='Original 0.5.2 dist; enables real signed upgrade and rollback')
+    parser.add_argument('--previous',type=Path,help='Original 0.5.3 dist; enables real signed upgrade and rollback')
     parser.add_argument('--driver',choices=('sqlite','pgsql'),default='sqlite')
     parser.add_argument('--report',type=Path,required=True)
     args=parser.parse_args(); report=args.report.resolve(); report.mkdir(parents=True,exist_ok=True)
@@ -673,7 +683,7 @@ def main():
         work=Path(tmp); port=free_port()
         # With --previous use the authentic baseline for upgrade, not a relabelled current tree.
         previous=args.previous.resolve() if args.previous else None
-        initial='0.5.2' if previous else current
+        initial='0.5.3' if previous else current
         site=unpack(previous or artifact,work/'live',initial)
         install(site,env,report,'initial',port,args.driver)
         with http(site,env,report,'initial',port,initial) as base:
@@ -706,6 +716,7 @@ def main():
                 verify_recycle(base,state,fixture,content)
                 verify_moderation(base,state,fixture)
                 verify_sanctions(base,state)
+                verify_antispam(base,state)
         if previous:
             key=work/'backup.key'; secret=work/'release.secret'; public=work/'release.public'
             run(site,env,report,'backup-key',['php','bin/cajeer','backup:keygen','--key='+str(key)])
@@ -736,6 +747,7 @@ def main():
                 verify_recycle(base,state,fixture,content)
                 verify_moderation(base,state,fixture)
                 verify_sanctions(base,state)
+                verify_antispam(base,state)
             run(site,env,report,'rollback',['php','bin/cajeer','update:rollback','--yes','--json'],timeout=600)
             require(version(site)==initial,'Rollback did not restore release')
             with http(site,env,report,'rollback',port,initial) as base:

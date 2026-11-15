@@ -103,6 +103,7 @@ final readonly class ForumController
     public function deleteProfileField(Request $r,array $p): JsonResponse { return $this->respond(fn()=> $this->discussions->profiles()->deleteField($this->actor($r),$this->id($p))); }
     public function moderateProfile(Request $r,array $p): JsonResponse { return $this->respond(fn()=> $this->discussions->profiles()->moderate($this->actor($r),$this->id($p),$this->field($r,'field'))); }
     public function register(Request $r): JsonResponse { return $this->respond(function () use ($r) {
+        $this->registration->checkAttempt($r->getClientIp()??'unknown',$this->field($r,'website'));
         $email=$this->text($r,'email',254);
         $id=$this->registration->register($email,$this->text($r,'name',60,2),V::password($this->field($r,'password')));
         $required=RegistrationService::verificationRequired();
@@ -155,6 +156,7 @@ final readonly class ForumController
     public function report(Request $r,array $p): JsonResponse { return $this->respond(fn () => ['id'=>$this->moderation->report($this->actor($r),$this->id($p),$this->text($r,'reason',500,3),V::text($this->field($r,'category')??'other','category',20))],201); }
     public function reports(Request $r): JsonResponse { return $this->respond(fn () => $this->moderation->reports($this->actor($r),$this->offset($r))); }
     public function resolve(Request $r,array $p): JsonResponse { return $this->respond(fn () => ['id'=>$this->moderation->resolve($this->actor($r),$this->id($p))]); }
+    public function spamStats(Request $r): JsonResponse {return $this->respond(fn()=>$this->discussions->antiSpam()->stats($this->actor($r)));}
     public function mySanctions(Request $r): JsonResponse {return $this->respond(fn()=>$this->discussions->sanctions()->listing($this->actor($r),$this->actor($r)->userId,$this->offset($r)));}
     public function memberSanctions(Request $r,array $p): JsonResponse {return $this->respond(fn()=>$this->discussions->sanctions()->listing($this->actor($r),$this->id($p),$this->offset($r)));}
     public function issueSanction(Request $r,array $p): JsonResponse {return $this->respond(fn()=>$this->discussions->sanctions()->issue($this->actor($r),$this->id($p),$this->body($r)),201);}

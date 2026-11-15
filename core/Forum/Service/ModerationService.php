@@ -21,6 +21,7 @@ final readonly class ModerationService
             $thread=$this->threads->lockForPost($post) ?? throw new ForumException('Сообщение не найдено.',404);
             $this->tx->permissions()->assertWrite($actor,$thread['board_id'],'report:create');
             $existing=$this->reports->existing($post,$actor->userId);if($existing!==null)return $existing;
+            $this->tx->antiSpam()->action($actor->userId,'report');
             $id = Uuid::v4(); $this->reports->insert($id,$post,$actor->userId,$reason,$category);$this->tx->moderationQueue()->reportEvent($id,$actor->userId,'submit','');
             $this->tx->audit('forum.report.create',$actor->userId,['report_id'=>$id,'post_id'=>$post]);
             return $id;

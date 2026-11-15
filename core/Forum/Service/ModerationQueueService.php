@@ -34,12 +34,15 @@ final readonly class ModerationQueueService
             $this->tx->permissions()->assertWrite($actor,$board,$scope==='thread'?'thread:create':'post:reply');$this->boards->writable($board);
             if($ids)$this->tx->sanctions()->enforce($actor->userId,'upload');
             if($thread&&(int)$thread['locked']!==0)throw new ForumException('Тема закрыта.',409);
-            if(!$this->requires($actor,$board))return $this->publish($actor,$scope,$target,$payload,$discussion);
+            $staff=$this->tx->permissions()->access($actor)['boards'][$board]['thread:moderate']??false;
+            $extra=($payload['title']??'').' '.($payload['poll']['question']??'').' '.implode(' ',$payload['poll']['options']??[]);
+            $risk=$this->tx->antiSpam()->publication($actor->userId,$scope,$payload['body'],$payload['body_format'],$staff,$extra);
+            if($risk===null&&!$this->requires($actor,$board))return $this->publish($actor,$scope,$target,$payload,$discussion,true);
             if($this->repo->countPending($actor->userId)>=25)throw new ForumException('Достигнут лимит заявок на модерацию.',409);
             $id=Uuid::v4();$now=time();$this->repo->insert(['id'=>$id,'author_id'=>$actor->userId,'board_id'=>$board,'thread_id'=>$thread['id']??null,'payload'=>json_encode($payload,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE),'created_at'=>$now]);
             $bytes=0;foreach($ids as $file){$a=$this->files->lockItem($file);if(!$a||$a['owner_id']!==$actor->userId||$a['post_id']!==null||$a['message_id']!==null||(int)$a['expires_at']<=$now||$this->repo->held($file))throw new ForumException('Вложение недоступно или уже ожидает проверки.',409);$bytes+=(int)$a['size_bytes'];$this->repo->hold($id,$file,$now+2592000);}
             if($bytes>AttachmentService::limits()['message_bytes'])throw new ForumException('Превышен лимит вложений.');
-            $this->repo->event('submission',$id,$actor->userId,'submit','');$this->tx->audit('forum.review.submit',$actor->userId,['submission_id'=>$id,'board_id'=>$board]);
+            $this->repo->event('submission',$id,$actor->userId,'submit',$risk===null?'':'antispam: '.$risk);$this->tx->audit('forum.review.submit',$actor->userId,['submission_id'=>$id,'board_id'=>$board]);
             return ['id'=>$id,'pending_review'=>true,'submission_id'=>$id];
         });
     }

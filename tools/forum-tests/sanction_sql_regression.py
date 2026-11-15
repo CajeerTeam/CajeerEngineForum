@@ -13,7 +13,7 @@ def sql(prefix):
     raise AssertionError(prefix)
 with tempfile.TemporaryDirectory() as tmp:
     db=sqlite3.connect(Path(tmp)/'db.sqlite');db.execute('PRAGMA foreign_keys=ON')
-    migrations=sorted((ROOT/'migrations/sqlite').glob('*.sql'));assert migrations[-1].name=='0035_forum_sanctions.sql'
+    migrations=sorted((ROOT/'migrations/sqlite').glob('*.sql'));migrations=[f for f in migrations if f.name[:4]<='0035'];assert migrations[-1].name=='0035_forum_sanctions.sql'
     for f in migrations[:-1]:db.executescript(f.read_text())
     user,admin,other=uid(),uid(),uid();now=int(time.time());board='22222222-2222-4222-8222-222222222222'
     for u in (user,admin,other):db.execute('INSERT INTO ce_users(id,email,name,password_hash) VALUES(?,?,?,?)',(u,u+'@example.test','Member','test'))

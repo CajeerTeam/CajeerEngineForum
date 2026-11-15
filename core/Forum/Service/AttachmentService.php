@@ -52,6 +52,7 @@ final readonly class AttachmentService
             if($meta['size_bytes']>$limits['file_bytes'])throw new ForumException('Превышен лимит размера файла.',413);
             if($this->repo->pendingCount($actor->userId)>=$limits['pending_files'])throw new ForumException('Слишком много временных файлов.',409);
             if((int)$usage['files']>=$limits['quota_files']||(int)$usage['bytes']+$meta['size_bytes']>$limits['quota_bytes'])throw new ForumException('Квота вложений исчерпана.',409);
+            $this->tx->antiSpam()->action($actor->userId,'upload');$this->tx->antiSpam()->action($actor->userId,'upload_bytes',$meta['size_bytes']);
             $now=time();$a=$meta+['id'=>Uuid::v4(),'owner_id'=>$actor->userId,'created_at'=>$now,'expires_at'=>$now+$limits['pending_seconds']];
             $this->repo->insert($a,$data);$this->tx->media()->enqueue($a);$this->tx->audit('forum.attachment.upload',$actor->userId,['attachment_id'=>$a['id'],'size_bytes'=>$a['size_bytes']]);return $this->tx->media()->decorate([self::publicMeta($a)])[0];
         });

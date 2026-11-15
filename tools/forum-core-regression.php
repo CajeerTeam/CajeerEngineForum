@@ -15,6 +15,8 @@ use CajeerEngine\Support\Uuid;
 
 $root=dirname(__DIR__);
 require $root.'/vendor/autoload.php';
+// Large legacy fixture intentionally exceeds normal new-account budgets; focused anti-spam tests exercise real limits.
+putenv('FORUM_SPAM_NEW_THREADS_HOUR=100');putenv('FORUM_SPAM_THREADS_HOUR=100');putenv('FORUM_SPAM_NEW_REPLIES_10MIN=200');putenv('FORUM_SPAM_REPLIES_10MIN=200');putenv('FORUM_SPAM_NEW_PRIVATE_10MIN=100');putenv('FORUM_SPAM_PRIVATE_10MIN=100');
 function check(bool $ok,string $message): void { if (!$ok) throw new RuntimeException($message); echo "PASS $message\n"; }
 function expectStatus(int $status, callable $fn): void {
     try { $fn(); } catch (ForumException $e) { check($e->status === $status, 'expected forum status '.$status); return; }
@@ -288,8 +290,28 @@ try {
     $moderation->moderate($a,$published['id'],'delete');$moderation->recycle()->change($a,'thread',$published['id'],'purge','',$moderation->recycle()->detail($a,'thread',$published['id'])['item']['deletion_id']);
     check((int)$pdo->query("SELECT COUNT(*) FROM ce_forum_post_revisions WHERE post_id=".$pdo->quote($dp['id']))->fetchColumn()===0,'revision cascade');
 
+    // Exercise the actual service, not just the SQL model, on both CI databases.
+    putenv('APP_KEY=forum-core-test-secret');putenv('FORUM_SPAM_NEW_THREADS_HOUR=3');
+    $spamUser=$registration->register('spam-regression@example.test','Spam test','ForumPass12345');$spamActor=new ForumAccessPolicy($spamUser,['forum:write']);
+    $queue=$discussion->moderationQueue();$long='A long duplicate example for the actual publication pipeline, deliberately longer than eighty characters.';
+    $clean=$queue->submit($spamActor,'thread',$board,['title'=>'Clean topic','body'=>$long],$discussion);
+    check(!isset($clean['pending_review']),'clean anti-spam publication');
+    $queued=$queue->submit($spamActor,'thread',$board,['title'=>'Duplicate topic','body'=>$long],$discussion);
+    check($queued['pending_review']===true,'duplicate held for moderation');
+    expectStatus(404,fn()=>$discussion->thread($queued['submission_id'],0));
+    $approved=$queue->action($a,'submission',$queued['submission_id'],['action'=>'approve','revision_number'=>1],$discussion);
+    check($approved['status']==='approved','review approval bypasses duplicate charge');
+    $third=$queue->submit($spamActor,'thread',$board,['title'=>'Link topic','body'=>'https://one.example/a https://two.example/b https://three.example/c'],$discussion);
+    check($third['pending_review']===true,'link spam held');
+    expectStatus(429,fn()=>$queue->submit($spamActor,'thread',$board,['title'=>'Flood topic','body'=>'Fourth publication'],$discussion));
+    expectStatus(422,fn()=>$discussion->edit($spamActor,$discussion->thread($clean['id'],0)['posts'][0]['id'],'https://one.example/a https://two.example/b https://three.example/c'));
+    putenv('FORUM_SPAM_REGISTRATIONS_HOUR=2');putenv('FORUM_SPAM_REGISTRATIONS_GLOBAL_HOUR=3');$registration->checkAttempt('192.0.2.1',null);expectStatus(422,fn()=>$registration->checkAttempt('192.0.2.1','bot'));
+    expectStatus(429,fn()=>$registration->checkAttempt('192.0.2.1',null));$registration->checkAttempt('192.0.2.2',null);expectStatus(429,fn()=>$registration->checkAttempt('192.0.2.3',null));
+    check(count($discussion->antiSpam()->stats($a)['review_reasons'])>=2,'admin aggregate anti-spam diagnostics');
+    expectStatus(403,fn()=>$discussion->antiSpam()->stats($spamActor));
+
     if($driver==='sqlite')check($pdo->query('PRAGMA foreign_key_check')->fetchAll()===[],'foreign keys intact');
-    $v=new ForumVersion($root);check($v->current()==='0.5.3' && $v->upstream()==='1.3.0','independent product/core versions');
+    $v=new ForumVersion($root);check($v->current()==='0.5.4' && $v->upstream()==='1.3.0','independent product/core versions');
     echo "Forum core regression passed\n";
 } finally {
     unset($db,$discussion,$engagement,$moderation,$registration,$pdo,$runner);

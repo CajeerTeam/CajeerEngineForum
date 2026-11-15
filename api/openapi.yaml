@@ -20218,6 +20218,11 @@
                   "password": {
                     "type": "string",
                     "maxLength": 1024
+                  },
+                  "website": {
+                    "type": "string",
+                    "maxLength": 0,
+                    "description": "Optional honeypot; must be empty."
                   }
                 },
                 "required": [
@@ -43646,6 +43651,140 @@
           }
         },
         "description": "Authenticated sanction management. Current ACL and account status are checked; expiry is evaluated at request time."
+      }
+    },
+    "/forum/antispam/status": {
+      "get": {
+        "tags": [
+          "Forum"
+        ],
+        "operationId": "get_Forum_spamStats",
+        "summary": "GET /forum/antispam/status",
+        "x-cajeer-route": "api.v1.forum.spamStats",
+        "x-cajeer-required-scopes": [
+          "*"
+        ],
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "BrowserSession": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "400": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data"
+                  ],
+                  "properties": {
+                    "data": {}
+                  }
+                }
+              }
+            }
+          }
+        },
+        "description": "Administrative abuse counter diagnostics for the past 24 hours; no message bodies, identities or fingerprints."
       }
     }
   },

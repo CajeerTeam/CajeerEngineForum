@@ -73,6 +73,7 @@ final readonly class PollQuestionService
             if($mine===$choices)return $this->view($id,$actor->userId);
             if($mine!==[]&&!(int)$p['allow_change'])throw new ForumException('Изменение голоса запрещено.',409);
             if(count($choices)>(int)$p['max_choices']||array_diff($choices,array_map('intval',array_column($this->repo->options($id),'option_no'))))throw new ForumException('Некорректный выбор.');
+            $this->tx->antiSpam()->action($actor->userId,'vote');
             $this->repo->vote($id,$actor->userId,$choices);return $this->view($id,$actor->userId);
         });
     }
@@ -113,6 +114,7 @@ final readonly class PollQuestionService
             $t=$this->threads->lockForPost($post)??throw new ForumException('Ответ не найден.',404);$id=$t['id'];$this->lock($actor,$id);
             if($this->repo->question($id)===null)throw new ForumException('Вопрос не найден.',404);
             $p=$this->answer($id,$post);if($p['author_id']===$actor->userId)throw new ForumException('Нельзя голосовать за свой ответ.',403);
+            if($enabled)$this->tx->antiSpam()->action($actor->userId,'vote');
             $this->repo->answerVote($post,$actor->userId,$enabled);return ['id'=>$post,'enabled'=>$enabled];
         });
     }
