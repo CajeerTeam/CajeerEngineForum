@@ -30,9 +30,22 @@ final readonly class ThreadRepository extends Repository
     private const AUTHOR_JOIN = ' LEFT JOIN ce_users u ON u.id=t.author_id LEFT JOIN ce_forum_member_profiles m ON m.user_id=u.id LEFT JOIN ce_forum_member_preferences pref ON pref.user_id=u.id ';
     public function countInBoard(string $id): int { return (int)$this->query('SELECT COUNT(*) FROM ce_forum_live_threads WHERE board_id=?',[$id])->fetchColumn(); }
     public function inBoard(string $id, int $offset,string $viewer=''): array
-    { return $this->rows('SELECT t.*,'.self::AUTHOR.',(SELECT COUNT(*) FROM ce_forum_live_posts p WHERE p.thread_id=t.id) AS posts FROM ce_forum_live_threads t'.self::AUTHOR_JOIN.'WHERE t.board_id=? ORDER BY t.pinned DESC,t.updated_at DESC,t.id LIMIT 25 OFFSET '.$offset,[$viewer,$viewer===''?null:$viewer,$id]); }
+    { return $this->rows('SELECT t.*,'.self::AUTHOR.',(SELECT COUNT(*) FROM ce_forum_posts p WHERE p.thread_id=t.id AND p.deleted_at IS NULL) AS posts FROM (SELECT * FROM ce_forum_live_threads WHERE board_id=? ORDER BY pinned DESC,updated_at DESC,id LIMIT 25 OFFSET '.$offset.') t'.self::AUTHOR_JOIN.' ORDER BY t.pinned DESC,t.updated_at DESC,t.id',[$viewer,$viewer===''?null:$viewer,$id]); }
     public function latest(int $offset,array $allowed,string $viewer=''): array
-    { return $this->rows('SELECT t.id,t.title,t.prefix,t.updated_at,t.pinned,t.locked,'.self::AUTHOR.' FROM ce_forum_live_threads t'.self::AUTHOR_JOIN.'WHERE '.$this->boardFilter('t.board_id',$allowed).' ORDER BY t.updated_at DESC,t.id LIMIT 25 OFFSET '.$offset,[$viewer,$viewer===''?null:$viewer]); }
+    { return $this->rows('SELECT t.id,t.title,t.prefix,t.updated_at,t.pinned,t.locked,'.self::AUTHOR.' FROM (SELECT id,title,prefix,updated_at,pinned,locked,author_id FROM ce_forum_live_threads WHERE '.$this->boardFilter('board_id',$allowed).' ORDER BY updated_at DESC,id LIMIT 25 OFFSET '.$offset.') t'.self::AUTHOR_JOIN.' ORDER BY t.updated_at DESC,t.id',[$viewer,$viewer===''?null:$viewer]); }
+    /** Seek using the existing feed order, not a growing OFFSET. ACL is resolved afresh per request. */
+    public function latestAfter(array $allowed,string $viewer,?array $cursor): array
+    {
+        $scope=$this->boardFilter('board_id',$allowed);
+        $fetch=function(string $where,array $params,int $limit)use($scope,$viewer): array {
+            return $this->rows('SELECT t.id,t.title,t.prefix,t.updated_at,t.pinned,t.locked,'.self::AUTHOR.' FROM (SELECT id,title,prefix,updated_at,pinned,locked,author_id FROM ce_forum_live_threads WHERE '.$scope.$where.' ORDER BY updated_at DESC,id LIMIT '.$limit.') t'.self::AUTHOR_JOIN.' ORDER BY t.updated_at DESC,t.id',[$viewer,$viewer===''?null:$viewer,...$params]);
+        };
+        if ($cursor===null) return $fetch('',[],26);
+        // Two index ranges avoid scanning a potentially huge timestamp tie group.
+        $ties=$fetch(' AND updated_at=? AND id>?',[$cursor['at'],$cursor['id']],26);
+        if(count($ties)===26)return $ties;
+        return [...$ties,...$fetch(' AND updated_at<?',[$cursor['at']],26-count($ties))];
+    }
     public function byAuthor(string $id, int $offset, array $allowed): array { return $this->rows('SELECT id,title,prefix,updated_at FROM ce_forum_live_threads WHERE author_id=? AND '.$this->boardFilter('board_id',$allowed).' ORDER BY updated_at DESC,id LIMIT 25 OFFSET '.$offset, [$id]); }
     public function search(string $term,int $offset,array $allowed,?string $tag=null,string $mode='threads',array $options=[]): array
     {

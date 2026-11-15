@@ -25,6 +25,9 @@ try {
     };
     $board=$call('GET','/forum')['boards'][0]['id'];
     $call('GET','/forum/latest?page%5B%5D=1',null,null,400);
+    $call('GET','/forum/latest?cursor=invalid',null,null,400);
+    $call('GET','/forum/latest?cursor%5B%5D=x',null,null,400);
+    check($call('GET','/forum/latest?cursor=')===['items'=>[],'next_cursor'=>null],'empty cursor feed');
     $call('GET','/forum/search?q=x',null,null,422);
     $call('GET','/forum/threads/not-a-uuid',null,null,422);
     $call('POST',"/forum/boards/$board/threads",['title'=>'Test topic','body'=>'First'],null,401);
@@ -35,6 +38,7 @@ try {
     $m=$login('member@example.test','MemberPass12345');$a=$login('admin@example.test','AdminPass12345');$o=$login('other@example.test','OtherPass12345');
     $t=$call('POST',"/forum/boards/$board/threads",['title'=>'Test topic','body'=>'First <script>not HTML</script>'],$m,201)['id'];
     check($call('GET',"/forum/boards/$board")['threads'][0]['id']===$t,'board listing with joined author');
+    check($call('GET','/forum/latest?cursor=')['items'][0]['id']===$t,'cursor feed reads published thread');
     // Real HTTP SSR (no browser JS): verify the body, metadata and guest ACL before JS can run.
     $htmlRequest=static function(string $path,?string $token=null)use($app): \Symfony\Component\HttpFoundation\Response {
         $headers=['HTTP_HOST'=>'untrusted-host.example','REMOTE_ADDR'=>'127.0.0.1'];if($token)$headers['HTTP_AUTHORIZATION']='Bearer '.$token;
@@ -144,6 +148,6 @@ try {
     putenv('FORUM_REGISTRATION=false');
     $call('POST','/forum/register',['name'=>'Closed','email'=>'closed@example.test','password'=>'MemberPass12345'],null,403);
     check(str_contains((string)$app->handle(Request::create('https://forum.test/'))->getContent(),'data-registration="false"'),'closed registration UI');
-    check($app->handle(Request::create('https://forum.test/'))->headers->get('X-CajeerEngine-Forum-Version')==='0.6.4','forum version header');
+    check($app->handle(Request::create('https://forum.test/'))->headers->get('X-CajeerEngine-Forum-Version')==='0.6.5','forum version header');
     echo "Forum integration passed\n";
 } finally {foreach(glob($tmp.'/*')?:[] as $f)unlink($f);rmdir($tmp);}

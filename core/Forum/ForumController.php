@@ -87,7 +87,7 @@ final readonly class ForumController
     public function notificationPreferences(Request $r): JsonResponse { return $this->respond(fn()=> $this->discussions->notifications()->preferences($this->actor($r),$this->body($r))); }
     public function unread(Request $r): JsonResponse { return $this->respond(fn()=> $this->discussions->readTracking()->unread($this->actor($r),$this->offset($r))); }
     public function markRead(Request $r): JsonResponse { return $this->respond(fn()=> $this->discussions->readTracking()->mark($this->actor($r),$this->body($r))); }
-    public function latest(Request $r): JsonResponse { return $this->cachedJson($r,'latest',fn()=> $this->respond(fn () => $this->discussions->latest($this->offset($r),$this->reader($r)))); }
+    public function latest(Request $r): JsonResponse { if(array_key_exists('cursor',$r->query->all()))return $this->cachedJson($r,'latest-cursor',fn()=> $this->respond(fn()=> $this->discussions->latestCursor(\CajeerEngine\Forum\Validation\ForumFeedCursor::decode($r->query->all()['cursor']),$this->reader($r))));return $this->cachedJson($r,'latest',fn()=> $this->respond(fn () => $this->discussions->latest($this->offset($r),$this->reader($r)))); }
     public function profile(Request $r,array $p): JsonResponse { return $this->respond(fn () => $this->discussions->profile($this->id($p),$this->offset($r),$this->reader($r))); }
     private function body(Request $r): array { $data=$r->attributes->get('json',[]);return is_array($data)?$data:[]; }
     private function revisionInput(Request $r,string $key,bool $zero=false): int {return \CajeerEngine\Forum\Service\DraftService::revision($this->field($r,$key),$zero);}

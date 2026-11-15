@@ -38,7 +38,7 @@ The inherited `/install` and `/upgrade` front controllers are routed through `pu
 
 ## Releases
 
-`VERSION` and `release.json.version` identify the upstream engine (1.3.0); `release.json.edition_version` is 0.6.4. `ForumVersion` validates both identities. Source/dist artifact names, manifest version, release tags and updater comparisons use the edition version. The signed manifest also records `upstream_version`, checked against VERSION, release metadata and the prebuilt admin manifest. The engine API/SDK compatibility version stays unchanged. Health/admin/system diagnostics expose `edition_version`; HTTP responses include `X-CajeerEngine-Forum-Version`.
+`VERSION` and `release.json.version` identify the upstream engine (1.3.0); `release.json.edition_version` is 0.6.5. `ForumVersion` validates both identities. Source/dist artifact names, manifest version, release tags and updater comparisons use the edition version. The signed manifest also records `upstream_version`, checked against VERSION, release metadata and the prebuilt admin manifest. The engine API/SDK compatibility version stays unchanged. Health/admin/system diagnostics expose `edition_version`; HTTP responses include `X-CajeerEngine-Forum-Version`.
 
 The 0.1.0 updater compared upstream engine versions. Apply the 0.1.1 changed-file archive manually to a backed-up test installation before using the new updater. Do not submit the patch ZIP to `update:apply`: it is not a signed full dist. With 0.1.1 installed, later signed releases can advance edition_version without changing upstream. Legacy forum manifests without upstream_version and ordinary CMS packages are refused by the updater. The upstream signed publication workflow is archived, not active; no production signature or deployment certification is claimed.
 
@@ -448,3 +448,60 @@ php bin/cajeer queue:work --queue=default --limit=10
 Run the default worker repeatedly on every worker host and the existing scheduler for processed-job cleanup. Forum notification, mail, image and replica work uses deduplicated Redis wakeups for durable SQL outboxes and existing SQL leases. A missing wakeup is reconstructed from due SQL rows; failed Redis handoff falls back to direct SQL draining. Generic Redis jobs still require Redis persistence. Existing notification fencing and mail retry semantics remain in place; SMTP acceptance immediately before a process crash can still result in a duplicate delivery.
 
 Anonymous GETs for forum home, boards, threads and latest (HTML and API) use Redis; authenticated or cookie-bearing requests, searches, profiles, RSS/sitemap, unknown query variants and errors are not cached. `X-Forum-Cache` reports HIT/MISS. Private counters are keyed by current user, permissions and SQL generation; only counts are cached. Writes invalidate via per-table generation triggers in the same SQL transaction; rolled-back writes do not invalidate. Generations are read from the primary in the same snapshot as public content, so an unavailable Redis cannot preserve a stale ACL/content key after a commit. Old keys expire automatically. Concurrent misses have a bounded wait and a fill lock, then use SQL if necessary. Redis loss alone does not prevent cache-backed reads. Time-dependent display state may age until TTL; no cache is a source of authority for mutation permissions. A generation change invalidates a broad group of cache entries, deliberately prioritizing consistency over fine-grained hit rates. Measure write contention and cache hit rates before large deployments. Rotate `FORUM_REDIS_NAMESPACE` after restoring a backup, out-of-band DDL or replacing the SQL database; MySQL direct TRUNCATE bypasses row triggers. Use row-based binlogging with MySQL. Never share a namespace across separate installations.
+
+### PostgreSQL Performance (0.6.5)
+
+Migration 0043 adds five live-feed and post-range indexes. PostgreSQL and SQLite
+use partial indexes (`deleted_at IS NULL`); MySQL/MariaDB use composite indexes
+with `deleted_at` as the leading equality column. Existing uniqueness constraints
+and historical migration checksums are unchanged. Lists select the bounded page
+before loading author/profile information; post reactions are grouped once for the
+selected IDs. Unread counts use live post sequence ranges, including holes after
+soft deletion, rather than subtracting watermarks.
+
+`GET /api/v1/forum/latest?cursor=` returns `data.items` (up to 25 rows) and
+`data.next_cursor` (string or null). Pass the returned cursor verbatim for the
+next page. The query splits the timestamp tie range and strictly older range,
+using the existing `updated_at DESC, id ASC` order; permissions are recomputed
+for every request. The old `?page=N` response remains an array. SSR and the
+interactive latest feed both use the cursor; previous numbered links still work.
+The cursor is not an authorization token or a frozen snapshot across HTTP requests:
+threads updated during navigation may move ahead of the cursor. Use the first page
+again for refreshed activity.
+
+PostgreSQL cache invalidation uses 16 transaction-selected shards per watched
+SQL table. The effective generation digest includes every shard in a consistent
+snapshot, so an older transaction committing after a newer one still invalidates
+cached responses. A rollback leaves the digest unchanged. Same-shard writers
+can still contend, and broad cache invalidation remains conservative. SQLite and
+MySQL/MariaDB retain the existing generation mechanism behind the same view.
+
+**Deploy 0043 in a maintenance window.** Ordinary `CREATE INDEX` runs inside the
+PostgreSQL migration transaction; on large tables allow time and disk for index
+construction, and adjust the deployment session's statement timeout if required.
+Stop all old PHP/worker processes before migrating: 0.6.4 binaries cannot safely
+share the database with 0.6.5 because the old PostgreSQL generation table no
+longer changes on writes. Rollback requires restoring the matched database and
+application backup, not just replacing PHP files. Change the Redis namespace
+on database restore. Resume traffic only after migration and readiness checks.
+
+```sh
+php bin/cajeer migrate
+php bin/cajeer migrate:status
+php bin/cajeer forum:performance:check --json
+php bin/cajeer forum:performance:check --analyze --json
+php bin/cajeer install:check --json
+```
+
+The diagnostic checks valid indexes, returns the bounded latest-feed plan and
+PostgreSQL table/index statistics (live/dead tuples, scans, bytes, autovacuum and
+analyze timestamps). `--analyze` runs the read-only bounded SELECT with
+`EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)` on PostgreSQL; without it only the
+planner is invoked. It never enables extensions, resets statistics, changes
+server settings or returns other users' SQL. Run `ANALYZE ce_forum_threads;
+ANALYZE ce_forum_posts; ANALYZE ce_forum_read_state;` after a large import. Monitor
+`pg_stat_user_tables`, `pg_stat_user_indexes`, and optional `pg_stat_statements`
+with administrator-approved permissions; tune autovacuum from measured dead tuple
+and vacuum behavior, not universal configuration values. Existing statement and
+lock timeouts remain in effect. No production throughput or latency claim is made
+without a representative native PostgreSQL workload.

@@ -68,9 +68,18 @@ final readonly class ForumPageRenderer
                     if($page===1)$schema[]=['@context'=>'https://schema.org','@type'=>'ProfilePage','mainEntity'=>['@type'=>'Person','name'=>$title,'description'=>$description,'url'=>$this->settings->baseUrl().$path]];
                 }
             } elseif($path==='/forum/latest'){
-                $page=self::page($q['page']??null,10000);$d=$this->discussions->latest(25*($page-1),$actor);$title='Последние обсуждения';
-                if($page>1&&!$d)throw new ForumException('Страница не найдена.',404);
-                $body=$this->threads($d).$this->paging($path,$page,count($d)===25); // duplicate listing, intentionally noindex
+                $title='Последние обсуждения';
+                if(array_key_exists('page',$q)&&!array_key_exists('cursor',$q)){
+                    $page=self::page($q['page'],10000);$d=$this->discussions->latest(25*($page-1),$actor);
+                    if($page>1&&!$d)throw new ForumException('Страница не найдена.',404);
+                    $body=$this->threads($d).$this->paging($path,$page,count($d)===25);
+                }else{
+                    $cursor=\CajeerEngine\Forum\Validation\ForumFeedCursor::decode($q['cursor']??'');
+                    $d=$this->discussions->latestCursor($cursor,$actor);$body=$this->threads($d['items']).'<nav class="pager" aria-label="Навигация">';
+                    if($cursor!==null)$body.='<a class="button secondary" href="/forum/latest">К началу</a>';
+                    if($d['next_cursor']!==null)$body.='<a class="button secondary" href="/forum/latest?cursor='.self::e(rawurlencode($d['next_cursor'])).'">Далее →</a>';
+                    $body.='</nav>';
+                } // duplicate listing, intentionally noindex
             } elseif($path==='/forum/questions'){
                 $page=self::page($q['page']??null,10000);$filter=$q['status']??'all';
                 $d=$this->discussions->polls()->questions($actor,25*($page-1),$filter);$title='Вопросы и ответы';

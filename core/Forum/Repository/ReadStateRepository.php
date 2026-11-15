@@ -54,7 +54,7 @@ final readonly class ReadStateRepository extends Repository
     public function decorateThreads(array $threads,string $user): array
     {
         if ($user==='' || !$threads) return $threads;
-        $counts=$this->rows('SELECT p.thread_id,COUNT(*) AS unread_posts FROM ce_forum_live_posts p LEFT JOIN ce_forum_read_state r ON r.thread_id=p.thread_id AND r.user_id=? WHERE p.read_sequence>COALESCE(r.read_sequence,0) AND '.$this->boardFilter('p.thread_id',array_column($threads,'id')).' GROUP BY p.thread_id',[$user]);
+        $counts=$this->rows('SELECT t.id AS thread_id,(SELECT COUNT(*) FROM ce_forum_posts p WHERE p.thread_id=t.id AND p.deleted_at IS NULL AND p.read_sequence>COALESCE(r.read_sequence,0)) AS unread_posts FROM ce_forum_live_threads t LEFT JOIN ce_forum_read_state r ON r.thread_id=t.id AND r.user_id=? WHERE '.$this->boardFilter('t.id',array_unique(array_column($threads,'id'))),[$user]);
         $map=array_column($counts,'unread_posts','thread_id');
         foreach($threads as &$thread) $thread['unread_posts']=(int)($map[$thread['id']]??0);
         return $threads;
@@ -63,12 +63,12 @@ final readonly class ReadStateRepository extends Repository
     public function boardCounts(string $user,array $boards): array
     {
         if ($user==='' || !$boards) return [];
-        return array_column($this->rows('SELECT t.board_id,COUNT(*) AS unread_threads FROM ce_forum_live_threads t LEFT JOIN ce_forum_read_state r ON r.thread_id=t.id AND r.user_id=? WHERE EXISTS (SELECT 1 FROM ce_forum_live_posts p WHERE p.thread_id=t.id AND p.read_sequence>COALESCE(r.read_sequence,0)) AND '.$this->boardFilter('t.board_id',$boards).' GROUP BY t.board_id',[$user]),'unread_threads','board_id');
+        return array_column($this->rows('SELECT t.board_id,COUNT(*) AS unread_threads FROM ce_forum_live_threads t LEFT JOIN ce_forum_read_state r ON r.thread_id=t.id AND r.user_id=? WHERE EXISTS (SELECT 1 FROM ce_forum_posts p WHERE p.thread_id=t.id AND p.deleted_at IS NULL AND p.read_sequence>COALESCE(r.read_sequence,0)) AND '.$this->boardFilter('t.board_id',$boards).' GROUP BY t.board_id',[$user]),'unread_threads','board_id');
     }
 
     public function unread(string $user,array $allowed,int $offset): array
     {
-        return $this->decorateThreads($this->rows('SELECT t.id,t.title,t.prefix,t.updated_at,t.pinned,t.locked FROM ce_forum_live_threads t LEFT JOIN ce_forum_read_state r ON r.thread_id=t.id AND r.user_id=? WHERE '.$this->boardFilter('t.board_id',$allowed).' AND EXISTS (SELECT 1 FROM ce_forum_live_posts p WHERE p.thread_id=t.id AND p.read_sequence>COALESCE(r.read_sequence,0)) ORDER BY t.updated_at DESC,t.id LIMIT 25 OFFSET '.$offset,[$user]),$user);
+        return $this->decorateThreads($this->rows('SELECT t.id,t.title,t.prefix,t.updated_at,t.pinned,t.locked FROM ce_forum_live_threads t LEFT JOIN ce_forum_read_state r ON r.thread_id=t.id AND r.user_id=? WHERE '.$this->boardFilter('t.board_id',$allowed).' AND EXISTS (SELECT 1 FROM ce_forum_posts p WHERE p.thread_id=t.id AND p.deleted_at IS NULL AND p.read_sequence>COALESCE(r.read_sequence,0)) ORDER BY t.updated_at DESC,t.id LIMIT 25 OFFSET '.$offset,[$user]),$user);
     }
 
     public function summary(string $user,string $thread): array

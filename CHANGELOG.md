@@ -1,3 +1,10 @@
+## 0.6.5 — PostgreSQL Performance
+
+- Live feed indexes with mixed-direction sort, partial live post ranges on PostgreSQL/SQLite, equivalent composite indexes on MySQL/MariaDB.
+- Cursor pagination on latest discussions, bounded page-first joins, batched reaction counts and indexed unread ranges.
+- Sixteen PostgreSQL cache generation shards per table, read as a snapshot digest; no cross-version rolling deployment.
+- Migration 0043, query-plan and cursor regressions, PostgreSQL concurrent generation regression.
+
 ## 0.6.4 — Redis Runtime & Caching
 
 - Redis-backed guest HTML/API and private unread counters; SQL snapshot generations invalidate stale content and permissions atomically.

@@ -7,7 +7,7 @@ final readonly class PostRepository extends Repository
 {
     public function inThread(string $id, int $offset,string $viewer=''): array
     {
-        $rows=$this->rows("SELECT p.*,u.name AS author,u.status AS author_status, m.display_name,m.signature,COALESCE(pref.profile_visibility,'public') AS profile_visibility,CASE WHEN img.user_id IS NULL THEN 0 ELSE 1 END AS has_avatar,(SELECT COUNT(*) FROM ce_forum_reactions a WHERE a.post_id=p.id AND a.reaction_type='like') AS likes FROM ce_forum_live_posts p LEFT JOIN ce_users u ON u.id=p.author_id LEFT JOIN ce_forum_member_profiles m ON m.user_id=u.id LEFT JOIN ce_forum_member_preferences pref ON pref.user_id=u.id LEFT JOIN ce_forum_profile_images img ON img.user_id=u.id AND img.kind='avatar' WHERE p.thread_id=? ORDER BY p.ordinal LIMIT 25 OFFSET ".$offset,[$id]);
+        $rows=$this->rows("SELECT p.*,u.name AS author,u.status AS author_status, m.display_name,m.signature,COALESCE(pref.profile_visibility,'public') AS profile_visibility,CASE WHEN img.user_id IS NULL THEN 0 ELSE 1 END AS has_avatar FROM (SELECT * FROM ce_forum_live_posts WHERE thread_id=? ORDER BY ordinal LIMIT 25 OFFSET ".$offset.") p LEFT JOIN ce_users u ON u.id=p.author_id LEFT JOIN ce_forum_member_profiles m ON m.user_id=u.id LEFT JOIN ce_forum_member_preferences pref ON pref.user_id=u.id LEFT JOIN ce_forum_profile_images img ON img.user_id=u.id AND img.kind='avatar' ORDER BY p.ordinal",[$id]);
         $show=$viewer===''|| (int)(new ProfileRepository($this->db))->preferences($viewer)['show_signatures']===1;
         $counts=[];$mine=[];$ignored=[];
         if($rows){
@@ -24,7 +24,7 @@ final readonly class PostRepository extends Repository
             $content=\CajeerEngine\Forum\Content\ForumContentRenderer::render($row['body'],$row['body_format']);
             $row['revision_number']=(int)$row['revision_number'];$row['body_html']=$content['html'];$row['renderer_version']=$content['renderer_version'];
             foreach($content['quotes'] as $quote)$quotes[$quote]=true;
-            $row['reactions']=$counts[$row['id']]??[];$row['my_reaction']=$mine[$row['id']]??null;
+            $row['reactions']=$counts[$row['id']]??[];$row['likes']=$row['reactions']['like']??0;$row['my_reaction']=$mine[$row['id']]??null;
             $row['ignored_author']=isset($ignored[$row['author_id']??'']);
             $visible=$row['author_status']==='active' && \CajeerEngine\Forum\Service\MemberProfileService::visible($row['profile_visibility'],$viewer,(string)$row['author_id']);
             $row['author_profile_visible']=$visible;

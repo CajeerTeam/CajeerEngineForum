@@ -97,7 +97,7 @@ try {
     $before=$pdo->query('SELECT migration,checksum FROM ce_migrations ORDER BY migration')->fetchAll();
     $runner=new MigrationRunner($pdo,$root.'/migrations');
     $pending=count($runner->status($driver)['pending']);
-    check($pending===27,'twenty-seven pending migrations from 0.1.1');
+    check($pending===28,'twenty-eight pending migrations from 0.1.1');
     check($runner->run($driver)['applied']===$pending&&$runner->run($driver)['applied']===0,'upgrade once and idempotent rerun');
     check($pdo->query("SELECT migration,checksum FROM ce_migrations WHERE migration < '0016_' ORDER BY migration")->fetchAll()===$before,'old ledger checksums unchanged');
     check((new PostRepository($db))->inThread($thread,0)[0]['body']==='Existing body','upgrade preserved existing post');
@@ -108,7 +108,7 @@ try {
     rejects(fn()=>$runnerOld->run($driver),'missing applied migration blocks execution','missing');
     check((int)$pdo->query('SELECT read_sequence FROM ce_forum_posts')->fetchColumn()===1,'existing post sequence backfilled');
     foreach(glob($root.'/migrations/'.$driver.'/*.sql') as $file)copy($file,$old.'/'.$driver.'/'.basename($file));
-    $bad=$old.'/'.$driver.'/0043_failure_test.sql';
+    $bad=$old.'/'.$driver.'/0044_failure_test.sql';
     file_put_contents($bad,'CREATE TABLE forum_rollback_probe(id INTEGER); INSERT INTO nonexistent_forum_probe VALUES (1);');
     rejects(fn()=>$runnerOld->run($driver),'broken SQL migration rolls back');
     check(!$db->tableExists('forum_rollback_probe')&&count($runnerOld->status($driver)['failed'])===1,'failed migration ledger and DDL rollback');

@@ -22720,6 +22720,15 @@
               "minimum": 1,
               "default": 1
             }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "description": "Empty string starts cursor pagination. Use next_cursor from the previous response. When present, cursor takes precedence over page and data is an object with items and next_cursor.",
+            "schema": {
+              "type": "string",
+              "maxLength": 256
+            }
           }
         ],
         "responses": {
@@ -22733,7 +22742,36 @@
                     "data"
                   ],
                   "properties": {
-                    "data": {}
+                    "data": {
+                      "oneOf": [
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "additionalProperties": true
+                          }
+                        },
+                        {
+                          "type": "object",
+                          "required": [
+                            "items",
+                            "next_cursor"
+                          ],
+                          "properties": {
+                            "items": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "additionalProperties": true
+                              }
+                            },
+                            "next_cursor": {
+                              "type": ["string", "null"]
+                            }
+                          }
+                        }
+                      ]
+                    }
                   }
                 }
               }

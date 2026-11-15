@@ -7,7 +7,7 @@ uid=lambda:str(uuid.uuid4())
 with tempfile.TemporaryDirectory() as tmp:
     path=Path(tmp)/'forum.sqlite'
     db=sqlite3.connect(path);db.execute('PRAGMA foreign_keys=ON');db.execute('PRAGMA journal_mode=WAL')
-    files=sorted((ROOT/'migrations/sqlite').glob('*.sql'))
+    files=sorted(f for f in (ROOT/'migrations/sqlite').glob('*.sql') if f.name[:4]<='0042')
     for f in files[:-1]:db.executescript(f.read_text())
     board=db.execute('SELECT id FROM ce_forum_boards LIMIT 1').fetchone()[0]
     thread,post=uid(),uid()

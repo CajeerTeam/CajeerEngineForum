@@ -78,8 +78,8 @@ final readonly class NotificationRepository extends Repository
     public function inbox(string $user,array $allowed,int $offset,?string $id=null): array
     {
         $params=[$user];if($id!==null)$params[]=$id;
-        $rows=$this->rows('SELECT n.event_id AS id,n.kind,n.moderation_action,n.subscription_kind,n.is_read,n.created_at,n.actor_id,(SELECT u.name FROM ce_users u WHERE u.id=n.actor_id) AS actor_name,n.post_id,t.id AS thread_id,t.title,(SELECT COUNT(*) FROM ce_forum_live_posts p2 WHERE p2.thread_id=p.thread_id AND p2.ordinal<p.ordinal) AS preceding'.$this->visible($allowed).($id===null?'':' AND n.event_id=?').' ORDER BY n.created_at DESC,n.event_id DESC LIMIT 25 OFFSET '.$offset,$params);
-        foreach($rows as &$r){$r['is_read']=(int)$r['is_read']===1;$r['page']=1+intdiv((int)$r['preceding'],25);unset($r['preceding']);}unset($r);
+        $rows=$this->rows('SELECT pgrow.*,u.name AS actor_name,(SELECT COUNT(*) FROM ce_forum_posts p2 WHERE p2.thread_id=pgrow.thread_id AND p2.deleted_at IS NULL AND p2.ordinal<pgrow.ordinal) AS preceding FROM (SELECT n.event_id AS id,n.kind,n.moderation_action,n.subscription_kind,n.is_read,n.created_at,n.actor_id,n.post_id,t.id AS thread_id,t.title,p.ordinal'.$this->visible($allowed).($id===null?'':' AND n.event_id=?').' ORDER BY n.created_at DESC,n.event_id DESC LIMIT 25 OFFSET '.$offset.') pgrow LEFT JOIN ce_users u ON u.id=pgrow.actor_id ORDER BY pgrow.created_at DESC,pgrow.id DESC',$params);
+        foreach($rows as &$r){$r['is_read']=(int)$r['is_read']===1;$r['page']=1+intdiv((int)$r['preceding'],25);unset($r['preceding'],$r['ordinal']);}unset($r);
         return $rows;
     }
     public function countUnread(string $user,array $allowed): int

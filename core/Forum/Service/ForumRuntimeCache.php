@@ -21,19 +21,20 @@ final class ForumRuntimeCache
         if(!self::enabled()||time()<$this->retryAfter||$request->getMethod()!=='GET'||$request->attributes->get('auth')!==null||$request->headers->has('Authorization')||$request->headers->has('X-API-Token')||$request->cookies->count()>0)return $load();
         $q=$request->query->all();
         // Bound cardinality. Unknown variants (including tracking and unread) are served normally.
+        if($view==='latest-cursor'&&$q===['cursor'=>''])$q=[];
         if(array_diff(array_keys($q),['page'])||isset($q['page'])&&(!is_scalar($q['page'])||!preg_match('/\A[1-9][0-9]{0,3}\z/D',(string)$q['page'])))return $load();
-        if(!in_array($view,['index','board','thread','latest','page'],true))return $load();
+        if(!in_array($view,['index','board','thread','latest','latest-cursor','page'],true))return $load();
         $path=$request->getPathInfo();
         if($view==='page'&&!preg_match('~\A(?:/|/forum/?|/forum/latest/?|/forum/(?:boards|threads)/[a-f0-9-]{36}/?)\z~D',$path))return $load();
         if(!$this->db->tableExists('ce_forum_cache_generation'))return $load();
         try{$prefix=RedisConnection::namespace();$redis=$this->redis();}catch(\Throwable){$this->retryAfter=time()+5;$this->redis=null;return $load();}
         // Never catch and replay application exceptions or SQL failures. Only Redis operations degrade.
         return $this->db->readSnapshot(function()use($prefix,$redis,$request,$view,$q,$path,$load){
-            $generation=$this->db->connection()->query("SELECT name, generation FROM ce_forum_cache_generation WHERE scope='public' ORDER BY name")->fetchAll(\PDO::FETCH_ASSOC);
+            $generation=$this->db->connection()->query("SELECT name, generation FROM ce_forum_cache_generation_effective WHERE scope='public' ORDER BY name")->fetchAll(\PDO::FETCH_ASSOC);
             if(count($generation)!==21)return $load();
             $seo=new ForumSeoSettings($this->root);
             $settings=$view==='page'?[getenv('APP_NAME'),$seo->baseUrl(),$seo->indexEnabled(),$seo->excludedBoards(),getenv('FORUM_REGISTRATION')]:[getenv('FORUM_REGISTRATION')];
-            $key=hash('sha256',json_encode(['v064',$generation,$view,$path,(string)($q['page']??1),$settings],JSON_THROW_ON_ERROR));
+            $key=hash('sha256',json_encode(['v065',$generation,$view,$path,(string)($q['page']??1),$settings],JSON_THROW_ON_ERROR));
             $store=new RedisCacheStore($redis,$prefix.'cache:');$lock=$prefix.'lock:'.$key;$token=bin2hex(random_bytes(16));$owner=false;
             try{
                 $cached=$store->get($key);

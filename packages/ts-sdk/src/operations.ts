@@ -841,6 +841,11 @@ export const operations = {
                 "name": "page",
                 "in": "query",
                 "required": false
+            },
+            {
+                "name": "cursor",
+                "in": "query",
+                "required": false
             }
         ],
         "bodyRequired": false

@@ -24,6 +24,8 @@ $insert('INSERT INTO ce_forum_posts(id,thread_id,body,ordinal,read_sequence) VAL
 $insert('INSERT INTO ce_forum_thread_tags(thread_id,tag) VALUES(?,?)',[$a,'astronomy']);
 $repo=new ThreadRepository($db);$search=fn($term,$mode='threads',$tag=null)=>$repo->search($term,0,[$board],$tag,$mode);
 verify(array_column($search('astronomy'),'id')===[$a],'public title search and ACL');
+$latest=$repo->latestAfter([$board],'',null);verify(array_column($latest,'id')===[$a],'native cursor feed ACL');
+$cursor=\CajeerEngine\Forum\Validation\ForumFeedCursor::decode(\CajeerEngine\Forum\Validation\ForumFeedCursor::encode($latest[0]));verify($repo->latestAfter([$board],'',$cursor)===[],'native cursor range');
 verify($search('telescopes','posts')[0]['post_id']===$p,'native fulltext post and snippet');
 verify($search('observatory','posts')[0]['post_id']===$p,'common term fallback and private isolation');
 verify($search('','threads','astronomy')[0]['id']===$a,'exact tag search');

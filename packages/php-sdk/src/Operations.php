@@ -1080,6 +1080,12 @@ final class Operations {
         'in' => 'query',
         'required' => false,
       ),
+      1 => 
+      array (
+        'name' => 'cursor',
+        'in' => 'query',
+        'required' => false,
+      ),
     ),
     'bodyRequired' => false,
   ),

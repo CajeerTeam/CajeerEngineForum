@@ -686,7 +686,7 @@ def main():
         initial=current
         if previous:
             with zipfile.ZipFile(previous) as z: initial=json.loads(z.read('cajeerengine/release.json'))['edition_version']
-            require(initial in ('0.5.5','0.5.6','0.6.0'),'Unsupported authentic baseline')
+            require(initial in ('0.5.5','0.5.6','0.6.0','0.6.1','0.6.2','0.6.3','0.6.4'),'Unsupported authentic baseline')
         site=unpack(previous or artifact,work/'live',initial)
         install(site,env,report,'initial',port,args.driver)
         with http(site,env,report,'initial',port,initial) as base:

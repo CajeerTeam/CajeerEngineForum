@@ -8,7 +8,7 @@ use CajeerEngine\Forum\ForumException;
 final readonly class BoardRepository extends Repository
 {
     public function categories(?array $allowed=null): array { return $this->rows('SELECT * FROM ce_forum_categories WHERE '.$this->boardFilter('id',$allowed).' ORDER BY position,name,id'); }
-    private const COUNTS='SELECT b.*, (SELECT COUNT(*) FROM ce_forum_live_threads t WHERE t.board_id=b.id) AS threads, (SELECT COUNT(*) FROM ce_forum_live_posts p JOIN ce_forum_live_threads t ON t.id=p.thread_id WHERE t.board_id=b.id) AS posts, (SELECT MAX(t.updated_at) FROM ce_forum_live_threads t WHERE t.board_id=b.id) AS last_activity FROM ce_forum_boards b';
+    private const COUNTS='SELECT b.*, (SELECT COUNT(*) FROM ce_forum_live_threads t WHERE t.board_id=b.id) AS threads, (SELECT COUNT(*) FROM ce_forum_posts p JOIN ce_forum_live_threads t ON t.id=p.thread_id WHERE t.board_id=b.id AND p.deleted_at IS NULL) AS posts, (SELECT MAX(t.updated_at) FROM ce_forum_live_threads t WHERE t.board_id=b.id) AS last_activity FROM ce_forum_boards b';
     public function boards(?array $allowed=null): array {
         $rows=$this->rows(self::COUNTS.' WHERE '.$this->boardFilter('b.id',$allowed).' ORDER BY b.position,b.name,b.id');$map=array_column($rows,null,'id');
         foreach ($rows as &$b) $b['effective_state']=self::effectiveState($b,$map);
