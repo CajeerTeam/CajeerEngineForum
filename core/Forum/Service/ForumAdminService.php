@@ -49,6 +49,8 @@ final readonly class ForumAdminService
             });
         });
     }
+    public function theme(ForumAccessPolicy $actor,array $input): array
+    { return (new ForumThemeService($this->db,$this->tx))->change($actor,$input); }
     public function policy(ForumAccessPolicy $actor,array $input): array
     { return $this->tx->settings()->save($actor,$input); }
     public function maintenance(ForumAccessPolicy $actor,array $input): array
@@ -79,15 +81,16 @@ final readonly class ForumAdminService
             $search=V::text($q['q']??'','q',100,0);
             $status=V::text($q['status']??'all','status',20);
             if($view==='access')return ['allowed'=>true,'capabilities'=>$caps];
-            $permission=match($view){'settings'=>'settings','users'=>'members','audit','policy_history'=>'audit',default=>'admin'};
+            $permission=match($view){'settings','themes'=>'settings','users'=>'members','audit','policy_history'=>'audit',default=>'admin'};
             if(!$caps['admin']&&!$caps[$permission])throw new ForumException('Недостаточно прав.',403);
             if($view==='delegation'){
                 $id=V::id($q['id']??null);$user=(new UserRepository($this->db,new RoleRepository($this->db)))->findById($id)??throw new ForumException('Участник не найден.',404);
                 return ['user_id'=>$id,'scopes'=>array_values(array_filter(self::DELEGATED,fn($scope)=>in_array('forum-acp-'.substr($scope,10),$user['roles'],true)))];
             }
+            if($view==='themes')return (new ForumThemeService($this->db,$this->tx))->editor($actor);
             if($view==='settings')return $this->tx->settings()->snapshot();
             if($view==='policy_history') {
-                $stmt=$this->db->connection()->query("SELECT id,event,actor_id,context,created_at FROM ce_audit_log WHERE event IN ('forum.acp.policy.update','forum.acp.maintenance','forum.acp.delegation.update') ORDER BY id DESC LIMIT 26 OFFSET ".(int)$page);
+                $stmt=$this->db->connection()->query("SELECT id,event,actor_id,context,created_at FROM ce_audit_log WHERE event IN ('forum.acp.policy.update','forum.acp.maintenance','forum.acp.delegation.update','forum.acp.theme.draft','forum.acp.theme.activate','forum.acp.theme.restore','forum.acp.theme.delete') ORDER BY id DESC LIMIT 26 OFFSET ".(int)$page);
                 $rows=$stmt->fetchAll(\PDO::FETCH_ASSOC);$more=count($rows)>25;if($more)array_pop($rows);
                 foreach($rows as &$row)$row['context']=json_decode((string)$row['context'],true,512,JSON_THROW_ON_ERROR);unset($row);
                 return ['items'=>$rows,'page'=>intdiv($page,25)+1,'has_more'=>$more];
@@ -129,8 +132,7 @@ final readonly class ForumAdminService
             case 'users':
                 $select='u.id,u.name,u.email,u.status,u.created_at,u.email_verified_at';$from='ce_users u';$order='u.created_at DESC,u.id ASC';
                 if($search!=='') {$where[]="(LOWER(u.name) LIKE ? ESCAPE '!' OR LOWER(u.email) LIKE ? ESCAPE '!')";$params=[$pattern,$pattern];}
-                if($status!=='all'){if(!in_array($status,['active','pending','disabled'],true))throw new ForumException('Некорректный статус.');
-            if(!$global&&$status!==$before['status']&&($status==='pending'||$before['status']==='pending'||($status==='active'&&RegistrationService::verificationRequired()&&empty($before['email_verified_at']))))throw new ForumException('Изменение статуса подтверждения доступно только глобальному администратору.',403);$where[]='u.status=?';$params[]=$status;}break;
+                if($status!=='all'){if(!in_array($status,['active','pending','disabled'],true))throw new ForumException('Некорректный статус.');$where[]='u.status=?';$params[]=$status;}break;
             case 'threads':
                 $select='t.id,t.title,t.board_id,t.author_id,t.pinned,t.locked,t.prefix,t.updated_at,b.name AS board_name';$from='ce_forum_live_threads t JOIN ce_forum_boards b ON b.id=t.board_id';$order='t.updated_at DESC,t.id ASC';
                 if($search!==''){$where[]="LOWER(t.title) LIKE ? ESCAPE '!'";$params[]=$pattern;}

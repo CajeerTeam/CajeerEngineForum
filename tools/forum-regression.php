@@ -81,9 +81,35 @@ try {
     $call('POST',"/forum/threads/$t/posts",['body'=>'Maintenance rejected'],$m,503);
     $call('GET',"/forum/threads/$t",null,$m);
     $call('PUT','/forum/acp/policy',['revision'=>$policy['revision'],'values'=>$defaults],$a);
+    // Actual theme lifecycle over the existing HTTP/session/ACL stack.
+    $theme=$call('GET','/forum/acp?view=themes',null,$delegated);
+    $defaultTheme=$theme['active'];$design=$theme['presets']['ocean'];$design['name']='Custom ocean';$design['logo']='OC';$design['scheme']='light';
+    $call('GET','/forum/acp?view=themes',null,$m,403);
+    $call('PUT','/forum/acp/theme',['revision'=>$theme['revision'],'action'=>'draft','design'=>$design],$m,403);
+    $call('PUT','/forum/acp/theme',['revision'=>$theme['revision'],'action'=>'draft','design'=>$design],null,403,['ce_session'=>$adminCookie]);
+    $bad=$design;$bad['light']['bg']='</style><script>alert(1)</script>';
+    $call('PUT','/forum/acp/theme',['revision'=>$theme['revision'],'action'=>'draft','design'=>$bad],$delegated,422);
+    $theme=$call('PUT','/forum/acp/theme',['revision'=>$theme['revision'],'action'=>'draft','design'=>$design],$delegated);
+    check($theme['active']===$defaultTheme&&$theme['draft']===$design,'theme draft is isolated from publication');
+    $call('PUT','/forum/acp/theme',['revision'=>$theme['revision']-1,'action'=>'activate'],$delegated,409);
+    $themeHtml=static function(string $path,?string $token=null)use($app){return $app->handle(Request::create('https://forum.test'.$path,'GET',[],[],[],['REMOTE_ADDR'=>'127.0.0.1']+($token?['HTTP_AUTHORIZATION'=>'Bearer '.$token]:[])));};
+    $previewPath='/forum/threads/'.$t.'?theme_preview=1&scheme=dark&revision='.$theme['revision'];
+    $preview=$themeHtml($previewPath,$delegated);$previewBody=(string)$preview->getContent();
+    check($preview->getStatusCode()===200&&str_contains($previewBody,'data-theme="dark"')&&str_contains($previewBody,'--bg:#081b23')&&str_contains($previewBody,'First &lt;script&gt;')&&!str_contains($previewBody,'src="/forum-assets/forum.js')&&str_contains((string)$preview->headers->get('X-Robots-Tag'),'noindex'),'real SSR preview is read-only, current draft and noindex');
+    check($themeHtml($previewPath)->getStatusCode()===401&&$themeHtml($previewPath,$m)->getStatusCode()===403,'theme preview requires current scope');
+    check(!str_contains((string)$themeHtml('/forum/threads/'.$t)->getContent(),'--bg:#081b23'),'public HTML unchanged before activation');
+    $theme=$call('PUT','/forum/acp/theme',['revision'=>$theme['revision'],'action'=>'activate'],$delegated);
+    $published=$themeHtml('/forum/threads/'.$t);
+    check(str_contains((string)$published->getContent(),'--bg:#081b23')&&str_contains((string)$published->getContent(),'data-theme="light"')&&str_contains((string)$published->getContent(),'rel="canonical"'),'activation applies design without losing SEO');
+    check($themeHtml($previewPath,$delegated)->getStatusCode()===409,'stale preview revision rejected');
+    $theme=$call('PUT','/forum/acp/theme',['revision'=>$theme['revision'],'action'=>'restore','index'=>0],$delegated);
+    check($theme['active']===$defaultTheme&&!str_contains((string)$themeHtml('/forum/threads/'.$t)->getContent(),'--bg:#081b23'),'restore prior active design');
+    check($call('GET','/forum/acp?view=policy_history',null,$delegated)['items'][0]['event']==='forum.acp.theme.restore','theme mutation appears in audit');
     $call('POST','/forum/acp/maintenance',['action'=>'cleanup_spam'],$a);
     $call('PUT',"/forum/acp/delegation/$other",['scopes'=>[]],$a);
     $call('GET','/forum/acp?view=settings',null,$delegated,403);
+    $call('GET','/forum/acp?view=themes',null,$delegated,403);
+    $call('PUT','/forum/acp/theme',['revision'=>$theme['revision'],'action'=>'activate'],$delegated,403);
     check(in_array('forum-member',$users->findById($other)['roles'],true),'revocation preserves forum membership');
 
     check($call('GET',"/forum/boards/$board")['threads'][0]['id']===$t,'board listing with joined author');
@@ -204,6 +230,6 @@ try {
     putenv('FORUM_REGISTRATION=false');
     $call('POST','/forum/register',['name'=>'Closed','email'=>'closed@example.test','password'=>'MemberPass12345'],null,403);
     check(str_contains((string)$app->handle(Request::create('https://forum.test/'))->getContent(),'data-registration="false"'),'closed registration UI');
-    check($app->handle(Request::create('https://forum.test/'))->headers->get('X-CajeerEngine-Forum-Version')==='0.7.2','forum version header');
+    check($app->handle(Request::create('https://forum.test/'))->headers->get('X-CajeerEngine-Forum-Version')==='0.7.3','forum version header');
     echo "Forum integration passed\n";
 } finally {foreach(glob($tmp.'/*')?:[] as $f)unlink($f);rmdir($tmp);}

@@ -21,7 +21,7 @@ echo json_encode($valid,JSON_THROW_ON_ERROR);
 values=json.loads(subprocess.check_output(['php','-r',PHP],cwd=ROOT))
 with tempfile.TemporaryDirectory() as tmp:
  db=sqlite3.connect(Path(tmp)/'forum.sqlite');db.execute('PRAGMA foreign_keys=ON')
- migrations=sorted((ROOT/'migrations/sqlite').glob('*.sql'))
+ migrations=sorted(f for f in (ROOT/'migrations/sqlite').glob('*.sql') if f.name[:4]<='0044')
  assert migrations[-1].name=='0044_forum_community_settings.sql'
  for f in migrations[:-1]:db.executescript(f.read_text())
  user=str(uuid.uuid4());db.execute('INSERT INTO ce_users(id,email,name,password_hash) VALUES(?,?,?,?)',(user,'acp@example.test','Member','test'))

@@ -37,6 +37,17 @@ try{
     check(in_array($t,$publicSearch(),true)&&str_contains($sitemap(),$t)&&str_contains($rss(),$t),'public search, sitemap and RSS agree');
     $first=$http('GET',$path);$hit=$http('GET',$path,null,null,$second);
     check($first->headers->get('X-Forum-Cache')==='MISS'&&$hit->headers->get('X-Forum-Cache')==='HIT'&&$first->getContent()===$hit->getContent(),'SSR Redis hit shared by independent application instances');
+    // Draft saves do not invalidate public HTML; activation does across instances.
+    $theme=$api('GET','/forum/acp?view=themes',null,$a);$design=$theme['presets']['ocean'];
+    $theme=$api('PUT','/forum/acp/theme',['revision'=>$theme['revision'],'action'=>'draft','design'=>$design],$a);
+    $draftHit=$http('GET',$path,null,null,$second);check($draftHit->headers->get('X-Forum-Cache')==='HIT'&&$draftHit->getContent()===$hit->getContent(),'draft theme leaves public cache intact');
+    $preview=$http('GET',$path.'?theme_preview=1&scheme=dark&revision='.$theme['revision'],null,$a);
+    check($preview->headers->get('X-Forum-Cache')===null&&str_contains((string)$preview->getContent(),'--bg:#081b23'),'preview bypasses Redis');
+    $theme=$api('PUT','/forum/acp/theme',['revision'=>$theme['revision'],'action'=>'activate'],$a);
+    $themed=$http('GET',$path,null,null,$second);check($themed->headers->get('X-Forum-Cache')==='MISS'&&str_contains((string)$themed->getContent(),'--bg:#081b23'),'activation changes shared HTML cache identity');
+    check($http('GET',$path)->headers->get('X-Forum-Cache')==='HIT','new theme cache shared');
+    $theme=$api('PUT','/forum/acp/theme',['revision'=>$theme['revision'],'action'=>'restore','index'=>0],$a);
+    check($http('GET',$path,null,null,$second)->getContent()===$hit->getContent(),'restore returns original HTML representation');
     $first=$http('GET','/api/v1'.$path);$hit=$http('GET','/api/v1'.$path,null,null,$second);check($first->headers->get('X-Forum-Cache')==='MISS'&&$hit->headers->get('X-Forum-Cache')==='HIT'&&$first->getContent()===$hit->getContent(),'API shared cache preserves JSON bytes');
     $cursor=$http('GET','/forum/latest');$numbered=$http('GET','/forum/latest?page=1');
     check($cursor->headers->get('X-Forum-Cache')==='MISS'&&$numbered->headers->get('X-Forum-Cache')==='MISS'&&str_contains((string)$cursor->getContent(),'aria-label="Навигация"')&&str_contains((string)$numbered->getContent(),'aria-label="Страницы"'),'numbered and cursor HTML have distinct cache keys');

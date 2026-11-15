@@ -45078,7 +45078,8 @@
                 "post",
                 "settings",
                 "policy_history",
-                "delegation"
+                "delegation",
+                "themes"
               ],
               "default": "overview"
             }
@@ -46073,6 +46074,226 @@
                   "properties": {
                     "data": {
                       "type": "object"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/forum/acp/theme": {
+      "put": {
+        "tags": [
+          "Forum"
+        ],
+        "operationId": "put_Forum_acp_theme",
+        "summary": "Save, activate, restore or remove a forum theme using an optimistic revision",
+        "x-cajeer-route": "api.v1.forum.acp.theme",
+        "x-cajeer-required-scopes": [
+          "forum:acp:settings"
+        ],
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "BrowserSession": [],
+            "CsrfToken": []
+          }
+        ],
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "revision": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "action": {
+                    "type": "string",
+                    "enum": [
+                      "draft",
+                      "activate",
+                      "restore",
+                      "delete"
+                    ]
+                  },
+                  "design": {
+                    "$ref": "#/components/schemas/ForumThemeDesign"
+                  },
+                  "index": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9
+                  },
+                  "key": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                  }
+                },
+                "required": [
+                  "revision",
+                  "action"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "400": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "revision": {
+                          "type": "integer"
+                        },
+                        "active": {
+                          "$ref": "#/components/schemas/ForumThemeDesign"
+                        },
+                        "draft": {
+                          "$ref": "#/components/schemas/ForumThemeDesign"
+                        },
+                        "library": {
+                          "oneOf": [
+                            {
+                              "type": "object",
+                              "additionalProperties": {
+                                "$ref": "#/components/schemas/ForumThemeDesign"
+                              }
+                            },
+                            {
+                              "type": "array",
+                              "maxItems": 0
+                            }
+                          ]
+                        },
+                        "history": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "at": {
+                                "type": "string"
+                              },
+                              "design": {
+                                "$ref": "#/components/schemas/ForumThemeDesign"
+                              }
+                            }
+                          }
+                        },
+                        "presets": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "$ref": "#/components/schemas/ForumThemeDesign"
+                          }
+                        }
+                      }
                     }
                   }
                 }
@@ -48002,6 +48223,165 @@
           "created_at"
         ],
         "additionalProperties": false
+      },
+      "ForumThemeDesign": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 60
+          },
+          "logo": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4
+          },
+          "scheme": {
+            "type": "string",
+            "enum": [
+              "system",
+              "light",
+              "dark"
+            ]
+          },
+          "font": {
+            "type": "string",
+            "enum": [
+              "system",
+              "serif",
+              "mono"
+            ]
+          },
+          "sidebar": {
+            "type": "string",
+            "enum": [
+              "left",
+              "right",
+              "none"
+            ]
+          },
+          "font_size": {
+            "type": "integer",
+            "minimum": 13,
+            "maximum": 20
+          },
+          "width": {
+            "type": "integer",
+            "minimum": 800,
+            "maximum": 1600
+          },
+          "radius": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 24
+          },
+          "spacing": {
+            "type": "integer",
+            "minimum": 8,
+            "maximum": 32
+          },
+          "light": {
+            "type": "object",
+            "properties": {
+              "bg": {
+                "type": "string",
+                "pattern": "^#[0-9a-fA-F]{6}$"
+              },
+              "panel": {
+                "type": "string",
+                "pattern": "^#[0-9a-fA-F]{6}$"
+              },
+              "text": {
+                "type": "string",
+                "pattern": "^#[0-9a-fA-F]{6}$"
+              },
+              "muted": {
+                "type": "string",
+                "pattern": "^#[0-9a-fA-F]{6}$"
+              },
+              "accent": {
+                "type": "string",
+                "pattern": "^#[0-9a-fA-F]{6}$"
+              },
+              "button": {
+                "type": "string",
+                "pattern": "^#[0-9a-fA-F]{6}$"
+              },
+              "line": {
+                "type": "string",
+                "pattern": "^#[0-9a-fA-F]{6}$"
+              }
+            },
+            "required": [
+              "bg",
+              "panel",
+              "text",
+              "muted",
+              "accent",
+              "button",
+              "line"
+            ],
+            "additionalProperties": false
+          },
+          "dark": {
+            "type": "object",
+            "properties": {
+              "bg": {
+                "type": "string",
+                "pattern": "^#[0-9a-fA-F]{6}$"
+              },
+              "panel": {
+                "type": "string",
+                "pattern": "^#[0-9a-fA-F]{6}$"
+              },
+              "text": {
+                "type": "string",
+                "pattern": "^#[0-9a-fA-F]{6}$"
+              },
+              "muted": {
+                "type": "string",
+                "pattern": "^#[0-9a-fA-F]{6}$"
+              },
+              "accent": {
+                "type": "string",
+                "pattern": "^#[0-9a-fA-F]{6}$"
+              },
+              "button": {
+                "type": "string",
+                "pattern": "^#[0-9a-fA-F]{6}$"
+              },
+              "line": {
+                "type": "string",
+                "pattern": "^#[0-9a-fA-F]{6}$"
+              }
+            },
+            "required": [
+              "bg",
+              "panel",
+              "text",
+              "muted",
+              "accent",
+              "button",
+              "line"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "logo",
+          "scheme",
+          "font",
+          "sidebar",
+          "font_size",
+          "width",
+          "radius",
+          "spacing",
+          "light",
+          "dark"
+        ]
       }
     }
   }

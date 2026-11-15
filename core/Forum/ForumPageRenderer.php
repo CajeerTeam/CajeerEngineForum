@@ -15,11 +15,12 @@ final readonly class ForumPageRenderer
     public function __construct(private DiscussionService $discussions,private string $root,?ForumSeoSettings $settings=null)
     { $this->settings=$settings??$discussions->seoSettings($root); }
 
-    public function render(Request $request,ForumAccessPolicy $actor): Response
+    public function render(Request $request,ForumAccessPolicy $actor,?array $preview=null,?string $previewScheme=null): Response
     {
         $path=rtrim($request->getPathInfo(),'/')?:'/';
         $path=$path==='/'?'/forum':$path;
         $community=$this->settings->community();$name=$community['name'];
+        $design=$preview??$this->settings->theme();$scheme=$previewScheme??$design['scheme'];
         $title=$name;$description=$community['description'];
         $canonical=null;$body='';$schema=[];$status=200;$index=false;
         // Do not expose user-specific metadata or index private content, even on an authenticated request.
@@ -94,8 +95,8 @@ final readonly class ForumPageRenderer
             $body='<p>'.self::e($title).'. <a href="/forum">К разделам форума</a> · <a href="/forum/login">Войти</a></p>';
             $canonical=null;$schema=[];$index=false;$description=$title;
         }
-        $index=$index&&$this->settings->indexEnabled()&&$status===200;
-        $robots=($index?'index':'noindex').', '.($guest&&$status===200&&$this->settings->followEnabled()?'follow':'nofollow');
+        $index=$preview===null&&$index&&$this->settings->indexEnabled()&&$status===200;
+        $robots=($index?'index':'noindex').', '.($preview===null&&$guest&&$status===200&&$this->settings->followEnabled()?'follow':'nofollow');
         $meta='<meta name="robots" content="'.$robots.'">';
         if($index&&$canonical!==null){
             $meta.='<link rel="alternate" type="application/rss+xml" title="RSS форума" href="'.self::e($this->settings->baseUrl().'/forum/rss.xml').'">';
@@ -107,10 +108,13 @@ final readonly class ForumPageRenderer
         }
         $registration=$community['registration_open'];
         $html=strtr((string)file_get_contents($this->root.'/public/forum-assets/index.html'),[
+            '<!--FORUM_THEME_CSS-->'=>'<style id="forum-theme">'.ForumTheme::css($design).'</style>',
+            '<!--FORUM_THEME_SCHEME-->'=>self::e($scheme),'<!--FORUM_THEME_SIDEBAR-->'=>self::e($design['sidebar']),'<!--FORUM_THEME_LOGO-->'=>self::e($design['logo']),
+            '<!--FORUM_THEME_PREVIEW-->'=>$preview!==null?'<p class="panel" role="status">Предпросмотр черновика оформления · только чтение</p>':'',
             '<!--FORUM_NAME-->'=>self::e($name),'<!--FORUM_REGISTRATION-->'=>$registration?'true':'false',
             '<!--FORUM_TITLE-->'=>self::e($title.($title===$name?'':' — '.$name).($page>1?' · '.$page:'')),
             '<!--FORUM_HEADING-->'=>self::e($title),'<!--FORUM_DESCRIPTION-->'=>self::e($description),
-            '<meta name="robots" content="noindex, nofollow" data-forum-template>'=>$meta,'<!--FORUM_MAINTENANCE-->'=>$community['paused']?'<p role="status" class="panel">Публикация новых тем и ответов временно приостановлена.</p>':'','<!--FORUM_BODY-->'=>$body,'<!--FORUM_RENDERED-->'=>$canonical!==null||$path==='/forum/latest'||$path==='/forum/questions'?'true':'false','<!--FORUM_SCRIPT-->'=>$status===200?'<script src="/forum-assets/forum.js" defer></script>':'',
+            '<meta name="robots" content="noindex, nofollow" data-forum-template>'=>$meta,'<!--FORUM_MAINTENANCE-->'=>$community['paused']?'<p role="status" class="panel">Публикация новых тем и ответов временно приостановлена.</p>':'','<!--FORUM_BODY-->'=>$body,'<!--FORUM_RENDERED-->'=>$canonical!==null||$path==='/forum/latest'||$path==='/forum/questions'?'true':'false','<!--FORUM_SCRIPT-->'=>$status===200&&$preview===null?'<script src="/forum-assets/forum.js?v=0.7.3" defer></script>':'',
         ]);
         return new Response($html,$status,['Content-Type'=>'text/html; charset=UTF-8','Cache-Control'=>'private, no-store','Vary'=>'Cookie, Authorization, X-API-Token','X-Robots-Tag'=>$robots]);
     }

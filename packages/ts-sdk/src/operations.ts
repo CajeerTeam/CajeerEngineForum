@@ -3040,6 +3040,12 @@ export const operations = {
         "parameters": [],
         "bodyRequired": true
     },
+    "put_Forum_acp_theme": {
+        "method": "PUT",
+        "path": "/forum/acp/theme",
+        "parameters": [],
+        "bodyRequired": true
+    },
     "put_Forum_answerVote": {
         "method": "PUT",
         "path": "/forum/posts/{id}/answer-vote",

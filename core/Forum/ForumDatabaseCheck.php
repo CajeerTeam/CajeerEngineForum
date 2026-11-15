@@ -15,6 +15,7 @@ final readonly class ForumDatabaseCheck
     public function check(): array
     {
         $required = [
+            'ce_forum_theme_settings'=>['id','revision','payload','active_payload'],
             'ce_forum_community_settings'=>['id','revision','payload'],
             'ce_forum_cache_generation'=>['name','generation','scope'],
             'ce_identity_challenges'=>['user_id','purpose','token_hash','secret','issued_at','expires_at'],

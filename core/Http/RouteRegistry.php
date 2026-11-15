@@ -169,6 +169,7 @@ final class RouteRegistry
             ['GET', '/search/', 'public.search.trailing', 'search', 'publicPage', null],
             ['GET', '/api/v1/forum/acp', 'api.v1.forum.acp.index', 'forum', 'adminListing', []],
             ['PUT', '/api/v1/forum/acp/delegation/{id}', 'api.v1.forum.acp.delegation', 'forum', 'adminDelegation', ['*']],
+            ['PUT', '/api/v1/forum/acp/theme', 'api.v1.forum.acp.theme', 'forum', 'adminTheme', ['forum:acp:settings']],
             ['PUT', '/api/v1/forum/acp/policy', 'api.v1.forum.acp.policy', 'forum', 'adminPolicy', ['forum:acp:settings']],
             ['POST', '/api/v1/forum/acp/maintenance', 'api.v1.forum.acp.maintenance', 'forum', 'adminMaintenance', ['forum:acp:maintenance']],
             ['PATCH', '/api/v1/forum/acp/members/{id}', 'api.v1.forum.acp.member', 'forum', 'adminUpdateMember', ['forum:acp:members']],

@@ -3942,6 +3942,15 @@ final class Operations {
     ),
     'bodyRequired' => true,
   ),
+  'put_Forum_acp_theme' => 
+  array (
+    'method' => 'PUT',
+    'path' => '/forum/acp/theme',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => true,
+  ),
   'put_Forum_answerVote' => 
   array (
     'method' => 'PUT',

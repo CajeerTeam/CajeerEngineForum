@@ -15,6 +15,17 @@ final readonly class ForumController
     public function page(Request $request, array $parameters=[]): Response
     {
         $settings=$this->discussions->seoSettings($this->root);
+        if($request->query->has('theme_preview')){
+            try{
+                $q=$request->query->all();$scheme=$q['scheme']??'system';
+                if(($q['theme_preview']??null)!=='1'||!in_array($scheme,['system','light','dark'],true))throw new ForumException('Некорректный предпросмотр.',422);
+                $state=$this->discussions->admin()->listing($this->actor($request),['view'=>'themes']);
+                if(isset($q['revision'])&&(!is_string($q['revision'])||$q['revision']!==(string)$state['revision']))throw new ForumException('Черновик изменён. Обновите ACP.',409);
+                $draft=$state['draft'];
+                // Preview is a public-reader simulation, never a privileged data view.
+                return (new ForumPageRenderer($this->discussions,$this->root,$settings))->render($request,ForumAccessPolicy::optional(null),$draft,$scheme);
+            }catch(ForumException $e){return new Response('Предпросмотр недоступен.', $e->status,['Content-Type'=>'text/plain; charset=UTF-8','Cache-Control'=>'private, no-store','X-Robots-Tag'=>'noindex, nofollow']);}
+        }
         return $this->cached($request,'page',fn()=> (new ForumPageRenderer($this->discussions,$this->root,$settings))->render($request,$this->reader($request)),$settings);
     }
     public function sitemap(Request $request, array $parameters=[]): Response
@@ -46,6 +57,7 @@ final readonly class ForumController
     private function offset(Request $r): int { return V::offset($r->query->all()['page'] ?? 1); }
     public function adminListing(Request $r): JsonResponse { return $this->respond(fn()=> $this->discussions->admin()->listing($this->actor($r),$r->query->all())); }
     public function adminDelegation(Request $r,array $p): JsonResponse { return $this->respond(fn()=> $this->discussions->admin()->delegation($this->actor($r),$this->id($p),$this->body($r))); }
+    public function adminTheme(Request $r): JsonResponse { return $this->respond(fn()=> $this->discussions->admin()->theme($this->actor($r),$this->body($r))); }
     public function adminPolicy(Request $r): JsonResponse { return $this->respond(fn()=> $this->discussions->admin()->policy($this->actor($r),$this->body($r))); }
     public function adminMaintenance(Request $r): JsonResponse { return $this->respond(fn()=> $this->discussions->admin()->maintenance($this->actor($r),$this->body($r))); }
     public function adminUpdateMember(Request $r,array $p): JsonResponse { return $this->respond(fn()=> $this->discussions->admin()->updateMember($this->actor($r),$this->id($p),$this->body($r))); }

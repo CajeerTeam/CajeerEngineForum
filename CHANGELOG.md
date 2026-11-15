@@ -1,3 +1,10 @@
+## 0.7.3 — Forum Themes & Styling
+
+- Three built-in forum designs, light/dark/system schemes and a validated design-token editor in Forum ACP.
+- Separate persisted draft, SSR preview as a public reader, activation, custom design library and ten previous active versions.
+- Optimistic revisions, transactional audit and existing settings delegation; theme changes participate in the SSR cache identity without invalidating draft-only changes.
+- Migration 0045; preserve existing user scheme preferences, search, ACL, SEO and engine version.
+
 ## 0.7.2 — Advanced Administration
 
 - Live community settings, optimistic revisions and audited before/after history.
