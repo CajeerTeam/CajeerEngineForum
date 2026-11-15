@@ -20367,7 +20367,7 @@
             }
           }
         },
-        "description": "Indexed search, current ACL and visibility checks before ranking and pagination. Query supports words, quoted phrases, and -excluded terms in the matched field. Discovery returns at most eight results. All dates UTC."
+        "description": "Indexed search, current ACL and visibility checks before ranking and pagination. Query supports words, quoted phrases, and -excluded terms in the matched field. Discovery returns at most eight results. All dates UTC. Threads without published posts are excluded. PostgreSQL search statements have a transaction-local timeout; a cancelled search returns HTTP 503 with Retry-After."
       }
     },
     "/forum/register": {

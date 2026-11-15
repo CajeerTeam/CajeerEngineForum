@@ -74,3 +74,23 @@ $victim=new DatabaseManager($cfg);$victimPdo=$victim->connection();$pid=(int)$vi
 $reader->query('SELECT pg_terminate_backend('.$pid.')')->fetchColumn();usleep(100000);
 try{$victim->transaction(fn(PDO $c)=>$c->query('SELECT 1')->fetchColumn());throw new LogicException('expected disconnected backend');}catch(\CajeerEngine\Database\DatabaseUnavailable $e){verify(true,'native PostgreSQL connection loss mapped to unavailable');}
 verify((int)$victim->connection()->query('SELECT 1')->fetchColumn()===1,'next independent database operation reconnects');
+
+// Search time budget is transaction-local. A cancelled SELECT rolls back cleanly
+// and neither poisons the next request nor overrides a stricter DBA setting.
+$budget=\CajeerEngine\Forum\Service\ForumSearchBudget::class;
+$original=$p->query('SHOW statement_timeout')->fetchColumn();putenv('FORUM_SEARCH_TIMEOUT_MS=100');
+try{$budget::run($db,fn()=> $p->query('SELECT pg_sleep(0.5)')->fetchColumn());throw new LogicException('expected search timeout');}
+catch(\CajeerEngine\Forum\ForumException $e){verify($e->status===503,'PostgreSQL search cancellation is a retryable 503');}
+verify(!$p->inTransaction()&&$p->query('SHOW statement_timeout')->fetchColumn()===$original&&(int)$p->query('SELECT 1')->fetchColumn()===1,'search budget rolls back without poisoning connection');
+$p->exec("SET statement_timeout='50ms'");
+verify($budget::run($db,fn()=> $p->query('SHOW statement_timeout')->fetchColumn())==='50ms','search respects stricter DBA budget');
+$p->exec('RESET statement_timeout');putenv('FORUM_SEARCH_TIMEOUT_MS');
+
+$maintenance=new \CajeerEngine\Forum\Service\ForumSearchMaintenance($db);
+verify($maintenance->check()['ok'],'native search diagnostics identify valid expression indexes');
+$db->transaction(function(PDO $pdo)use($maintenance){
+    $pdo->exec('ALTER INDEX ce_forum_fts_threads RENAME TO ce_forum_fts_threads_original');
+    $pdo->exec("CREATE INDEX ce_forum_fts_threads ON ce_forum_posts USING gin (to_tsvector('simple'::regconfig,body))");
+    verify(!$maintenance->check()['indexes']['thread']['ok'],'diagnostics reject a GIN index on the wrong source table');
+    $pdo->exec('DROP INDEX ce_forum_fts_threads');$pdo->exec('ALTER INDEX ce_forum_fts_threads_original RENAME TO ce_forum_fts_threads');
+});

@@ -1,3 +1,12 @@
+## 0.7.0 — Search, SEO & Performance Stable
+
+- Search and discovery exclude threads without a published post, before count/ranking; PostgreSQL quoted phrases verify literal tokens against a non-positional candidate query.
+- Request-scoped SEO policy shares the forum database connection and cache identity; honor robots follow policy and isolate numbered/cursor HTML variants in Redis.
+- PostgreSQL search has a configurable transaction-local statement timeout, respecting stricter DBA settings; cancellation yields a retryable 503 without replay.
+- Release acceptance uses an authentic 0.6.6 baseline and verifies search/SSR/sitemap after installation, upgrade and rollback. PostgreSQL 17/18 CI includes real Redis lifecycle tests.
+- Search index diagnostics use a coherent SQLite integrity snapshot and validate PostgreSQL index ownership and MySQL FULLTEXT column order.
+- No schema migration beyond 0043; preserve the 1.3.0 engine identity and API compatibility.
+
 ## 0.6.6 — High Load & Reliability
 
 - Shared PostgreSQL publication board locks retain exclusive topology/ACL changes; sequence allocation uses UPDATE RETURNING.

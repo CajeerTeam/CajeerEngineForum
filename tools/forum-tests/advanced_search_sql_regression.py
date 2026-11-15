@@ -52,7 +52,7 @@ db.execute("INSERT INTO ce_forum_member_relations(user_id,target_id,kind) VALUES
 assert not search('database',viewer=viewer)
 db.execute('UPDATE ce_forum_posts SET deleted_at=1 WHERE id=?',(answer,));assert not search('',question='solved');assert set(ids(search('',question='unanswered')))=={q,solved}
 # Pagination and stable count, including hidden boards.
-for i in range(30):thread('Pagination marker '+str(i))
+for i in range(30):post(thread('Pagination marker '+str(i)),'Published')
 assert len(search('pagination'))==25 and len(search('pagination',offset=25))==5
 assert search('pagination',offset=25)[0]['total_results']==30
 assert not db.execute('PRAGMA foreign_key_check').fetchall()

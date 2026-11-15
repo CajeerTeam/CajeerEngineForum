@@ -1,5 +1,5 @@
 <?php
-/** Real Redis, PHP extension, SQLite migrations, Symfony HTTP and independent worker connections. */
+/** Real Redis + SQLite/PostgreSQL, Symfony HTTP and independent worker connections. */
 declare(strict_types=1);
 use CajeerEngine\Cache\RedisConnection;
 use CajeerEngine\Database\{DatabaseManager,MigrationRunner};
@@ -10,12 +10,16 @@ use CajeerEngine\Runtime\ConfigRepository;
 use CajeerEngine\Security\{PasswordHasher,RateLimiter};
 use Symfony\Component\HttpFoundation\Request;
 $root=dirname(__DIR__);require $root.'/vendor/autoload.php';
+$driver=getenv('FORUM_TEST_DRIVER')==='pgsql'?'pgsql':'sqlite';
+if($driver==='pgsql'&&(getenv('DB_DATABASE')!=='forum_test_redis'||getenv('DB_HOST')!=='127.0.0.1'))throw new RuntimeException('Expected disposable loopback forum_test_redis');
 $tmp=sys_get_temp_dir().'/forum-redis-'.bin2hex(random_bytes(6));mkdir($tmp,0700);$ns='test-'.bin2hex(random_bytes(8));$queuePrefix='ce:test:'.$ns.':';
 function check(bool $ok,string $label):void{if(!$ok)throw new RuntimeException($label);echo "PASS $label\n";}
-foreach(['APP_ENV=testing','APP_URL=https://forum.test','APP_NAME=Forum Redis Test','FORUM_SEO_INDEX=true','FORUM_SEO_EXCLUDED_BOARDS=','DB_DRIVER=sqlite','SQLITE_DATABASE='.$tmp.'/forum.sqlite','DB_SQLITE_WAL=true','CACHE_DRIVER=file','STORAGE_DRIVER=local','CONTENT_STORAGE=database','CMS_STORAGE=database','QUEUE_DRIVER=redis','QUEUE_REDIS_PREFIX='.$queuePrefix,'FORUM_REDIS_NAMESPACE='.$ns,'FORUM_CACHE_ENABLED=true','FORUM_CACHE_TTL_SECONDS=60','RATE_LIMIT_DRIVER=file','RATE_LIMIT_GLOBAL=10000','RATE_LIMIT_AUTH=10000','FORUM_REGISTRATION=true','FORUM_REQUIRE_EMAIL_VERIFICATION=false','PASSWORD_ARGON2_MEMORY=8192','PASSWORD_ARGON2_TIME=2','FORUM_MEDIA_S3_REPLICA=false'] as $v)putenv($v);
+foreach(['APP_ENV=testing','APP_URL=https://forum.test','APP_NAME=Forum Redis Test','FORUM_SEO_INDEX=true','FORUM_SEO_EXCLUDED_BOARDS=','DB_DRIVER='.$driver,'SQLITE_DATABASE='.$tmp.'/forum.sqlite','DB_SQLITE_WAL=true','CACHE_DRIVER=file','STORAGE_DRIVER=local','CONTENT_STORAGE=database','CMS_STORAGE=database','QUEUE_DRIVER=redis','QUEUE_REDIS_PREFIX='.$queuePrefix,'FORUM_REDIS_NAMESPACE='.$ns,'FORUM_CACHE_ENABLED=true','FORUM_CACHE_TTL_SECONDS=60','RATE_LIMIT_DRIVER=file','RATE_LIMIT_GLOBAL=10000','RATE_LIMIT_AUTH=10000','FORUM_REGISTRATION=true','FORUM_REQUIRE_EMAIL_VERIFICATION=false','PASSWORD_ARGON2_MEMORY=8192','PASSWORD_ARGON2_TIME=2','FORUM_MEDIA_S3_REPLICA=false'] as $v)putenv($v);
 $r=RedisConnection::open();$prefix=RedisConnection::namespace();
 try{
-    $cfg=new ConfigRepository($root);$db=new DatabaseManager($cfg);(new MigrationRunner($db->connection(),$root.'/migrations'))->run('sqlite');
+    $cfg=new ConfigRepository($root);$db=new DatabaseManager($cfg);
+    if($driver==='pgsql'&&$db->tableExists('ce_users'))throw new RuntimeException('Expected empty forum_test_redis');
+    (new MigrationRunner($db->connection(),$root.'/migrations'))->run($driver);
     $roles=new RoleRepository($db);$roles->seedDefaults();(new UserRepository($db,$roles,new PasswordHasher($cfg)))->createAdmin('admin@example.test','Admin','AdminPass12345');
     $app=Application::boot($root);$second=Application::boot($root);
     $http=function(string $method,string $path,?array $data=null,?string $token=null,?Application $server=null)use($app){$headers=['CONTENT_TYPE'=>'application/json','REMOTE_ADDR'=>'127.0.0.1'];if($token)$headers['HTTP_AUTHORIZATION']='Bearer '.$token;return ($server??$app)->handle(Request::create('https://forum.test'.$path,$method,[],[],[],$headers,$data===null?null:json_encode($data,JSON_THROW_ON_ERROR)));};
@@ -26,12 +30,24 @@ try{
     $login=fn($email,$password)=>$api('POST','/auth/login',['email'=>$email,'password'=>$password],null,201)['access_token'];
     $m=$login('member@example.test','MemberPass12345');$o=$login('other@example.test','OtherPass12345');$a=$login('admin@example.test','AdminPass12345');
     $t=$api('POST',"/forum/boards/$board/threads",['title'=>'Redis test','body'=>'Original marker'],$m,201)['id'];
-    $path='/forum/threads/'.$t;$first=$http('GET',$path);$hit=$http('GET',$path,null,null,$second);
+    $path='/forum/threads/'.$t;
+    $publicSearch=fn()=>array_column($api('GET','/forum/search?q=Redis'),'id');
+    $sitemap=fn()=>(string)$http('GET','/forum/sitemap.xml?page=1')->getContent();
+    $rss=fn()=>(string)$http('GET','/forum/rss.xml')->getContent();
+    check(in_array($t,$publicSearch(),true)&&str_contains($sitemap(),$t)&&str_contains($rss(),$t),'public search, sitemap and RSS agree');
+    $first=$http('GET',$path);$hit=$http('GET',$path,null,null,$second);
     check($first->headers->get('X-Forum-Cache')==='MISS'&&$hit->headers->get('X-Forum-Cache')==='HIT'&&$first->getContent()===$hit->getContent(),'SSR Redis hit shared by independent application instances');
     $first=$http('GET','/api/v1'.$path);$hit=$http('GET','/api/v1'.$path,null,null,$second);check($first->headers->get('X-Forum-Cache')==='MISS'&&$hit->headers->get('X-Forum-Cache')==='HIT'&&$first->getContent()===$hit->getContent(),'API shared cache preserves JSON bytes');
+    $cursor=$http('GET','/forum/latest');$numbered=$http('GET','/forum/latest?page=1');
+    check($cursor->headers->get('X-Forum-Cache')==='MISS'&&$numbered->headers->get('X-Forum-Cache')==='MISS'&&str_contains((string)$cursor->getContent(),'aria-label="Навигация"')&&str_contains((string)$numbered->getContent(),'aria-label="Страницы"'),'numbered and cursor HTML have distinct cache keys');
+    check($http('GET','/forum/latest',null,null,$second)->getContent()===$cursor->getContent()&&$http('GET','/forum/latest?page=1',null,null,$second)->getContent()===$numbered->getContent(),'cache hits retain each pagination representation');
+    putenv('FORUM_SEO_INDEX=false');$noindex=$http('GET',$path,null,null,$second);
+    check($noindex->headers->get('X-Forum-Cache')==='MISS'&&str_contains((string)$noindex->headers->get('X-Robots-Tag'),'noindex')&&$http('GET','/forum/sitemap.xml')->getStatusCode()===404,'global SEO change invalidates HTML representation without changing content');
+    putenv('FORUM_SEO_INDEX=true');
     check($http('GET',$path,null,$m)->headers->get('X-Forum-Cache')===null,'authenticated HTML bypasses cache');
     $post=$api('GET',$path)['posts'][0]['id'];$api('PATCH','/forum/posts/'.$post,['body'=>'Edited marker'],$m);
     $edited=$http('GET',$path,null,null,$second);check($edited->headers->get('X-Forum-Cache')==='MISS'&&str_contains((string)$edited->getContent(),'Edited marker')&&!str_contains((string)$edited->getContent(),'Original marker'),'edit invalidates cross-instance cache');
+    check($api('GET','/forum/search?q=Original&mode=posts')===[]&&$api('GET','/forum/search?q=Edited&mode=posts')[0]['post_id']===$post,'edit synchronizes search with warm SSR');
     $api('POST',$path.'/posts',['body'=>'Reply marker'],$o,201);
     $before=$api('GET','/forum/notifications?count_only=1',null,$m);$api('GET','/forum/notifications?count_only=1',null,$m,200,$second);
     check((int)$r->hGet($prefix.'stats','counter_hit')>=1,'private counter shared cache hit');
@@ -43,7 +59,13 @@ try{
     $api('PUT',"/forum/boards/$board/permissions",['visibility'=>'private','rules'=>[],'revision'=>$acl['revision']],$a);
     $hidden=$http('GET',$path,null,null,$second);check($hidden->getStatusCode()===404&&!str_contains((string)$hidden->getContent(),'Edited marker'),'ACL revocation cannot leak through warm cache');
     check($http('GET',$path,null,$a)->getStatusCode()===200,'authorized administrator still reads private thread');
+    check(!in_array($t,$publicSearch(),true)&&!str_contains($sitemap(),$t)&&!str_contains($rss(),$t)&&$api('GET','/forum/search?q=Redis&discover=suggest')===[],'revoked ACL excludes search, discovery, sitemap and RSS');
     $acl=$api('GET',"/forum/boards/$board/permissions",null,$a);$api('PUT',"/forum/boards/$board/permissions",['visibility'=>'public','rules'=>[],'revision'=>$acl['revision']],$a);
+    check(in_array($t,$publicSearch(),true)&&str_contains($sitemap(),$t)&&$http('GET',$path)->getStatusCode()===200,'restored ACL reopens all public surfaces');
+    $http('GET',$path);$deletion=$api('POST','/forum/recycle-bin/thread/'.$t,['action'=>'delete','reason'=>'Stable lifecycle test'],$a)['deletion_id'];
+    check($http('GET',$path,null,null,$second)->getStatusCode()===404&&!in_array($t,$publicSearch(),true)&&!str_contains($sitemap(),$t)&&!str_contains($rss(),$t),'soft delete excludes warm HTML, search and feeds');
+    $api('POST','/forum/recycle-bin/thread/'.$t,['action'=>'restore','deletion_id'=>$deletion],$a);
+    check($http('GET',$path,null,null,$second)->getStatusCode()===200&&in_array($t,$publicSearch(),true)&&str_contains($sitemap(),$t),'restored discussion returns across public surfaces');
     putenv('RATE_LIMIT_DRIVER=redis');$l1=new RateLimiter($tmp);$l2=new RateLimiter($tmp);check($l1->hit('test','peer',2,60)['allowed']&&$l2->hit('test','peer',2,60)['allowed']&&!$l1->hit('test','peer',2,60)['allowed'],'Redis rate budget shared across connections');putenv('RATE_LIMIT_DRIVER=file');
     // Simulate loss of Redis connectivity without touching the CI service.
     $http('GET',$path);$http('GET',$path);

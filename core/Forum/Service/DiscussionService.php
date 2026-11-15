@@ -14,6 +14,8 @@ final readonly class DiscussionService
 {
     public function __construct(private DatabaseManager $db, private ForumTransaction $tx, private BoardRepository $boards, private ThreadRepository $threads, private PostRepository $posts, private MemberRepository $members) {}
 
+    public function seoSettings(string $root): \CajeerEngine\Forum\ForumSeoSettings { return new \CajeerEngine\Forum\ForumSeoSettings($root,$this->db,true); }
+
     private function access(?ForumAccessPolicy $actor): array { return $this->tx->permissions()->access($actor??new ForumAccessPolicy('',[])); }
     private function decorated(array $board,array $access): array { $board['permissions']=$access['boards'][$board['id']]; return $board; }
     public function antiSpam(): AntiSpamService {return $this->tx->antiSpam();}
@@ -169,7 +171,7 @@ final readonly class DiscussionService
             return $result;
         });
     }
-    public function search(string $term,int $offset,?ForumAccessPolicy $actor=null,?string $tag=null,string $mode='threads',array $options=[]): array { return $this->db->readSnapshot(fn()=> $this->tx->readState()->decorateThreads($this->threads->search($term,$offset,NodePermissionService::allowed($this->access($actor)),$tag,$mode,['viewer'=>$actor?->userId??'']+$options),$actor?->userId??'')); }
+    public function search(string $term,int $offset,?ForumAccessPolicy $actor=null,?string $tag=null,string $mode='threads',array $options=[]): array { return ForumSearchBudget::run($this->db,fn()=> $this->tx->readState()->decorateThreads($this->threads->search($term,$offset,NodePermissionService::allowed($this->access($actor)),$tag,$mode,['viewer'=>$actor?->userId??'']+$options),$actor?->userId??'')); }
     public function latestCursor(?array $cursor,?ForumAccessPolicy $actor=null): array
     {
         return $this->db->readSnapshot(function()use($cursor,$actor){

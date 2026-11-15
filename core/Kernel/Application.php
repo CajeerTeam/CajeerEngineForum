@@ -350,7 +350,7 @@ final class Application
             $c->get(PublicPageRenderer::class),
             $c->get(RedirectRepository::class),
             $c->get(PreviewTokenService::class),
-            new \CajeerEngine\Forum\ForumSeoSettings($rootPath),
+            new \CajeerEngine\Forum\ForumSeoSettings($rootPath,$c->get(DatabaseManager::class)),
         ));
         $container->set('controller.cms', fn (ServiceContainer $c): CmsController => new CmsController(
             $c->get(ThemeConfigRepository::class),

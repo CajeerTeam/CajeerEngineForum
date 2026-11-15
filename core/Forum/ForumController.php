@@ -14,7 +14,8 @@ final readonly class ForumController
 
     public function page(Request $request, array $parameters=[]): Response
     {
-        return $this->cached($request,'page',fn()=> (new ForumPageRenderer($this->discussions,$this->root))->render($request,$this->reader($request)));
+        $settings=$this->discussions->seoSettings($this->root);
+        return $this->cached($request,'page',fn()=> (new ForumPageRenderer($this->discussions,$this->root,$settings))->render($request,$this->reader($request)),$settings);
     }
     public function sitemap(Request $request, array $parameters=[]): Response
     {
@@ -24,14 +25,14 @@ final readonly class ForumController
     {
         return (new ForumPageRenderer($this->discussions,$this->root))->rss();
     }
-    private function cached(Request $request,string $view,callable $load): Response
-    { return $this->cache===null?$load():$this->cache->response($request,$view,$load); }
+    private function cached(Request $request,string $view,callable $load,?ForumSeoSettings $settings=null): Response
+    { return $this->cache===null?$load():$this->cache->response($request,$view,$load,$settings); }
     private function cachedJson(Request $request,string $view,callable $load): JsonResponse
     { $response=$this->cached($request,$view,$load);if(!$response instanceof JsonResponse)throw new \LogicException('Expected JSON response');return $response; }
     private function respond(callable $operation, int $status = 200): JsonResponse
     {
         try { return new JsonResponse(['data'=>$operation()],$status,['Cache-Control'=>'private, no-store','Vary'=>'Cookie, Authorization, X-API-Token']); }
-        catch (ForumException $e) { return new JsonResponse(['error'=>['code'=>'forum_error','message'=>$e->getMessage()]],$e->status,['Cache-Control'=>'private, no-store','Vary'=>'Cookie, Authorization, X-API-Token']); }
+        catch (ForumException $e) { return new JsonResponse(['error'=>['code'=>'forum_error','message'=>$e->getMessage()]],$e->status,['Cache-Control'=>'private, no-store','Vary'=>'Cookie, Authorization, X-API-Token']+($e->status===503?['Retry-After'=>'3']:[])); }
     }
     private function field(Request $r, string $key): mixed
     {

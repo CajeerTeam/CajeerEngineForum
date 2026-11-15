@@ -17,21 +17,32 @@ final readonly class ForumSearchMaintenance
 
     public function check(): array
     {
-        $pdo=$this->db->connection();$driver=$this->db->driver();$checks=[];
+        $driver=$this->db->driver();
+        // FTS5 integrity-check is a special write. Keep it and source parity
+        // checks in one transaction so concurrent publications cannot create false alarms.
+        $check=fn(\PDO $pdo)=>$this->checkIndexes($pdo,$driver);
+        return $driver==='sqlite'?$this->db->transaction($check):$this->db->readSnapshot($check);
+    }
+
+    private function checkIndexes(\PDO $pdo,string $driver): array
+    {
+        $checks=[];
         foreach (self::SOURCES as $kind=>[$table,$index,$id,$columns]) {
             if ($driver==='sqlite') {
                 $pdo->exec("INSERT INTO $index($index) VALUES('integrity-check')");
                 $join="k.kind='$kind' AND k.source_id=s.$id".($kind==='tag'?' AND k.tag=s.tag':'');
-                $differences=implode(' OR ',array_map(static fn($c)=>"f.$c<>s.$c",explode(',',$columns)));
+                $differences=implode(' OR ',array_map(static fn($c)=>"f.$c IS NOT s.$c",explode(',',$columns)));
                 $missing=(int)$pdo->query("SELECT COUNT(*) FROM $table s LEFT JOIN ce_forum_fts_keys k ON $join LEFT JOIN $index f ON f.rowid=k.id WHERE f.rowid IS NULL OR $differences")->fetchColumn();
                 $extra=(int)$pdo->query("SELECT COUNT(*) FROM $index f LEFT JOIN ce_forum_fts_keys k ON k.id=f.rowid LEFT JOIN $table s ON $join WHERE s.$id IS NULL")->fetchColumn();
                 $keys=(int)$pdo->query("SELECT COUNT(*) FROM ce_forum_fts_keys WHERE kind='$kind'")->fetchColumn();
                 $rows=(int)$pdo->query("SELECT COUNT(*) FROM $table")->fetchColumn();
                 $checks[$kind]=['ok'=>$missing===0&&$extra===0&&$keys===$rows,'missing_or_stale'=>$missing,'extra'=>$extra,'source_rows'=>$rows,'keys'=>$keys];
             } elseif ($driver==='pgsql') {
-                $q=$pdo->prepare('SELECT COUNT(*) FROM pg_index i JOIN pg_class c ON c.oid=i.indexrelid JOIN pg_am a ON a.oid=c.relam WHERE c.oid=to_regclass(?) AND i.indisvalid AND i.indisready AND a.am=\'gin\'');$q->execute([$index]);$checks[$kind]=['ok'=>(int)$q->fetchColumn()===1];
+                $q=$pdo->prepare("SELECT pg_get_indexdef(i.indexrelid) FROM pg_index i JOIN pg_class c ON c.oid=i.indexrelid JOIN pg_am a ON a.oid=c.relam WHERE c.oid=to_regclass(?) AND i.indrelid=to_regclass(?) AND i.indisvalid AND i.indisready AND i.indislive AND i.indpred IS NULL AND i.indexprs IS NOT NULL AND i.indnkeyatts=1 AND a.am='gin'");
+                $q->execute([$index,$table]);$definition=$q->fetchColumn();$checks[$kind]=['ok'=>is_string($definition),'definition'=>$definition===false?null:$definition];
             } else {
-                $q=$pdo->prepare("SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema=DATABASE() AND table_name=? AND index_name=? AND index_type='FULLTEXT'");$q->execute([$table,$index]);$checks[$kind]=['ok'=>(int)$q->fetchColumn()===count(explode(',',$columns))];
+                $q=$pdo->prepare("SELECT column_name FROM information_schema.statistics WHERE table_schema=DATABASE() AND table_name=? AND index_name=? AND index_type='FULLTEXT' ORDER BY seq_in_index");
+                $q->execute([$table,$index]);$actual=$q->fetchAll(\PDO::FETCH_COLUMN);$checks[$kind]=['ok'=>$actual===explode(',',$columns),'columns'=>$actual];
             }
         }
         return ['ok'=>!in_array(false,array_column($checks,'ok'),true),'driver'=>$driver,'indexes'=>$checks];

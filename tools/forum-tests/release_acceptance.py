@@ -140,6 +140,31 @@ def verify_data(base, state):
     c.login(ADMIN, ADMIN_PASSWORD)
 
 
+def verify_search_seo(base, state, fixture):
+    """Read-only cross-surface check on the actual installed artifact, including rollback."""
+    c=Client(base); _, thread, post, _=state
+    path='/forum/threads/'+thread
+    found=c.call('GET','/forum/search?q=Original%20content&mode=posts')
+    require(any(r['post_id']==post and r['id']==thread and r['post_page']==1 for r in found),'Public post not discoverable after release transition')
+    require(c.call('GET','/forum/search?q=ReleasePrivateMarker')==[],'Private text leaked into search')
+    private=c.call('GET','/forum/search?q=ReleasePrivateMarker',token=fixture['token'])
+    require(fixture['target'] in [r['id'] for r in private],'Authorized private search lost after transition')
+    def page(url,status=200):
+        try: response=c.opener.open(base+url,timeout=15)
+        except urllib.error.HTTPError as e: response=e
+        with response:
+            require(response.status==status,f'{url}: unexpected HTTP {response.status}')
+            return response.read().decode(),response.headers
+    html,headers=page(path)
+    require('Original content' in html and 'rel="canonical" href="'+base+path+'"' in html and 'index, follow' in headers.get('X-Robots-Tag',''),'SSR or canonical mismatch after release transition')
+    hidden,_=page('/forum/threads/'+fixture['target'],404)
+    require('ReleasePrivateMarker' not in hidden,'Private SSR leaked')
+    sitemap,_=page('/forum/sitemap.xml?page=1')
+    require(thread in sitemap and fixture['target'] not in sitemap and fixture['source'] not in sitemap,'Sitemap visibility or redirect mismatch')
+    robots,_=page('/robots.txt');require(base+'/forum/sitemap.xml' in robots,'Forum sitemap discovery missing')
+    print('PASS physical dist search/SSR/canonical/sitemap/ACL after release transition',flush=True)
+
+
 def verify_rich_content(base,state):
     token,thread,post,_=state;c=Client(base);path='/forum/threads/'+thread
     original=c.call('GET',path)['posts'][0]
@@ -674,7 +699,7 @@ def verify_community_live(base,f):
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--artifact',type=Path,required=True)
-    parser.add_argument('--previous',type=Path,help='Original 0.5.5, 0.5.6 or 0.6.0 dist; enables real signed upgrade and rollback')
+    parser.add_argument('--previous',type=Path,help='Original 0.6.6 dist (or supported historical baseline); enables real signed upgrade and rollback')
     parser.add_argument('--driver',choices=('sqlite','pgsql'),default='sqlite')
     parser.add_argument('--report',type=Path,required=True)
     args=parser.parse_args(); report=args.report.resolve(); report.mkdir(parents=True,exist_ok=True)
@@ -686,12 +711,13 @@ def main():
         initial=current
         if previous:
             with zipfile.ZipFile(previous) as z: initial=json.loads(z.read('cajeerengine/release.json'))['edition_version']
-            require(initial in ('0.5.5','0.5.6','0.6.0','0.6.1','0.6.2','0.6.3','0.6.4'),'Unsupported authentic baseline')
+            require(initial in ('0.5.5','0.5.6','0.6.0','0.6.1','0.6.2','0.6.3','0.6.4','0.6.5','0.6.6'),'Unsupported authentic baseline')
         site=unpack(previous or artifact,work/'live',initial)
         install(site,env,report,'initial',port,args.driver)
         with http(site,env,report,'initial',port,initial) as base:
             state=seed(base); verify_data(base,state)
             fixture=seed_structure(base,state); verify_structure(base,fixture)
+            if tuple(map(int,initial.split("."))) >= (0,6,3): verify_search_seo(base,state,fixture)
             media=seed_media(base,fixture)
             content=seed_content(base,state,fixture)
             # Seed community last: its pending notifications/digests are part of the snapshot.
@@ -734,7 +760,7 @@ def main():
             require(update['state']=='committed' and version(site)==current,'Update not committed')
             with http(site,env,report,'updated',port,current) as base:
                 verify_content(base,state,fixture,content)
-                verify_data(base,state); verify_structure(base,fixture); verify_community(base,community); verify_community_live(base,community); verify_groups(base,state); verify_discussions(base,state); verify_navigation(base,state); verify_identity(site,env,report,base)
+                verify_data(base,state); verify_structure(base,fixture); verify_search_seo(base,state,fixture); verify_community(base,community); verify_community_live(base,community); verify_groups(base,state); verify_discussions(base,state); verify_navigation(base,state); verify_identity(site,env,report,base)
                 verify_data_integrity(site,env,report,fixture)
                 verify_profiles(base,fixture)
                 verify_read_tracking(base,state)
@@ -755,6 +781,7 @@ def main():
             require(version(site)==initial,'Rollback did not restore release')
             with http(site,env,report,'rollback',port,initial) as base:
                 verify_data(base,state); verify_structure(base,fixture); verify_community(base,community); verify_media(base,state,fixture,media,False); verify_content(base,state,fixture,content)
+                if tuple(map(int,initial.split("."))) >= (0,6,3): verify_search_seo(base,state,fixture)
             # Inject actual failing SQL into a separately built, correctly signed target.
             broken=unpack(artifact,work/'broken',current)
             (broken/'migrations'/args.driver/'9999_acceptance_failure.sql').write_text('CREATE TABLE ce_acceptance_failure(id INTEGER); THIS IS INVALID SQL;\n')
@@ -766,6 +793,7 @@ def main():
             require(failed['state']=='rolled_back' and version(site)==initial and not (site/'storage/app/updates/active.json').exists(), 'Automatic rollback failed')
             with http(site,env,report,'failed-rollback',port,initial) as base:
                 verify_data(base,state); verify_structure(base,fixture); verify_community(base,community); verify_media(base,state,fixture,media,False); verify_content(base,state,fixture,content)
+                if tuple(map(int,initial.split("."))) >= (0,6,3): verify_search_seo(base,state,fixture)
         print('PASS physical dist acceptance',flush=True)
 
 

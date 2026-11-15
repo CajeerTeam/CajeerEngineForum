@@ -41,5 +41,10 @@ verify($search('telescopes','posts')===[]&&$search('replacement','posts')[0]['po
 $insert('UPDATE ce_forum_posts SET deleted_at=1 WHERE id=?',[$p]);verify($search('replacement','posts')===[],'soft delete');
 $insert('UPDATE ce_forum_posts SET deleted_at=NULL WHERE id=?',[$p]);verify($search('replacement','posts')[0]['post_id']===$p,'restore');
 $maintenance=new ForumSearchMaintenance($db);verify($maintenance->check()['ok'],'native index diagnostic');
+$pdo->exec('ALTER TABLE ce_forum_threads DROP INDEX ce_forum_fts_threads');
+$pdo->exec('ALTER TABLE ce_forum_threads ADD FULLTEXT INDEX ce_forum_fts_threads(prefix,title)');
+verify(!$maintenance->check()['indexes']['thread']['ok'],'diagnostic rejects incorrect FULLTEXT column order');
+$pdo->exec('ALTER TABLE ce_forum_threads DROP INDEX ce_forum_fts_threads');
+$pdo->exec('ALTER TABLE ce_forum_threads ADD FULLTEXT INDEX ce_forum_fts_threads(title,prefix)');
 verify($maintenance->rebuild()['ok'],'native rebuild');verify($search('replacement','posts')[0]['post_id']===$p,'search after rebuild');
 $insert('DELETE FROM ce_forum_threads WHERE id=?',[$a]);verify($search('replacement','posts')===[],'cascade purge');

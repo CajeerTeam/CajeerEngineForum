@@ -117,6 +117,13 @@ try {
     check($maintenance->check()['ok'],'forum search index diagnostics');
     check($maintenance->rebuild()['ok'],'forum search reindex');
     check($call('GET','/forum/search?q=searchmarker&mode=posts')[0]['post_id']===$post,'search after reindex');
+    // A damaged/imported thread without live posts must not surface through title/tag discovery.
+    $orphan=\CajeerEngine\Support\Uuid::v4();$db->connection()->prepare('INSERT INTO ce_forum_threads(id,board_id,author_id,title) VALUES(?,?,?,?)')->execute([$orphan,$board,$member,'Orphanmarker title']);
+    $db->connection()->prepare('INSERT INTO ce_forum_thread_tags(thread_id,tag) VALUES(?,?)')->execute([$orphan,'orphanmarker']);
+    check($advanced(['q'=>'Orphanmarker'])===[]&&$advanced(['tag'=>'orphanmarker'])===[]&&$advanced(['q'=>'Orphanmarker','discover'=>'suggest'])===[],'empty thread is absent from search and discovery');
+    check($htmlRequest('/forum/threads/'.$orphan)->getStatusCode()===404&&!str_contains((string)$htmlRequest('/forum/sitemap.xml?page=1')->getContent(),$orphan),'empty thread absent from SSR and sitemap');
+    $db->connection()->prepare('DELETE FROM ce_forum_threads WHERE id=?')->execute([$orphan]);
+
     $call('PUT',"/forum/posts/$post/reaction",['enabled'=>'true'],$o,422);
     $call('PUT',"/forum/posts/$post/reaction",['enabled'=>true],$o);$call('PUT',"/forum/posts/$post/reaction",['enabled'=>true],$o);
     check((int)$call('GET',"/forum/threads/$t")['posts'][0]['likes']===1,'reaction idempotency');
@@ -148,6 +155,6 @@ try {
     putenv('FORUM_REGISTRATION=false');
     $call('POST','/forum/register',['name'=>'Closed','email'=>'closed@example.test','password'=>'MemberPass12345'],null,403);
     check(str_contains((string)$app->handle(Request::create('https://forum.test/'))->getContent(),'data-registration="false"'),'closed registration UI');
-    check($app->handle(Request::create('https://forum.test/'))->headers->get('X-CajeerEngine-Forum-Version')==='0.6.6','forum version header');
+    check($app->handle(Request::create('https://forum.test/'))->headers->get('X-CajeerEngine-Forum-Version')==='0.7.0','forum version header');
     echo "Forum integration passed\n";
 } finally {foreach(glob($tmp.'/*')?:[] as $f)unlink($f);rmdir($tmp);}

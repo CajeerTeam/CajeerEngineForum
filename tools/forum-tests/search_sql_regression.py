@@ -17,6 +17,7 @@ with tempfile.TemporaryDirectory() as tmp:
     def post(t,body,n):
         p=uid();db.execute('INSERT INTO ce_forum_posts(id,thread_id,body,ordinal,read_sequence) VALUES(?,?,?,?,?)',(p,t,body,n,n));return p
     a=thread('Astronomy guide');b=thread('Other title');c=thread('Astronomy private',private);d=thread('Tags only')
+    post(a,'Initial discussion',1);post(d,'Initial tagged discussion',1)
     p=post(b,'Astronomy telescopes <script>literal</script>',1);q=post(b,'Astronomy observations',2);post(c,'Astronomy secrets',1)
     db.execute('INSERT INTO ce_forum_thread_tags(thread_id,tag) VALUES(?,?)',(d,'astronomy'))
     db.commit();db.executescript(fts.read_text())

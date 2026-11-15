@@ -58,7 +58,7 @@ final class ForumSearchQuery
             foreach ($indexed as $x) {
                 $lang=preg_match('/\\p{Cyrillic}/u',$x['text'])?'russian':'english';
                 if ($x['phrase']) {
-                    $piece="phraseto_tsquery('$lang'::regconfig,?)";$cteParams[]=$x['text'];
+                    $piece="plainto_tsquery('$lang'::regconfig,?)";$cteParams[]=$x['text'];
                 } elseif ($discover==='suggest') {
                     // Only tokenized letters/numbers enter to_tsquery; the prefix operator is server-owned.
                     $piece="(to_tsquery('$lang'::regconfig,?) || to_tsquery('simple'::regconfig,?))";array_push($cteParams,$x['text'].':*',$x['text'].':*');
@@ -85,7 +85,9 @@ final class ForumSearchQuery
             $scope=' JOIN ce_forum_live_threads t ON t.id='.$id;
             $author=$kind==='post'?'s.author_id':'t.author_id';
             $date=$mode==='posts'?'s.created_at':'t.created_at';
-            $where=$acl.($kind==='post'?' AND s.deleted_at IS NULL':'');$filters=[];
+            // Title/tag/filter-only hits must describe an actually readable publication,
+            // just like sitemap and SSR. Post hits already prove this themselves.
+            $where=$acl.($kind==='post'?' AND s.deleted_at IS NULL':' AND EXISTS (SELECT 1 FROM ce_forum_posts published WHERE published.thread_id=t.id AND published.deleted_at IS NULL)');$filters=[];
             if ($tag!==null) {$where.=' AND EXISTS (SELECT 1 FROM ce_forum_thread_tags g WHERE g.thread_id=t.id AND g.tag=?)';$filters[]=$tag;}
             foreach (['board_id'=>'t.board_id','author_id'=>$mode==='posts'?'s.author_id':'t.author_id','from'=>$date,'to'=>$date] as $key=>$column) {
                 if (!isset($options[$key])) continue;

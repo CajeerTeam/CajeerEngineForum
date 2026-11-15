@@ -23,3 +23,24 @@ $html=$invoke('post',[$p,$id]);check(str_contains($html,'&lt;bad&gt;')&&str_cont
 $schema=$invoke('discussionSchema',[['posts'=>[$p,$p+[]],'thread'=>['title'=>'Topic'],'interaction'=>['kind'=>'question','question'=>['accepted_post_id'=>$id]],'total_posts'=>2],'/forum/threads/'.$id]);check($schema['@type']==='QAPage'&&$schema['mainEntity']['acceptedAnswer']['text']==='Safe <script> text ','Q&A structured data from visible posts');
 $links=$invoke('paging',['/forum/questions',2,true,['status'=>'open']]);check(str_contains($links,'status=open&amp;page=3')&&str_contains($links,'rel="prev"'),'crawlable pagination preserves filter');
 check($invoke('summary',[str_repeat('я',200)])===str_repeat('я',160),'Unicode meta description truncation');
+
+putenv('FORUM_SEO_INDEX=true');$frozen=$settings->forRequest();$first=$frozen->cacheIdentity();putenv('FORUM_SEO_INDEX=false');
+check($frozen->indexEnabled()&&$frozen->cacheIdentity()===$first&&!$settings->forRequest()->indexEnabled(),'SEO snapshot is frozen only within a representation');
+$cache=\CajeerEngine\Forum\Service\ForumRuntimeCache::class;
+check($cache::pageVariant('page','/forum/latest',[])==='cursor'&&$cache::pageVariant('page','/forum/latest/',['page'=>'1'])==='numbered'&&$cache::pageVariant('thread','/api/v1/forum/threads/id',['page'=>'1'])==='default','cache representation variants');
+$budget=\CajeerEngine\Forum\Service\ForumSearchBudget::class;
+putenv('FORUM_SEARCH_TIMEOUT_MS=0');check($budget::milliseconds()===100,'search budget minimum');putenv('FORUM_SEARCH_TIMEOUT_MS=99999');check($budget::milliseconds()===30000,'search budget maximum');putenv('FORUM_SEARCH_TIMEOUT_MS=invalid');check($budget::milliseconds()===3000,'search budget invalid setting uses default');
+$tmp=sys_get_temp_dir().'/ce-seo-policy-'.bin2hex(random_bytes(8));
+mkdir($tmp.'/storage/app/cms',0700,true);
+mkdir($tmp.'/config',0700);
+file_put_contents($tmp.'/config/app.php',"<?php return ['url'=>'https://forum.test'];");
+try {
+    $file=$tmp.'/storage/app/cms/theme-config.json';
+    putenv('FORUM_SEO_INDEX=true');
+    file_put_contents($file,json_encode(['config'=>['robots_index'=>true,'robots_follow'=>false,'sitemap_enabled'=>true]]));
+    $policy=(new ForumSeoSettings($tmp))->forRequest();
+    check($policy->indexEnabled()&&!$policy->followEnabled()&&$policy->sitemapEnabled(),'CMS robots follow policy included in SEO snapshot');
+    file_put_contents($file,json_encode(['config'=>['robots_index'=>true,'robots_follow'=>true,'sitemap_enabled'=>false]]));
+    $fresh=$policy->forRequest();
+    check(!$policy->followEnabled()&&$policy->sitemapEnabled()&&$fresh->followEnabled()&&!$fresh->sitemapEnabled()&&$fresh->cacheIdentity()!==$policy->cacheIdentity(),'changed CMS policy changes cache identity');
+} finally { @unlink($file);@rmdir($tmp.'/storage/app/cms');@rmdir($tmp.'/storage/app');@rmdir($tmp.'/storage');@unlink($tmp.'/config/app.php');@rmdir($tmp.'/config');@rmdir($tmp); }

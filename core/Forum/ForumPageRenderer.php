@@ -12,8 +12,8 @@ use Symfony\Component\HttpFoundation\{Request,Response,RedirectResponse};
 final readonly class ForumPageRenderer
 {
     private ForumSeoSettings $settings;
-    public function __construct(private DiscussionService $discussions,private string $root)
-    { $this->settings=new ForumSeoSettings($root); }
+    public function __construct(private DiscussionService $discussions,private string $root,?ForumSeoSettings $settings=null)
+    { $this->settings=$settings??$discussions->seoSettings($root); }
 
     public function render(Request $request,ForumAccessPolicy $actor): Response
     {
@@ -95,7 +95,8 @@ final readonly class ForumPageRenderer
             $canonical=null;$schema=[];$index=false;$description=$title;
         }
         $index=$index&&$this->settings->indexEnabled()&&$status===200;
-        $meta='<meta name="robots" content="'.($index?'index, follow':'noindex, follow').'">';
+        $robots=($index?'index':'noindex').', '.($guest&&$status===200&&$this->settings->followEnabled()?'follow':'nofollow');
+        $meta='<meta name="robots" content="'.$robots.'">';
         if($index&&$canonical!==null){
             $meta.='<link rel="alternate" type="application/rss+xml" title="RSS форума" href="'.self::e($this->settings->baseUrl().'/forum/rss.xml').'">';
             $url=$this->settings->baseUrl().$canonical;
@@ -111,7 +112,7 @@ final readonly class ForumPageRenderer
             '<!--FORUM_HEADING-->'=>self::e($title),'<!--FORUM_DESCRIPTION-->'=>self::e($description),
             '<meta name="robots" content="noindex, nofollow" data-forum-template>'=>$meta,'<!--FORUM_BODY-->'=>$body,'<!--FORUM_RENDERED-->'=>$canonical!==null||$path==='/forum/latest'||$path==='/forum/questions'?'true':'false','<!--FORUM_SCRIPT-->'=>$status===200?'<script src="/forum-assets/forum.js" defer></script>':'',
         ]);
-        return new Response($html,$status,['Content-Type'=>'text/html; charset=UTF-8','Cache-Control'=>'private, no-store','Vary'=>'Cookie, Authorization, X-API-Token','X-Robots-Tag'=>$index?'index, follow':'noindex, follow']);
+        return new Response($html,$status,['Content-Type'=>'text/html; charset=UTF-8','Cache-Control'=>'private, no-store','Vary'=>'Cookie, Authorization, X-API-Token','X-Robots-Tag'=>$robots]);
     }
 
     public function sitemap(Request $request): Response

@@ -4,27 +4,36 @@ declare(strict_types=1);
 namespace CajeerEngine\Forum;
 
 use CajeerEngine\Cms\ThemeConfigRepository;
+use CajeerEngine\Database\DatabaseManager;
 use CajeerEngine\Public\PublicPath;
 use CajeerEngine\Runtime\ConfigRepository;
 
-/** Use a configured origin, never a request Host or forwarded header. */
-final readonly class ForumSeoSettings
+/** Use a configured origin, never a request Host. Freeze policy per representation,
+ * not for the lifetime of a long-running application/worker. */
+final class ForumSeoSettings
 {
-    public function __construct(private string $root) {}
-    public function baseUrl(): string { return PublicPath::base((new ConfigRepository($this->root))->string('app.url')); }
-    public function indexEnabled(): bool
+    private ?array $policy=null;
+    public function __construct(private readonly string $root,private readonly ?DatabaseManager $db=null,private readonly bool $freeze=false) {}
+    public function forRequest(): self { return new self($this->root,$this->db,true); }
+    private function policy(): array
     {
+        if($this->policy!==null)return $this->policy;
+        $theme=(new ThemeConfigRepository($this->root,$this->db))->get();
         $flag=getenv('FORUM_SEO_INDEX');
-        return ($flag===false || filter_var($flag,FILTER_VALIDATE_BOOLEAN)) && (bool)((new ThemeConfigRepository($this->root))->get()['robots_index']??true);
+        $excluded=array_values(array_unique(array_filter(array_map('trim',explode(',',getenv('FORUM_SEO_EXCLUDED_BOARDS')?:'')),static fn($id)=>preg_match('/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/D',$id))));
+        sort($excluded,SORT_STRING);
+        $data=['base'=>PublicPath::base((new ConfigRepository($this->root))->string('app.url')),
+            'index'=>($flag===false||filter_var($flag,FILTER_VALIDATE_BOOLEAN))&&filter_var($theme['robots_index']??true,FILTER_VALIDATE_BOOLEAN),
+            'follow'=>filter_var($theme['robots_follow']??true,FILTER_VALIDATE_BOOLEAN),'sitemap'=>filter_var($theme['sitemap_enabled']??true,FILTER_VALIDATE_BOOLEAN),'excluded'=>$excluded];
+        if($this->freeze)$this->policy=$data;
+        return $data;
     }
-    public function sitemapEnabled(): bool
-    {
-        return $this->indexEnabled() && (bool)((new ThemeConfigRepository($this->root))->get()['sitemap_enabled']??true);
-    }
-    public function excludedBoards(): array
-    {
-        return array_values(array_filter(array_map('trim',explode(',',getenv('FORUM_SEO_EXCLUDED_BOARDS')?:'')),static fn($id)=>preg_match('/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/D',$id)));
-    }
+    public function baseUrl(): string { return $this->policy()['base']; }
+    public function indexEnabled(): bool { return $this->policy()['index']; }
+    public function followEnabled(): bool { return $this->policy()['follow']; }
+    public function sitemapEnabled(): bool { $p=$this->policy();return $p['index']&&$p['sitemap']; }
+    public function excludedBoards(): array { return $this->policy()['excluded']; }
+    public function cacheIdentity(): array { return $this->policy(); }
     public function permitsPath(array $breadcrumbs): bool
     {
         $excluded=$this->excludedBoards();

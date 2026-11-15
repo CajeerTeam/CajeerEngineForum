@@ -38,7 +38,7 @@ The inherited `/install` and `/upgrade` front controllers are routed through `pu
 
 ## Releases
 
-`VERSION` and `release.json.version` identify the upstream engine (1.3.0); `release.json.edition_version` is 0.6.6. `ForumVersion` validates both identities. Source/dist artifact names, manifest version, release tags and updater comparisons use the edition version. The signed manifest also records `upstream_version`, checked against VERSION, release metadata and the prebuilt admin manifest. The engine API/SDK compatibility version stays unchanged. Health/admin/system diagnostics expose `edition_version`; HTTP responses include `X-CajeerEngine-Forum-Version`.
+`VERSION` and `release.json.version` identify the upstream engine (1.3.0); `release.json.edition_version` is 0.7.0. `ForumVersion` validates both identities. Source/dist artifact names, manifest version, release tags and updater comparisons use the edition version. The signed manifest also records `upstream_version`, checked against VERSION, release metadata and the prebuilt admin manifest. The engine API/SDK compatibility version stays unchanged. Health/admin/system diagnostics expose `edition_version`; HTTP responses include `X-CajeerEngine-Forum-Version`.
 
 The 0.1.0 updater compared upstream engine versions. Apply the 0.1.1 changed-file archive manually to a backed-up test installation before using the new updater. Do not submit the patch ZIP to `update:apply`: it is not a signed full dist. With 0.1.1 installed, later signed releases can advance edition_version without changing upstream. Legacy forum manifests without upstream_version and ordinary CMS packages are refused by the updater. The upstream signed publication workflow is archived, not active; no production signature or deployment certification is claimed.
 
@@ -566,3 +566,13 @@ fall back to SQL; a Redis-backed rate limiter intentionally still fails closed.
 When a database or queue is unavailable, do not use a stale cache as authorization
 and do not restart/retry every job concurrently. Backoff worker restart loops.
 Redis queue processing remains at-least-once, including SMTP uncertainty.
+
+### Search, SEO & Performance Stable (0.7.0)
+
+The forum search, guest HTML, sitemap and Redis cache share the published-content and current ACL boundary. Title/tag/filter-only results require a live post. Search reads remain snapshot-consistent; exact phrase checks are literal, while candidate selection uses the indexed language lexemes. PostgreSQL `FORUM_SEARCH_TIMEOUT_MS` defaults to 3000 (100–30000), applies per statement inside the search transaction, and never overrides a stricter DBA timeout. SQLSTATE 57014 produces a 503 with Retry-After; narrow the query before retrying. No timeout is imposed on SQLite/MySQL by this setting. Index diagnostics use a single SQLite integrity transaction (run off-peak); PostgreSQL verifies the source relation, valid full expression GIN, and MySQL verifies FULLTEXT column order.
+
+The SEO renderer uses a request-scoped policy (configured origin, index/follow switches and excluded boards), shared with its Redis cache key. Numbered and cursor latest HTML representations have separate cache keys. The cache namespace version is v070; no global Redis flush is required for the upgrade. Private and error HTML is noindex/nofollow. Redis remains optional; the SQL snapshot is authoritative.
+
+Upgrade from 0.6.6 with a consistent database/files backup, stop old PHP/queue processes, replace the changed files, check migration status (0043), run `php bin/cajeer forum:search:check --json`, `php bin/cajeer forum:performance:check --json`, `php bin/cajeer forum:runtime:check --json` and `php bin/cajeer install:check --json`, then restart. There are no new migrations. Keep the previous source and backup for rollback; rotate the Redis namespace when restoring an unrelated snapshot.
+
+Certification: the `forum-required` CI aggregate must pass, including native PostgreSQL 17/18 + Redis, SQLite, MySQL/MariaDB search, browser regressions, signed physical dist upgrade/rollback from 0.6.6, and multi-process load. The smoke load is not the million-post/200-client production capacity benchmark; establish p95/p99 and saturation on representative hardware before claiming capacity.

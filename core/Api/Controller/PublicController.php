@@ -43,7 +43,8 @@ final readonly class PublicController
     public function robotsTxt(Request $request, array $parameters = []): Response
     {
         $text=$this->renderer->robotsTxt($this->baseUrl($request));
-        if($this->forumSeo?->sitemapEnabled())$text.='Sitemap: '.$this->forumSeo->baseUrl()."/forum/sitemap.xml\n";
+        $seo=$this->forumSeo?->forRequest();
+        if($seo?->sitemapEnabled())$text.='Sitemap: '.$seo->baseUrl()."/forum/sitemap.xml\n";
         return new Response($text, 200, ['Content-Type' => 'text/plain; charset=UTF-8','Cache-Control'=>'no-store']);
     }
 
