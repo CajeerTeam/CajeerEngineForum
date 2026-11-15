@@ -10,7 +10,7 @@ use CajeerEngine\Forum\Validation\ForumValidator as V;
 
 final readonly class NotificationService
 {
-    public function __construct(private ForumTransaction $tx,private NotificationRepository $repo) {}
+    public function __construct(private ForumTransaction $tx,private NotificationRepository $repo,private ?\CajeerEngine\Database\DatabaseManager $db=null) {}
 
     /** Explicit stable UUID references, not ambiguous display names. Limit fanout from text. */
     public static function references(string $body,string $prefix): array
@@ -65,7 +65,12 @@ final readonly class NotificationService
     {
         return $this->tx->read(function()use($actor,$offset,$countOnly){
             $allowed=NodePermissionService::allowed($this->tx->permissions()->access($actor));
-            $result=['unread'=>$this->repo->countUnread($actor->userId,$allowed)]+$this->tx->conversations()->alerts($actor,$countOnly);
+            $load=fn()=>['unread'=>$this->repo->countUnread($actor->userId,$allowed)]+$this->tx->conversations()->alerts($actor,$countOnly);
+            if($countOnly&&$this->db!==null&&ForumRuntimeCache::enabled()){
+                $canWrite=true;try{$this->tx->permissions()->requireCurrent($actor,'forum:write');}catch(ForumException $e){if($e->status!==403)throw $e;$canWrite=false;}
+                return (new ForumCounterCache($this->db))->get($actor->userId,$allowed,$canWrite,$load);
+            }
+            $result=$load();
             if(!$countOnly)$result+=['items'=>$this->repo->inbox($actor->userId,$allowed,$offset),'preferences'=>$this->repo->preferences($actor->userId)];
             return $result;
         });

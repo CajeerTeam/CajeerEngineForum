@@ -451,7 +451,7 @@ final class Application
             new \CajeerEngine\Forum\Service\EngagementService($forumTx, new \CajeerEngine\Forum\Repository\EngagementRepository($forumDb), $forumThreads),
             new \CajeerEngine\Forum\Service\ModerationService($forumTx, new \CajeerEngine\Forum\Repository\ReportRepository($forumDb), $forumThreads),
             new \CajeerEngine\Forum\Service\RegistrationService($forumTx, $container->get(UserRepository::class), $container->get(PasswordHasher::class)),
-            $container->get('root_path'), $identityService
+            $container->get('root_path'), $identityService, new \CajeerEngine\Forum\Service\ForumRuntimeCache($forumDb,$container->get('root_path'))
         );
         $controllers = compact('identity', 'forum', 'health', 'system', 'contentTypes', 'entries', 'runtime', 'search', 'queue', 'scheduler', 'webhooks', 'extensions', 'installer', 'importExport', 'updates', 'rc', 'stable', 'admin', 'media', 'public', 'cms', 'database', 'auth', 'users', 'roles', 'apiTokens', 'security');
         foreach (\CajeerEngine\Http\RouteRegistry::all() as [$method, $path, $name, $controller, $action, $scopes]) {

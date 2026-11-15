@@ -15,6 +15,7 @@ final readonly class ForumDatabaseCheck
     public function check(): array
     {
         $required = [
+            'ce_forum_cache_generation'=>['name','generation','scope'],
             'ce_identity_challenges'=>['user_id','purpose','token_hash','secret','issued_at','expires_at'],
             'ce_users'=>['id','email','password_hash','status','email_verified_at','password_changed_at','two_factor_enabled','two_factor_secret','two_factor_recovery_codes','two_factor_last_step'],
             'ce_roles'=>['id','handle','permissions'],
@@ -90,6 +91,7 @@ final readonly class ForumDatabaseCheck
             if ($role===null || array_diff($permissions,$role['permissions'] ?? [])!==[] || array_diff($role['permissions'] ?? [],$permissions)!==[]) $invalidRoles[]=$handle;
         }
         $pdo=$this->db->connection();
+        if ((int)$pdo->query('SELECT COUNT(*) FROM ce_forum_cache_generation')->fetchColumn()!==27) $missing[]='forum_cache_generations';
         if ((int)$pdo->query("SELECT COUNT(*) FROM ce_forum_groups g JOIN ce_roles r ON r.id=g.role_id WHERE r.handle IN ('forum-member','forum-moderator')")->fetchColumn()!==2) $missing[]='forum_system_groups';
         $indexes = match($this->db->driver()) {
             'pgsql' => $pdo->query('SELECT indexname FROM pg_indexes WHERE schemaname=current_schema()')->fetchAll(\PDO::FETCH_COLUMN),

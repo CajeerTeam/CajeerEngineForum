@@ -4,7 +4,7 @@ import re, sqlite3, uuid
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[2]
 db=sqlite3.connect(':memory:');db.execute('PRAGMA foreign_keys=ON')
-files=sorted((ROOT/'migrations/sqlite').glob('*.sql'))
+files=sorted(f for f in (ROOT/'migrations/sqlite').glob('*.sql') if f.name[:4]<='0041')
 for f in files[:-1]:db.executescript(f.read_text())
 uid=lambda:str(uuid.uuid4())
 board,cat=db.execute('SELECT id,category_id FROM ce_forum_boards LIMIT 1').fetchone()

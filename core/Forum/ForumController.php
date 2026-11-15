@@ -10,11 +10,11 @@ use Symfony\Component\HttpFoundation\{JsonResponse, Request, Response};
 
 final readonly class ForumController
 {
-    public function __construct(private DiscussionService $discussions, private EngagementService $engagement, private ModerationService $moderation, private RegistrationService $registration, private string $root, private \CajeerEngine\Forum\Service\IdentityService $identity) {}
+    public function __construct(private DiscussionService $discussions, private EngagementService $engagement, private ModerationService $moderation, private RegistrationService $registration, private string $root, private \CajeerEngine\Forum\Service\IdentityService $identity, private ?\CajeerEngine\Forum\Service\ForumRuntimeCache $cache=null) {}
 
     public function page(Request $request, array $parameters=[]): Response
     {
-        return (new ForumPageRenderer($this->discussions,$this->root))->render($request,$this->reader($request));
+        return $this->cached($request,'page',fn()=> (new ForumPageRenderer($this->discussions,$this->root))->render($request,$this->reader($request)));
     }
     public function sitemap(Request $request, array $parameters=[]): Response
     {
@@ -24,6 +24,10 @@ final readonly class ForumController
     {
         return (new ForumPageRenderer($this->discussions,$this->root))->rss();
     }
+    private function cached(Request $request,string $view,callable $load): Response
+    { return $this->cache===null?$load():$this->cache->response($request,$view,$load); }
+    private function cachedJson(Request $request,string $view,callable $load): JsonResponse
+    { $response=$this->cached($request,$view,$load);if(!$response instanceof JsonResponse)throw new \LogicException('Expected JSON response');return $response; }
     private function respond(callable $operation, int $status = 200): JsonResponse
     {
         try { return new JsonResponse(['data'=>$operation()],$status,['Cache-Control'=>'private, no-store','Vary'=>'Cookie, Authorization, X-API-Token']); }
@@ -39,9 +43,9 @@ final readonly class ForumController
     private function reader(Request $r): ForumAccessPolicy { return ForumAccessPolicy::optional($r->attributes->get('auth')); }
     private function id(array $p): string { return V::id($p['id'] ?? null); }
     private function offset(Request $r): int { return V::offset($r->query->all()['page'] ?? 1); }
-    public function index(Request $r): JsonResponse { return $this->respond(fn () => $this->discussions->index($this->reader($r))); }
-    public function board(Request $r,array $p): JsonResponse { return $this->respond(fn () => $this->discussions->board($this->id($p),$this->offset($r),$this->reader($r))); }
-    public function thread(Request $r,array $p): JsonResponse { return $this->respond(fn () => $this->discussions->thread($this->id($p),$this->offset($r),$this->reader($r),($r->query->all()['first_unread']??null)==='1')); }
+    public function index(Request $r): JsonResponse { return $this->cachedJson($r,'index',fn()=> $this->respond(fn () => $this->discussions->index($this->reader($r)))); }
+    public function board(Request $r,array $p): JsonResponse { return $this->cachedJson($r,'board',fn()=> $this->respond(fn () => $this->discussions->board($this->id($p),$this->offset($r),$this->reader($r)))); }
+    public function thread(Request $r,array $p): JsonResponse { return $this->cachedJson($r,'thread',fn()=> $this->respond(fn () => $this->discussions->thread($this->id($p),$this->offset($r),$this->reader($r),($r->query->all()['first_unread']??null)==='1'))); }
     public function search(Request $r): JsonResponse { return $this->respond(function () use ($r) {
         $q=$r->query->all();$tag=null;
         if (array_key_exists('tag',$q)) { [, $tags]=\CajeerEngine\Forum\Service\DiscussionManagementService::normalizeMetadata('',[$q['tag']]);$tag=$tags[0]; }
@@ -83,7 +87,7 @@ final readonly class ForumController
     public function notificationPreferences(Request $r): JsonResponse { return $this->respond(fn()=> $this->discussions->notifications()->preferences($this->actor($r),$this->body($r))); }
     public function unread(Request $r): JsonResponse { return $this->respond(fn()=> $this->discussions->readTracking()->unread($this->actor($r),$this->offset($r))); }
     public function markRead(Request $r): JsonResponse { return $this->respond(fn()=> $this->discussions->readTracking()->mark($this->actor($r),$this->body($r))); }
-    public function latest(Request $r): JsonResponse { return $this->respond(fn () => $this->discussions->latest($this->offset($r),$this->reader($r))); }
+    public function latest(Request $r): JsonResponse { return $this->cachedJson($r,'latest',fn()=> $this->respond(fn () => $this->discussions->latest($this->offset($r),$this->reader($r)))); }
     public function profile(Request $r,array $p): JsonResponse { return $this->respond(fn () => $this->discussions->profile($this->id($p),$this->offset($r),$this->reader($r))); }
     private function body(Request $r): array { $data=$r->attributes->get('json',[]);return is_array($data)?$data:[]; }
     private function revisionInput(Request $r,string $key,bool $zero=false): int {return \CajeerEngine\Forum\Service\DraftService::revision($this->field($r,$key),$zero);}

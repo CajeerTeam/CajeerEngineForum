@@ -22,7 +22,9 @@ final readonly class RedisCacheStore implements CacheStoreInterface
 
     public function put(string $key, mixed $value, int $ttlSeconds = 3600): void
     {
-        $this->redis->setex($this->prefix . $key, $ttlSeconds, serialize($value));
+        if (!$this->redis->setex($this->prefix . $key, $ttlSeconds, serialize($value))) {
+            throw new \RuntimeException('Redis cache write not confirmed');
+        }
     }
 
     public function forget(string $key): void

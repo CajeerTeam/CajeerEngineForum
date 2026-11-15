@@ -38,7 +38,7 @@ The inherited `/install` and `/upgrade` front controllers are routed through `pu
 
 ## Releases
 
-`VERSION` and `release.json.version` identify the upstream engine (1.3.0); `release.json.edition_version` is 0.6.3. `ForumVersion` validates both identities. Source/dist artifact names, manifest version, release tags and updater comparisons use the edition version. The signed manifest also records `upstream_version`, checked against VERSION, release metadata and the prebuilt admin manifest. The engine API/SDK compatibility version stays unchanged. Health/admin/system diagnostics expose `edition_version`; HTTP responses include `X-CajeerEngine-Forum-Version`.
+`VERSION` and `release.json.version` identify the upstream engine (1.3.0); `release.json.edition_version` is 0.6.4. `ForumVersion` validates both identities. Source/dist artifact names, manifest version, release tags and updater comparisons use the edition version. The signed manifest also records `upstream_version`, checked against VERSION, release metadata and the prebuilt admin manifest. The engine API/SDK compatibility version stays unchanged. Health/admin/system diagnostics expose `edition_version`; HTTP responses include `X-CajeerEngine-Forum-Version`.
 
 The 0.1.0 updater compared upstream engine versions. Apply the 0.1.1 changed-file archive manually to a backed-up test installation before using the new updater. Do not submit the patch ZIP to `update:apply`: it is not a signed full dist. With 0.1.1 installed, later signed releases can advance edition_version without changing upstream. Legacy forum manifests without upstream_version and ordinary CMS packages are refused by the updater. The upstream signed publication workflow is archived, not active; no production signature or deployment certification is claimed.
 
@@ -418,3 +418,33 @@ If the extension is absent, all other discovery and search features work. Trigra
 - `/forum/sitemap.xml` is a sitemap index; `?page=N` returns at most 1,000 URLs (home, guest-readable boards and live threads with at least one live post). Stable UUID ordering, live database snapshots, no stored stale XML. `/robots.txt` advertises it alongside the existing CMS sitemap. Public profiles are discoverable through public links but not enumerated in sitemap. `/forum/rss.xml` contains the latest 25 guest-readable indexed discussions.
 - In `/forum/manage`, administrators can set a board's **Индексация раздела и подразделов** switch. It is persisted in `seo_index` (migration 0041); disabling it affects all descendants, thread HTML metadata, sitemap and RSS without changing ACL. Existing boards default to enabled. `FORUM_SEO_INDEX=false` disables all forum indexing and discovery. `FORUM_SEO_EXCLUDED_BOARDS` optionally excludes a comma-separated UUID list and descendants. The CMS `robots_index` flag also disables forum indexing; `sitemap_enabled` controls sitemap publication. Noindex is not an access control: use private/hidden ACL to protect content.
 - Upgrade from 0.6.2: back up, apply files and run `php bin/cajeer migrate`; verify `/forum`, `/forum/sitemap.xml`, `/robots.txt`, `/forum/rss.xml` and the admin board switch. No search reindex is needed. Native PostgreSQL/MySQL and HTTP integration gates are required before production deployment.
+
+### Redis Runtime & Caching (0.6.4)
+
+Redis is optional. Apply migration 0042 before enabling caching. On every web node and worker use the same SQL primary, installation-specific Redis namespace, queue prefix and connection configuration. Install PHP `ext-redis`; use a trusted standalone Redis 7+ service (not Redis Cluster), preferably with ACL credentials, AOF persistence and `maxmemory-policy noeviction` for queue/rate-limit durability. Do not expose Redis publicly. A dedicated Redis instance is recommended. Example:
+
+```dotenv
+REDIS_HOST=127.0.0.1
+REDIS_PORT=6379
+REDIS_DATABASE=0
+REDIS_TIMEOUT_SECONDS=0.5
+FORUM_REDIS_NAMESPACE=forum-production
+FORUM_CACHE_ENABLED=true
+FORUM_CACHE_TTL_SECONDS=60
+QUEUE_DRIVER=redis
+QUEUE_REDIS_PREFIX=ce:queue:forum-production:
+RATE_LIMIT_DRIVER=redis
+```
+
+The last two driver switches are independent of forum caching; drain the old generic queue before changing drivers. `RATE_LIMIT_DRIVER=file` is the default and is not distributed. Redis rate limiting fails closed (HTTP 429) rather than silently granting each node a separate budget; SQL anti-spam limits remain authoritative. Keep the shared rate-limit store persistent, and do not evict its keys. To inspect the configuration and operation:
+
+```sh
+php bin/cajeer migrate
+php bin/cajeer forum:runtime:check --json
+php bin/cajeer queue:diagnostics --json
+php bin/cajeer queue:work --queue=default --limit=10
+```
+
+Run the default worker repeatedly on every worker host and the existing scheduler for processed-job cleanup. Forum notification, mail, image and replica work uses deduplicated Redis wakeups for durable SQL outboxes and existing SQL leases. A missing wakeup is reconstructed from due SQL rows; failed Redis handoff falls back to direct SQL draining. Generic Redis jobs still require Redis persistence. Existing notification fencing and mail retry semantics remain in place; SMTP acceptance immediately before a process crash can still result in a duplicate delivery.
+
+Anonymous GETs for forum home, boards, threads and latest (HTML and API) use Redis; authenticated or cookie-bearing requests, searches, profiles, RSS/sitemap, unknown query variants and errors are not cached. `X-Forum-Cache` reports HIT/MISS. Private counters are keyed by current user, permissions and SQL generation; only counts are cached. Writes invalidate via per-table generation triggers in the same SQL transaction; rolled-back writes do not invalidate. Generations are read from the primary in the same snapshot as public content, so an unavailable Redis cannot preserve a stale ACL/content key after a commit. Old keys expire automatically. Concurrent misses have a bounded wait and a fill lock, then use SQL if necessary. Redis loss alone does not prevent cache-backed reads. Time-dependent display state may age until TTL; no cache is a source of authority for mutation permissions. A generation change invalidates a broad group of cache entries, deliberately prioritizing consistency over fine-grained hit rates. Measure write contention and cache hit rates before large deployments. Rotate `FORUM_REDIS_NAMESPACE` after restoring a backup, out-of-band DDL or replacing the SQL database; MySQL direct TRUNCATE bypasses row triggers. Use row-based binlogging with MySQL. Never share a namespace across separate installations.

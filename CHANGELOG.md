@@ -1,3 +1,9 @@
+## 0.6.4 — Redis Runtime & Caching
+
+- Redis-backed guest HTML/API and private unread counters; SQL snapshot generations invalidate stale content and permissions atomically.
+- Shared Redis rate limits with fail-closed behavior, bounded connections, lazy queue initialization and durable SQL outbox wakeups via Redis workers.
+- Migration 0042, runtime diagnostics, regression coverage and operational guidance.
+
 ## 0.6.3 — Server Rendering & SEO
 
 - Render home, boards, discussions, public profiles, latest and question listings as real HTML with the current viewer ACL; existing JavaScript preserves interactive behavior.

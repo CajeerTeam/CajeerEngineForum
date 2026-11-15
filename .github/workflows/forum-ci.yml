@@ -13,6 +13,15 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     services:
+      redis:
+        image: redis:7.4
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
       mailpit:
         image: axllent/mailpit:v1.27
         ports:
@@ -23,7 +32,7 @@ jobs:
       - uses: shivammathur/setup-php@v2
         with:
           php-version: '8.4'
-          extensions: mbstring, pdo_sqlite, sodium, zip, dom, xml, xmlwriter, curl, openssl, gd
+          extensions: mbstring, pdo_sqlite, sodium, zip, dom, xml, xmlwriter, curl, openssl, gd, redis
           tools: composer:v2
           coverage: xdebug
       - uses: actions/setup-node@v4
@@ -72,6 +81,9 @@ jobs:
       - run: python tools/forum-tests/advanced_search_sql_regression.py
       - run: php tools/forum-seo-unit-regression.php
       - run: python tools/forum-tests/seo_sql_regression.py
+      - run: python tools/forum-tests/cache_sql_regression.py
+      - run: php tools/queue-regression.php --redis
+      - run: php tools/forum-redis-regression.php
       - run: python tools/forum-tests/smtp_regression.py
       - run: php tools/security-regression.php
       - run: php tools/release-regression.php
@@ -294,13 +306,13 @@ jobs:
           ln -s pg_dump "$RUNNER_TEMP/pg-client/pg_restore"
           ln -s pg_dump "$RUNNER_TEMP/pg-client/psql"
           echo "$RUNNER_TEMP/pg-client" >> "$GITHUB_PATH"
-      - name: Build and verify physical 0.6.3 artifacts
+      - name: Build and verify physical 0.6.4 artifacts
         run: |
           composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader
           mkdir -p storage/tmp/forum-ci/release
           php tools/build-release.php --all --target-dir="$RUNNER_TEMP/forum-current" --json > storage/tmp/forum-ci/release/build.json
-          php bin/cajeer release:verify --dist --strict --artifact="$RUNNER_TEMP/forum-current/cajeerengine-0.6.3-dist.zip"
-          php bin/cajeer release:verify --strict --artifact="$RUNNER_TEMP/forum-current/cajeerengine-0.6.3-source.zip"
+          php bin/cajeer release:verify --dist --strict --artifact="$RUNNER_TEMP/forum-current/cajeerengine-0.6.4-dist.zip"
+          php bin/cajeer release:verify --strict --artifact="$RUNNER_TEMP/forum-current/cajeerengine-0.6.4-source.zip"
       - name: Build authentic previous baseline from repository history
         run: |
           mkdir -p "$RUNNER_TEMP/forum-previous"
@@ -320,11 +332,11 @@ jobs:
       - name: Clean install, live HTTP, identity and corrupt-ledger rejection
         env:
           FORUM_TEST_RELEASE_DB: forum_test_release_clean
-        run: python tools/forum-tests/release_acceptance.py --driver ${{ matrix.driver }} --artifact "$RUNNER_TEMP/forum-current/cajeerengine-0.6.3-dist.zip" --report storage/tmp/forum-ci/release/clean
+        run: python tools/forum-tests/release_acceptance.py --driver ${{ matrix.driver }} --artifact "$RUNNER_TEMP/forum-current/cajeerengine-0.6.4-dist.zip" --report storage/tmp/forum-ci/release/clean
       - name: Signed upgrade from authentic baseline, recovery and rollback
         env:
           FORUM_TEST_RELEASE_DB: forum_test_release_upgrade
-        run: python tools/forum-tests/release_acceptance.py --driver ${{ matrix.driver }} --artifact "$RUNNER_TEMP/forum-current/cajeerengine-0.6.3-dist.zip" --previous "$RUNNER_TEMP/forum-previous-dist/cajeerengine-${FORUM_BASELINE_VERSION}-dist.zip" --report storage/tmp/forum-ci/release/upgrade
+        run: python tools/forum-tests/release_acceptance.py --driver ${{ matrix.driver }} --artifact "$RUNNER_TEMP/forum-current/cajeerengine-0.6.4-dist.zip" --previous "$RUNNER_TEMP/forum-previous-dist/cajeerengine-${FORUM_BASELINE_VERSION}-dist.zip" --report storage/tmp/forum-ci/release/upgrade
       - name: Upload release acceptance evidence
         if: always()
         uses: actions/upload-artifact@v4

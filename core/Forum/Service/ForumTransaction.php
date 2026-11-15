@@ -45,7 +45,7 @@ final readonly class ForumTransaction
     public function watches(): WatchService { return new WatchService($this,new \CajeerEngine\Forum\Repository\WatchRepository($this->db),new \CajeerEngine\Forum\Repository\ThreadRepository($this->db)); }
 
     public function driver(): string { return $this->db->driver(); }
-    public function notifications(): NotificationService { return new NotificationService($this,new \CajeerEngine\Forum\Repository\NotificationRepository($this->db)); }
+    public function notifications(): NotificationService { return new NotificationService($this,new \CajeerEngine\Forum\Repository\NotificationRepository($this->db),$this->db); }
 
     public function readState(): \CajeerEngine\Forum\Repository\ReadStateRepository { return new \CajeerEngine\Forum\Repository\ReadStateRepository($this->db); }
 
