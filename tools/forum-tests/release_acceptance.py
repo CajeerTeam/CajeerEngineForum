@@ -198,6 +198,21 @@ def verify_polls_questions(base,state,fixture):
     else:raise AssertionError('Accepted answer notification not delivered')
     print('PASS physical dist polls, Q&A, result visibility and private accepted notifications',flush=True)
 
+def verify_drafts_revisions(base,state):
+    import uuid
+    c=Client(base);token,thread,post,_=state
+    history=c.call('GET','/forum/posts/'+post+'/revisions',token=token)
+    require(history[-1]['revision_number']==1 and history[-1]['body']=='Original content','Initial revision not preserved')
+    did=str(uuid.uuid4());path='/forum/drafts/'+did
+    saved=c.call('PUT',path,200,{'scope':'reply','target_id':thread,'revision_number':0,'payload':{'body':'Release draft','body_format':'markdown','attachment_ids':[]}},token=token)
+    require(saved['revision_number']==1,'Draft was not saved')
+    result=c.call('POST',path+'/publish',200,{'revision_number':1},token=token)
+    require(c.call('POST',path+'/publish',200,{'revision_number':1},token=token)==result,'Duplicate draft publication')
+    pp='/forum/posts/'+result['id'];c.call('PATCH',pp,200,{'body':'Release edited','expected_revision':1},token=token);c.call('PATCH',pp,409,{'body':'Stale edit','expected_revision':1},token=token)
+    c.call('POST',pp+'/revisions/restore',200,{'revision_number':1,'expected_revision':2},token=token)
+    revisions=c.call('GET',pp+'/revisions',token=token);require([r['revision_number'] for r in revisions]==[3,2,1] and revisions[0]['body']=='Release draft','Revision restore failed')
+    print('PASS physical dist draft publication and revision migration/restore',flush=True)
+
 def verify_groups(base,state):
     token, _, _, member=state; c=Client(base)
     groups=c.call('GET','/forum/groups',token=token)
@@ -239,7 +254,7 @@ def verify_navigation(base,state):
 
 
 def seed_structure(base, state):
-    """Create real 0.4.3 structure before updating, not just after the upgrade."""
+    """Create real 0.4.4 structure before updating, not just after the upgrade."""
     admin, _, _, member = state
     c=Client(base)
     member_group=next(g['id'] for g in c.call('GET','/forum/groups',token=admin) if g['handle']=='forum-member')
@@ -341,7 +356,7 @@ def verify_read_tracking(base, state):
 
 def verify_notifications(base, state, fixture):
     c=Client(base); admin,thread,post,_=state
-    # The original 0.4.3 topic has no synthetic historical notifications.
+    # The original 0.4.4 topic has no synthetic historical notifications.
     path='/forum/notifications'
     c.call('POST','/queue/work',200,{'limit':10},token=admin)
     c.call('POST',path+'/read',200,{'all':True},token=admin)
@@ -509,7 +524,7 @@ def community_snapshot(base,f):
     for message in private['messages']:
         if 'body_format' in message:
             require(message['body_format']=='plain' and isinstance(message['body_html'],str),'Legacy private format changed')
-            for key in ('body_format','body_html','renderer_version','attachments'): message.pop(key,None)
+            for key in ('body_format','body_html','renderer_version','attachments','revision_number'): message.pop(key,None)
     return {'profile':own['profile'],'preferences':own['preferences'],'fields':own['values'],'avatar':avatar,
             'read':thread['read_state'],'watch':thread['thread']['watch_mode'],'posts':[(p['id'],p['body']) for p in thread['posts']],
             'delivery':c.call('GET','/forum/watch-settings',token=token)['delivery'],
@@ -552,7 +567,7 @@ def verify_community_live(base,f):
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--artifact',type=Path,required=True)
-    parser.add_argument('--previous',type=Path,help='Original 0.4.3 dist; enables real signed upgrade and rollback')
+    parser.add_argument('--previous',type=Path,help='Original 0.4.4 dist; enables real signed upgrade and rollback')
     parser.add_argument('--driver',choices=('sqlite','pgsql'),default='sqlite')
     parser.add_argument('--report',type=Path,required=True)
     args=parser.parse_args(); report=args.report.resolve(); report.mkdir(parents=True,exist_ok=True)
@@ -561,7 +576,7 @@ def main():
         work=Path(tmp); port=free_port()
         # With --previous use the authentic baseline for upgrade, not a relabelled current tree.
         previous=args.previous.resolve() if args.previous else None
-        initial='0.4.3' if previous else current
+        initial='0.4.4' if previous else current
         site=unpack(previous or artifact,work/'live',initial)
         install(site,env,report,'initial',port,args.driver)
         with http(site,env,report,'initial',port,initial) as base:
@@ -588,6 +603,7 @@ def main():
                 verify_attachments(base,state,fixture)
                 verify_media(base,state,fixture,media)
                 verify_polls_questions(base,state,fixture)
+                verify_drafts_revisions(base,state)
         if previous:
             key=work/'backup.key'; secret=work/'release.secret'; public=work/'release.public'
             run(site,env,report,'backup-key',['php','bin/cajeer','backup:keygen','--key='+str(key)])
@@ -613,6 +629,7 @@ def main():
                 verify_attachments(base,state,fixture)
                 verify_media(base,state,fixture,media)
                 verify_polls_questions(base,state,fixture)
+                verify_drafts_revisions(base,state)
             run(site,env,report,'rollback',['php','bin/cajeer','update:rollback','--yes','--json'],timeout=600)
             require(version(site)==initial,'Rollback did not restore release')
             with http(site,env,report,'rollback',port,initial) as base:

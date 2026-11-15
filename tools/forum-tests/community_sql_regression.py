@@ -30,7 +30,7 @@ def audit(db):
 
 
 def snapshot(db):
-    tables=['ce_forum_member_profiles','ce_forum_member_preferences','ce_forum_profile_images','ce_forum_threads','ce_forum_posts','ce_forum_read_state','ce_forum_notifications','ce_forum_watches','ce_forum_mail_delivery','ce_forum_conversations','ce_forum_conversation_participants','ce_forum_conversation_messages','ce_forum_reactions','ce_forum_member_relations','ce_forum_achievement_rules']
+    tables=['ce_forum_member_profiles','ce_forum_member_preferences','ce_forum_profile_images','ce_forum_threads','ce_forum_posts','ce_forum_read_state','ce_forum_notifications','ce_forum_watches','ce_forum_mail_delivery','ce_forum_conversations','ce_forum_conversation_participants','ce_forum_conversation_messages','ce_forum_reactions','ce_forum_member_relations','ce_forum_achievement_rules','ce_forum_post_revisions','ce_forum_conversation_revisions','ce_forum_drafts']
     return {t:sorted(db.execute('SELECT * FROM '+t).fetchall(),key=repr) for t in tables}
 
 
@@ -73,6 +73,7 @@ with tempfile.TemporaryDirectory(prefix='forum-community-sql-') as directory:
         except sqlite3.IntegrityError: pass
         else: raise AssertionError('invalid format accepted')
     db.commit()
+    db.executescript((ROOT/'migrations/sqlite/0032_forum_drafts_revisions.sql').read_text())
     assert audit(db)=={},audit(db)
     before=snapshot(db)
     # Exercise SQLite's actual backup/restore, including pending queue data and private history.

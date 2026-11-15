@@ -1,5 +1,11 @@
 # Changelog
 
+## Forum Edition 0.4.5 — Drafts & Revision History
+
+- Private server drafts for topics, replies and conversations, autosave, attachment lifetime and idempotent publication.
+- Immutable text revisions, optimistic edit checks, comparison and restoration through normal permissions.
+- Migration 0032 backfills existing messages; previous migrations remain unchanged.
+
 ## Forum Edition 0.4.4 — Polls & Q&A
 
 - Transactional single/multiple choice polls with deadlines, private ballots, controlled result visibility and close/reopen.

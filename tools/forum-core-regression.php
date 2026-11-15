@@ -267,8 +267,24 @@ try {
         foreach(['FORUM_ATTACHMENT_MAX_MB'=>$previousMax,'FORUM_ATTACHMENT_QUOTA_MB'=>$previousQuota,'FORUM_ATTACHMENT_GROUP_LIMITS'=>$previousGroup] as $key=>$value)putenv($value===false?$key:$key.'='.$value);
     }
 
+    // New draft publication uses the normal domain service and one outer transaction.
+    $drafts=$discussion->drafts();$did=Uuid::v4();$data=['scope'=>'thread','target_id'=>$board,'revision_number'=>0,'payload'=>['title'=>'Draft integration','body'=>'**Draft body**','body_format'=>'markdown','attachment_ids'=>[]]];
+    $saved=$drafts->save($m,$did,$data);check($saved['revision_number']===1,'draft saved');
+    expectStatus(404,fn()=>$drafts->get($a,$did));
+    expectStatus(409,fn()=>$drafts->save($m,$did,$data));
+    $data['revision_number']=1;$data['payload']['body']='New draft text';$saved=$drafts->save($m,$did,$data);
+    $published=$drafts->publish($m,$did,2,$discussion);check($drafts->publish($m,$did,2,$discussion)===$published,'idempotent draft publication');
+    $dp=$discussion->thread($published['id'],0,$m)['posts'][0];check($dp['body']==='New draft text'&&$dp['revision_number']===1,'draft text published with initial revision');
+    $discussion->edit($m,$dp['id'],'Second version','plain',[],1,'test edit');
+    expectStatus(409,fn()=>$discussion->edit($m,$dp['id'],'Stale version','plain',[],1));
+    $history=$discussion->revisionHistory($m,$dp['id']);check(count($history)===2&&$history[0]['body']==='Second version','revision history contains original and edit');
+    $discussion->restoreRevision($m,$dp['id'],1,2);check($discussion->thread($published['id'],0,$m)['posts'][0]['body']==='New draft text','restore through actual edit service');
+    check(count($discussion->revisionHistory($m,$dp['id']))===3,'restore is a new revision');
+    $moderation->moderate($a,$published['id'],'delete');
+    check((int)$pdo->query("SELECT COUNT(*) FROM ce_forum_post_revisions WHERE post_id=".$pdo->quote($dp['id']))->fetchColumn()===0,'revision cascade');
+
     if($driver==='sqlite')check($pdo->query('PRAGMA foreign_key_check')->fetchAll()===[],'foreign keys intact');
-    $v=new ForumVersion($root);check($v->current()==='0.4.4' && $v->upstream()==='1.3.0','independent product/core versions');
+    $v=new ForumVersion($root);check($v->current()==='0.4.5' && $v->upstream()==='1.3.0','independent product/core versions');
     echo "Forum core regression passed\n";
 } finally {
     unset($db,$discussion,$engagement,$moderation,$registration,$pdo,$runner);

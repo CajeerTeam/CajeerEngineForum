@@ -34,7 +34,7 @@ final readonly class ConversationService
             $this->repo->limit($user,'create',3600,5);$members=[$user];
             foreach($ids as $target){$this->repo->limit($user,'invite',3600,20);$this->checkInvite($user,$target,$members);$members[]=$target;}
             $id=$this->repo->create($user,$title,$kind);foreach($members as $member)$this->repo->join($id,$member,1);
-            $msg=$this->repo->append($id,$user,$text,1,$format??'plain');$this->tx->attachments()->attach($user,'message',$msg,$body['attachment_ids']??[]);$this->repo->mark($id,$user,1);return ['id'=>$id,'message_id'=>$msg];
+            $msg=$this->repo->append($id,$user,$text,1,$format??'plain');$this->tx->revisions()->initial('message',$msg,$text,$format??'plain',$user);$this->tx->attachments()->attach($user,'message',$msg,$body['attachment_ids']??[]);$this->repo->mark($id,$user,1);return ['id'=>$id,'message_id'=>$msg];
         });
     }
     public function inbox(ForumAccessPolicy $actor,int $offset,bool $archived,bool $notifications,mixed $search): array
@@ -59,15 +59,28 @@ final readonly class ConversationService
             $user=$actor->userId;$c=$this->repo->membership($id,$user);$members=array_column($this->repo->participants($id),'user_id');$others=array_diff($members,[$user]);
             if($others===[])throw new ForumException('В переписке нет других участников.',409);
             foreach($others as $target)if($this->repo->blocked($user,$target))throw new ForumException('Отправка в эту переписку недоступна.',403);
-            $this->repo->limit($user,'send',60,30);$message_sequence=(int)$c['last_sequence']+1;$msg=$this->repo->append($id,$user,$text,$message_sequence,$format??'plain');
+            $this->repo->limit($user,'send',60,30);$message_sequence=(int)$c['last_sequence']+1;$msg=$this->repo->append($id,$user,$text,$message_sequence,$format??'plain');$this->tx->revisions()->initial('message',$msg,$text,$format??'plain',$user);
             $this->tx->attachments()->attach($user,'message',$msg,$body['attachment_ids']??[]);
             // Sending is not proof that previously received messages were read.
             return ['id'=>$msg,'message_sequence'=>$message_sequence];
         });
     }
-    public function edit(ForumAccessPolicy $actor,string $id,string $msg,array $body): array
+    public function revisionHistory(ForumAccessPolicy $actor,string $id,string $msg,int $offset=0,?int $number=null): array
     {
-        $text=$body['body']??null;$format=array_key_exists('body_format',$body)?\CajeerEngine\Forum\Content\ForumContentRenderer::format($body['body_format']):null;return $this->write($actor,function()use($actor,$id,$msg,$text,$format,$body){$c=$this->repo->membership($id,$actor->userId);$m=$this->repo->message($id,$msg,(int)$c['joined_sequence']);if($m['author_id']!==$actor->userId)throw new ForumException('Недостаточно прав.',403);foreach($this->repo->participants($id) as $participant){$target=$participant['user_id'];if($target!==$actor->userId&&$this->repo->blocked($actor->userId,$target))throw new ForumException('Редактирование в этой переписке недоступно.',403);}$this->repo->limit($actor->userId,'edit',60,30);$format=$format??$m['body_format'];$text=\CajeerEngine\Forum\Content\ForumContentRenderer::source($text,$format);$this->repo->edit($msg,$text,$format);$this->tx->attachments()->attach($actor->userId,'message',$msg,$body['attachment_ids']??[]);return ['id'=>$msg];});
+        return $this->read($actor,function()use($actor,$id,$msg,$offset,$number){
+            $c=$this->repo->membership($id,$actor->userId);$m=$this->repo->message($id,$msg,(int)$c['joined_sequence']);
+            if($m['author_id']!==$actor->userId)throw new ForumException('Недостаточно прав.',403);
+            return $number===null?$this->tx->revisions()->history('message',$msg,$offset):$this->tx->revisions()->version('message',$msg,$number);
+        });
+    }
+    public function restoreRevision(ForumAccessPolicy $actor,string $id,string $msg,int $number,int $expected): array
+    {
+        $old=$this->revisionHistory($actor,$id,$msg,0,$number);
+        return $this->edit($actor,$id,$msg,['body'=>$old['body'],'body_format'=>$old['body_format'],'expected_revision'=>$expected,'edit_reason'=>'Restore revision '.$number],true);
+    }
+    public function edit(ForumAccessPolicy $actor,string $id,string $msg,array $body,bool $forceRevision=false): array
+    {
+        $text=$body['body']??null;$format=array_key_exists('body_format',$body)?\CajeerEngine\Forum\Content\ForumContentRenderer::format($body['body_format']):null;return $this->write($actor,function()use($actor,$id,$msg,$text,$format,$body,$forceRevision){$c=$this->repo->membership($id,$actor->userId);$m=$this->repo->message($id,$msg,(int)$c['joined_sequence']);if($m['author_id']!==$actor->userId)throw new ForumException('Недостаточно прав.',403);foreach($this->repo->participants($id) as $participant){$target=$participant['user_id'];if($target!==$actor->userId&&$this->repo->blocked($actor->userId,$target))throw new ForumException('Редактирование в этой переписке недоступно.',403);}$this->repo->limit($actor->userId,'edit',60,30);$format=$format??$m['body_format'];$text=\CajeerEngine\Forum\Content\ForumContentRenderer::source($text,$format);$expected=isset($body['expected_revision'])?DraftService::revision($body['expected_revision']):null;$number=$this->tx->revisions()->advance('message',$m,$text,$format,$actor->userId,$expected,DraftService::reason($body['edit_reason']??null),$forceRevision);$this->repo->edit($msg,$text,$format);$this->tx->attachments()->attach($actor->userId,'message',$msg,$body['attachment_ids']??[]);return ['id'=>$msg,'revision_number'=>$number];});
     }
     public function invite(ForumAccessPolicy $actor,string $id,array $body): array
     {

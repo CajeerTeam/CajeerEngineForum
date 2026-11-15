@@ -5,6 +5,8 @@ namespace CajeerEngine\Forum\Repository;
 
 final readonly class ThreadRepository extends Repository
 {
+    public function pageForPost(string $thread,string $post): int
+    {return 1+intdiv((int)$this->query('SELECT COUNT(*) FROM ce_forum_posts WHERE thread_id=? AND ordinal<(SELECT ordinal FROM ce_forum_posts WHERE id=? AND thread_id=?)',[$thread,$post,$thread])->fetchColumn(),25);}
     public function find(string $id): ?array { return $this->row('SELECT t.*,b.name AS board_name FROM ce_forum_threads t JOIN ce_forum_boards b ON b.id=t.board_id WHERE t.id=?', [$id]); }
     public function lockThread(string $id): ?array { return $this->lock('ce_forum_threads', 'id=?', [$id]); }
     public function lockForPost(string $post): ?array {

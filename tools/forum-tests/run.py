@@ -1017,6 +1017,24 @@ class NetworkTests(unittest.TestCase):
         c.call('GET',path,404,token=other);c.call('PUT',path+'/poll/vote',404,{'choices':[1]},token=other);c.call('GET',qp+'/answers',404,token=other);self.assertNotIn(q,[x['id'] for x in c.call('GET','/forum/questions',token=other)])
         self.assertIn(q,[x['id'] for x in c.call('GET','/forum/questions',token=admin)])
 
+    def test_18_drafts_revisions(self):
+        c=Client(self.base);admin=c.login(ADMIN,ADMIN_PASSWORD)[0]['data']['access_token'];email=unique_email();user=c.call('POST','/users',201,{'email':email,'name':'Draft member','password':PASSWORD,'roles':['forum-member']},token=admin)['id'];member=c.login(email)[0]['data']['access_token'];board=c.call('GET','/forum')['boards'][0]['id'];did=str(uuid.uuid4());path='/forum/drafts/'+did
+        file=c.upload_attachment('draft.txt',b'Draft content',token=member)['id']
+        data={'scope':'thread','target_id':board,'revision_number':0,'payload':{'title':'Draft topic','body':'**Draft source**','body_format':'markdown','attachment_ids':[file]}}
+        saved=c.call('PUT',path,200,data,token=member);self.assertEqual(1,saved['revision_number']);c.call('GET',path,404,token=admin);c.call('GET',path,401)
+        c.call('PUT',path,409,data,token=member);data['revision_number']=1;data['payload']['body']='Revised draft';saved=c.call('PUT',path,200,data,token=member);self.assertEqual(2,saved['revision_number']);self.assertEqual('Revised draft',c.call('GET',path,token=member)['payload']['body'])
+        self.assertIn(did,[r['id'] for r in c.call('GET','/forum/drafts?scope=thread&target_id='+board,token=member)])
+        result=c.call('POST',path+'/publish',200,{'revision_number':2},token=member);self.assertEqual(result,c.call('POST',path+'/publish',200,{'revision_number':2},token=member));self.assertNotIn(did,[r['id'] for r in c.call('GET','/forum/drafts',token=member)])
+        topic='/forum/threads/'+result['id'];post=c.call('GET',topic,token=member)['posts'][0];self.assertEqual(file,post['attachments'][0]['id']);self.assertEqual(1,post['revision_number']);pp='/forum/posts/'+post['id']
+        c.call('PATCH',pp,200,{'body':'Second edit','body_format':'plain','expected_revision':1,'edit_reason':'Test'},token=member);c.call('PATCH',pp,409,{'body':'Stale','expected_revision':1},token=member)
+        history=c.call('GET',pp+'/revisions',token=member);self.assertEqual([2,1],[r['revision_number'] for r in history]);self.assertEqual('Revised draft',history[1]['body']);c.call('GET',pp+'/revisions',401)
+        c.call('POST',pp+'/revisions/restore',200,{'revision_number':1,'expected_revision':2},token=member);self.assertEqual('Revised draft',c.call('GET',topic,token=member)['posts'][0]['body']);self.assertEqual(3,c.call('GET',pp+'/revisions',token=member)[0]['revision_number'])
+        # Private history is author-only even for a system administrator who participates.
+        admin_id=c.call('GET','/auth/me',token=admin)['user_id'];conv_did=str(uuid.uuid4());cp='/forum/drafts/'+conv_did;cd={'scope':'new_conversation','target_id':None,'revision_number':0,'payload':{'title':'Draft private','body':'Private baseline','body_format':'plain','kind':'direct','participant_ids':[admin_id],'attachment_ids':[]}}
+        c.call('PUT',cp,200,cd,token=member);cr=c.call('POST',cp+'/publish',200,{'revision_number':1},token=member);mp='/forum/conversations/'+cr['id']+'/messages/'+cr['message_id'];c.call('GET',mp+'/revisions',403,token=admin);c.call('PATCH',mp,200,{'body':'Private edit','expected_revision':1},token=member);c.call('POST',mp+'/revisions/restore',200,{'revision_number':1,'expected_revision':2},token=member);self.assertEqual('Private baseline',c.call('GET',mp+'/revisions',token=member)[0]['body'])
+        # A draft cannot bypass revoked permission or a now-locked topic.
+        rid=str(uuid.uuid4());rp='/forum/drafts/'+rid;rd={'scope':'reply','target_id':result['id'],'revision_number':0,'payload':{'body':'Pending answer','body_format':'plain','attachment_ids':[]}};c.call('PUT',rp,200,rd,token=member);c.call('POST',topic+'/moderate',200,{'action':'lock'},token=admin);c.call('POST',rp+'/publish',409,{'revision_number':1},token=member);self.assertIsNone(c.call('GET',rp,token=member)['result']);c.call('DELETE',rp,200,{'revision_number':1},token=member)
+
     def test_99_rate_limit(self):
         # Run last: exhaust the real IP auth bucket without guessing credentials.
         c = Client(self.base)

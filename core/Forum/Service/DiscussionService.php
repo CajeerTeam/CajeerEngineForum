@@ -16,6 +16,23 @@ final readonly class DiscussionService
 
     private function access(?ForumAccessPolicy $actor): array { return $this->tx->permissions()->access($actor??new ForumAccessPolicy('',[])); }
     private function decorated(array $board,array $access): array { $board['permissions']=$access['boards'][$board['id']]; return $board; }
+    public function drafts(): DraftService { return $this->tx->drafts(); }
+    public function revisionHistory(ForumAccessPolicy $actor,string $id,int $offset=0,?int $number=null): array
+    {
+        return $this->tx->read(function()use($actor,$id,$offset,$number){
+            $this->tx->permissions()->requireCurrent($actor,'forum:write');
+            $post=(new \CajeerEngine\Forum\Repository\AttachmentRepository($this->db))->post($id)??throw new ForumException('Сообщение не найдено.',404);
+            $access=$this->access($actor);NodePermissionService::assert($access,$post['board_id'],'thread:read');
+            if($post['author_id']!==$actor->userId)NodePermissionService::assert($access,$post['board_id'],'post:edit_any');
+            return $number===null?$this->tx->revisions()->history('post',$id,$offset):$this->tx->revisions()->version('post',$id,$number);
+        });
+    }
+    public function restoreRevision(ForumAccessPolicy $actor,string $id,int $number,int $expected): array
+    {
+        $old=$this->revisionHistory($actor,$id,0,$number);
+        $this->edit($actor,$id,$old['body'],$old['body_format'],[],$expected,'Restore revision '.$number,true);
+        return ['id'=>$id,'revision_number'=>$expected+1];
+    }
     public function polls(): PollQuestionService { return $this->tx->polls(); }
     public function attachments(): AttachmentService { return $this->tx->attachments(); }
     public function conversations(): ConversationService { return $this->tx->conversations(); }
@@ -141,6 +158,7 @@ final readonly class DiscussionService
             $this->threads->insert($id,$board,$actor->userId,$title);
             $this->polls()->initialize($id,$kind,$poll);
             $this->posts->insert($post,$id,$actor->userId,$body,1,$format);
+            $this->tx->revisions()->initial('post',$post,$body,$format,$actor->userId);
             $this->tx->attachments()->attach($actor->userId,'post',$post,$attachments);
             $this->tx->notifications()->published($actor->userId,$id,$post,$body,false,$format);
             $this->tx->audit('forum.thread.create',$actor->userId,['thread_id'=>$id,'board_id'=>$board,'post_id'=>$post]);
@@ -158,6 +176,7 @@ final readonly class DiscussionService
             if ((int) $thread['locked'] !== 0) throw new ForumException('Тема закрыта.',409);
             $post = Uuid::v4();
             $this->posts->insert($post,$id,$actor->userId,$body,$this->posts->nextOrdinal($id),$format??'plain');
+            $this->tx->revisions()->initial('post',$post,$body,$format??'plain',$actor->userId);
             $this->threads->touch($id);
             $this->tx->attachments()->attach($actor->userId,'post',$post,$attachments);
             $this->tx->notifications()->published($actor->userId,$id,$post,$body,true,$format??'plain');
@@ -165,17 +184,18 @@ final readonly class DiscussionService
             return $post;
         });
     }
-    public function edit(ForumAccessPolicy $actor, string $id, mixed $body, ?string $format=null, mixed $attachments=[]): string
+    public function edit(ForumAccessPolicy $actor, string $id, mixed $body, ?string $format=null, mixed $attachments=[], ?int $expectedRevision=null, string $reason='', bool $forceRevision=false): string
     {
         $id = V::id($id);
         $actor->require('forum:write');
-        return $this->tx->write(function () use ($actor,$id,$body,$format,$attachments) {
+        return $this->tx->write(function () use ($actor,$id,$body,$format,$attachments,$expectedRevision,$reason,$forceRevision) {
             $thread = $this->threads->lockForPost($id) ?? throw new ForumException('Сообщение не найдено.',404);
             $post = $this->posts->findForWrite($id) ?? throw new ForumException('Сообщение не найдено.',404);
             $this->permissions()->assertWrite($actor,$thread['board_id'],$post['author_id']===$actor->userId && (int)$thread['locked']===0?'post:edit_own':'post:edit_any');
             $this->boards->writable($thread['board_id']);
             $actor->assertEdit($post,$thread);
             $format=$format??$post['body_format'];$body=\CajeerEngine\Forum\Content\ForumContentRenderer::source($body,$format);
+            $this->tx->revisions()->advance('post',$post,$body,$format,$actor->userId,$expectedRevision,$reason,$forceRevision);
             $this->posts->edit($id,$body,$format);
             $this->tx->attachments()->attach($actor->userId,'post',$id,$attachments);
             $this->tx->audit('forum.post.edit',$actor->userId,['thread_id'=>$thread['id'],'post_id'=>$id]);

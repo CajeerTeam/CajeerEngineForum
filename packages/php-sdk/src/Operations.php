@@ -147,6 +147,21 @@ final class Operations {
     ),
     'bodyRequired' => false,
   ),
+  'delete_Forum_deleteDraft' => 
+  array (
+    'method' => 'DELETE',
+    'path' => '/forum/drafts/{id}',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => true,
+  ),
   'delete_Forum_deleteGroup' => 
   array (
     'method' => 'DELETE',
@@ -867,6 +882,33 @@ final class Operations {
     ),
     'bodyRequired' => false,
   ),
+  'get_Forum_conversationRevisions' => 
+  array (
+    'method' => 'GET',
+    'path' => '/forum/conversations/{id}/messages/{message_id}/revisions',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+      1 => 
+      array (
+        'name' => 'message_id',
+        'in' => 'path',
+        'required' => true,
+      ),
+      2 => 
+      array (
+        'name' => 'page',
+        'in' => 'query',
+        'required' => false,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
   'get_Forum_conversationSettings' => 
   array (
     'method' => 'GET',
@@ -920,6 +962,48 @@ final class Operations {
         'name' => 'id',
         'in' => 'path',
         'required' => true,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
+  'get_Forum_draft' => 
+  array (
+    'method' => 'GET',
+    'path' => '/forum/drafts/{id}',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
+  'get_Forum_drafts' => 
+  array (
+    'method' => 'GET',
+    'path' => '/forum/drafts',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'page',
+        'in' => 'query',
+        'required' => false,
+      ),
+      1 => 
+      array (
+        'name' => 'scope',
+        'in' => 'query',
+        'required' => false,
+      ),
+      2 => 
+      array (
+        'name' => 'target_id',
+        'in' => 'query',
+        'required' => false,
       ),
     ),
     'bodyRequired' => false,
@@ -1089,6 +1173,27 @@ final class Operations {
       2 => 
       array (
         'name' => 'user_id',
+        'in' => 'query',
+        'required' => false,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
+  'get_Forum_postRevisions' => 
+  array (
+    'method' => 'GET',
+    'path' => '/forum/posts/{id}/revisions',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+      1 => 
+      array (
+        'name' => 'page',
         'in' => 'query',
         'required' => false,
       ),
@@ -2706,6 +2811,21 @@ final class Operations {
     ),
     'bodyRequired' => true,
   ),
+  'post_Forum_publishDraft' => 
+  array (
+    'method' => 'POST',
+    'path' => '/forum/drafts/{id}/publish',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => true,
+  ),
   'post_Forum_readConversation' => 
   array (
     'method' => 'POST',
@@ -2819,6 +2939,42 @@ final class Operations {
       ),
     ),
     'bodyRequired' => false,
+  ),
+  'post_Forum_restoreConversationRevision' => 
+  array (
+    'method' => 'POST',
+    'path' => '/forum/conversations/{id}/messages/{message_id}/revisions/restore',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+      1 => 
+      array (
+        'name' => 'message_id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => true,
+  ),
+  'post_Forum_restorePostRevision' => 
+  array (
+    'method' => 'POST',
+    'path' => '/forum/posts/{id}/revisions/restore',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => true,
   ),
   'post_Forum_retryAttachmentImage' => 
   array (
@@ -3360,6 +3516,21 @@ final class Operations {
     'path' => '/forum/conversation-settings',
     'parameters' => 
     array (
+    ),
+    'bodyRequired' => true,
+  ),
+  'put_Forum_saveDraft' => 
+  array (
+    'method' => 'PUT',
+    'path' => '/forum/drafts/{id}',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
     ),
     'bodyRequired' => true,
   ),

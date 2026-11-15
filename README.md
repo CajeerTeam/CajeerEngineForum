@@ -1,6 +1,6 @@
 # CajeerEngine Forum Edition
 
-**Forum Edition 0.4.4 — Polls & Q&A**, built on CajeerEngine 1.3.0. Release certification requires all `forum-required` CI jobs to pass.
+**Forum Edition 0.4.5 — Drafts & Revision History**, built on CajeerEngine 1.3.0. Release certification requires all `forum-required` CI jobs to pass.
 
 Self-hosted forum platform by CajeerTeam. PHP 8.4.1+, CajeerEngine kernel, Symfony Components, REST API, Apache-2.0.
 

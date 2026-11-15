@@ -36,7 +36,7 @@ final class ForumIdentityTest extends TestCase
     public function testIndependentReleaseIdentity(): void
     {
         $version=new ForumVersion(dirname(__DIR__,2));
-        self::assertSame('0.4.4',$version->current());
+        self::assertSame('0.4.5',$version->current());
         self::assertSame('1.3.0',$version->upstream());
     }
 }

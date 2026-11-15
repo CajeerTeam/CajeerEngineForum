@@ -24,7 +24,7 @@ def reject(db, query, args):
 
 with tempfile.TemporaryDirectory(prefix='forum-poll-') as tmp:
     path=Path(tmp)/'live.sqlite';db=conn(path)
-    migrations=sorted((ROOT/'migrations/sqlite').glob('*.sql'))
+    migrations=sorted(f for f in (ROOT/'migrations/sqlite').glob('*.sql') if f.name[:4]<='0031')
     assert migrations[-1].name=='0031_forum_polls_questions.sql'
     for f in migrations[:-1]:db.executescript(f.read_text())
     users=[uid() for _ in range(8)];owner,answerer,voter=users[:3]

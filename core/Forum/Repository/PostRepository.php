@@ -22,7 +22,7 @@ final readonly class PostRepository extends Repository
         $quotes=[];
         foreach($rows as &$row){
             $content=\CajeerEngine\Forum\Content\ForumContentRenderer::render($row['body'],$row['body_format']);
-            $row['body_html']=$content['html'];$row['renderer_version']=$content['renderer_version'];
+            $row['revision_number']=(int)$row['revision_number'];$row['body_html']=$content['html'];$row['renderer_version']=$content['renderer_version'];
             foreach($content['quotes'] as $quote)$quotes[$quote]=true;
             $row['reactions']=$counts[$row['id']]??[];$row['my_reaction']=$mine[$row['id']]??null;
             $row['ignored_author']=isset($ignored[$row['author_id']??'']);

@@ -113,6 +113,18 @@ export const operations = {
         ],
         "bodyRequired": false
     },
+    "delete_Forum_deleteDraft": {
+        "method": "DELETE",
+        "path": "/forum/drafts/{id}",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
+    },
     "delete_Forum_deleteGroup": {
         "method": "DELETE",
         "path": "/forum/groups/{id}",
@@ -674,6 +686,28 @@ export const operations = {
         ],
         "bodyRequired": false
     },
+    "get_Forum_conversationRevisions": {
+        "method": "GET",
+        "path": "/forum/conversations/{id}/messages/{message_id}/revisions",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            },
+            {
+                "name": "message_id",
+                "in": "path",
+                "required": true
+            },
+            {
+                "name": "page",
+                "in": "query",
+                "required": false
+            }
+        ],
+        "bodyRequired": false
+    },
     "get_Forum_conversationSettings": {
         "method": "GET",
         "path": "/forum/conversation-settings",
@@ -715,6 +749,40 @@ export const operations = {
                 "name": "id",
                 "in": "path",
                 "required": true
+            }
+        ],
+        "bodyRequired": false
+    },
+    "get_Forum_draft": {
+        "method": "GET",
+        "path": "/forum/drafts/{id}",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": false
+    },
+    "get_Forum_drafts": {
+        "method": "GET",
+        "path": "/forum/drafts",
+        "parameters": [
+            {
+                "name": "page",
+                "in": "query",
+                "required": false
+            },
+            {
+                "name": "scope",
+                "in": "query",
+                "required": false
+            },
+            {
+                "name": "target_id",
+                "in": "query",
+                "required": false
             }
         ],
         "bodyRequired": false
@@ -846,6 +914,23 @@ export const operations = {
             },
             {
                 "name": "user_id",
+                "in": "query",
+                "required": false
+            }
+        ],
+        "bodyRequired": false
+    },
+    "get_Forum_postRevisions": {
+        "method": "GET",
+        "path": "/forum/posts/{id}/revisions",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            },
+            {
+                "name": "page",
                 "in": "query",
                 "required": false
             }
@@ -2084,6 +2169,18 @@ export const operations = {
         "parameters": [],
         "bodyRequired": true
     },
+    "post_Forum_publishDraft": {
+        "method": "POST",
+        "path": "/forum/drafts/{id}/publish",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
+    },
     "post_Forum_readConversation": {
         "method": "POST",
         "path": "/forum/conversations/{id}/read",
@@ -2172,6 +2269,35 @@ export const operations = {
             }
         ],
         "bodyRequired": false
+    },
+    "post_Forum_restoreConversationRevision": {
+        "method": "POST",
+        "path": "/forum/conversations/{id}/messages/{message_id}/revisions/restore",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            },
+            {
+                "name": "message_id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
+    },
+    "post_Forum_restorePostRevision": {
+        "method": "POST",
+        "path": "/forum/posts/{id}/revisions/restore",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
     },
     "post_Forum_retryAttachmentImage": {
         "method": "POST",
@@ -2571,6 +2697,18 @@ export const operations = {
         "method": "PUT",
         "path": "/forum/conversation-settings",
         "parameters": [],
+        "bodyRequired": true
+    },
+    "put_Forum_saveDraft": {
+        "method": "PUT",
+        "path": "/forum/drafts/{id}",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
         "bodyRequired": true
     },
     "put_Forum_setBoardPermissions": {
