@@ -26,7 +26,7 @@ echo json_encode(['base'=>$base,'draft'=>$draft,'active'=>S::transition($draft,'
 state=json.loads(subprocess.check_output(['php','-r',PHP],cwd=ROOT))
 with tempfile.TemporaryDirectory() as tmp:
  db=sqlite3.connect(Path(tmp)/'forum.sqlite');db.execute('PRAGMA foreign_keys=ON')
- files=sorted((ROOT/'migrations/sqlite').glob('*.sql'));assert files[-1].name=='0045_forum_themes.sql'
+ files=sorted(f for f in (ROOT/'migrations/sqlite').glob('*.sql') if f.name[:4]<='0045');assert files[-1].name=='0045_forum_themes.sql'
  for f in files[:-1]:db.executescript(f.read_text())
  user=str(uuid.uuid4());db.execute('INSERT INTO ce_users(id,email,name,password_hash) VALUES(?,?,?,?)',(user,'theme@example.test','Theme admin','test'));db.commit()
  db.executescript(files[-1].read_text());assert db.execute('SELECT revision,payload,active_payload FROM ce_forum_theme_settings').fetchone()==(0,'{}','{}')

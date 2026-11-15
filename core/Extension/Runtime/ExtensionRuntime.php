@@ -43,6 +43,14 @@ final class ExtensionRuntime
         $this->platform = new PlatformServices();
     }
 
+    public function forumOutboxDiagnostics(): array
+    {
+        if($this->database===null)return ['available'=>false];
+        try{if(!$this->database->tableExists('ce_forum_extension_events'))return ['available'=>false];
+            return ['available'=>true]+(new \CajeerEngine\Forum\Service\ForumExtensionOutbox($this->database))->diagnostics();
+        }catch(\Throwable){return ['available'=>false];}
+    }
+
     /** @return array<string,mixed> */
     public function boot(bool $force = false): array
     {
@@ -284,6 +292,7 @@ final class ExtensionRuntime
             'declared_providers' => $providers,
             'loaded_providers' => array_sum(array_map('count', $this->providers)),
             'pages' => $this->platform->pages(),
+            'forum' => $this->platform->forumDiagnostics(),
             'tasks' => $this->platform->tasks(),
             'listener_counts' => $this->events->listenerCounts(),
             'errors' => $bootErrors,

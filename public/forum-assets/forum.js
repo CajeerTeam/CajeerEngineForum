@@ -175,6 +175,18 @@ async function revisionPanel(path,expected,refresh){const box=panel();add(box,no
  const load=async()=>{const rows=await f(path+'?page='+currentPage);versions=rows;content.replaceChildren();left.replaceChildren();right.replaceChildren();for(const r of rows){const label='Версия '+r.revision_number+' · '+conversationDate(r.created_at);for(const sel of [left,right]){const o=node('option',label);o.value=r.revision_number;add(sel,o)}const item=add(node('details'),node('summary',label+(r.edit_reason?' · '+r.edit_reason:'')),node('pre',r.body,'revision-source'),button('Восстановить версию '+r.revision_number,async()=>{if(!confirm('Создать новую ревизию с этим текстом? Текущие вложения не изменятся.'))return;await f(path+'/restore','POST',{revision_number:Number(r.revision_number),expected_revision:Number(expected)});await refresh()}));add(content,item)}if(rows.length>1)left.selectedIndex=1;compare();if(currentPage>1)add(content,button('Более новые',async()=>{currentPage--;await load()}));if(rows.length===25)add(content,button('Более старые',async()=>{currentPage++;await load()}))};
  left.addEventListener('change',compare);right.addEventListener('change',compare);add(box,add(node('label','Сравнить версии'),left),add(node('label','С версией'),right),diff,content);await load();return box}
 
+function topicTemplates(editor){
+ const templates=document.getElementById('forum-extension-topic-templates');if(!templates)return;
+ const controls=node('div',undefined,'actions');
+ for(const item of templates.content.querySelectorAll('[data-template-title]')){
+  add(controls,button(item.dataset.templateTitle,()=>{
+   const field=editor.elements.body;if(field.value.trim()&&!confirm('Заменить текущий текст шаблоном?'))return;
+   const mode=editor.elements.body_format;mode.value='plain';mode.dispatchEvent(new Event('change'));
+   field.value=item.textContent;field.dispatchEvent(new Event('input',{bubbles:true}));field.focus();
+  }));
+ }
+ if(controls.children.length)editor.prepend(add(node('fieldset'),node('legend','Шаблоны темы'),controls));
+}
 function topicComposer(boardId){
  const kind=selectField('kind','Тип темы',[['discussion','Обсуждение'],['poll','Опрос'],['question','Вопрос']],'discussion'),kindInput=kind.querySelector('select');
  const options=node('textarea');options.placeholder='Первый вариант\nВторой вариант';options.rows=4;
@@ -189,7 +201,7 @@ function topicComposer(boardId){
   data.kind=kindInput.value;delete data.poll_visibility;
   if(data.kind==='poll')data.poll={question:question.value,options:options.value.split('\n').map(x=>x.trim()).filter(Boolean),max_choices:Number(max.value),allow_change:change.checked,visibility:visibility.querySelector('select').value,closes_at:deadline.value?Math.floor(new Date(deadline.value).getTime()/1000):null};
   const t=await f(`/boards/${boardId}/threads`,'POST',data);go(threadUrl(t));
- });editor.prepend(kind,settings);editor.insertBefore(searchDiscovery(editor.elements.title,'similar',boardId),editor.querySelector('button[type=submit]'));return draftControls(editor,'thread',boardId,()=>{const p=draftPayload(editor);p.kind=kindInput.value;if(p.kind==='poll')p.poll={question:question.value,options:options.value.split('\n').map(x=>x.trim()).filter(Boolean),max_choices:Number(max.value),allow_change:change.checked,visibility:visibility.querySelector('select').value,closes_at:deadline.value?Math.floor(new Date(deadline.value).getTime()/1000):null};return p},p=>{kindInput.value=p.kind||'discussion';kindInput.dispatchEvent(new Event('change'));if(p.poll){question.value=p.poll.question;options.value=p.poll.options.join('\n');max.value=p.poll.max_choices;change.checked=p.poll.allow_change;visibility.querySelector('select').value=p.poll.visibility;deadline.value='';if(p.poll.closes_at){const dt=new Date(p.poll.closes_at*1000);deadline.value=new Date(dt.getTime()-dt.getTimezoneOffset()*60000).toISOString().slice(0,16)}}});
+ });editor.prepend(kind,settings);topicTemplates(editor);editor.insertBefore(searchDiscovery(editor.elements.title,'similar',boardId),editor.querySelector('button[type=submit]'));return draftControls(editor,'thread',boardId,()=>{const p=draftPayload(editor);p.kind=kindInput.value;if(p.kind==='poll')p.poll={question:question.value,options:options.value.split('\n').map(x=>x.trim()).filter(Boolean),max_choices:Number(max.value),allow_change:change.checked,visibility:visibility.querySelector('select').value,closes_at:deadline.value?Math.floor(new Date(deadline.value).getTime()/1000):null};return p},p=>{kindInput.value=p.kind||'discussion';kindInput.dispatchEvent(new Event('change'));if(p.poll){question.value=p.poll.question;options.value=p.poll.options.join('\n');max.value=p.poll.max_choices;change.checked=p.poll.allow_change;visibility.querySelector('select').value=p.poll.visibility;deadline.value='';if(p.poll.closes_at){const dt=new Date(p.poll.closes_at*1000);deadline.value=new Date(dt.getTime()-dt.getTimezoneOffset()*60000).toISOString().slice(0,16)}}});
 }
 function pollWritable(d){return canWrite()&&d.board.effective_state==='open'&&!Number(d.thread.locked)&&d.board.permissions?.['post:reply']}
 function pollOwner(d){return canWrite()&&d.board.effective_state==='open'&&(d.board.permissions?.['thread:moderate']||(!Number(d.thread.locked)&&d.board.permissions?.['post:reply']&&d.thread.author_id===me?.user_id))}

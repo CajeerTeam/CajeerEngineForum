@@ -19,7 +19,7 @@ final class QueueWorker
         $this->handlers->register('webhooks.dispatch_pending',function(){if(!$this->webhooks->enqueuePending($this->queue,50)['ok'])throw new \RuntimeException('Outbox handoff failed; events retained for retry');});
         $this->handlers->register('webhook.dispatch',fn($p,$c)=>$this->dispatchWebhookJob($p,$c));
         $this->handlers->register('webhook.deliver',fn($p,$c)=>$this->deliver($p,$c));
-        if($database!==null){$this->forumJobs=new \CajeerEngine\Forum\Service\ForumRuntimeJobs($database,$queue);$this->forumJobs->register($this->handlers);}
+        if($database!==null){$this->forumJobs=new \CajeerEngine\Forum\Service\ForumRuntimeJobs($database,$queue,$platform);$this->forumJobs->register($this->handlers);}
     }
     public function registry(): JobHandlerRegistry {return $this->handlers;}
     public function stop(): void {$this->stopping=true;}
@@ -28,7 +28,7 @@ final class QueueWorker
         $root=$this->webhooks->rootPath();$metrics=new \CajeerEngine\Observability\Metrics($root);\CajeerEngine\Observability\OperationsMonitor::marker($root,'worker','running');
         $processed=0;$failed=0;$errors=[];$lost=0;$signals=PHP_SAPI==='cli'&&function_exists('pcntl_signal')&&function_exists('pcntl_alarm');
         if($signals){$async=pcntl_async_signals(true);$old=[];foreach([SIGTERM,SIGINT,SIGALRM]as $s)$old[$s]=pcntl_signal_get_handler($s);pcntl_signal(SIGTERM,fn()=> $this->stop());pcntl_signal(SIGINT,fn()=> $this->stop());pcntl_signal(SIGALRM,static function(){throw new \RuntimeException('Job execution timeout');});}
-        $spamCleaned=0;$forumProcessed=0;$recyclePurged=0;$attachmentsCleaned=0;$draftsCleaned=0;$mediaStats=['image'=>'disabled','replica'=>'disabled'];$mailStats=['sent'=>0,'failed'=>0,'cancelled'=>0];
+        $extensionStats=[];$spamCleaned=0;$forumProcessed=0;$recyclePurged=0;$attachmentsCleaned=0;$draftsCleaned=0;$mediaStats=['image'=>'disabled','replica'=>'disabled'];$mailStats=['sent'=>0,'failed'=>0,'cancelled'=>0];
         try {
             $distributed=false;
             $forumDbReady=$this->database===null;
@@ -42,43 +42,54 @@ final class QueueWorker
             }
             try {
             // Non-Redis workers (or failed Redis handoff) drain durable SQL directly.
+            if(($queue===null||$queue==='default')&&$forumDbReady&&$this->database!==null&&$this->platform!==null&&!$this->stopping&&$this->database->tableExists('ce_forum_extension_events')){
+                try{
+                    $outbox=new \CajeerEngine\Forum\Service\ForumExtensionOutbox($this->database);
+                    if(!$distributed){
+                        if($signals)pcntl_alarm(max(1,min(120,(int)(getenv('QUEUE_JOB_TIMEOUT_SECONDS')?:120))));
+                        try{$extensionStats=$outbox->drain($this->platform,max(1,min(50,$limit*5)));}finally{if($signals)pcntl_alarm(0);}
+                    }
+                    $outbox->cleanup();
+                }catch(\Throwable $e){$failed++;$errors[]=['name'=>'forum.extensions.dispatch','error'=>'Forum extension delivery deferred'];}
+            }
+
             if (!$distributed && ($queue===null || $queue==='default') && $forumDbReady && $this->database!==null && $this->database->tableExists('ce_forum_notifications') && !$this->stopping) {
                 try {
-                    $tx=new \CajeerEngine\Forum\Service\ForumTransaction($this->database,new \CajeerEngine\Database\Repository\AuditLogRepository($this->database));
+                    $tx=new \CajeerEngine\Forum\Service\ForumTransaction($this->database,new \CajeerEngine\Database\Repository\AuditLogRepository($this->database),$this->platform);
                     if($signals)pcntl_alarm(max(1,(int)(getenv('QUEUE_JOB_TIMEOUT_SECONDS')?:120)));
                     try{$forumProcessed=$tx->notifications()->dispatch(10*max(1,min(10,$limit)));}finally{if($signals)pcntl_alarm(0);}
                 }catch(\Throwable $e){$failed++;$errors[]=['name'=>'forum.notifications.dispatch','error'=>QueueOptions::error($e->getMessage())];}
             }
             if (!$distributed && ($queue===null || $queue==='default') && $forumDbReady && $this->database!==null && $this->database->tableExists('ce_forum_mail_delivery') && !$this->stopping) {
                 try {
-                    $tx=new \CajeerEngine\Forum\Service\ForumTransaction($this->database,new \CajeerEngine\Database\Repository\AuditLogRepository($this->database));
+                    $tx=new \CajeerEngine\Forum\Service\ForumTransaction($this->database,new \CajeerEngine\Database\Repository\AuditLogRepository($this->database),$this->platform);
                     if($signals)pcntl_alarm(max(1,min(240,(int)(getenv('QUEUE_JOB_TIMEOUT_SECONDS')?:120))));
                     try{$mailStats=$tx->watches()->dispatch(min(5,$limit));}finally{if($signals)pcntl_alarm(0);}
                     if($mailStats['failed']>0){$failed+=$mailStats['failed'];$errors[]=['name'=>'forum.mail.dispatch','error'=>'SMTP delivery failed; retry scheduled'];}
                 }catch(\Throwable $e){$failed++;$errors[]=['name'=>'forum.mail.dispatch','error'=>'Forum mail processing failed'];}
             }
             if (($queue===null || $queue==='default') && $forumDbReady && $this->database!==null && $this->database->tableExists('ce_forum_drafts') && !$this->stopping) {
-                try{$tx=new \CajeerEngine\Forum\Service\ForumTransaction($this->database,new \CajeerEngine\Database\Repository\AuditLogRepository($this->database));$draftsCleaned=$tx->drafts()->cleanup();}
+                try{$tx=new \CajeerEngine\Forum\Service\ForumTransaction($this->database,new \CajeerEngine\Database\Repository\AuditLogRepository($this->database),$this->platform);$draftsCleaned=$tx->drafts()->cleanup();}
                 catch(\Throwable $e){$failed++;$errors[]=['name'=>'forum.drafts.cleanup','error'=>'Draft cleanup failed'];}
             }
             if (($queue===null || $queue==='default') && $forumDbReady && $this->database!==null && $this->database->columnExists('ce_forum_threads','deleted_at') && !$this->stopping) {
-                try{$tx=new \CajeerEngine\Forum\Service\ForumTransaction($this->database,new \CajeerEngine\Database\Repository\AuditLogRepository($this->database));$recyclePurged=$tx->recycle()->cleanup();}
+                try{$tx=new \CajeerEngine\Forum\Service\ForumTransaction($this->database,new \CajeerEngine\Database\Repository\AuditLogRepository($this->database),$this->platform);$recyclePurged=$tx->recycle()->cleanup();}
                 catch(\Throwable $e){$failed++;$errors[]=['name'=>'forum.recycle.purge','error'=>'Recycle bin cleanup failed'];}
             }
             if (($queue===null || $queue==='default') && $forumDbReady && $this->database!==null && $this->database->tableExists('ce_forum_attachments') && !$this->stopping) {
-                try{$tx=new \CajeerEngine\Forum\Service\ForumTransaction($this->database,new \CajeerEngine\Database\Repository\AuditLogRepository($this->database));$attachmentsCleaned=$tx->attachments()->cleanup();}
+                try{$tx=new \CajeerEngine\Forum\Service\ForumTransaction($this->database,new \CajeerEngine\Database\Repository\AuditLogRepository($this->database),$this->platform);$attachmentsCleaned=$tx->attachments()->cleanup();}
                 catch(\Throwable $e){$failed++;$errors[]=['name'=>'forum.attachments.cleanup','error'=>'Attachment cleanup failed'];}
             }
             if (!$distributed && ($queue===null || $queue==='default') && $forumDbReady && $this->database!==null && $this->database->tableExists('ce_forum_media_state') && !$this->stopping) {
                 foreach(['image'=>'processImage','replica'=>'syncReplica'] as $kind=>$method){try{
-                    $tx=new \CajeerEngine\Forum\Service\ForumTransaction($this->database,new \CajeerEngine\Database\Repository\AuditLogRepository($this->database));
+                    $tx=new \CajeerEngine\Forum\Service\ForumTransaction($this->database,new \CajeerEngine\Database\Repository\AuditLogRepository($this->database),$this->platform);
                     if($signals)pcntl_alarm(max(90,min(240,(int)(getenv('QUEUE_JOB_TIMEOUT_SECONDS')?:120))));
                     try{$mediaStats[$kind]=$tx->media()->$method();}finally{if($signals)pcntl_alarm(0);}
                     if($mediaStats[$kind]==='failed'){$failed++;$errors[]=['name'=>'forum.media.'.$kind,'error'=>'Media processing failed; retry scheduled'];}
                 }catch(\Throwable $e){$failed++;$mediaStats[$kind]='failed';$errors[]=['name'=>'forum.media.'.$kind,'error'=>'Media processing failed'];}}
             }
             if (($queue===null || $queue==='default') && $forumDbReady && $this->database!==null && $this->database->tableExists('ce_forum_spam_events') && !$this->stopping) {
-                try{$tx=new \CajeerEngine\Forum\Service\ForumTransaction($this->database,new \CajeerEngine\Database\Repository\AuditLogRepository($this->database));$spamCleaned=$tx->antiSpam()->cleanup();}
+                try{$tx=new \CajeerEngine\Forum\Service\ForumTransaction($this->database,new \CajeerEngine\Database\Repository\AuditLogRepository($this->database),$this->platform);$spamCleaned=$tx->antiSpam()->cleanup();}
                 catch(\Throwable $e){$failed++;$errors[]=['name'=>'forum.spam.cleanup','error'=>'Spam counter cleanup failed'];}
             }
             } catch (\Throwable $e) {
@@ -101,7 +112,7 @@ final class QueueWorker
         \CajeerEngine\Observability\OperationsMonitor::marker($root,'worker',$failed?'failure':'success');
         $stats=$this->forumJobs?->stats??[];$forumProcessed+=$stats['notifications']??0;foreach($stats['mail']??[] as $key=>$n)$mailStats[$key]+=$n;$mediaStats=array_replace($mediaStats,$stats['media']??[]);
         try{$diagnostics=$this->queue->diagnostics();}catch(\Throwable){$diagnostics=['connected'=>false,'error'=>'Queue unavailable'];}
-        return ['processed'=>$processed,'forum_notifications_processed'=>$forumProcessed,'forum_mail'=>$mailStats,'forum_attachments_cleaned'=>$attachmentsCleaned,'forum_drafts_cleaned'=>$draftsCleaned,'forum_spam_cleaned'=>$spamCleaned,'forum_recycle_purged'=>$recyclePurged,'forum_media'=>$mediaStats,'failed'=>$failed,'lost_reservations'=>$lost,'stopping'=>$this->stopping,'errors'=>$errors,'diagnostics'=>$diagnostics];
+        return ['processed'=>$processed,'forum_extensions'=>$extensionStats?:($this->forumJobs?->stats['extensions']??[]),'forum_notifications_processed'=>$forumProcessed,'forum_mail'=>$mailStats,'forum_attachments_cleaned'=>$attachmentsCleaned,'forum_drafts_cleaned'=>$draftsCleaned,'forum_spam_cleaned'=>$spamCleaned,'forum_recycle_purged'=>$recyclePurged,'forum_media'=>$mediaStats,'failed'=>$failed,'lost_reservations'=>$lost,'stopping'=>$this->stopping,'errors'=>$errors,'diagnostics'=>$diagnostics];
     }
     private function logMessage(array $payload,JobContext $context): void
     {

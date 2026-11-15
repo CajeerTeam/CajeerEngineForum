@@ -66,3 +66,34 @@ Recovery проверяет backup и ждёт освобождения блок
 ## Проверки
 
 `php tools/extension-regression.php` проверяет подпись ZIP, реальные lifecycle, queue worker, scheduler, тему, зависимости и backup/recovery. В release CI тест запускается с PDO SQLite; PostgreSQL и MySQL миграции требуют отдельных интеграционных прогонов перед эксплуатацией. `php bin/cajeer api:lint --strict --json` проверяет runtime API и OpenAPI.
+
+## Forum Extension Platform 0.7.4
+
+Forum Edition uses the same signed package manager and trusted PHP provider runtime. A forum plugin must declare a `forum` version constraint (for example `"forum": "^0.7.4"`) alongside `engine`, and declare `forum.events` and/or `forum.ui` as needed. `CajeerEngine\Forum\Extension\ForumExtension` is the SDK facade; register in `boot(ExtensionContext $context)`:
+
+```php
+$sdk = new \CajeerEngine\Forum\Extension\ForumExtension($context);
+$sdk->listen('activity', 'forum.post.reply', function (array $event, string $name): void {
+    // Persist the result and a unique receipt for $event['event_id'] together.
+});
+$sdk->panel('welcome', 'home', fn () => ['title' => 'Welcome', 'text' => 'Community news']);
+$sdk->topicTemplate('bug', fn () => ['title' => 'Bug report', 'text' => "Steps:\nExpected:\nActual:"]);
+```
+
+`ForumExtension::events()` enumerates the supported events. Metadata is selected from the corresponding forum audit event; `event_id`, `occurred_at` (Unix seconds) and `actor_id` are supplied. There is no message body, email, password, session or private conversation in the payload. IDs can still refer to restricted content: plugins must not expose them publicly without their own authorization checks. These are trusted PHP plugins, not a sandbox. Subscribers are captured at mutation time; the event is committed with the forum transaction and delivered by workers, never by the request transaction. Unsubscribed events create no outbox row. Delivery is at-least-once (including worker crash after handler commit), not ordered globally or exactly once. Each handler must use the event ID for idempotency. A failed subscriber is retried up to eight times with exponential delay; completed subscribers are not repeated for its failure. Disabled subscribers are skipped; restart long-lived web/worker processes after lifecycle changes. Terminal rows are retained for 30 days. No automatic replay of historical events on installation.
+
+The `home`, `sidebar`, `thread` slots render plain text in server HTML; `composer` supplies selectable templates for the new-topic editor. A callback returns `title` and `text` strings or `null` to hide. No arbitrary HTML, JS, routes, ACL decisions or per-user context are supplied by the SDK. Preview and error pages do not render plugin content. Public HTML cache is bypassed when public UI slots are registered so schedules and plugin-owned state cannot become stale; JSON caching remains unchanged. Plugins must keep rendering quick and side-effect free.
+
+### Working examples
+
+`examples/extensions/forum-announcements` stores announcements in its own SQL tables, provides a revision-checked administrative editor and start/end times, renders the active announcement on the forum home page, and counts observed topic/reply events using transactionally stored receipts. `examples/extensions/forum-topic-templates` supplies two selectable templates in the new-topic composer. Both ship as source examples, not preinstalled or signed packages. Copy to a staging directory, inspect, sign with your trusted publisher key and install as described above (publisher is `cajeer`). Apply core migration 0046 first. Example:
+
+```sh
+cp -R examples/extensions/forum-announcements /tmp/forum-announcements
+php bin/cajeer extension:sign /tmp/forum-announcements --secret-key=/secure/cajeer.secret
+php bin/cajeer extension:package:install /tmp/forum-announcements --enable
+php bin/cajeer queue:work --queue=default --limit=10
+php bin/cajeer forum:extensions:check --json
+```
+
+Open `/admin/#/extensions` → Forum Announcements. The fields use Unix seconds UTC (zero means immediate/no expiry). To retry a dead event after repairing a subscriber, use `php bin/cajeer forum:extensions:retry EVENT_ID --json`. Redis wakes workers; SQL owns the event ledger. Non-Redis workers drain it directly. Run `php tools/forum-extension-regression.php --database` and `python tools/forum-tests/extension_sql_regression.py` in CI. The new SDK does not provide a search-field injection API or arbitrary template replacement.

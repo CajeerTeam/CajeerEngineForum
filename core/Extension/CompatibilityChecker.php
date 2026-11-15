@@ -6,23 +6,26 @@ namespace CajeerEngine\Extension;
 
 final readonly class CompatibilityChecker
 {
-    public function __construct(private string $engineApiVersion)
+    public function __construct(private string $engineApiVersion, private ?string $forumVersion=null)
     {
     }
 
     public function isCompatible(ExtensionManifest $manifest): bool
     {
-        return $this->matches($this->normalize($this->engineApiVersion), $manifest->engineConstraint);
+        if(!$this->matches($this->normalize($this->engineApiVersion), $manifest->engineConstraint))return false;
+        $constraint=$manifest->raw['forum']??null;
+        return $constraint===null||($this->forumVersion!==null&&DependencyGraph::matches($this->normalize($this->forumVersion),$constraint));
     }
 
     public function assertCompatible(ExtensionManifest $manifest): void
     {
         if (!$this->isCompatible($manifest)) {
             throw new \RuntimeException(sprintf(
-                'Расширение %s требует Engine API %s, текущая версия Engine API: %s.',
+                'Расширение %s требует Engine API %s, текущая версия Engine API: %s; Forum constraint: %s, текущая версия Forum: %s.',
                 $manifest->name,
                 $manifest->engineConstraint,
                 $this->engineApiVersion,
+                $manifest->raw['forum']??'—', $this->forumVersion??'—',
             ));
         }
     }

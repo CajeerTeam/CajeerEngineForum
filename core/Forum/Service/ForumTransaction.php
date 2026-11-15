@@ -10,7 +10,7 @@ use PDOException;
 
 final readonly class ForumTransaction
 {
-    public function __construct(private DatabaseManager $db, private AuditLogRepository $audit) {}
+    public function __construct(private DatabaseManager $db, private AuditLogRepository $audit, private ?\CajeerEngine\Extension\Runtime\PlatformServices $platform=null) {}
 
     /** Run mutations and audit on the same connection; exceptions roll both back. */
     public function write(callable $operation): mixed
@@ -59,5 +59,7 @@ final readonly class ForumTransaction
     {
         if (!$this->db->connection()->inTransaction()) throw new \LogicException('Forum audit requires a transaction');
         $this->audit->record($event, $actor, $context);
+        $targets=$this->platform?->forumSubscribers($event,time())??[];
+        if($targets!==[])(new ForumExtensionOutbox($this->db))->record($event,$actor,$context,$targets);
     }
 }

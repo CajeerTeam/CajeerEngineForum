@@ -12,10 +12,11 @@ use CajeerEngine\Queue\{ManagedQueueDriverInterface,JobHandlerRegistry,JobContex
 final class ForumRuntimeJobs
 {
     public array $stats=[];
-    public function __construct(private readonly DatabaseManager $db,private readonly ManagedQueueDriverInterface $queue) {}
-    private function tx(): ForumTransaction {return new ForumTransaction($this->db,new AuditLogRepository($this->db));}
+    public function __construct(private readonly DatabaseManager $db,private readonly ManagedQueueDriverInterface $queue,private readonly ?\CajeerEngine\Extension\Runtime\PlatformServices $platform=null) {}
+    private function tx(): ForumTransaction {return new ForumTransaction($this->db,new AuditLogRepository($this->db),$this->platform);}
     public function register(JobHandlerRegistry $registry): void
     {
+        if($this->platform!==null)$registry->register('forum.extensions.dispatch',function(array $p,JobContext $ctx){$ctx->heartbeat();foreach((new ForumExtensionOutbox($this->db))->drain($this->platform,20) as $key=>$n)$this->stats['extensions'][$key]=($this->stats['extensions'][$key]??0)+$n;});
         $registry->register('forum.notifications.dispatch',function(array $p,JobContext $ctx){$ctx->heartbeat();$this->stats['notifications']=($this->stats['notifications']??0)+$this->tx()->notifications()->dispatch(100);});
         $registry->register('forum.mail.dispatch',function(array $p,JobContext $ctx){$ctx->heartbeat();$stats=$this->tx()->watches()->dispatch(5);foreach($stats as $key=>$n)$this->stats['mail'][$key]=($this->stats['mail'][$key]??0)+$n;if($stats['failed'])throw new \RuntimeException('Forum mail delivery failed; SQL retry scheduled');});
         foreach(['image'=>'processImage','replica'=>'syncReplica'] as $kind=>$method)$registry->register('forum.media.'.$kind,function(array $p,JobContext $ctx)use($kind,$method){$ctx->heartbeat();$result=$this->tx()->media()->$method();$this->stats['media'][$kind]=$result;if($result==='failed')throw new \RuntimeException('Forum media processing failed; SQL retry scheduled');});
@@ -24,6 +25,7 @@ final class ForumRuntimeJobs
     public function schedule(): void
     {
         $now=time();$tick=intdiv($now,10);$jobs=[];
+        if($this->platform!==null&&$this->db->tableExists('ce_forum_extension_events')&&(new ForumExtensionOutbox($this->db))->pending())$jobs[]='forum.extensions.dispatch';
         if($this->db->tableExists('ce_forum_notifications')&&(new NotificationRepository($this->db))->pending(1))$jobs[]='forum.notifications.dispatch';
         if($this->db->tableExists('ce_forum_mail_delivery')&&(new WatchRepository($this->db))->candidate($now)!==null)$jobs[]='forum.mail.dispatch';
         if($this->db->tableExists('ce_forum_media_state')){

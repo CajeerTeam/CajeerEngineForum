@@ -67,6 +67,9 @@ final readonly class ManifestLoader
             $errors[] = 'engine не должен быть пустым';
         }
 
+        if(array_key_exists('forum',$payload)&&(!is_string($payload['forum'])||!preg_match('/^(?:\*|(?:[<>]=?|=|\^)?[0-9]+\.[0-9]+\.[0-9]+(?:\s+(?:[<>]=?|=|\^)?[0-9]+\.[0-9]+\.[0-9]+)*)$/D',$payload['forum'])))$errors[]='Invalid Forum version constraint';
+        if(is_array($payload['permissions']??null)&&array_intersect($payload['permissions'],['forum.events','forum.ui'])&&!isset($payload['forum']))$errors[]='Forum extensions require a forum version constraint';
+
         foreach (['permissions', 'events', 'providers'] as $field) {
             if (isset($payload[$field]) && !is_array($payload[$field])) {
                 $errors[] = "{$field} должен быть массивом строк";

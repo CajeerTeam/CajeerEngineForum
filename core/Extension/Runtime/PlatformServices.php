@@ -6,6 +6,52 @@ namespace CajeerEngine\Extension\Runtime;
 final class PlatformServices
 {
     private array $actions=[]; private array $jobs=[]; private array $pages=[]; private array $tasks=[]; private array $services=[];
+    private array $forumListeners=[];
+    private array $forumPanels=[];
+    public function forumListen(ExtensionContext $c,string $name,string $event,callable $handler): void
+    {
+        if(!array_key_exists($event,\CajeerEngine\Forum\Service\ForumExtensionOutbox::EVENTS))throw new \InvalidArgumentException('Unsupported forum event');
+        $key=$this->key($c,$name,'forum.events');
+        if(count($this->forumListeners)>=128)throw new \RuntimeException('Forum subscriber limit exceeded');
+        $since=strtotime((string)($c->state['enabled_at']??''))?:0;
+        $this->put($this->forumListeners,$key,['event'=>$event,'handler'=>$handler,'since'=>$since]);
+    }
+    public function forumSubscribers(string $event, int $occurredAt=PHP_INT_MAX): array
+    {
+        return array_keys(array_filter($this->forumListeners,static fn($entry)=>$entry['event']===$event&&$entry['since']<=$occurredAt));
+    }
+    public function deliverForumEvent(string $key,string $event,array $payload): bool
+    {
+        $listener=$this->forumListeners[$key]??null;
+        if($listener===null||$listener['event']!==$event||$listener['since']>(int)($payload['occurred_at']??0))return false;
+        ($listener['handler'])($payload,$event);return true;
+    }
+    /** Slots accept structured plain text only; no arbitrary HTML, scripts or route replacement. */
+    public function forumPanel(ExtensionContext $c,string $name,string $slot,callable $handler): void
+    {
+        if(!in_array($slot,['home','sidebar','thread','composer'],true))throw new \InvalidArgumentException('Unsupported forum slot');
+        $this->put($this->forumPanels,$this->key($c,$name,'forum.ui'),['slot'=>$slot,'handler'=>$handler,'context'=>$c]);
+    }
+    public function hasForumPanels(): bool {return $this->forumPanels!==[];}
+    public function forumPanels(string $slot): array
+    {
+        $panels=[];
+        foreach($this->forumPanels as $key=>$entry){
+            if($entry['slot']!==$slot)continue;
+            try{
+                // No request, user identifier or content is passed to a public renderer.
+                $value=($entry['handler'])();if($value===null)continue;
+                if(!is_array($value)||!is_string($value['title']??null)||!is_string($value['text']??null)||strlen($value['title'])>240||strlen($value['text'])>4000)throw new \InvalidArgumentException('Invalid forum panel');
+                $panels[]=['title'=>$value['title'],'text'=>$value['text']];
+            }catch(\Throwable $e){
+                // A broken optional panel must not break reading a discussion.
+                try{$entry['context']->log('forum.panel.failed',['slot'=>$slot,'panel'=>$key]);}catch(\Throwable){}
+            }
+            if(count($panels)>=10)break;
+        }
+        return $panels;
+    }
+    public function forumDiagnostics(): array {return ['listeners'=>array_keys($this->forumListeners),'panels'=>array_keys($this->forumPanels)];}
     private function key(ExtensionContext $c,string $name,string $permission): string
     {
         $c->requirePermission($permission);

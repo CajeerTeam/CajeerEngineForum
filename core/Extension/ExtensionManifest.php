@@ -49,6 +49,7 @@ final readonly class ExtensionManifest
             'type' => $this->type,
             'version' => $this->version,
             'engine' => $this->engineConstraint,
+            'forum' => $this->raw['forum']??null,
             'title' => $this->title !== '' ? $this->title : $this->name,
             'description' => $this->description,
             'permissions' => $this->permissions,

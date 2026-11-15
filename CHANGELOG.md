@@ -1,3 +1,10 @@
+## 0.7.4 — Forum Extension Platform
+
+- Transactional forum event outbox with per-subscriber progress, leased workers, retry/dead-letter recovery and Redis wakeups.
+- Forum SDK and safe SSR panel slots; explicit Forum Edition compatibility and permissions.
+- Installable announcements plugin with scheduling, ACP editor and deduplicated publication metrics.
+- Migration 0046 for SQLite, PostgreSQL and MySQL.
+
 ## 0.7.3 — Forum Themes & Styling
 
 - Three built-in forum designs, light/dark/system schemes and a validated design-token editor in Forum ACP.

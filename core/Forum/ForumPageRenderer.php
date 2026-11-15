@@ -12,7 +12,7 @@ use Symfony\Component\HttpFoundation\{Request,Response,RedirectResponse};
 final readonly class ForumPageRenderer
 {
     private ForumSeoSettings $settings;
-    public function __construct(private DiscussionService $discussions,private string $root,?ForumSeoSettings $settings=null)
+    public function __construct(private DiscussionService $discussions,private string $root,?ForumSeoSettings $settings=null,private ?\CajeerEngine\Extension\Runtime\PlatformServices $platform=null)
     { $this->settings=$settings??$discussions->seoSettings($root); }
 
     public function render(Request $request,ForumAccessPolicy $actor,?array $preview=null,?string $previewScheme=null): Response
@@ -107,16 +107,37 @@ final readonly class ForumPageRenderer
             foreach($schema as $item)$meta.='<script type="application/ld+json">'.json_encode($item,JSON_THROW_ON_ERROR|JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_UNICODE|JSON_INVALID_UTF8_SUBSTITUTE).'</script>';
         }
         $registration=$community['registration_open'];
+        $panels='';$sidebar='';$templates='';
+        if($status===200&&$preview===null&&$this->platform!==null){
+            $slot=$path==='/forum'?'home':(preg_match('~^/forum/threads/[^/]+$~D',$path)?'thread':null);
+            if($slot!==null)$panels=$this->extensionPanels($slot);
+            $sidebar=$this->extensionPanels('sidebar');
+            if(preg_match('~^/forum/boards/[^/]+$~D',$path)){
+                foreach($this->platform->forumPanels('composer') as $template){
+                    $templates.='<div data-template-title="'.self::e($template['title']).'">'.self::e($template['text']).'</div>';
+                }
+                if($templates!=='')$templates='<template id="forum-extension-topic-templates">'.$templates.'</template>';
+            }
+        }
         $html=strtr((string)file_get_contents($this->root.'/public/forum-assets/index.html'),[
+            '<!--FORUM_EXTENSION_MAIN-->'=>$panels,'<!--FORUM_EXTENSION_TEMPLATES-->'=>$templates,'<!--FORUM_EXTENSION_SIDEBAR-->'=>$sidebar,
             '<!--FORUM_THEME_CSS-->'=>'<style id="forum-theme">'.ForumTheme::css($design).'</style>',
             '<!--FORUM_THEME_SCHEME-->'=>self::e($scheme),'<!--FORUM_THEME_SIDEBAR-->'=>self::e($design['sidebar']),'<!--FORUM_THEME_LOGO-->'=>self::e($design['logo']),
             '<!--FORUM_THEME_PREVIEW-->'=>$preview!==null?'<p class="panel" role="status">Предпросмотр черновика оформления · только чтение</p>':'',
             '<!--FORUM_NAME-->'=>self::e($name),'<!--FORUM_REGISTRATION-->'=>$registration?'true':'false',
             '<!--FORUM_TITLE-->'=>self::e($title.($title===$name?'':' — '.$name).($page>1?' · '.$page:'')),
             '<!--FORUM_HEADING-->'=>self::e($title),'<!--FORUM_DESCRIPTION-->'=>self::e($description),
-            '<meta name="robots" content="noindex, nofollow" data-forum-template>'=>$meta,'<!--FORUM_MAINTENANCE-->'=>$community['paused']?'<p role="status" class="panel">Публикация новых тем и ответов временно приостановлена.</p>':'','<!--FORUM_BODY-->'=>$body,'<!--FORUM_RENDERED-->'=>$canonical!==null||$path==='/forum/latest'||$path==='/forum/questions'?'true':'false','<!--FORUM_SCRIPT-->'=>$status===200&&$preview===null?'<script src="/forum-assets/forum.js?v=0.7.3" defer></script>':'',
+            '<meta name="robots" content="noindex, nofollow" data-forum-template>'=>$meta,'<!--FORUM_MAINTENANCE-->'=>$community['paused']?'<p role="status" class="panel">Публикация новых тем и ответов временно приостановлена.</p>':'','<!--FORUM_BODY-->'=>$body,'<!--FORUM_RENDERED-->'=>$canonical!==null||$path==='/forum/latest'||$path==='/forum/questions'?'true':'false','<!--FORUM_SCRIPT-->'=>$status===200&&$preview===null?'<script src="/forum-assets/forum.js?v=0.7.4" defer></script>':'',
         ]);
         return new Response($html,$status,['Content-Type'=>'text/html; charset=UTF-8','Cache-Control'=>'private, no-store','Vary'=>'Cookie, Authorization, X-API-Token','X-Robots-Tag'=>$robots]);
+    }
+
+    private function extensionPanels(string $slot): string
+    {
+        $html='';foreach($this->platform?->forumPanels($slot)??[] as $panel){
+            $html.='<section class="panel forum-extension-panel"><h2>'.self::e($panel['title']).'</h2><p>'.nl2br(self::e($panel['text']),false).'</p></section>';
+        }
+        return $html;
     }
 
     public function sitemap(Request $request): Response

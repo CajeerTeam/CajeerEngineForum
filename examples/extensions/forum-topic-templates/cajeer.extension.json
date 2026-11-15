@@ -1,0 +1,14 @@
+{
+  "name": "cajeer/forum-topic-templates",
+  "type": "plugin",
+  "version": "1.0.0",
+  "engine": "^1.1",
+  "forum": ">=0.7.4 <0.8.0",
+  "title": "Forum Topic Templates",
+  "permissions": ["forum.ui"],
+  "providers": ["CajeerExample\\ForumTopicTemplatesProvider"],
+  "config": {
+    "bug": "Что произошло:\n\nШаги воспроизведения:\n\nОжидаемый результат:\n\nВерсия и окружение:\n",
+    "question": "Мой вопрос:\n\nКонтекст:\n\nЧто уже попробовал:\n"
+  }
+}

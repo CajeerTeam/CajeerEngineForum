@@ -15,6 +15,7 @@ final readonly class ForumDatabaseCheck
     public function check(): array
     {
         $required = [
+            'ce_forum_extension_events'=>['id','event_name','payload','state','targets','progress','attempts','due_at','lease_until','lease_token'],
             'ce_forum_theme_settings'=>['id','revision','payload','active_payload'],
             'ce_forum_community_settings'=>['id','revision','payload'],
             'ce_forum_cache_generation'=>['name','generation','scope'],

@@ -16,7 +16,7 @@ final class ExtensionRegistry
     public function __construct(private readonly string $rootPath, private readonly ConfigRepository $config)
     {
         $this->loader = new ManifestLoader();
-        $this->compatibility = new CompatibilityChecker($this->config->string('app.engine_api_version', '1.0'));
+        $this->compatibility = new CompatibilityChecker($this->config->string('app.engine_api_version', '1.0'),$this->config->string('app.edition_version'));
         $this->ensureDirectories();
     }
 

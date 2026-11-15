@@ -10,7 +10,7 @@ use Symfony\Component\HttpFoundation\{JsonResponse, Request, Response};
 
 final readonly class ForumController
 {
-    public function __construct(private DiscussionService $discussions, private EngagementService $engagement, private ModerationService $moderation, private RegistrationService $registration, private string $root, private \CajeerEngine\Forum\Service\IdentityService $identity, private ?\CajeerEngine\Forum\Service\ForumRuntimeCache $cache=null) {}
+    public function __construct(private DiscussionService $discussions, private EngagementService $engagement, private ModerationService $moderation, private RegistrationService $registration, private string $root, private \CajeerEngine\Forum\Service\IdentityService $identity, private ?\CajeerEngine\Forum\Service\ForumRuntimeCache $cache=null,private ?\CajeerEngine\Extension\Runtime\PlatformServices $platform=null) {}
 
     public function page(Request $request, array $parameters=[]): Response
     {
@@ -26,7 +26,10 @@ final readonly class ForumController
                 return (new ForumPageRenderer($this->discussions,$this->root,$settings))->render($request,ForumAccessPolicy::optional(null),$draft,$scheme);
             }catch(ForumException $e){return new Response('Предпросмотр недоступен.', $e->status,['Content-Type'=>'text/plain; charset=UTF-8','Cache-Control'=>'private, no-store','X-Robots-Tag'=>'noindex, nofollow']);}
         }
-        return $this->cached($request,'page',fn()=> (new ForumPageRenderer($this->discussions,$this->root,$settings))->render($request,$this->reader($request)),$settings);
+        $load=fn()=> (new ForumPageRenderer($this->discussions,$this->root,$settings,$this->platform))->render($request,$this->reader($request));
+        // Dynamic extension panels can depend on time or external state; never reuse stale HTML.
+        if($this->platform?->hasForumPanels())return $load();
+        return $this->cached($request,'page',$load,$settings);
     }
     public function sitemap(Request $request, array $parameters=[]): Response
     {

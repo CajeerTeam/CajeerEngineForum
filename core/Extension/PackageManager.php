@@ -30,7 +30,7 @@ final class PackageManager
             F::dir($stage); $this->stage($package,$stage);
             $manifest=(new ManifestLoader())->load($stage.'/'.ManifestLoader::FILENAME);
             $trust=PackageTrust::verify($stage,$manifest,$this->config->string('extensions.trust_dir'));
-            (new CompatibilityChecker($this->config->string('app.engine_api_version')))->assertCompatible($manifest);
+            (new CompatibilityChecker($this->config->string('app.engine_api_version'),$this->config->string('app.edition_version')))->assertCompatible($manifest);
             $registry=new ExtensionRegistry($this->root,$this->config); $old=$registry->findInstalled($manifest->name); $installed=!empty($old['installed']);
             if ($upgrade!==$installed) throw new \RuntimeException($upgrade?'Extension not installed':'Already installed; use upgrade');
             if ($upgrade && ($old['type']!==$manifest->type||!version_compare($manifest->version,$old['version'],'>'))) throw new \RuntimeException('Upgrade requires newer version of same type');
