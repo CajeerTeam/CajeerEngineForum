@@ -27,6 +27,13 @@ verify(array_column($search('astronomy'),'id')===[$a],'public title search and A
 verify($search('telescopes','posts')[0]['post_id']===$p,'native fulltext post and snippet');
 verify($search('observatory','posts')[0]['post_id']===$p,'common term fallback and private isolation');
 verify($search('','threads','astronomy')[0]['id']===$a,'exact tag search');
+$advanced=fn($term,$mode='threads',$opts=[])=>$repo->search($term,0,[$board],null,$mode,$opts);
+verify($advanced('"Observatory telescopes"','posts',['board_id'=>$board])[0]['post_id']===$p,'quoted phrase and board filter');
+verify($advanced('observatory -telescopes','posts')===[],'literal exclusion and ACL');
+verify($advanced('astr','threads',['discover'=>'suggest'])[0]['id']===$a,'native prefix discovery');
+verify($advanced('astronomy unknown','threads',['discover'=>'similar'])[0]['id']===$a,'related topic OR match');
+verify($advanced('','threads',['board_id'=>$board,'sort'=>'replies'])[0]['total_results']===1,'filter-only count and reply sort');
+
 $insert('UPDATE ce_forum_posts SET body=? WHERE id=?',['Different replacement',$p]);
 verify($search('telescopes','posts')===[]&&$search('replacement','posts')[0]['post_id']===$p,'transactional edit index');
 $insert('UPDATE ce_forum_posts SET deleted_at=1 WHERE id=?',[$p]);verify($search('replacement','posts')===[],'soft delete');

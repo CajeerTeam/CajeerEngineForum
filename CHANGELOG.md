@@ -1,3 +1,12 @@
+## 0.6.2 — Advanced Search & Discovery
+
+- Combine full-text search with exact board, author, tag, UTC date and question-status filters; sort by relevance, publication date, activity or replies.
+- Quoted token phrases and excluded words/phrases, stable result counts and safe visual highlighting.
+- Prefix title/tag suggestions, privacy-aware author picker, related topics in the composer and optional PostgreSQL trigram fallback.
+- Apply ACL, live content, bilateral blocks and ignores before ranking/counting; author discovery also respects profile/activity privacy.
+- Bound search to 100 characters, 16 clauses, 100 pages and a configurable per-IP search budget. Reuse migration 0040 indexes; no new schema migration is required.
+- Add SQL, browser and native-driver regressions.
+
 ## 0.6.1 — Forum Full-Text Search
 
 - Replace forum substring search with indexed PostgreSQL GIN search (English/Russian), SQLite FTS5 and MySQL FULLTEXT; exact tag lookup remains available.

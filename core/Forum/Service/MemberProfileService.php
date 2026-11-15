@@ -38,11 +38,11 @@ final readonly class MemberProfileService
         $member['name']=$profile['display_name']!==''?$profile['display_name']:$member['name'];
         return $member+$profile+$this->images($id)+['activity_visible'=>self::visible($prefs['activity_visibility'],$viewer,$id),'groups'=>((int)$prefs['show_groups']===1||$viewer===$id)?$this->repo->groups($id):[], 'fields'=>array_values(array_filter($this->repo->values($id),fn($f)=>self::visible($f['visibility'],$viewer,$id)))];
     }
-    public function directory(ForumAccessPolicy $actor,mixed $term,int $offset,mixed $sort): array
+    public function directory(ForumAccessPolicy $actor,mixed $term,int $offset,mixed $sort,bool $discovery=false): array
     {
-        $q=V::text($term,'q',100,0);
+        $q=V::text($term,'q',100,$discovery?2:0);
         if(!in_array($sort,['name','newest'],true))throw new ForumException('Некорректная сортировка.',422);
-        return $this->tx->read(fn()=> $this->repo->directory($this->viewer($actor),$q,$offset,$sort));
+        return $this->tx->read(fn()=> $this->repo->directory($this->viewer($actor),$q,$offset,$sort,$discovery));
     }
     public function own(ForumAccessPolicy $actor): array
     {

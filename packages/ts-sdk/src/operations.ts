@@ -898,6 +898,11 @@ export const operations = {
                 "name": "page",
                 "in": "query",
                 "required": false
+            },
+            {
+                "name": "discovery",
+                "in": "query",
+                "required": false
             }
         ],
         "bodyRequired": false
@@ -1253,6 +1258,41 @@ export const operations = {
             },
             {
                 "name": "mode",
+                "in": "query",
+                "required": false
+            },
+            {
+                "name": "board_id",
+                "in": "query",
+                "required": false
+            },
+            {
+                "name": "author_id",
+                "in": "query",
+                "required": false
+            },
+            {
+                "name": "from",
+                "in": "query",
+                "required": false
+            },
+            {
+                "name": "to",
+                "in": "query",
+                "required": false
+            },
+            {
+                "name": "sort",
+                "in": "query",
+                "required": false
+            },
+            {
+                "name": "question",
+                "in": "query",
+                "required": false
+            },
+            {
+                "name": "discover",
                 "in": "query",
                 "required": false
             }

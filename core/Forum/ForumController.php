@@ -40,10 +40,13 @@ final readonly class ForumController
     public function search(Request $r): JsonResponse { return $this->respond(function () use ($r) {
         $q=$r->query->all();$tag=null;
         if (array_key_exists('tag',$q)) { [, $tags]=\CajeerEngine\Forum\Service\DiscussionManagementService::normalizeMetadata('',[$q['tag']]);$tag=$tags[0]; }
-        $term=V::text($q['q']??'','q',100,$tag===null?2:0);
+        $options=\CajeerEngine\Forum\Validation\ForumSearchOptions::parse($q);
+        $term=V::text($q['q']??'','q',100,0);
         $mode=$q['mode']??'threads';
-        if (!in_array($mode,['threads','posts'],true) || ($mode==='posts' && $term==='')) throw new ForumException('Выберите режим поиска и введите запрос.');
-        return $this->discussions->search($term,$this->offset($r),$this->reader($r),$tag,$mode);
+        if (!is_string($mode) || ($term!=='' && mb_strlen($term)<2)) throw new ForumException('Введите минимум два символа.');
+        \CajeerEngine\Forum\Validation\ForumSearchOptions::validateTerm($term,$mode,$options,$tag);
+        $offset=$this->offset($r);if($offset>=2500)throw new ForumException('Уточните запрос: доступны первые 100 страниц.');
+        return $this->discussions->search($term,$offset,$this->reader($r),$tag,$mode,$options);
     }); }
     public function activity(Request $r): JsonResponse { return $this->respond(fn()=> $this->discussions->activity()->feed($this->reader($r),$r->query->all()['scope']??'all',$this->offset($r))); }
     public function leaderboard(Request $r): JsonResponse { return $this->respond(fn()=> $this->discussions->activity()->leaderboard($this->reader($r),$this->offset($r))); }
@@ -88,7 +91,7 @@ final readonly class ForumController
     public function restorePostRevision(Request $r,array $p): JsonResponse {return $this->respond(fn()=>$this->discussions->restoreRevision($this->actor($r),$this->id($p),$this->revisionInput($r,'revision_number'),$this->revisionInput($r,'expected_revision')));}
     public function conversationRevisions(Request $r,array $p): JsonResponse {return $this->respond(fn()=>$this->discussions->conversations()->revisionHistory($this->actor($r),$this->id($p),V::id($p['message_id']??null),$this->offset($r)));}
     public function restoreConversationRevision(Request $r,array $p): JsonResponse {return $this->respond(fn()=>$this->discussions->conversations()->restoreRevision($this->actor($r),$this->id($p),V::id($p['message_id']??null),$this->revisionInput($r,'revision_number'),$this->revisionInput($r,'expected_revision')));}
-    public function members(Request $r): JsonResponse { return $this->respond(fn()=> $this->discussions->profiles()->directory($this->reader($r),$r->query->all()['q']??'',$this->offset($r),$r->query->all()['sort']??'name')); }
+    public function members(Request $r): JsonResponse { return $this->respond(fn()=> $this->discussions->profiles()->directory($this->reader($r),$r->query->all()['q']??'',$this->offset($r),$r->query->all()['sort']??'name',($r->query->all()['discovery']??null)==='1')); }
     public function ownProfile(Request $r): JsonResponse { return $this->respond(fn()=> $this->discussions->profiles()->own($this->actor($r))); }
     public function updateProfile(Request $r): JsonResponse { return $this->respond(fn()=> $this->discussions->profiles()->update($this->actor($r),$this->body($r))); }
     public function updatePreferences(Request $r): JsonResponse { return $this->respond(fn()=> $this->discussions->profiles()->preferences($this->actor($r),$this->body($r))); }

@@ -24,6 +24,11 @@ final readonly class RateLimitMiddleware implements MiddlewareInterface
         $window = $this->config->int('security.rate_limits.window_seconds', 60);
         $identity = ($request->getClientIp() ?: 'unknown');
         $hit = $this->limiter->hit($bucket, $identity, $limit, $window);
+        // Search and author discovery consume both the existing global budget and a smaller shared budget.
+        if ($hit['allowed'] && ($path === '/api/v1/forum/search' || ($path === '/api/v1/forum/members' && ($request->query->all()['discovery']??null)==='1'))) {
+            $search = $this->limiter->hit('forum_search', $identity, $this->config->int('security.rate_limits.forum_search',60), $window);
+            if (!$search['allowed'] || $search['remaining'] < $hit['remaining']) $hit=$search;
+        }
 
         if (!$hit['allowed']) {
             $response = new JsonResponse([

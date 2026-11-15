@@ -26,6 +26,7 @@ return [
     'rate_limits' => [
         'global' => (int) (getenv('RATE_LIMIT_GLOBAL') ?: 120),
         'auth' => (int) (getenv('RATE_LIMIT_AUTH') ?: 20),
+        'forum_search' => (int) (getenv('RATE_LIMIT_FORUM_SEARCH') ?: 60),
         'window_seconds' => (int) (getenv('RATE_LIMIT_WINDOW_SECONDS') ?: 60),
     ],
     'scopes' => [

@@ -20067,7 +20067,8 @@
             "schema": {
               "type": "integer",
               "minimum": 1,
-              "default": 1
+              "default": 1,
+              "maximum": 100
             }
           },
           {
@@ -20077,7 +20078,8 @@
             "schema": {
               "type": "string",
               "maxLength": 100
-            }
+            },
+            "description": "Up to 100 characters and 16 word/phrase clauses. Positive term required for posts. Threads can use filters alone."
           },
           {
             "name": "tag",
@@ -20086,7 +20088,7 @@
               "type": "string",
               "maxLength": 60
             },
-            "description": "Exact normalized tag. q or tag required."
+            "description": "Exact normalized tag."
           },
           {
             "name": "mode",
@@ -20101,6 +20103,93 @@
               "default": "threads"
             },
             "description": "One result per discussion or individual matching published posts. Posts mode requires q."
+          },
+          {
+            "name": "board_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Exact readable board."
+          },
+          {
+            "name": "author_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Thread or post author, subject to profile and activity visibility."
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "description": "Inclusive UTC publication date."
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "description": "Inclusive UTC publication date."
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "relevance",
+                "newest",
+                "oldest",
+                "active",
+                "replies"
+              ],
+              "default": "relevance"
+            },
+            "description": "Order by relevance, publication date, thread activity or live reply count."
+          },
+          {
+            "name": "question",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "all",
+                "questions",
+                "solved",
+                "unsolved",
+                "unanswered"
+              ],
+              "default": "all"
+            },
+            "description": "Question status of matching thread."
+          },
+          {
+            "name": "discover",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "suggest",
+                "similar"
+              ]
+            },
+            "description": "Thread/title and tag prefix suggestions or related topics; optional pg_trgm fallback for similar. Plain words only; at most eight hits, no pagination."
           }
         ],
         "responses": {
@@ -20166,6 +20255,24 @@
                           },
                           "unread_posts": {
                             "type": "integer"
+                          },
+                          "match_date": {
+                            "type": "string"
+                          },
+                          "reply_count": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "total_results": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "description": "Count after filtering, on each returned row; absent on empty pages. In suggestion mode counts title/tag candidates."
+                          },
+                          "matched_tag": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
                           }
                         }
                       }
@@ -20256,7 +20363,7 @@
             }
           }
         },
-        "description": "Indexed forum search over currently readable, published discussions and posts. Literal words, ranked title/tag/body hits; exact tag-only lookup is chronological. Private messages and unpublished or deleted posts are excluded."
+        "description": "Indexed search, current ACL and visibility checks before ranking and pagination. Query supports words, quoted phrases, and -excluded terms in the matched field. Discovery returns at most eight results. All dates UTC."
       }
     },
     "/forum/register": {
@@ -27470,6 +27577,17 @@
               "type": "integer",
               "minimum": 1
             }
+          },
+          {
+            "name": "discovery",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1"
+              ]
+            },
+            "description": "Return up to eight author suggestions respecting activity/profile privacy and bilateral blocks."
           }
         ],
         "responses": {

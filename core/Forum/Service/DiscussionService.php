@@ -135,7 +135,7 @@ final readonly class DiscussionService
             return $result;
         });
     }
-    public function search(string $term,int $offset,?ForumAccessPolicy $actor=null,?string $tag=null,string $mode='threads'): array { return $this->db->readSnapshot(fn()=> $this->tx->readState()->decorateThreads($this->threads->search($term,$offset,NodePermissionService::allowed($this->access($actor)),$tag,$mode),$actor?->userId??'')); }
+    public function search(string $term,int $offset,?ForumAccessPolicy $actor=null,?string $tag=null,string $mode='threads',array $options=[]): array { return $this->db->readSnapshot(fn()=> $this->tx->readState()->decorateThreads($this->threads->search($term,$offset,NodePermissionService::allowed($this->access($actor)),$tag,$mode,['viewer'=>$actor?->userId??'']+$options),$actor?->userId??'')); }
     public function latest(int $offset,?ForumAccessPolicy $actor=null): array { return $this->db->readSnapshot(fn()=> $this->tx->readState()->decorateThreads($this->threads->latest($offset,NodePermissionService::allowed($this->access($actor)),$actor?->userId??''),$actor?->userId??'')); }
     public function activity(): ActivityService { return new ActivityService($this->tx,new \CajeerEngine\Forum\Repository\ActivityRepository($this->db),$this->profiles()); }
     public function profiles(): MemberProfileService { return new MemberProfileService($this->tx,new \CajeerEngine\Forum\Repository\ProfileRepository($this->db)); }

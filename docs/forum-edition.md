@@ -38,7 +38,7 @@ The inherited `/install` and `/upgrade` front controllers are routed through `pu
 
 ## Releases
 
-`VERSION` and `release.json.version` identify the upstream engine (1.3.0); `release.json.edition_version` is 0.6.1. `ForumVersion` validates both identities. Source/dist artifact names, manifest version, release tags and updater comparisons use the edition version. The signed manifest also records `upstream_version`, checked against VERSION, release metadata and the prebuilt admin manifest. The engine API/SDK compatibility version stays unchanged. Health/admin/system diagnostics expose `edition_version`; HTTP responses include `X-CajeerEngine-Forum-Version`.
+`VERSION` and `release.json.version` identify the upstream engine (1.3.0); `release.json.edition_version` is 0.6.2. `ForumVersion` validates both identities. Source/dist artifact names, manifest version, release tags and updater comparisons use the edition version. The signed manifest also records `upstream_version`, checked against VERSION, release metadata and the prebuilt admin manifest. The engine API/SDK compatibility version stays unchanged. Health/admin/system diagnostics expose `edition_version`; HTTP responses include `X-CajeerEngine-Forum-Version`.
 
 The 0.1.0 updater compared upstream engine versions. Apply the 0.1.1 changed-file archive manually to a backed-up test installation before using the new updater. Do not submit the patch ZIP to `update:apply`: it is not a signed full dist. With 0.1.1 installed, later signed releases can advance edition_version without changing upstream. Legacy forum manifests without upstream_version and ordinary CMS packages are refused by the updater. The upstream signed publication workflow is archived, not active; no production signature or deployment certification is claimed.
 
@@ -387,3 +387,25 @@ Migration 0040 builds indexes over existing thread titles/prefixes, public post 
 `GET /api/v1/forum/search?q=...&mode=threads|posts&tag=...&page=1` defaults to one result per discussion. `mode=posts` requires a query and returns matching individual published posts, with `post_id`, `post_page`, `snippet`, and `match_type`; thread/tag matches may have null post fields. Snippets are plain text, not trusted HTML. ACL and soft-delete filtering use current source rows before paging; drafts, private messages and review submissions are never indexed. Public posts remain searchable under existing personal-block semantics. Indexes may contain soft-deleted source text until purge; no public query exposes it. Native ranks are not returned to clients.
 
 Run `php bin/cajeer migrate` with a database backup and a write-free maintenance window (index creation can lock tables). `php bin/cajeer forum:search:check --json` verifies index presence/validity (SQLite also checks FTS integrity and source parity). `php bin/cajeer forum:search:reindex --json` rebuilds indexes; stop writers and workers first, as rebuilding can lock tables. The CMS `search:*` commands are unchanged. SQLite builds must include FTS5. MySQL/MariaDB search behavior follows server tokenizer/collation and stopword configuration; use PostgreSQL for full morphology. The existing search request rate limits and page bounds remain in force.
+
+
+### Advanced Search & Discovery (0.6.2)
+
+`GET /api/v1/forum/search` keeps the existing array response and supports `board_id`, `author_id`, `tag`, `from`, `to`, `sort`, `question`, `mode`, and `discover`. Date bounds are inclusive UTC calendar days; thread mode filters the original thread author and creation date, post mode the matching post. `sort` is `relevance`, `newest`, `oldest`, `active` (thread activity), or `replies` (live replies). `question` is `all`, `questions`, `solved`, `unsolved`, or `unanswered`. A soft-deleted accepted answer is not treated as solved. Filter-only discussion search is supported; post search requires text.
+
+Words are conjunctive in normal search; quotes match adjacent tokens in order, `-word` or `-"two words"` excludes matches in the same indexed field. PostgreSQL retains stemming for ordinary positive terms; quoted phrases and exclusions are verified literally against case-insensitive token sequences so dictionary stop words cannot weaken them. Phrase-only queries composed of stop words may scan permitted source rows. Punctuation is tokenized. MySQL/MariaDB use literal word/phrase regex for exclusions, quoted phrases and short words to avoid native stop-word omissions, and native FULLTEXT for ordinary terms with the existing fallback. SQLite uses FTS5. The API returns `total_results`, `match_date`, `reply_count` and optional `matched_tag` per result. Empty pages have no count. Counts and ranking use authorized live candidates. The query is capped at 100 characters, 16 clauses, and 100 pages (25 per page).
+
+`discover=suggest` returns up to eight title/tag prefix hits; `discover=similar` returns up to eight related topics based on overlapping title/tag words, with optional PostgreSQL trigram matching if no lexical hit exists. Discovery accepts only ordinary words and ignores pagination. `/forum/members?discovery=1&q=...` returns up to eight visible author matches. The forum search UI offers these suggestions, and the topic composer provides an explicit related-topic lookup. No draft text is sent automatically from the composer.
+
+ACL/live status, bilateral blocks and ignores are evaluated before count/rank. Author filtering and discovery also check profile/activity visibility. Public posts remain readable through normal discussion routes. Author matching and suggestions do not grant any new access to content.
+
+The existing global HTTP rate budget remains in effect. `RATE_LIMIT_FORUM_SEARCH` (default 60 per `RATE_LIMIT_WINDOW_SECONDS`, per client IP) adds a shared search/author-discovery budget using the existing file-based limiter. Distributed rate limiting is planned for Redis runtime. The existing migration 0040 is sufficient; no schema migration is needed.
+
+Optional PostgreSQL typo discovery: a DBA can install `pg_trgm` in the database's search path and create a trigram index outside a transaction for large installations:
+
+```sql
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+CREATE INDEX CONCURRENTLY IF NOT EXISTS ce_forum_threads_title_trgm ON ce_forum_threads USING gin (title gin_trgm_ops);
+```
+
+If the extension is absent, all other discovery and search features work. Trigram matching is a fallback for related titles, not automatic rewriting of the search query. Search snippets and visual highlights are text-only; exact lexical highlighting may not highlight all morphological variants. The 0.6.2 release adds no background indexing workers or external services.

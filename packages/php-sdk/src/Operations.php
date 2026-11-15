@@ -1152,6 +1152,12 @@ final class Operations {
         'in' => 'query',
         'required' => false,
       ),
+      3 => 
+      array (
+        'name' => 'discovery',
+        'in' => 'query',
+        'required' => false,
+      ),
     ),
     'bodyRequired' => false,
   ),
@@ -1593,6 +1599,48 @@ final class Operations {
       3 => 
       array (
         'name' => 'mode',
+        'in' => 'query',
+        'required' => false,
+      ),
+      4 => 
+      array (
+        'name' => 'board_id',
+        'in' => 'query',
+        'required' => false,
+      ),
+      5 => 
+      array (
+        'name' => 'author_id',
+        'in' => 'query',
+        'required' => false,
+      ),
+      6 => 
+      array (
+        'name' => 'from',
+        'in' => 'query',
+        'required' => false,
+      ),
+      7 => 
+      array (
+        'name' => 'to',
+        'in' => 'query',
+        'required' => false,
+      ),
+      8 => 
+      array (
+        'name' => 'sort',
+        'in' => 'query',
+        'required' => false,
+      ),
+      9 => 
+      array (
+        'name' => 'question',
+        'in' => 'query',
+        'required' => false,
+      ),
+      10 => 
+      array (
+        'name' => 'discover',
         'in' => 'query',
         'required' => false,
       ),

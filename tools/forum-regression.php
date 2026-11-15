@@ -40,7 +40,7 @@ try {
     $call('POST',"/forum/threads/$t/posts",['body'=>'Second'],$o,201);
     $posts=$call('GET',"/forum/threads/$t")['posts'];check($posts[0]['id']===$post&&count($posts)===2,'post ordering');
     $call('PATCH',"/forum/posts/$post",['body'=>'Unauthorized'],$o,403);
-    $call('PATCH',"/forum/posts/$post",['body'=>'Edited телескопами searchmarker <script>literal</script>'],$m);
+    $call('PATCH',"/forum/posts/$post",['body'=>'Edited телескопами searchmarker <script>literal</script> database the index'],$m);
     $hits=$call('GET','/forum/search?q=searchmarker&mode=posts');
     check(count($hits)===1&&$hits[0]['post_id']===$post&&$hits[0]['id']===$t&&$hits[0]['post_page']===1&&str_contains($hits[0]['snippet'],'searchmarker')&&!isset($hits[0]['match_body']),'indexed post hit and safe snippet contract');
     check($call('GET','/forum/search?q=First&mode=posts')===[],'edited content disappears from search');
@@ -48,6 +48,29 @@ try {
     check($call('GET','/forum/search?q='.$russian.'&mode=posts')[0]['post_id']===$post,'Russian search and PostgreSQL morphology');
     $call('GET','/forum/search?q=searchmarker&mode=wrong',null,null,422);
     $call('GET','/forum/search?tag=php&mode=posts',null,null,422);
+    $advanced=fn(array $params,?string $token=null)=>$call('GET','/forum/search?'.http_build_query($params,'','&',PHP_QUERY_RFC3986),null,$token);
+    $found=$advanced(['q'=>'"Edited телескопами"','mode'=>'posts','board_id'=>$board,'author_id'=>$member,'sort'=>'newest']);
+    check(count($found)===1&&$found[0]['post_id']===$post&&$found[0]['total_results']===1,'advanced phrase, board, author, sort and count');
+    check($advanced(['q'=>'searchmarker -Edited','mode'=>'posts'])===[],'excluded term removes matching post');
+    check($advanced(['q'=>'searchmarker "database the index"','mode'=>'posts'])[0]['post_id']===$post,'exact phrase retains stop words');
+    check($advanced(['q'=>'searchmarker "database a index"','mode'=>'posts'])===[],'different stop word does not satisfy exact phrase');
+    check($advanced(['q'=>'searchmarker','mode'=>'posts','author_id'=>$other])===[],'post author filter before ranking');
+    check($advanced(['board_id'=>$board,'sort'=>'replies'])[0]['id']===$t,'filter-only threads');
+    check($advanced(['q'=>'Tes','discover'=>'suggest'])[0]['id']===$t,'indexed title suggestion');
+    check($advanced(['q'=>'Test unrelated','discover'=>'similar'])[0]['id']===$t,'related topic search');
+    check($call('GET','/forum/members?q=Member&discovery=1')[0]['id']===$member,'author picker');
+    $call('GET','/forum/search?q=Test&sort=bad',null,null,422);
+    $call('GET','/forum/search?q=Test&from=2026-02-30',null,null,422);
+    $call('GET','/forum/search?q=Test&page=101',null,null,422);
+    $call('GET','/forum/search?q=-Test',null,null,422);
+    if ($driver==='pgsql' && (int)$db->connection()->query("SELECT COUNT(*) FROM pg_available_extensions WHERE name='pg_trgm'")->fetchColumn()>0) {
+        $db->connection()->exec('CREATE EXTENSION IF NOT EXISTS pg_trgm');
+        // One typo in a distinctive title, no lexical matches; fixture removed afterwards.
+        $fuzzy=$call('POST',"/forum/boards/$board/threads",['title'=>'Astrophotography','body'=>'Fuzzy fixture'],$a,201)['id'];
+        check($advanced(['q'=>'Astrophotograpy','discover'=>'similar'])[0]['id']===$fuzzy,'optional PostgreSQL trigram typo discovery');
+        $call('POST',"/forum/threads/$fuzzy/moderate",['action'=>'delete'],$a);
+    }
+
     $maintenance=new \CajeerEngine\Forum\Service\ForumSearchMaintenance($db);
     check($maintenance->check()['ok'],'forum search index diagnostics');
     check($maintenance->rebuild()['ok'],'forum search reindex');
@@ -71,6 +94,6 @@ try {
     putenv('FORUM_REGISTRATION=false');
     $call('POST','/forum/register',['name'=>'Closed','email'=>'closed@example.test','password'=>'MemberPass12345'],null,403);
     check(str_contains((string)$app->handle(Request::create('https://forum.test/'))->getContent(),'data-registration="false"'),'closed registration UI');
-    check($app->handle(Request::create('https://forum.test/'))->headers->get('X-CajeerEngine-Forum-Version')==='0.6.1','forum version header');
+    check($app->handle(Request::create('https://forum.test/'))->headers->get('X-CajeerEngine-Forum-Version')==='0.6.2','forum version header');
     echo "Forum integration passed\n";
 } finally {foreach(glob($tmp.'/*')?:[] as $f)unlink($f);rmdir($tmp);}

@@ -48,15 +48,21 @@ final readonly class ProfileRepository extends Repository
     {
         return $this->rows('SELECT r.id,r.name,CASE WHEN p.role_id=r.id THEN 1 ELSE 0 END AS is_primary FROM ce_user_roles ur JOIN ce_forum_groups g ON g.role_id=ur.role_id JOIN ce_roles r ON r.id=g.role_id LEFT JOIN ce_forum_primary_groups p ON p.user_id=ur.user_id WHERE ur.user_id=? ORDER BY is_primary DESC,r.name,r.id',[$id]);
     }
-    public function directory(string $viewer,string $term,int $offset,string $sort): array
+    public function directory(string $viewer,string $term,int $offset,string $sort,bool $discovery=false): array
     {
         $filter="u.status='active' AND (COALESCE(p.profile_visibility,'public')='public'";
         $args=[];
         if($viewer!==''){$filter.=" OR p.profile_visibility='members' OR u.id=?";$args[]=$viewer;}
         $filter.=')';
+        if ($discovery) {
+            $filter.=" AND (COALESCE(p.activity_visibility,'public')='public'";
+            if($viewer!==''){$filter.=" OR p.activity_visibility='members' OR u.id=?";$args[]=$viewer;}
+            $filter.=')';
+            if($viewer!==''){$filter.=" AND NOT EXISTS (SELECT 1 FROM ce_forum_user_blocks b WHERE (b.user_id=? AND b.blocked_id=u.id) OR (b.blocked_id=? AND b.user_id=u.id)) AND NOT EXISTS (SELECT 1 FROM ce_forum_member_relations i WHERE i.user_id=? AND i.target_id=u.id AND i.kind='ignore')";array_push($args,$viewer,$viewer,$viewer);}
+        }
         $name="COALESCE(NULLIF(m.display_name,''),u.name)";
         if($term!==''){$filter.=" AND LOWER($name) LIKE LOWER(?) ESCAPE '!'";$args[]='%'.str_replace(['!','%','_'],['!!','!%','!_'],$term).'%';}
         $order=$sort==='newest'?'u.created_at DESC,u.id':"LOWER($name),u.id";
-        return $this->rows("SELECT u.id,$name AS name,u.created_at FROM ce_users u LEFT JOIN ce_forum_member_profiles m ON m.user_id=u.id LEFT JOIN ce_forum_member_preferences p ON p.user_id=u.id WHERE $filter ORDER BY $order LIMIT 25 OFFSET ".$offset,$args);
+        return $this->rows("SELECT u.id,$name AS name,u.created_at FROM ce_users u LEFT JOIN ce_forum_member_profiles m ON m.user_id=u.id LEFT JOIN ce_forum_member_preferences p ON p.user_id=u.id WHERE $filter ORDER BY $order LIMIT ".($discovery?8:25)." OFFSET ".$offset,$args);
     }
 }

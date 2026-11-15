@@ -33,19 +33,24 @@ final readonly class ThreadRepository extends Repository
     public function latest(int $offset,array $allowed,string $viewer=''): array
     { return $this->rows('SELECT t.id,t.title,t.prefix,t.updated_at,t.pinned,t.locked,'.self::AUTHOR.' FROM ce_forum_live_threads t'.self::AUTHOR_JOIN.'WHERE '.$this->boardFilter('t.board_id',$allowed).' ORDER BY t.updated_at DESC,t.id LIMIT 25 OFFSET '.$offset,[$viewer,$viewer===''?null:$viewer]); }
     public function byAuthor(string $id, int $offset, array $allowed): array { return $this->rows('SELECT id,title,prefix,updated_at FROM ce_forum_live_threads WHERE author_id=? AND '.$this->boardFilter('board_id',$allowed).' ORDER BY updated_at DESC,id LIMIT 25 OFFSET '.$offset, [$id]); }
-    public function search(string $term,int $offset,array $allowed,?string $tag=null,string $mode='threads'): array
+    public function search(string $term,int $offset,array $allowed,?string $tag=null,string $mode='threads',array $options=[]): array
     {
         if ($allowed===[]) return [];
         $driver=$this->db->driver();$acl=$this->boardFilter('t.board_id',$allowed);
-        $fetch=function(string $engine,int $start) use ($term,$acl,$tag,$mode): array {
-            [$sql,$params]=ForumSearchQuery::build($engine,$term,$start,$acl,$tag,$mode);
+        $fetch=function(string $engine,int $start) use ($term,$acl,$tag,$mode,$options): array {
+            [$sql,$params]=ForumSearchQuery::build($engine,$term,$start,$acl,$tag,$mode,$options);
             return $this->rows($sql,$params);
         };
         // Short words cannot reliably be matched by MySQL's default FULLTEXT parser.
-        $short=$driver==='mysql' && array_filter(ForumSearchQuery::words($term),static fn($word)=>mb_strlen($word)<3);
+        // Native MySQL drops stop words; exact phrases and exclusions need literal verification.
+        $short=$driver==='mysql' && (array_filter(ForumSearchQuery::words($term),static fn($word)=>mb_strlen($word)<3) || array_filter(ForumSearchQuery::expression($term),static fn($x)=>$x['phrase']||$x['negative']));
         $rows=$fetch($short?'mysql_literal':$driver,$offset);
         if ($driver==='mysql' && !$short && $term!=='' && !$rows && ($offset===0 || !$fetch($driver,0))) {
             $rows=$fetch('mysql_literal',$offset);
+        }
+        // Optional pg_trgm is never required to install or upgrade. Only discovery uses fuzzy matches.
+        if (!$rows && $driver==='pgsql' && ($options['discover']??'')==='similar' && $term!=='' && (int)$this->query("SELECT CASE WHEN to_regprocedure('similarity(text,text)') IS NOT NULL AND to_regoperator('%(text,text)') IS NOT NULL THEN 1 ELSE 0 END")->fetchColumn()===1) {
+            $rows=$fetch('pgsql_trgm',0);
         }
         foreach ($rows as &$row) {
             if (!array_key_exists('match_body',$row)) continue;
@@ -54,6 +59,7 @@ final readonly class ThreadRepository extends Repository
             if ($body!==null && $this->db->driver()==='pgsql') $body=str_replace(['__CE_FTS_START__','__CE_FTS_END__'],'',$body);unset($row['match_body'],$row['weight'],$row['relevance']);
             $row['post_page']=$row['post_page']===null?null:(int)$row['post_page'];
             $row['snippet']=$body===null?null:self::searchSnippet($body,$term);
+            $row['total_results']=(int)$row['total_results'];$row['reply_count']=(int)$row['reply_count'];
         }
         unset($row);
         return $rows;
