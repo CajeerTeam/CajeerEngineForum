@@ -30,7 +30,7 @@ with tempfile.TemporaryDirectory() as tmp:
     db.execute('INSERT INTO ce_forum_reports(id,post_id,user_id,reason) VALUES(?,?,?,?)',(report,r,a,'Keep evidence'))
     db.commit();db.executescript(files[-1].read_text());assert count(db,'ce_forum_live_posts')==4
     assert count(db,'ce_forum_post_revisions')==4
-    db.executescript((ROOT/'migrations/sqlite/0034_forum_moderation_center.sql').read_text())
+    db.executescript((ROOT/'migrations/sqlite/0034_forum_moderation_center.sql').read_text());db.executescript((ROOT/'migrations/sqlite/0035_forum_sanctions.sql').read_text())
     def hide(kind,id,generation,stamp=now):
         table='ce_forum_threads' if kind=='thread' else 'ce_forum_posts'
         assert db.execute('UPDATE '+table+' '+sql(' SET deleted_at=?,deleted_by=').lstrip(),(stamp,a,'Reason',generation,id)).rowcount==1

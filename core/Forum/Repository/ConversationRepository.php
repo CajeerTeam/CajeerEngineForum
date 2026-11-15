@@ -14,7 +14,7 @@ final readonly class ConversationRepository extends Repository
         if ($this->lock('ce_forum_conversation_lock','id=?',[1])===null) throw new \LogicException('Conversation lock missing');
     }
     public function activeUser(string $id): bool { return $this->row("SELECT id FROM ce_users WHERE id=? AND status='active'",[$id])!==null; }
-    public function eligibleUser(string $id): bool { if(!$this->activeUser($id))return false;$scopes=(new \CajeerEngine\Database\Repository\RoleRepository($this->db))->permissionsForUser($id);return in_array('*',$scopes,true)||in_array('forum:write',$scopes,true); }
+    public function eligibleUser(string $id): bool { if(!$this->activeUser($id)||\CajeerEngine\Forum\Service\SanctionService::blocks((new SanctionRepository($this->db))->active($id,time()),'suspension'))return false;$scopes=(new \CajeerEngine\Database\Repository\RoleRepository($this->db))->permissionsForUser($id);return in_array('*',$scopes,true)||in_array('forum:write',$scopes,true); }
     public function membership(string $id,string $user): array
     {
         return $this->row('SELECT c.*,p.joined_sequence,p.read_sequence,p.archived,p.muted FROM ce_forum_conversations c JOIN ce_forum_conversation_participants p ON p.conversation_id=c.id WHERE c.id=? AND p.user_id=? AND p.active=1',[$id,$user])??throw new ForumException('Переписка не найдена.',404);

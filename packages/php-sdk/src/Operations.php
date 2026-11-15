@@ -1080,6 +1080,27 @@ final class Operations {
     ),
     'bodyRequired' => false,
   ),
+  'get_Forum_memberSanctions' => 
+  array (
+    'method' => 'GET',
+    'path' => '/forum/members/{id}/sanctions',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+      1 => 
+      array (
+        'name' => 'page',
+        'in' => 'query',
+        'required' => false,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
   'get_Forum_members' => 
   array (
     'method' => 'GET',
@@ -1161,6 +1182,21 @@ final class Operations {
       3 => 
       array (
         'name' => 'assigned',
+        'in' => 'query',
+        'required' => false,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
+  'get_Forum_mySanctions' => 
+  array (
+    'method' => 'GET',
+    'path' => '/forum/sanctions',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'page',
         'in' => 'query',
         'required' => false,
       ),
@@ -1463,6 +1499,21 @@ final class Operations {
         'name' => 'file_id',
         'in' => 'path',
         'required' => true,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
+  'get_Forum_sanctionAppeals' => 
+  array (
+    'method' => 'GET',
+    'path' => '/forum/moderation/appeals',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'page',
+        'in' => 'query',
+        'required' => false,
       ),
     ),
     'bodyRequired' => false,
@@ -2763,6 +2814,21 @@ final class Operations {
     ),
     'bodyRequired' => false,
   ),
+  'post_Forum_appealSanction' => 
+  array (
+    'method' => 'POST',
+    'path' => '/forum/sanctions/{id}/appeal',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => true,
+  ),
   'post_Forum_bulkThreads' => 
   array (
     'method' => 'POST',
@@ -2853,10 +2919,40 @@ final class Operations {
     ),
     'bodyRequired' => true,
   ),
+  'post_Forum_decideSanctionAppeal' => 
+  array (
+    'method' => 'POST',
+    'path' => '/forum/sanctions/{id}/appeal/decision',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => true,
+  ),
   'post_Forum_inviteConversation' => 
   array (
     'method' => 'POST',
     'path' => '/forum/conversations/{id}/invite',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => true,
+  ),
+  'post_Forum_issueSanction' => 
+  array (
+    'method' => 'POST',
+    'path' => '/forum/members/{id}/sanctions',
     'parameters' => 
     array (
       0 => 
@@ -3191,6 +3287,21 @@ final class Operations {
       ),
     ),
     'bodyRequired' => false,
+  ),
+  'post_Forum_revokeSanction' => 
+  array (
+    'method' => 'POST',
+    'path' => '/forum/sanctions/{id}/revoke',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => true,
   ),
   'post_Forum_sendConversation' => 
   array (

@@ -1092,6 +1092,27 @@ class NetworkTests(unittest.TestCase):
             rejected=c.call('POST',topic+'/posts',201,{'body':'Reject me'},token=member)['submission_id'];c.call('POST','/forum/moderation/cases/submission/'+rejected,200,{'action':'reject','revision_number':1,'reason':'Rule violation'},token=admin);self.assertEqual(1,len(c.call('GET',topic)['posts']))
         finally:c.call('PUT',policy,200,{'review_required':False},token=admin)
 
+    def test_21_sanctions(self):
+        c=Client(self.base);admin=c.login(ADMIN,ADMIN_PASSWORD)[0]['data']['access_token'];email=unique_email()
+        c.call('POST','/users',201,{'email':email,'name':'Sanction member','password':PASSWORD,'roles':['forum-member']},token=admin)
+        member=c.login(email)[0]['data']['access_token'];uid=c.call('GET','/auth/me',token=member)['user_id'];admin_id=c.call('GET','/auth/me',token=admin)['user_id'];board=c.call('GET','/forum')['boards'][0]['id'];create='/forum/boards/'+board+'/threads';issue='/forum/members/'+uid+'/sanctions';sp='/forum/sanctions/'
+        def sanction(kind,**extra):return c.call('POST',issue,201,{'kind':kind,'reason':'Integration restriction','duration_seconds':3600,**extra},token=admin)['id']
+        def revoke(id):c.call('POST',sp+id+'/revoke',200,{'reason':'Integration revoke'},token=admin)
+        c.call('POST',issue,403,{'kind':'posting','reason':'Unauthorized'},token=member)
+        c.call('POST','/forum/members/'+admin_id+'/sanctions',403,{'kind':'warning','reason':'Protected admin'},token=admin)
+        tid=c.call('POST',create,201,{'title':'Sanction topic','body':'Before restriction','kind':'poll','poll':{'question':'Choice','options':['One','Two'],'max_choices':1}},token=member)['id'];topic='/forum/threads/'+tid;post=c.call('GET',topic)['first_post_id']
+        draft='/forum/drafts/'+str(uuid.uuid4());c.call('PUT',draft,200,{'scope':'reply','target_id':tid,'revision_number':0,'payload':{'body':'Saved before sanction'}},token=member)
+        file=c.upload_attachment('before.txt',b'Before restriction',member)['id'];conv=c.call('POST','/forum/conversations',201,{'title':'Sanction conversation','body':'Initial','participant_ids':[admin_id]},token=member)['id']
+        posting=sanction('posting',board_id=board);c.call('GET',topic,200,token=member);c.call('POST',topic+'/posts',403,{'body':'Blocked'},token=member);c.call('PATCH','/forum/posts/'+post,403,{'body':'Blocked edit'},token=member);c.call('POST',draft+'/publish',403,{'revision_number':1},token=member);c.call('POST',create,403,{'title':'Blocked topic','body':'Blocked'},token=member);revoke(posting)
+        c.call('POST',draft+'/publish',200,{'revision_number':1},token=member)
+        upload=sanction('upload');c.upload_attachment('blocked.txt',b'Blocked',member,status=403);c.call('POST',topic+'/posts',403,{'body':'Blocked file','attachment_ids':[file]},token=member);revoke(upload)
+        conversation=sanction('conversation');c.call('POST','/forum/conversations/'+conv+'/messages',403,{'body':'Blocked'},token=member);c.call('GET','/forum/conversations/'+conv,200,token=member);revoke(conversation)
+        reaction=sanction('reaction');c.call('PUT',topic+'/poll/vote',403,{'choices':[1]},token=member);c.call('PUT','/forum/posts/'+post+'/reaction',403,{'enabled':True},token=member);revoke(reaction)
+        warning=sanction('warning',points=5);history=c.call('GET','/forum/sanctions',token=member);self.assertTrue(any(r['source_warning_id']==warning and r['kind']=='posting' and r['active'] for r in history));c.call('POST',topic+'/posts',403,{'body':'Auto blocked'},token=member);revoke(warning)
+        ban=sanction('suspension');c.call('GET','/auth/me',401,token=member);limited=c.login(email)[0]['data'];self.assertTrue(limited['suspended']);member=limited['access_token'];c.call('GET','/forum/account/profile',403,token=member);c.call('POST',topic+'/posts',403,{'body':'Suspended'},token=member);c.call('GET','/forum/sanctions',200,token=member)
+        appeal=c.call('POST',sp+ban+'/appeal',201,{'body':'Please reconsider'},token=member);self.assertEqual(appeal,c.call('POST',sp+ban+'/appeal',201,{'body':'Please reconsider'},token=member));c.call('POST',sp+ban+'/appeal',409,{'body':'Different appeal'},token=member)
+        c.call('POST',sp+ban+'/appeal/decision',200,{'status':'accepted','reason':'Restored access'},token=admin);self.assertFalse(c.call('GET','/auth/me',token=member)['suspended']);c.call('POST',topic+'/posts',201,{'body':'Allowed again'},token=member)
+
     def test_99_rate_limit(self):
         # Run last: exhaust the real IP auth bucket without guessing credentials.
         c = Client(self.base)

@@ -56,6 +56,7 @@ final readonly class PollQuestionService
         $moderator=$owner&&($access['boards'][$t['board_id']]['thread:moderate']??false);
         if($owner&&!$moderator&&$t['author_id']!==$actor->userId)throw new ForumException('Недостаточно прав.',403);
         NodePermissionService::assert($access,$t['board_id'],$moderator?'thread:moderate':'post:reply');
+        $this->tx->sanctions()->enforce($actor->userId,'reaction',$t['board_id']);
         $this->boards->writable($t['board_id']);
         if((int)$t['locked']!==0&&!$moderator)throw new ForumException('Тема закрыта.',409);
         return $t;

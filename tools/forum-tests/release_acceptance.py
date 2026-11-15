@@ -290,6 +290,14 @@ def verify_moderation(base,state,fixture):
     finally:c.call('PUT',policy,200,{'review_required':False},token=admin)
     print('PASS moderation queue, approval, attachment and report evidence',flush=True)
 
+def verify_sanctions(base,state):
+    c=Client(base);admin=state[0];email=unique_email();c.call('POST','/users',201,{'email':email,'name':'Acceptance sanction member','password':PASSWORD,'roles':['forum-member']},token=admin)
+    member=c.login(email)[0]['data']['access_token'];uid=c.call('GET','/auth/me',token=member)['user_id'];board=c.call('GET','/forum')['boards'][0]['id'];path='/forum/boards/'+board+'/threads'
+    sanction=c.call('POST','/forum/members/'+uid+'/sanctions',201,{'kind':'posting','board_id':board,'reason':'Acceptance posting restriction','duration_seconds':3600},token=admin)['id'];c.call('POST',path,403,{'title':'Blocked publication','body':'Blocked'},token=member)
+    c.call('POST','/forum/sanctions/'+sanction+'/appeal',201,{'body':'Acceptance appeal'},token=member);c.call('POST','/forum/sanctions/'+sanction+'/appeal/decision',200,{'status':'accepted','reason':'Acceptance decision'},token=admin)
+    c.call('POST',path,201,{'title':'Restored publication','body':'Restored'},token=member);require(not c.call('GET','/forum/sanctions',token=member)[0]['active'],'Revoked sanction still active')
+    print('PASS sanction enforcement and appeal restores publication',flush=True)
+
 def verify_recycle(base,state,fixture,f):
     c=Client(base);admin=state[0];token=fixture['token'];poll='/forum/threads/'+f['poll'];path='/forum/recycle-bin/thread/'+f['poll']
     generation=c.call('POST',path,200,{'action':'delete','reason':'Acceptance restore'},token=admin)['deletion_id']
@@ -656,7 +664,7 @@ def verify_community_live(base,f):
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--artifact',type=Path,required=True)
-    parser.add_argument('--previous',type=Path,help='Original 0.5.1 dist; enables real signed upgrade and rollback')
+    parser.add_argument('--previous',type=Path,help='Original 0.5.2 dist; enables real signed upgrade and rollback')
     parser.add_argument('--driver',choices=('sqlite','pgsql'),default='sqlite')
     parser.add_argument('--report',type=Path,required=True)
     args=parser.parse_args(); report=args.report.resolve(); report.mkdir(parents=True,exist_ok=True)
@@ -665,7 +673,7 @@ def main():
         work=Path(tmp); port=free_port()
         # With --previous use the authentic baseline for upgrade, not a relabelled current tree.
         previous=args.previous.resolve() if args.previous else None
-        initial='0.5.1' if previous else current
+        initial='0.5.2' if previous else current
         site=unpack(previous or artifact,work/'live',initial)
         install(site,env,report,'initial',port,args.driver)
         with http(site,env,report,'initial',port,initial) as base:
@@ -697,6 +705,7 @@ def main():
                 verify_drafts_revisions(base,state)
                 verify_recycle(base,state,fixture,content)
                 verify_moderation(base,state,fixture)
+                verify_sanctions(base,state)
         if previous:
             key=work/'backup.key'; secret=work/'release.secret'; public=work/'release.public'
             run(site,env,report,'backup-key',['php','bin/cajeer','backup:keygen','--key='+str(key)])
@@ -726,6 +735,7 @@ def main():
                 verify_drafts_revisions(base,state)
                 verify_recycle(base,state,fixture,content)
                 verify_moderation(base,state,fixture)
+                verify_sanctions(base,state)
             run(site,env,report,'rollback',['php','bin/cajeer','update:rollback','--yes','--json'],timeout=600)
             require(version(site)==initial,'Rollback did not restore release')
             with http(site,env,report,'rollback',port,initial) as base:

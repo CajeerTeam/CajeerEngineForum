@@ -32,6 +32,7 @@ final readonly class ModerationQueueService
         return $this->tx->write(function()use($actor,$scope,$target,$payload,$discussion,$ids){
             $thread=$scope==='reply'?($this->threads->lockThread($target)??throw new ForumException('Тема не найдена.',404)):null;$board=$thread['board_id']??$target;
             $this->tx->permissions()->assertWrite($actor,$board,$scope==='thread'?'thread:create':'post:reply');$this->boards->writable($board);
+            if($ids)$this->tx->sanctions()->enforce($actor->userId,'upload');
             if($thread&&(int)$thread['locked']!==0)throw new ForumException('Тема закрыта.',409);
             if(!$this->requires($actor,$board))return $this->publish($actor,$scope,$target,$payload,$discussion);
             if($this->repo->countPending($actor->userId)>=25)throw new ForumException('Достигнут лимит заявок на модерацию.',409);

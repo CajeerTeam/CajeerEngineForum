@@ -53,12 +53,16 @@ final readonly class AuthService
                 $token = $this->tokens->create((string)$user['id'], 'admin-session', $scopes, new \DateTimeImmutable('+' . $ttlDays . ' days'));
                 $this->users->markLogin((string)$user['id']);
                 $this->audit->record('auth.login_success', (string)$user['id'], ['email'=>$user['email'],'token_id'=>$token['id']], $request->getClientIp(), $request->headers->get('User-Agent'));
+                $suspended=$this->users->forumSuspended((string)$user['id']);
+                $publicUser=$this->publicUser($this->users->findById((string)$user['id']) ?? $user);
+                if($suspended)$publicUser['permissions']=[];
                 return [
                     'access_token'=>$token['plain_token'],
                     'token_type'=>'Bearer',
                     'expires_at'=>$token['expires_at'] ?? null,
-                    'user'=>$this->publicUser($this->users->findById((string)$user['id']) ?? $user),
-                    'scopes'=>$scopes,
+                    'user'=>$publicUser,
+                    'scopes'=>$suspended?[]:$scopes,
+                    'suspended'=>$suspended,
                 ];
             });
         } catch (\PDOException|\CajeerEngine\Database\DatabaseUnavailable $e) {
@@ -105,13 +109,17 @@ final readonly class AuthService
         }
         // A token is an upper bound, never a grant beyond current role permissions.
         $scopes = self::intersectScopes(is_array($scopes) ? $scopes : [], $this->users->permissionsForUser((string) $user['id']));
+        $suspended=$this->users->forumSuspended((string)$user['id']);
+        $publicUser=$this->publicUser($user);
+        if($suspended){$scopes=[];$publicUser['permissions']=[];}
         $this->tokens->touch((string) $record['id']);
         return [
             'token_id' => (string) $record['id'],
             'session' => $record['name'] === 'admin-session',
+            'suspended' => $suspended,
             'cookie' => $cookie,
             'csrf_token' => $cookie ? self::csrfToken($token) : null,
-            'user' => $user !== null ? $this->publicUser($user) : null,
+            'user' => $publicUser,
             'user_id' => $record['user_id'] ?? null,
             'scopes' => is_array($scopes) ? array_values($scopes) : [],
         ];

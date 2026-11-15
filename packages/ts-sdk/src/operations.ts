@@ -841,6 +841,23 @@ export const operations = {
         "parameters": [],
         "bodyRequired": false
     },
+    "get_Forum_memberSanctions": {
+        "method": "GET",
+        "path": "/forum/members/{id}/sanctions",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            },
+            {
+                "name": "page",
+                "in": "query",
+                "required": false
+            }
+        ],
+        "bodyRequired": false
+    },
     "get_Forum_members": {
         "method": "GET",
         "path": "/forum/members",
@@ -906,6 +923,18 @@ export const operations = {
             },
             {
                 "name": "assigned",
+                "in": "query",
+                "required": false
+            }
+        ],
+        "bodyRequired": false
+    },
+    "get_Forum_mySanctions": {
+        "method": "GET",
+        "path": "/forum/sanctions",
+        "parameters": [
+            {
+                "name": "page",
                 "in": "query",
                 "required": false
             }
@@ -1148,6 +1177,18 @@ export const operations = {
                 "name": "file_id",
                 "in": "path",
                 "required": true
+            }
+        ],
+        "bodyRequired": false
+    },
+    "get_Forum_sanctionAppeals": {
+        "method": "GET",
+        "path": "/forum/moderation/appeals",
+        "parameters": [
+            {
+                "name": "page",
+                "in": "query",
+                "required": false
             }
         ],
         "bodyRequired": false
@@ -2142,6 +2183,18 @@ export const operations = {
         ],
         "bodyRequired": false
     },
+    "post_Forum_appealSanction": {
+        "method": "POST",
+        "path": "/forum/sanctions/{id}/appeal",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
+    },
     "post_Forum_bulkThreads": {
         "method": "POST",
         "path": "/forum/thread-actions/bulk",
@@ -2208,9 +2261,33 @@ export const operations = {
         ],
         "bodyRequired": true
     },
+    "post_Forum_decideSanctionAppeal": {
+        "method": "POST",
+        "path": "/forum/sanctions/{id}/appeal/decision",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
+    },
     "post_Forum_inviteConversation": {
         "method": "POST",
         "path": "/forum/conversations/{id}/invite",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
+    },
+    "post_Forum_issueSanction": {
+        "method": "POST",
+        "path": "/forum/members/{id}/sanctions",
         "parameters": [
             {
                 "name": "id",
@@ -2473,6 +2550,18 @@ export const operations = {
             }
         ],
         "bodyRequired": false
+    },
+    "post_Forum_revokeSanction": {
+        "method": "POST",
+        "path": "/forum/sanctions/{id}/revoke",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
     },
     "post_Forum_sendConversation": {
         "method": "POST",

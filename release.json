@@ -17,10 +17,10 @@
     "docs": "GitHub repository docs/",
     "updates": "GitHub Releases",
     "release_builder": "tools/build-release.php",
-    "source_artifact": "storage/releases/cajeerengine-0.5.2-source.zip",
-    "dist_artifact": "storage/releases/cajeerengine-0.5.2-dist.zip",
+    "source_artifact": "storage/releases/cajeerengine-0.5.3-source.zip",
+    "dist_artifact": "storage/releases/cajeerengine-0.5.3-dist.zip",
     "checksums": "storage/releases/*.sha256",
-    "artifact_index": "storage/releases/cajeerengine-0.5.2-artifacts.json",
+    "artifact_index": "storage/releases/cajeerengine-0.5.3-artifacts.json",
     "support_bundle": "storage/app/support",
     "backup": "storage/app/backups/production",
     "server_reports": "storage/app/reports",
@@ -58,7 +58,8 @@
     "Forum Edition 0.4.4: transactional polls, privacy-controlled results, question threads, answer votes and accepted answers.",
     "Forum Edition 0.4.5: private autosaved drafts, atomic idempotent publication, optimistic edit revisions and text restoration.",
     "Forum Edition 0.5.0: content lifecycle hardening, idempotent draft saves, revision fences for attachment edits, safe derivative retries, and integrated upgrade/rollback acceptance.",
-    "Forum Edition 0.5.2: ACL-scoped moderation cases, evidence snapshots, versioned decisions, board-level premoderation and transactional approval with reserved attachments."
+    "Forum Edition 0.5.2: ACL-scoped moderation cases, evidence snapshots, versioned decisions, board-level premoderation and transactional approval with reserved attachments.",
+    "Forum Edition 0.5.3: warnings, scoped sanctions, request-time expiry, session revocation and transactional appeals."
   ],
   "notes": {
     "1.0.4": "Install UX release: real web/CLI installer, SQLite quick start, install lock, first admin creation, secrets generation and dist-ready release plan.",
@@ -84,8 +85,8 @@
     "1.2.5": "Production Deployment",
     "1.3.0": "Integration Certification, Security & Load Testing"
   },
-  "stability": "moderation-center",
+  "stability": "warnings-sanctions",
   "edition": "forum",
-  "edition_version": "0.5.2",
+  "edition_version": "0.5.3",
   "upstream_version": "1.3.0"
 }

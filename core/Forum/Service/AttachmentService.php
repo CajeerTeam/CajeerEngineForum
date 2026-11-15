@@ -47,6 +47,7 @@ final readonly class AttachmentService
     {
         $meta=self::validate($filename,$data);return $this->tx->write(function()use($actor,$meta,$data){
             $this->tx->permissions()->requireCurrent($actor,'forum:write',true);
+            $this->tx->sanctions()->enforce($actor->userId,'upload');
             $limits=$this->limitsFor($actor->userId);$usage=$this->repo->usage($actor->userId);
             if($meta['size_bytes']>$limits['file_bytes'])throw new ForumException('Превышен лимит размера файла.',413);
             if($this->repo->pendingCount($actor->userId)>=$limits['pending_files'])throw new ForumException('Слишком много временных файлов.',409);
@@ -61,7 +62,7 @@ final readonly class AttachmentService
     public function attach(string $user,string $kind,string $target,mixed $ids): void
     {
         if(!is_array($ids)||!array_is_list($ids)||count($ids)>10)throw new ForumException('Недопустимый список вложений.',422);
-        if(!$ids)return;$ids=array_map(V::id(...),$ids);if(count(array_unique($ids))!==count($ids))throw new ForumException('Повторяющиеся вложения.',422);sort($ids);
+        if(!$ids)return;$this->tx->sanctions()->enforce($user,'upload');$ids=array_map(V::id(...),$ids);if(count(array_unique($ids))!==count($ids))throw new ForumException('Повторяющиеся вложения.',422);sort($ids);
         $existing=$this->repo->attached($kind,[$target]);$bytes=array_sum(array_column($existing,'size_bytes'));$now=time();$new=[];
         foreach($ids as $id){$a=$this->repo->lockItem($id);if(!$a||$a['owner_id']!==$user||$a['post_id']!==null||$a['message_id']!==null||(int)$a['expires_at']<=$now||$this->repo->held($id))throw new ForumException('Вложение недоступно.',404);$bytes+=(int)$a['size_bytes'];$new[]=$id;}
         if(count($existing)+count($new)>10||$bytes>self::limits()['message_bytes'])throw new ForumException('Превышен лимит вложений сообщения.',422);

@@ -1,3 +1,9 @@
+## 0.5.3 — Warnings & Sanctions
+
+- Issue and revoke warnings and time-limited restrictions, with current board ACL and protected administrators.
+- Enforce posting, conversation, upload and reaction restrictions inside publication transactions; suspend sessions and provide restricted appeals.
+- Add personal sanctions, moderator management, appeal decisions and migration 0035.
+
 ## 0.5.2 — Moderation Center
 
 - Add ACL-filtered report and publication queues, assignment, priority, evidence snapshots, private notes and versioned decisions.

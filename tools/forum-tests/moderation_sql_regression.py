@@ -14,7 +14,7 @@ def connect(path):
     db=sqlite3.connect(path,timeout=5);db.execute('PRAGMA foreign_keys=ON');return db
 with tempfile.TemporaryDirectory() as tmp:
     path=Path(tmp)/'live.sqlite';db=connect(path)
-    migrations=sorted((ROOT/'migrations/sqlite').glob('*.sql'));assert migrations[-1].name=='0034_forum_moderation_center.sql'
+    migrations=sorted((ROOT/'migrations/sqlite').glob('*.sql'));migrations=[f for f in migrations if f.name[:4]<='0034'];assert migrations[-1].name=='0034_forum_moderation_center.sql'
     for f in migrations[:-1]:db.executescript(f.read_text())
     author,mod,other,thread,post,legacy,file,submission,report=[uid() for _ in range(9)]
     board='22222222-2222-4222-8222-222222222222';now=int(time.time())

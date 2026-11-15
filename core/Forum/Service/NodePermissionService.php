@@ -18,7 +18,8 @@ final readonly class NodePermissionService
         if ($actor->userId==='') return [$actor->restrict([]),[],false];
         $user=$lock?$this->repo->lockActor($actor->userId):$this->repo->inspectUser($actor->userId);
         if ($user===null || $user['status']!=='active') throw new ForumException('Требуется авторизация.',401);
-        $records=$this->repo->roleRecords($actor->userId);
+        if($this->tx->sanctions()->suspended($actor->userId,$lock))throw new ForumException('Аккаунт заблокирован.',401);
+        $records=$this->repo->roleRecords($actor->userId,$lock);
         $roles=array_column($records,'id');$scopes=[];$globalModerator=false;
         foreach ($records as $role) {
             $p=json_decode((string)$role['permissions'],true,512,JSON_THROW_ON_ERROR);
@@ -81,7 +82,7 @@ final readonly class NodePermissionService
             $user=$userId===null?null:$this->repo->inspectUser($userId);
             if ($userId!==null && $user===null) throw new ForumException('Пользователь не найден.',404);
             $trace=[];
-            $active=$user===null || $user['status']==='active';
+            $active=$user===null || ($user['status']==='active'&&!$this->tx->sanctions()->suspended($userId));
             $target=new ForumAccessPolicy($userId??'', $userId===null?[]:['*']);
             $access=$active?$this->access($target,$kind.':'.$id,$trace):[];
             $effective=$access[$kind==='board'?'boards':'categories'][$id]??array_fill_keys(PermissionResolver::PERMISSIONS,false);
@@ -104,6 +105,8 @@ final readonly class NodePermissionService
     {
         $this->boards->lockBoard($board) ?? throw new ForumException('Раздел не найден.',404);
         self::assert($this->access($actor,lockActor:true),$board,$permission);
+        $action=match($permission){'thread:create','post:reply','post:edit_own','post:edit_any'=>'posting','reaction:use'=>'reaction',default=>null};
+        if($action!==null)$this->tx->sanctions()->enforce($actor->userId,$action,$board);
     }
     private function policy(string $kind,string $id): array
     {

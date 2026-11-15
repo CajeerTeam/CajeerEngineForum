@@ -36,6 +36,13 @@ final readonly class UserRepository
         return $stmt->rowCount() === 1;
     }
 
+    public function forumSuspended(string $id): bool
+    {
+        if (!$this->database->tableExists('ce_forum_sanctions')) return false;
+        $stmt=$this->database->connection()->prepare("SELECT COUNT(*) FROM ce_forum_sanctions WHERE user_id=? AND kind='suspension' AND revoked_at IS NULL AND starts_at<=? AND (ends_at IS NULL OR ends_at>?)");
+        $now=time();$stmt->execute([$id,$now,$now]);return (int)$stmt->fetchColumn()>0;
+    }
+
     public function count(): int
     {
         return (int) $this->database->connection()->query('SELECT COUNT(*) FROM ce_users')->fetchColumn();

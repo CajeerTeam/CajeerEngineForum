@@ -11,7 +11,7 @@ final readonly class PermissionRepository extends Repository
     public function nodes(string $kind): array { return $this->rows('SELECT * FROM '.$this->table($kind)); }
     public function rules(string $kind,?string $id=null): array { return $this->rows('SELECT node_id,subject_type,subject_id,permission,effect FROM '.$this->rulesTable($kind).($id===null?'':' WHERE node_id=?').' ORDER BY node_id,subject_type,subject_id,permission',$id===null?[]:[$id]); }
     public function roles(string $user): array { return array_column($this->rows('SELECT role_id FROM ce_user_roles WHERE user_id=?',[$user]),'role_id'); }
-    public function roleRecords(string $user): array { return $this->rows('SELECT r.id,r.handle,r.permissions,g.role_id AS group_id FROM ce_user_roles ur JOIN ce_roles r ON r.id=ur.role_id LEFT JOIN ce_forum_groups g ON g.role_id=r.id WHERE ur.user_id=?',[$user]); }
+    public function roleRecords(string $user,bool $lock=false): array { return $this->rows('SELECT r.id,r.handle,r.permissions,g.role_id AS group_id FROM ce_user_roles ur JOIN ce_roles r ON r.id=ur.role_id LEFT JOIN ce_forum_groups g ON g.role_id=r.id WHERE ur.user_id=?'.($lock&&$this->db->driver()==='mysql'?' FOR UPDATE':''),[$user]); }
     /** Lock the same user row as core role/credential changes, after board locks. */
     public function lockActor(string $id): ?array
     {

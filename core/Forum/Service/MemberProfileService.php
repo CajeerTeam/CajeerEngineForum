@@ -16,13 +16,13 @@ final readonly class MemberProfileService
     { return $viewer===$owner || $visibility==='public' || ($visibility==='members' && $viewer!==''); }
     private function viewer(ForumAccessPolicy $actor): string
     {
-        if($actor->userId!=='' && $this->repo->user($actor->userId)===null)throw new ForumException('Требуется авторизация.',401);
+        if($actor->userId!=='' && ($this->repo->user($actor->userId)===null||$this->tx->sanctions()->suspended($actor->userId)))throw new ForumException('Требуется авторизация.',401);
         return $actor->userId;
     }
     private function lockActive(ForumAccessPolicy $actor): void
     {
         $u=$this->repo->lockUser($actor->userId);
-        if(!$u||$u['status']!=='active')throw new ForumException('Требуется авторизация.',401);
+        if(!$u||$u['status']!=='active'||$this->tx->sanctions()->suspended($actor->userId,true))throw new ForumException('Требуется авторизация.',401);
     }
     private static function visibility(mixed $value): string
     { if(!is_string($value)||!in_array($value,['public','members','private'],true))throw new ForumException('Некорректная видимость.',422);return $value; }
@@ -81,7 +81,7 @@ final readonly class MemberProfileService
         // Authenticate before spending CPU decoding an image.
         if($this->viewer($actor)==='')throw new ForumException('Требуется авторизация.',401);
         $data=$input===null?null:ProfileImage::encode($kind,$input);
-        $this->tx->write(function()use($actor,$kind,$data){$this->lockActive($actor);$this->repo->saveImage($actor->userId,$kind,$data);$this->tx->audit('forum.profile.image',$actor->userId,['kind'=>$kind,'removed'=>$data===null]);});return $this->own($actor);
+        $this->tx->write(function()use($actor,$kind,$data){$this->lockActive($actor);if($data!==null)$this->tx->sanctions()->enforce($actor->userId,'upload');$this->repo->saveImage($actor->userId,$kind,$data);$this->tx->audit('forum.profile.image',$actor->userId,['kind'=>$kind,'removed'=>$data===null]);});return $this->own($actor);
     }
     public function image(ForumAccessPolicy $actor,string $id,string $kind): string
     {
