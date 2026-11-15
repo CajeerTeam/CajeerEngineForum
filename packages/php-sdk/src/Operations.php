@@ -1590,6 +1590,12 @@ final class Operations {
         'in' => 'query',
         'required' => false,
       ),
+      3 => 
+      array (
+        'name' => 'mode',
+        'in' => 'query',
+        'required' => false,
+      ),
     ),
     'bodyRequired' => false,
   ),

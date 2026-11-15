@@ -11,7 +11,7 @@ uid = lambda: str(uuid.uuid4())
 now = int(time.time())
 db = sqlite3.connect(':memory:')
 db.execute('PRAGMA foreign_keys=ON')
-files = sorted((ROOT/'migrations/sqlite').glob('*.sql'))
+files = sorted(f for f in (ROOT/'migrations/sqlite').glob('*.sql') if f.name[:4] <= '0039')
 assert files[-1].name == '0039_forum_safety_stable.sql'
 for f in files[:-1]: db.executescript(f.read_text())
 a,b,admin,outsider = [uid() for _ in range(4)]

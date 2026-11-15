@@ -20087,6 +20087,20 @@
               "maxLength": 60
             },
             "description": "Exact normalized tag. q or tag required."
+          },
+          {
+            "name": "mode",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "threads",
+                "posts"
+              ],
+              "default": "threads"
+            },
+            "description": "One result per discussion or individual matching published posts. Posts mode requires q."
           }
         ],
         "responses": {
@@ -20100,7 +20114,62 @@
                     "data"
                   ],
                   "properties": {
-                    "data": {}
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "id",
+                          "title",
+                          "prefix",
+                          "updated_at"
+                        ],
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "prefix": {
+                            "type": "string"
+                          },
+                          "updated_at": {
+                            "type": "string"
+                          },
+                          "post_id": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "post_page": {
+                            "type": [
+                              "integer",
+                              "null"
+                            ]
+                          },
+                          "snippet": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "description": "Plain text, not HTML."
+                          },
+                          "match_type": {
+                            "type": "string",
+                            "enum": [
+                              "title",
+                              "tag",
+                              "post"
+                            ]
+                          },
+                          "unread_posts": {
+                            "type": "integer"
+                          }
+                        }
+                      }
+                    }
                   }
                 }
               }
@@ -20187,7 +20256,7 @@
             }
           }
         },
-        "description": "Optional authentication via session or API token. Results are filtered by effective node permissions; inaccessible nodes return 404. Authenticated responses include personal read-state indicators: unread_posts on thread lists, unread_threads on board/subtree views, and read_state plus post read_sequence/is_unread in thread detail. GET never advances the watermark."
+        "description": "Indexed forum search over currently readable, published discussions and posts. Literal words, ranked title/tag/body hits; exact tag-only lookup is chronological. Private messages and unpublished or deleted posts are excluded."
       }
     },
     "/forum/register": {

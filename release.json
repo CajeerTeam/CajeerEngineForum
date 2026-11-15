@@ -17,10 +17,10 @@
     "docs": "GitHub repository docs/",
     "updates": "GitHub Releases",
     "release_builder": "tools/build-release.php",
-    "source_artifact": "storage/releases/cajeerengine-0.6.0-source.zip",
-    "dist_artifact": "storage/releases/cajeerengine-0.6.0-dist.zip",
+    "source_artifact": "storage/releases/cajeerengine-0.6.1-source.zip",
+    "dist_artifact": "storage/releases/cajeerengine-0.6.1-dist.zip",
     "checksums": "storage/releases/*.sha256",
-    "artifact_index": "storage/releases/cajeerengine-0.6.0-artifacts.json",
+    "artifact_index": "storage/releases/cajeerengine-0.6.1-artifacts.json",
     "support_bundle": "storage/app/support",
     "backup": "storage/app/backups/production",
     "server_reports": "storage/app/reports",
@@ -63,7 +63,8 @@
     "Forum Edition 0.5.4: transactional abuse budgets, registration protection, content analysis and moderation routing.",
     "Forum Edition 0.5.5: personal data export, profile erasure, privacy center and irreversible account closure with preserved shared content.",
     "Forum Edition 0.5.6: live trust-based contact budgets, recipient contact policies and cross-surface personal safety.",
-    "Forum Edition 0.6.0: safety center, personal report tracking, atomic report decisions and sanctions, report-and-block, integrated safety regression."
+    "Forum Edition 0.6.0: safety center, personal report tracking, atomic report decisions and sanctions, report-and-block, integrated safety regression.",
+    "Forum Edition 0.6.1: indexed forum search, PostgreSQL English/Russian morphology, SQLite FTS5, MySQL FULLTEXT, ranked thread and post results with ACL and transactional lifecycle."
   ],
   "notes": {
     "1.0.4": "Install UX release: real web/CLI installer, SQLite quick start, install lock, first admin creation, secrets generation and dist-ready release plan.",
@@ -89,8 +90,8 @@
     "1.2.5": "Production Deployment",
     "1.3.0": "Integration Certification, Security & Load Testing"
   },
-  "stability": "member-privacy-personal-data",
+  "stability": "forum-full-text-search",
   "edition": "forum",
-  "edition_version": "0.6.0",
+  "edition_version": "0.6.1",
   "upstream_version": "1.3.0"
 }

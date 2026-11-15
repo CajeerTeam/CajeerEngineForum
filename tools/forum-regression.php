@@ -40,7 +40,18 @@ try {
     $call('POST',"/forum/threads/$t/posts",['body'=>'Second'],$o,201);
     $posts=$call('GET',"/forum/threads/$t")['posts'];check($posts[0]['id']===$post&&count($posts)===2,'post ordering');
     $call('PATCH',"/forum/posts/$post",['body'=>'Unauthorized'],$o,403);
-    $call('PATCH',"/forum/posts/$post",['body'=>'Edited'],$m);
+    $call('PATCH',"/forum/posts/$post",['body'=>'Edited телескопами searchmarker <script>literal</script>'],$m);
+    $hits=$call('GET','/forum/search?q=searchmarker&mode=posts');
+    check(count($hits)===1&&$hits[0]['post_id']===$post&&$hits[0]['id']===$t&&$hits[0]['post_page']===1&&str_contains($hits[0]['snippet'],'searchmarker')&&!isset($hits[0]['match_body']),'indexed post hit and safe snippet contract');
+    check($call('GET','/forum/search?q=First&mode=posts')===[],'edited content disappears from search');
+    $russian=rawurlencode($driver==='pgsql'?'телескоп':'телескопами');
+    check($call('GET','/forum/search?q='.$russian.'&mode=posts')[0]['post_id']===$post,'Russian search and PostgreSQL morphology');
+    $call('GET','/forum/search?q=searchmarker&mode=wrong',null,null,422);
+    $call('GET','/forum/search?tag=php&mode=posts',null,null,422);
+    $maintenance=new \CajeerEngine\Forum\Service\ForumSearchMaintenance($db);
+    check($maintenance->check()['ok'],'forum search index diagnostics');
+    check($maintenance->rebuild()['ok'],'forum search reindex');
+    check($call('GET','/forum/search?q=searchmarker&mode=posts')[0]['post_id']===$post,'search after reindex');
     $call('PUT',"/forum/posts/$post/reaction",['enabled'=>'true'],$o,422);
     $call('PUT',"/forum/posts/$post/reaction",['enabled'=>true],$o);$call('PUT',"/forum/posts/$post/reaction",['enabled'=>true],$o);
     check((int)$call('GET',"/forum/threads/$t")['posts'][0]['likes']===1,'reaction idempotency');
@@ -54,11 +65,12 @@ try {
     $call('POST',"/forum/threads/$t/posts",['body'=>'CSRF blocked'],null,403,['ce_session'=>$cookie]);$call('POST',"/forum/threads/$t/posts",['body'=>'CSRF valid'],null,201,['ce_session'=>$cookie],['HTTP_X_CSRF_TOKEN'=>$csrf]);
     $call('POST',"/forum/threads/$t/moderate",['action'=>'delete'],$a);$call('GET',"/forum/threads/$t",null,null,404);
     check((int)$db->connection()->query('SELECT COUNT(*) FROM ce_forum_posts')->fetchColumn()===0,'cascade removal');
+    check($call('GET','/forum/search?q=searchmarker&mode=posts')===[],'purged post removed from index');
     check($app->handle(Request::create('https://forum.test/'))->getStatusCode()===200,'forum home');
     check(str_contains((string)$app->handle(Request::create('https://forum.test/'))->getContent(),'Test &lt;Forum&gt;'),'configured forum title safely escaped');
     putenv('FORUM_REGISTRATION=false');
     $call('POST','/forum/register',['name'=>'Closed','email'=>'closed@example.test','password'=>'MemberPass12345'],null,403);
     check(str_contains((string)$app->handle(Request::create('https://forum.test/'))->getContent(),'data-registration="false"'),'closed registration UI');
-    check($app->handle(Request::create('https://forum.test/'))->headers->get('X-CajeerEngine-Forum-Version')==='0.6.0','forum version header');
+    check($app->handle(Request::create('https://forum.test/'))->headers->get('X-CajeerEngine-Forum-Version')==='0.6.1','forum version header');
     echo "Forum integration passed\n";
 } finally {foreach(glob($tmp.'/*')?:[] as $f)unlink($f);rmdir($tmp);}

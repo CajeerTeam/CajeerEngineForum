@@ -33,17 +33,42 @@ final readonly class ThreadRepository extends Repository
     public function latest(int $offset,array $allowed,string $viewer=''): array
     { return $this->rows('SELECT t.id,t.title,t.prefix,t.updated_at,t.pinned,t.locked,'.self::AUTHOR.' FROM ce_forum_live_threads t'.self::AUTHOR_JOIN.'WHERE '.$this->boardFilter('t.board_id',$allowed).' ORDER BY t.updated_at DESC,t.id LIMIT 25 OFFSET '.$offset,[$viewer,$viewer===''?null:$viewer]); }
     public function byAuthor(string $id, int $offset, array $allowed): array { return $this->rows('SELECT id,title,prefix,updated_at FROM ce_forum_live_threads WHERE author_id=? AND '.$this->boardFilter('board_id',$allowed).' ORDER BY updated_at DESC,id LIMIT 25 OFFSET '.$offset, [$id]); }
-    public function search(string $term, int $offset, array $allowed, ?string $tag=null): array
+    public function search(string $term,int $offset,array $allowed,?string $tag=null,string $mode='threads'): array
     {
-        $pattern = '%'.mb_strtolower(str_replace(['!','%','_'], ['!!','!%','!_'], $term)).'%';
-        $sql="SELECT t.id,t.title,t.prefix,t.updated_at FROM ce_forum_live_threads t WHERE ".$this->boardFilter('t.board_id',$allowed);
-        $params=[];
-        if ($term!=='') {
-            $sql.=" AND (LOWER(t.title) LIKE ? ESCAPE '!' OR LOWER(t.prefix) LIKE ? ESCAPE '!' OR EXISTS (SELECT 1 FROM ce_forum_thread_tags g WHERE g.thread_id=t.id AND LOWER(g.tag) LIKE ? ESCAPE '!') OR EXISTS (SELECT 1 FROM ce_forum_live_posts p WHERE p.thread_id=t.id AND LOWER(p.body) LIKE ? ESCAPE '!'))";
-            $params=[$pattern,$pattern,$pattern,$pattern];
+        if ($allowed===[]) return [];
+        $driver=$this->db->driver();$acl=$this->boardFilter('t.board_id',$allowed);
+        $fetch=function(string $engine,int $start) use ($term,$acl,$tag,$mode): array {
+            [$sql,$params]=ForumSearchQuery::build($engine,$term,$start,$acl,$tag,$mode);
+            return $this->rows($sql,$params);
+        };
+        // Short words cannot reliably be matched by MySQL's default FULLTEXT parser.
+        $short=$driver==='mysql' && array_filter(ForumSearchQuery::words($term),static fn($word)=>mb_strlen($word)<3);
+        $rows=$fetch($short?'mysql_literal':$driver,$offset);
+        if ($driver==='mysql' && !$short && $term!=='' && !$rows && ($offset===0 || !$fetch($driver,0))) {
+            $rows=$fetch('mysql_literal',$offset);
         }
-        if ($tag!==null) { $sql.=' AND EXISTS (SELECT 1 FROM ce_forum_thread_tags g WHERE g.thread_id=t.id AND g.tag=?)';$params[]=$tag; }
-        return $this->rows($sql.' ORDER BY t.updated_at DESC,t.id LIMIT 25 OFFSET '.$offset,$params);
+        foreach ($rows as &$row) {
+            if (!array_key_exists('match_body',$row)) continue;
+            $body=$row['match_body'];
+            $row['match_type']=match((int)$row['weight']){4=>'title',2=>'tag',default=>'post'};
+            if ($body!==null && $this->db->driver()==='pgsql') $body=str_replace(['__CE_FTS_START__','__CE_FTS_END__'],'',$body);unset($row['match_body'],$row['weight'],$row['relevance']);
+            $row['post_page']=$row['post_page']===null?null:(int)$row['post_page'];
+            $row['snippet']=$body===null?null:self::searchSnippet($body,$term);
+        }
+        unset($row);
+        return $rows;
+    }
+
+    private static function searchSnippet(string $body,string $term): string
+    {
+        $body=trim(preg_replace('/\s+/u',' ',$body)??$body);
+        $position=null;
+        foreach (ForumSearchQuery::words($term) as $word) {
+            $found=mb_stripos($body,$word);
+            if ($found!==false && ($position===null || $found<$position)) $position=$found;
+        }
+        $start=max(0,($position??0)-70);
+        return ($start>0?'…':'').mb_substr($body,$start,240).(mb_strlen($body)>$start+240?'…':'');
     }
     public function insert(string $id, string $board, string $actor, string $title): void { $this->query('INSERT INTO ce_forum_threads(id,board_id,author_id,title) VALUES(?,?,?,?)', [$id,$board,$actor,$title]); }
     public function touch(string $id): void { $this->query('UPDATE ce_forum_threads SET updated_at=CURRENT_TIMESTAMP WHERE id=?', [$id]); }

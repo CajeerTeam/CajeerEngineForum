@@ -68,6 +68,7 @@ jobs:
       - run: python tools/forum-tests/privacy_sql_regression.py
       - run: python tools/forum-tests/trust_sql_regression.py
       - run: python tools/forum-tests/safety_stable_sql_regression.py
+      - run: python tools/forum-tests/search_sql_regression.py
       - run: python tools/forum-tests/smtp_regression.py
       - run: php tools/security-regression.php
       - run: php tools/release-regression.php
@@ -153,6 +154,44 @@ jobs:
           path: storage/tmp/forum-ci/
           if-no-files-found: warn
           retention-days: 7
+  mysql-search:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ['mysql:8.4', 'mariadb:10.11']
+    services:
+      database:
+        image: ${{ matrix.image }}
+        env:
+          MYSQL_ROOT_PASSWORD: 'ForumCI-Root-123!'
+          MYSQL_DATABASE: forum_search
+          MYSQL_USER: forum_ci
+          MYSQL_PASSWORD: 'ForumCI-Disposable-123!'
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -uroot -pForumCI-Root-123!"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      FORUM_TEST_DRIVER: mysql
+      DB_HOST: 127.0.0.1
+      DB_PORT: '3306'
+      DB_DATABASE: forum_search
+      DB_USERNAME: forum_ci
+      DB_PASSWORD: 'ForumCI-Disposable-123!'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: mbstring, pdo_mysql, sodium, zip, dom, xml, xmlwriter, curl, openssl, gd
+          tools: composer:v2
+      - run: composer install --prefer-dist --no-interaction
+      - run: php tools/forum-search-db-regression.php
   browser:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -251,37 +290,37 @@ jobs:
           ln -s pg_dump "$RUNNER_TEMP/pg-client/pg_restore"
           ln -s pg_dump "$RUNNER_TEMP/pg-client/psql"
           echo "$RUNNER_TEMP/pg-client" >> "$GITHUB_PATH"
-      - name: Build and verify physical 0.6.0 artifacts
+      - name: Build and verify physical 0.6.1 artifacts
         run: |
           composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader
           mkdir -p storage/tmp/forum-ci/release
           php tools/build-release.php --all --target-dir="$RUNNER_TEMP/forum-current" --json > storage/tmp/forum-ci/release/build.json
-          php bin/cajeer release:verify --dist --strict --artifact="$RUNNER_TEMP/forum-current/cajeerengine-0.6.0-dist.zip"
-          php bin/cajeer release:verify --strict --artifact="$RUNNER_TEMP/forum-current/cajeerengine-0.6.0-source.zip"
+          php bin/cajeer release:verify --dist --strict --artifact="$RUNNER_TEMP/forum-current/cajeerengine-0.6.1-dist.zip"
+          php bin/cajeer release:verify --strict --artifact="$RUNNER_TEMP/forum-current/cajeerengine-0.6.1-source.zip"
       - name: Build authentic previous baseline from repository history
         run: |
           mkdir -p "$RUNNER_TEMP/forum-previous"
           ref="$FORUM_BASELINE_REF"
           # Prefer the immediately preceding release when its actual tag is available.
           if [ "$ref" = '25f00f4b3183ff72e2f857b73b5071ca65d4efeb' ]; then
-            for tag in v0.5.6 0.5.6; do
+            for tag in v0.6.0 0.6.0 v0.5.6 0.5.6; do
               if git rev-parse --verify "refs/tags/$tag^{commit}" >/dev/null 2>&1; then ref="refs/tags/$tag"; break; fi
             done
           fi
           git archive "$ref" | tar -x -C "$RUNNER_TEMP/forum-previous"
           cd "$RUNNER_TEMP/forum-previous"
-          baseline=$(php -r '$v=json_decode(file_get_contents("release.json"),true,512,JSON_THROW_ON_ERROR)["edition_version"]; if(!in_array($v,["0.5.5","0.5.6"],true)) exit(1); echo $v;')
+          baseline=$(php -r '$v=json_decode(file_get_contents("release.json"),true,512,JSON_THROW_ON_ERROR)["edition_version"]; if(!in_array($v,["0.5.5","0.5.6","0.6.0"],true)) exit(1); echo $v;')
           echo "FORUM_BASELINE_VERSION=$baseline" >> "$GITHUB_ENV"
           composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader
           php tools/build-release.php --dist --target-dir="$RUNNER_TEMP/forum-previous-dist" --json
       - name: Clean install, live HTTP, identity and corrupt-ledger rejection
         env:
           FORUM_TEST_RELEASE_DB: forum_test_release_clean
-        run: python tools/forum-tests/release_acceptance.py --driver ${{ matrix.driver }} --artifact "$RUNNER_TEMP/forum-current/cajeerengine-0.6.0-dist.zip" --report storage/tmp/forum-ci/release/clean
+        run: python tools/forum-tests/release_acceptance.py --driver ${{ matrix.driver }} --artifact "$RUNNER_TEMP/forum-current/cajeerengine-0.6.1-dist.zip" --report storage/tmp/forum-ci/release/clean
       - name: Signed upgrade from authentic baseline, recovery and rollback
         env:
           FORUM_TEST_RELEASE_DB: forum_test_release_upgrade
-        run: python tools/forum-tests/release_acceptance.py --driver ${{ matrix.driver }} --artifact "$RUNNER_TEMP/forum-current/cajeerengine-0.6.0-dist.zip" --previous "$RUNNER_TEMP/forum-previous-dist/cajeerengine-${FORUM_BASELINE_VERSION}-dist.zip" --report storage/tmp/forum-ci/release/upgrade
+        run: python tools/forum-tests/release_acceptance.py --driver ${{ matrix.driver }} --artifact "$RUNNER_TEMP/forum-current/cajeerengine-0.6.1-dist.zip" --previous "$RUNNER_TEMP/forum-previous-dist/cajeerengine-${FORUM_BASELINE_VERSION}-dist.zip" --report storage/tmp/forum-ci/release/upgrade
       - name: Upload release acceptance evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -293,16 +332,18 @@ jobs:
   forum-required:
     runs-on: ubuntu-24.04
     if: always()
-    needs: [test, postgres, browser, release]
+    needs: [test, postgres, mysql-search, browser, release]
     steps:
       - name: Require every test matrix to pass
         env:
           SQLITE: ${{ needs.test.result }}
           POSTGRES: ${{ needs.postgres.result }}
+          MYSQL: ${{ needs.mysql-search.result }}
           BROWSER: ${{ needs.browser.result }}
           RELEASE: ${{ needs.release.result }}
         run: |
           test "$SQLITE" = success
           test "$POSTGRES" = success
+          test "$MYSQL" = success
           test "$BROWSER" = success
           test "$RELEASE" = success

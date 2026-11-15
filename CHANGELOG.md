@@ -1,3 +1,10 @@
+## 0.6.1 — Forum Full-Text Search
+
+- Replace forum substring search with indexed PostgreSQL GIN search (English/Russian), SQLite FTS5 and MySQL FULLTEXT; exact tag lookup remains available.
+- Ranked discussion and individual-message results, safe text snippets and links to the correct message page.
+- Migration 0040 backfills existing content and keeps indexes transactional. ACL and live-content checks precede pagination; private messages and unpublished submissions are excluded.
+- Add `forum:search:check` and `forum:search:reindex`, API/SDK updates and lifecycle regression coverage.
+
 ## 0.6.0 — Trust & Safety Stable
 
 - Member safety center with personal public/private report status, without moderator evidence or identities.

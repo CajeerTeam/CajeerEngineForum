@@ -41,7 +41,9 @@ final readonly class ForumController
         $q=$r->query->all();$tag=null;
         if (array_key_exists('tag',$q)) { [, $tags]=\CajeerEngine\Forum\Service\DiscussionManagementService::normalizeMetadata('',[$q['tag']]);$tag=$tags[0]; }
         $term=V::text($q['q']??'','q',100,$tag===null?2:0);
-        return $this->discussions->search($term,$this->offset($r),$this->reader($r),$tag);
+        $mode=$q['mode']??'threads';
+        if (!in_array($mode,['threads','posts'],true) || ($mode==='posts' && $term==='')) throw new ForumException('Выберите режим поиска и введите запрос.');
+        return $this->discussions->search($term,$this->offset($r),$this->reader($r),$tag,$mode);
     }); }
     public function activity(Request $r): JsonResponse { return $this->respond(fn()=> $this->discussions->activity()->feed($this->reader($r),$r->query->all()['scope']??'all',$this->offset($r))); }
     public function leaderboard(Request $r): JsonResponse { return $this->respond(fn()=> $this->discussions->activity()->leaderboard($this->reader($r),$this->offset($r))); }

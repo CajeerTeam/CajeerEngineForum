@@ -1371,6 +1371,11 @@ class BrowserTests(unittest.TestCase):
                 page.locator('[name=auto_mode]').select_option('daily');click('Сохранить');expect(page.locator('#notice')).to_contain_text('Настройки сохранены')
                 page.goto(self.base + '/forum/search?q=Browser')
                 expect(page.get_by_role('link', name='Browser regression topic')).to_be_visible()
+                page.goto(self.base + '/forum/search?q=remote&mode=posts')
+                expect(page.get_by_role('link', name='Перейти к сообщению').first).to_be_visible()
+                expect(page.get_by_role('link', name='Browser regression topic')).to_have_attribute('href',re.compile(r'#post-'+reply+r'$'))
+                page.get_by_role('link', name='Browser regression topic').click()
+                expect(page.locator('#post-'+reply)).to_contain_text('New remote reply')
                 # Password reset uses a real email link and revokes the browser session.
                 page.goto(self.base + '/forum/forgot-password'); fill('email', email); click('Отправить письмо')
                 expect(page.locator('#notice')).to_contain_text('письмо будет отправлено')

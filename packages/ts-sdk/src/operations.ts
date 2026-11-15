@@ -1250,6 +1250,11 @@ export const operations = {
                 "name": "tag",
                 "in": "query",
                 "required": false
+            },
+            {
+                "name": "mode",
+                "in": "query",
+                "required": false
             }
         ],
         "bodyRequired": false
