@@ -1,3 +1,10 @@
+## 0.5.5 — Member Privacy & Personal Data
+
+- Dedicated privacy center links existing live visibility, communication and notification controls.
+- Session-only, paginated JSON exports of personal records; current board ACL and conversation membership protect content; credentials and internal moderation evidence are excluded.
+- Password/TOTP-confirmed profile clearing and irreversible account closure, including pending submissions, drafts, subscriptions, private preferences and tokens. Shared content and moderation evidence retain an anonymized foreign-key identity.
+- Migration 0037 on SQLite/PostgreSQL/MySQL, account reactivation guards, integrity checks and network regression coverage.
+
 ## 0.5.4 — Anti-Spam & Abuse Protection
 
 - Transactional account and registration limits, flood protection for publications, edits, private messages, reports, uploads and votes.

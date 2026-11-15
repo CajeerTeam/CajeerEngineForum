@@ -1132,6 +1132,38 @@ class NetworkTests(unittest.TestCase):
         c.call('POST',path,429,{'title':'Exceeds budget','body':'Over limit'},token=member)
         stats=c.call('GET','/forum/antispam/status',200,token=admin);self.assertTrue(any(x['reason']=='duplicate' for x in stats['review_reasons']))
 
+    def test_23_personal_data(self):
+        c=Client(self.base); email, member, token=self.activated(c)
+        other=Client(self.base); other_email, other_id, foreign=self.activated(other)
+        admin=c.login(ADMIN,ADMIN_PASSWORD)[0]['data']['access_token']
+        root='/auth/privacy'; export=root+'/export'
+        c.call('GET',export,401)
+        self.assertIn('posts',c.call('GET',export,token=token)['sections'])
+        c.call('GET',export+'?section=unknown',422,token=token)
+        c.call('GET',export+'?section=account&offset=-1',422,token=token)
+        account,headers=c.request('GET',export+'?section=account',token=token)
+        self.assertIn('no-store',headers['Cache-Control'])
+        row=account['data']['items'][0];self.assertEqual(email,row['email']);self.assertNotIn('password_hash',row);self.assertNotIn('two_factor_secret',row)
+        self.assertNotIn(other_email,json.dumps(account))
+        c.call('PATCH','/forum/account/profile',200,{'bio':'Personal privacy marker'},token=token)
+        self.assertEqual('Personal privacy marker',c.call('GET',export+'?section=profile',token=token)['items'][0]['bio'])
+        board=c.call('GET','/forum')['boards'][0]['id'];path='/forum/boards/'+board+'/threads'
+        thread=c.call('POST',path,201,{'title':'Privacy retention '+uuid.uuid4().hex,'body':'Own published text'},token=token)['id']
+        other.call('POST',path,201,{'title':'Other privacy '+uuid.uuid4().hex,'body':'Foreign published text'},token=foreign)
+        posts=c.call('GET',export+'?section=posts',token=token)['items'];self.assertTrue(any(p['thread_id']==thread for p in posts));self.assertNotIn('Foreign published text',json.dumps(posts))
+        c.call('POST',root+'/clear-profile',403,{'password':'incorrect-password'},token=token)
+        self.assertTrue(c.call('POST',root+'/clear-profile',200,{'password':PASSWORD},token=token)['cleared'])
+        self.assertEqual([],c.call('GET',export+'?section=profile',token=token)['items'])
+        self.assertEqual('private',c.call('GET',export+'?section=preferences',token=token)['items'][0]['profile_visibility'])
+        c.call('POST',root+'/erase',422,{'password':PASSWORD,'confirmation':'NO'},token=token)
+        c.call('POST',root+'/erase',409,{'password':ADMIN_PASSWORD,'confirmation':'DELETE'},token=admin)
+        second=c.login(email)[0]['data']['access_token']
+        self.assertTrue(c.call('POST',root+'/erase',200,{'password':PASSWORD,'confirmation':'DELETE'},token=token)['closed'])
+        c.call('GET',export,401,token=token);c.call('GET','/auth/me',401,token=second);c.login(email,status=401)
+        c.call('PATCH','/users/'+member,422,{'status':'active'},token=admin)
+        c.call('GET','/forum/threads/'+thread,200,token=foreign)
+        c.call('GET','/forum/members/'+member,404,token=foreign)
+
     def test_99_rate_limit(self):
         # Run last: exhaust the real IP auth bucket without guessing credentials.
         c = Client(self.base)

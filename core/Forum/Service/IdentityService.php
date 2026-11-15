@@ -114,13 +114,59 @@ final readonly class IdentityService
             $this->audit->record('auth.2fa_disabled',$id,[]);
         });
     }
+    /** Export only the current human session's own records, using live ACLs. */
+    public function personalData(array $identity, string $section, int $offset): array
+    {
+        $id=$this->sessionUser($identity);
+        return $this->db->readSnapshot(function()use($identity,$id,$section,$offset){
+            $token=$this->tokens->find($identity['token_id']);$user=$this->users->findById($id);
+            if(!$token || $token['user_id']!==$id || $token['name']!=='admin-session' || $token['revoked_at']!==null || ApiTokenRepository::expiryTimestamp($token['expires_at']??'')<=time() || !$user || $user['status']!=='active') throw new ForumException('Требуется действующая сессия.',401);
+            $repo=new \CajeerEngine\Forum\Repository\PersonalDataRepository($this->db);
+            if($section==='index')return ['format_version'=>1,'sections'=>$repo::SECTIONS,'page_size'=>$repo::PAGE_SIZE];
+            $tx=new ForumTransaction($this->db,$this->audit);
+            $boards=$this->users->forumSuspended($id)?[]:NodePermissionService::allowed($tx->permissions()->access(\CajeerEngine\Forum\Security\ForumAccessPolicy::fromAuth($identity)));
+            return $repo->page($id,$section,$offset,$boards);
+        });
+    }
+
+    public function clearPersonalProfile(array $identity,string $password,?string $code): array
+    {
+        return (new ForumTransaction($this->db,$this->audit))->write(function()use($identity,$password,$code){
+            (new \CajeerEngine\Forum\Repository\ProfileRepository($this->db))->lockFields();
+            return $this->sensitive($identity,$password,$code,function($id){
+                (new \CajeerEngine\Forum\Repository\PersonalDataRepository($this->db))->clearProfile($id);
+                $this->audit->record('forum.privacy.profile_cleared',$id,[]);
+                return ['cleared'=>true];
+            });
+        });
+    }
+
+    public function erasePersonalAccount(array $identity,string $password,?string $code): array
+    {
+        return (new ForumTransaction($this->db,$this->audit))->write(function()use($identity,$password,$code){
+            // Serialize profile/ACL and conversation writes before locking the account.
+            (new \CajeerEngine\Forum\Repository\ProfileRepository($this->db))->lockFields();
+            (new \CajeerEngine\Forum\Repository\ConversationRepository($this->db))->lockWrites();
+            return $this->sensitive($identity,$password,$code,function($id){
+                // Do not remove the installation administrator or a privileged service account.
+                $scopes=$this->users->permissionsForUser($id);
+                if(in_array('*',$scopes,true))throw new ForumException('Сначала передайте полномочия администратора другому аккаунту.',409);
+                $email='closed-'.bin2hex(random_bytes(24)).'@account.invalid';
+                $hash=password_hash(bin2hex(random_bytes(32)),PASSWORD_DEFAULT);
+                (new \CajeerEngine\Forum\Repository\PersonalDataRepository($this->db))->erase($id,$email,$hash);
+                $this->audit->record('forum.privacy.account_closed',$id,[]);
+                return ['closed'=>true];
+            });
+        });
+    }
+
     private function sensitive(array $identity,string $password,?string $code,callable $fn): mixed
     {
         $id=$this->sessionUser($identity);
         return $this->users->locked($id,function() use($id,$identity,$password,$code,$fn) {
             $token=$this->tokens->find($identity['token_id']);
             $user=$this->users->findByEmailForAuth($identity['user']['email']);
-            if (!$token || $token['revoked_at']!==null || ApiTokenRepository::expiryTimestamp($token['expires_at'] ?? '')<=time() || !$user || $user['id']!==$id || !$this->auth->confirmSensitiveAction($identity,$password,$code)) throw new ForumException('Подтвердите пароль и текущий 2FA-код.',403);
+            if (!$token || $token['user_id']!==$id || $token['name']!=='admin-session' || $token['revoked_at']!==null || ApiTokenRepository::expiryTimestamp($token['expires_at'] ?? '')<=time() || !$user || $user['id']!==$id || !$this->auth->confirmSensitiveAction($identity,$password,$code)) throw new ForumException('Подтвердите пароль и текущий 2FA-код.',403);
             return $fn($id,$user);
         });
     }

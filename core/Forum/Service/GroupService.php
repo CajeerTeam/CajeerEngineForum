@@ -70,7 +70,7 @@ final readonly class GroupService
         if (in_array($primary,$secondary,true)||count(array_unique($secondary))!==count($secondary)) throw new ForumException('Повторяющиеся группы.',422);
         return $this->tx->write(function() use($actor,$user,$primary,$secondary){
             $this->boards->lockTree();$this->tx->permissions()->requireAdmin($actor,true);
-            if (!$this->groups->lockUser($user)) throw new ForumException('Пользователь не найден.',404);
+            if (!$this->groups->lockUser($user)||$this->groups->erased($user)) throw new ForumException('Пользователь не найден.',404);
             foreach (array_merge([$primary],$secondary) as $id) {
                 $group=$this->groups->find($id)??throw new ForumException('Форумная группа не найдена.',422);
                 if (array_diff($group['permissions'],['forum:write','forum:moderate'])!==[]) throw new ForumException('Группа содержит системные права.',409);

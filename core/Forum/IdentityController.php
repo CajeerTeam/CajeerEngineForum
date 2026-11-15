@@ -11,8 +11,8 @@ final readonly class IdentityController
     public function __construct(private IdentityService $service) {}
     private function respond(callable $fn,int $status=200): JsonResponse
     {
-        try { return new JsonResponse(['data'=>$fn()],$status,['Cache-Control'=>'no-store']); }
-        catch (ForumException $e) { return new JsonResponse(['error'=>['code'=>'identity_error','message'=>$e->getMessage()]],$e->status,['Cache-Control'=>'no-store']); }
+        try { return new JsonResponse(['data'=>$fn()],$status,['Cache-Control'=>'private, no-store']); }
+        catch (ForumException $e) { return new JsonResponse(['error'=>['code'=>'identity_error','message'=>$e->getMessage()]],$e->status,['Cache-Control'=>'private, no-store']); }
     }
     private function field(Request $r,string $key): mixed { return $r->attributes->get('json',[])[$key]??null; }
     private function password(Request $r): string { return V::password($this->field($r,'password')); }
@@ -20,6 +20,9 @@ final readonly class IdentityController
     private function token(Request $r,string $key='token'): string { return V::text($this->field($r,$key),$key,64,64); }
     private function actor(Request $r): array { $a=$r->attributes->get('auth');if(!is_array($a))throw new ForumException('Требуется авторизация.',401);return $a; }
     private function email(Request $r): string { $e=V::text($this->field($r,'email'),'email',254);if(!filter_var($e,FILTER_VALIDATE_EMAIL))throw new ForumException('Некорректный email.');return $e; }
+    public function personalData(Request $r): JsonResponse { return $this->respond(function()use($r){$q=$r->query->all();$section=V::text($q['section']??'index','section',40);$offset=$q['offset']??'0';if(!is_string($offset)||!preg_match('/^(0|[1-9][0-9]{0,8})$/D',$offset))throw new ForumException('Некорректное смещение.',422);return $this->service->personalData($this->actor($r),$section,(int)$offset);}); }
+    public function clearPersonalProfile(Request $r): JsonResponse { return $this->respond(fn()=>$this->service->clearPersonalProfile($this->actor($r),$this->password($r),$this->code($r))); }
+    public function erasePersonalAccount(Request $r): JsonResponse { $response=$this->respond(function()use($r){if($this->field($r,'confirmation')!=='DELETE')throw new ForumException('Введите DELETE для подтверждения.',422);return $this->service->erasePersonalAccount($this->actor($r),$this->password($r),$this->code($r));});if($response->getStatusCode()===200)$response->headers->clearCookie('ce_session','/api/v1',null,$r->isSecure(),true,Cookie::SAMESITE_STRICT);return $response; }
     public function resend(Request $r): JsonResponse { return $this->respond(function()use($r){$this->service->requestMail($this->email($r),'verify');return ['accepted'=>true];},202); }
     public function forgot(Request $r): JsonResponse { return $this->respond(function()use($r){$this->service->requestMail($this->email($r),'reset');return ['accepted'=>true];},202); }
     public function verify(Request $r): JsonResponse { return $this->respond(function()use($r){$this->service->verifyEmail($this->token($r),$this->password($r));return ['verified'=>true];}); }

@@ -16,6 +16,16 @@ final readonly class ApiTokenRepository
     /** @param list<string> $scopes @return array{plain_token:string,id:string,prefix:string,expires_at:?string} */
     public function create(?string $userId, string $name, array $scopes, ?\DateTimeImmutable $expiresAt = null): array
     {
+        if ($userId === null) return $this->issue($userId, $name, $scopes, $expiresAt);
+        $users = new UserRepository($this->database, new RoleRepository($this->database));
+        return $users->locked($userId, function () use ($users, $userId, $name, $scopes, $expiresAt) {
+            if ($users->isForumErased($userId)) throw new \InvalidArgumentException('Account closed');
+            return $this->issue($userId, $name, $scopes, $expiresAt);
+        });
+    }
+
+    private function issue(?string $userId, string $name, array $scopes, ?\DateTimeImmutable $expiresAt): array
+    {
         $plain = 'ce_' . bin2hex(random_bytes(32));
         $hash = hash('sha256', $plain);
         $id = Uuid::v4();

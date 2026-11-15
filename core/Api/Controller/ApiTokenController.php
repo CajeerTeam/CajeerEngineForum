@@ -38,7 +38,8 @@ final readonly class ApiTokenController
         if (!empty($payload['expires_at'])) {
             $expiresAt = new \DateTimeImmutable((string) $payload['expires_at']);
         }
-        $token = $this->tokens->create($userId, $name, $scopes, $expiresAt);
+        try { $token = $this->tokens->create($userId, $name, $scopes, $expiresAt); }
+        catch (\InvalidArgumentException $e) { return new JsonResponse(['error' => ['code' => 'forbidden', 'message' => 'Аккаунт закрыт.']], 403); }
         return new JsonResponse(['data' => $token], Response::HTTP_CREATED);
     }
 

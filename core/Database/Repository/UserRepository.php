@@ -129,24 +129,26 @@ final readonly class UserRepository
     /** @param array<string, mixed> $payload */
     public function update(string $id, array $payload): ?array
     {
-        $user = $this->findById($id);
-        if ($user === null) {
-            return null;
-        }
-        $name = isset($payload['name']) ? trim((string) $payload['name']) : (string) $user['name'];
-        $status = isset($payload['status']) ? (string) $payload['status'] : (string) ($user['status'] ?? 'active');
-        if (!in_array($status, ['active', 'disabled', 'pending'], true)) {
-            throw new \InvalidArgumentException('Некорректный status пользователя.');
-        }
-        $this->database->transaction(function () use ($id, $name, $status, $payload): void {
-            $stmt = $this->database->connection()->prepare('UPDATE ce_users SET name = :name, status = :status, disabled_at = CASE WHEN :status_check = :disabled THEN CURRENT_TIMESTAMP ELSE NULL END, updated_at = CURRENT_TIMESTAMP WHERE id = :id');
-            $stmt->execute(['id' => $id, 'name' => $name, 'status' => $status, 'status_check' => $status, 'disabled' => 'disabled']);
-            if (isset($payload['roles']) && is_array($payload['roles'])) {
-                $this->syncRoles($id, array_values(array_map('strval', $payload['roles'])));
-            }
-            if ($status === 'disabled') (new ApiTokenRepository($this->database))->revokeForUser($id);
+        return $this->locked($id, function () use ($id,$payload): ?array {
+            $user=$this->findById($id);
+            if($user===null)return null;
+            if($this->isForumErased($id))throw new \InvalidArgumentException('Удалённый аккаунт нельзя восстановить или изменить.');
+            $name=isset($payload['name'])?trim((string)$payload['name']):(string)$user['name'];
+            $status=isset($payload['status'])?(string)$payload['status']:(string)($user['status']??'active');
+            if(!in_array($status,['active','disabled','pending'],true))throw new \InvalidArgumentException('Некорректный status пользователя.');
+            $stmt=$this->database->connection()->prepare('UPDATE ce_users SET name = :name, status = :status, disabled_at = CASE WHEN :status_check = :disabled THEN CURRENT_TIMESTAMP ELSE NULL END, updated_at = CURRENT_TIMESTAMP WHERE id = :id');
+            $stmt->execute(['id'=>$id,'name'=>$name,'status'=>$status,'status_check'=>$status,'disabled'=>'disabled']);
+            if(isset($payload['roles'])&&is_array($payload['roles']))$this->syncRoles($id,array_values(array_map('strval',$payload['roles'])));
+            if($status==='disabled')(new ApiTokenRepository($this->database))->revokeForUser($id);
+            return $this->findById($id);
         });
-        return $this->findById($id);
+    }
+
+    public function isForumErased(string $id): bool
+    {
+        if(!$this->database->tableExists('ce_forum_erased_accounts'))return false;
+        $stmt=$this->database->connection()->prepare('SELECT user_id FROM ce_forum_erased_accounts WHERE user_id=?');
+        $stmt->execute([$id]);return $stmt->fetchColumn()!==false;
     }
 
     public function disable(string $id): bool
@@ -174,6 +176,7 @@ final readonly class UserRepository
     public function syncRoles(string $userId, array $roleHandles): void
     {
         $this->locked($userId, function () use ($userId, $roleHandles): void {
+            if($this->isForumErased($userId))throw new \InvalidArgumentException('Удалённому аккаунту нельзя назначить роли.');
             $pdo=$this->database->connection();
             $wanted=[];
             foreach (array_values(array_unique($roleHandles)) as $handle) {

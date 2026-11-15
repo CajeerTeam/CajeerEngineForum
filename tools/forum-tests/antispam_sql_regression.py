@@ -26,7 +26,7 @@ ck($s::limits(true)['thread'][1]<$s::limits(false)['thread'][1],'stricter new ac
 subprocess.run(['php','-r',php],cwd=ROOT,check=True)
 with tempfile.TemporaryDirectory() as tmp:
     path=Path(tmp)/'db.sqlite';db=sqlite3.connect(path);db.execute('PRAGMA foreign_keys=ON')
-    migrations=sorted((ROOT/'migrations/sqlite').glob('*.sql'));assert migrations[-1].name=='0036_forum_antispam.sql'
+    migrations=sorted(f for f in (ROOT/'migrations/sqlite').glob('*.sql') if f.name<='0036_forum_antispam.sql');assert migrations[-1].name=='0036_forum_antispam.sql'
     for f in migrations[:-1]:db.executescript(f.read_text())
     user,other=uid(),uid();now=int(time.time())
     for u in (user,other):db.execute('INSERT INTO ce_users(id,email,name,password_hash) VALUES(?,?,?,?)',(u,u+'@example.test','Member','hash'))

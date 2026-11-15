@@ -351,6 +351,27 @@ final class Operations {
     ),
     'bodyRequired' => false,
   ),
+  'get_AuthPrivacyExport' => 
+  array (
+    'method' => 'GET',
+    'path' => '/auth/privacy/export',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'section',
+        'in' => 'query',
+        'required' => false,
+      ),
+      1 => 
+      array (
+        'name' => 'offset',
+        'in' => 'query',
+        'required' => false,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
   'get_AuthSessions' => 
   array (
     'method' => 'GET',
@@ -2533,6 +2554,24 @@ final class Operations {
   array (
     'method' => 'POST',
     'path' => '/auth/password/reset',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => true,
+  ),
+  'post_AuthPrivacyClearProfile' => 
+  array (
+    'method' => 'POST',
+    'path' => '/auth/privacy/clear-profile',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => true,
+  ),
+  'post_AuthPrivacyErase' => 
+  array (
+    'method' => 'POST',
+    'path' => '/auth/privacy/erase',
     'parameters' => 
     array (
     ),

@@ -272,6 +272,23 @@ export const operations = {
         "parameters": [],
         "bodyRequired": false
     },
+    "get_AuthPrivacyExport": {
+        "method": "GET",
+        "path": "/auth/privacy/export",
+        "parameters": [
+            {
+                "name": "section",
+                "in": "query",
+                "required": false
+            },
+            {
+                "name": "offset",
+                "in": "query",
+                "required": false
+            }
+        ],
+        "bodyRequired": false
+    },
     "get_AuthSessions": {
         "method": "GET",
         "path": "/auth/sessions",
@@ -1972,6 +1989,18 @@ export const operations = {
     "post_AuthPasswordReset": {
         "method": "POST",
         "path": "/auth/password/reset",
+        "parameters": [],
+        "bodyRequired": true
+    },
+    "post_AuthPrivacyClearProfile": {
+        "method": "POST",
+        "path": "/auth/privacy/clear-profile",
+        "parameters": [],
+        "bodyRequired": true
+    },
+    "post_AuthPrivacyErase": {
+        "method": "POST",
+        "path": "/auth/privacy/erase",
         "parameters": [],
         "bodyRequired": true
     },

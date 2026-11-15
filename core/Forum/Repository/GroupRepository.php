@@ -22,6 +22,7 @@ final readonly class GroupRepository extends Repository
     public function description(string $id,string $description): void { $this->query('UPDATE ce_forum_groups SET description=? WHERE role_id=?',[$description,$id]); }
     public function userExists(string $id): bool { return $this->row('SELECT id FROM ce_users WHERE id=?',[$id])!==null; }
     public function lockUser(string $id): ?array { return $this->lock('ce_users','id=?',[$id]); }
+    public function erased(string $id): bool { return $this->row('SELECT user_id FROM ce_forum_erased_accounts WHERE user_id=?',[$id])!==null; }
     public function membership(string $id): array
     {
         $rows=$this->rows('SELECT r.id,r.handle FROM ce_user_roles ur JOIN ce_forum_groups g ON g.role_id=ur.role_id JOIN ce_roles r ON r.id=ur.role_id WHERE ur.user_id=? ORDER BY r.handle',[$id]);
