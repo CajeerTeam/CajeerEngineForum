@@ -182,6 +182,22 @@ def verify_media(base,state,fixture,media,variants=True):
     print('PASS physical dist original and private image variants' if variants else 'PASS restored original image',flush=True)
 
 
+def verify_polls_questions(base,state,fixture):
+    c=Client(base);token=state[0];member=fixture['token'];board=fixture['board'];create='/forum/boards/'+board+'/threads'
+    poll=c.call('POST',create,201,{'title':'Release poll','body':'Select','kind':'poll','poll':{'question':'Select release','options':['One','Two'],'visibility':'closed'}},token=token)['id'];path='/forum/threads/'+poll
+    c.call('PUT',path+'/poll/vote',200,{'choices':[2]},token=member)
+    require(not c.call('GET',path,token=member)['interaction']['poll']['results_visible'],'Hidden poll results leaked')
+    c.call('PATCH',path+'/poll',200,{'closed':True},token=token);p=c.call('GET',path,token=member)['interaction']['poll'];require(p['voters']==1 and p['options'][1]['votes']==1,'Poll tally incorrect')
+    q=c.call('POST',create,201,{'title':'Release question','body':'Question','kind':'question'},token=token)['id'];qp='/forum/threads/'+q
+    post=c.call('POST',qp+'/posts',201,{'body':'Accepted answer'},token=member)['id'];c.call('PUT',qp+'/accepted-answer',200,{'post_id':post},token=token)
+    require(c.call('GET',qp,token=member)['interaction']['question']['accepted_post_id']==post,'Answer not accepted')
+    c.call('GET',qp,404);c.call('GET',qp+'/answers',404);require(q not in [x['id'] for x in c.call('GET','/forum/questions')],'Private question leaked')
+    for _ in range(5):
+        c.call('POST','/queue/work',200,{'limit':10},token=token)
+        if any(n['kind']=='accepted' and n['post_id']==post for n in c.call('GET','/forum/notifications',token=member)['items']):break
+    else:raise AssertionError('Accepted answer notification not delivered')
+    print('PASS physical dist polls, Q&A, result visibility and private accepted notifications',flush=True)
+
 def verify_groups(base,state):
     token, _, _, member=state; c=Client(base)
     groups=c.call('GET','/forum/groups',token=token)
@@ -223,7 +239,7 @@ def verify_navigation(base,state):
 
 
 def seed_structure(base, state):
-    """Create real 0.4.2 structure before updating, not just after the upgrade."""
+    """Create real 0.4.3 structure before updating, not just after the upgrade."""
     admin, _, _, member = state
     c=Client(base)
     member_group=next(g['id'] for g in c.call('GET','/forum/groups',token=admin) if g['handle']=='forum-member')
@@ -325,7 +341,7 @@ def verify_read_tracking(base, state):
 
 def verify_notifications(base, state, fixture):
     c=Client(base); admin,thread,post,_=state
-    # The original 0.4.2 topic has no synthetic historical notifications.
+    # The original 0.4.3 topic has no synthetic historical notifications.
     path='/forum/notifications'
     c.call('POST','/queue/work',200,{'limit':10},token=admin)
     c.call('POST',path+'/read',200,{'all':True},token=admin)
@@ -536,7 +552,7 @@ def verify_community_live(base,f):
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--artifact',type=Path,required=True)
-    parser.add_argument('--previous',type=Path,help='Original 0.4.2 dist; enables real signed upgrade and rollback')
+    parser.add_argument('--previous',type=Path,help='Original 0.4.3 dist; enables real signed upgrade and rollback')
     parser.add_argument('--driver',choices=('sqlite','pgsql'),default='sqlite')
     parser.add_argument('--report',type=Path,required=True)
     args=parser.parse_args(); report=args.report.resolve(); report.mkdir(parents=True,exist_ok=True)
@@ -545,7 +561,7 @@ def main():
         work=Path(tmp); port=free_port()
         # With --previous use the authentic baseline for upgrade, not a relabelled current tree.
         previous=args.previous.resolve() if args.previous else None
-        initial='0.4.2' if previous else current
+        initial='0.4.3' if previous else current
         site=unpack(previous or artifact,work/'live',initial)
         install(site,env,report,'initial',port,args.driver)
         with http(site,env,report,'initial',port,initial) as base:
@@ -571,6 +587,7 @@ def main():
                 verify_rich_content(base,state)
                 verify_attachments(base,state,fixture)
                 verify_media(base,state,fixture,media)
+                verify_polls_questions(base,state,fixture)
         if previous:
             key=work/'backup.key'; secret=work/'release.secret'; public=work/'release.public'
             run(site,env,report,'backup-key',['php','bin/cajeer','backup:keygen','--key='+str(key)])
@@ -595,6 +612,7 @@ def main():
                 verify_rich_content(base,state)
                 verify_attachments(base,state,fixture)
                 verify_media(base,state,fixture,media)
+                verify_polls_questions(base,state,fixture)
             run(site,env,report,'rollback',['php','bin/cajeer','update:rollback','--yes','--json'],timeout=600)
             require(version(site)==initial,'Rollback did not restore release')
             with http(site,env,report,'rollback',port,initial) as base:

@@ -1,5 +1,12 @@
 # Changelog
 
+## Forum Edition 0.4.4 — Polls & Q&A
+
+- Transactional single/multiple choice polls with deadlines, private ballots, controlled result visibility and close/reopen.
+- Question topics, separate answer votes, accepted answers, accepted-answer outbox notifications, ranked answers and ACL-filtered question lists.
+- Preserve existing discussions; reset moved answer state and reject lossy structured-topic merges.
+- Migration 0031, API/SDK, forum UI and regression coverage.
+
 ## Forum Edition 0.4.3 — Media & Storage
 
 - Private sanitized thumbnail, medium and large derivatives, inline attachment markers and keyboard-accessible image galleries.

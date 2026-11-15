@@ -8,11 +8,12 @@ use CajeerEngine\Support\Uuid;
 /** Rows are created in the publication transaction and promoted by the worker. */
 final readonly class NotificationRepository extends Repository
 {
-    public const KINDS=['reply','mention','quote','reaction','moderation'];
+    public const KINDS=['reply','mention','quote','reaction','moderation','accepted'];
+    private const FEED="(SELECT event_id,recipient_id,actor_id,post_id,kind,moderation_action,subscription_kind,state,is_read,created_at FROM ce_forum_notifications UNION ALL SELECT event_id,recipient_id,actor_id,post_id,'accepted' AS kind,NULL AS moderation_action,NULL AS subscription_kind,state,is_read,created_at FROM ce_forum_answer_notifications)";
 
     public function enqueue(string $kind,string $actor,string $post,array $recipients,?string $action=null,?string $subscription=null): void
     {
-        if (($subscription!==null && ($subscription!=='board'||$kind!=='reply')) || !$this->db->connection()->inTransaction() || !in_array($kind,self::KINDS,true) || ($kind==='moderation'?!in_array($action,['lock','unlock','pin','unpin'],true):$action!==null)) throw new \LogicException('Invalid notification event or missing transaction');
+        if (($subscription!==null && ($subscription!=='board'||$kind!=='reply')) || !$this->db->connection()->inTransaction() || (!in_array($kind,self::KINDS,true)||$kind==='accepted') || ($kind==='moderation'?!in_array($action,['lock','unlock','pin','unpin'],true):$action!==null)) throw new \LogicException('Invalid notification event or missing transaction');
         $event=Uuid::v4();
         $uuid=$this->db->driver()==='pgsql'?'CAST(? AS uuid)':'?';
         foreach (array_unique($recipients) as $recipient) {
@@ -39,30 +40,41 @@ final readonly class NotificationRepository extends Repository
     { return $this->row('SELECT author_id FROM ce_forum_posts WHERE id=?',[$id])['author_id']??null; }
     public function removeReaction(string $actor,string $post): void
     { $this->query("DELETE FROM ce_forum_notifications WHERE actor_id=? AND post_id=? AND kind='reaction'",[$actor,$post]); }
+    public function accepted(string $actor,string $post,string $recipient): void
+    {
+        if(!$this->db->connection()->inTransaction())throw new \LogicException('Acceptance event requires a transaction');
+        if($actor===$recipient)return;
+        $uuid=$this->db->driver()==='pgsql'?'CAST(? AS uuid)':'?';
+        $this->query('INSERT INTO ce_forum_answer_notifications(event_id,recipient_id,actor_id,post_id) SELECT '.$uuid.',u.id,'.$uuid.','.$uuid." FROM ce_users u WHERE u.id=? AND u.status='active' AND COALESCE((SELECT pref.accepted FROM ce_forum_notification_preferences pref WHERE pref.user_id=u.id),1)=1",[Uuid::v4(),$actor,$post,$recipient]);
+    }
+    public function removeAccepted(string $post): void { $this->query('DELETE FROM ce_forum_answer_notifications WHERE post_id=?',[$post]); }
     public function preferences(string $user): array
     {
-        $row=$this->row('SELECT reply,mention,quote,reaction,moderation FROM ce_forum_notification_preferences WHERE user_id=?',[$user])??array_fill_keys(self::KINDS,1);
+        $row=$this->row('SELECT reply,mention,quote,reaction,moderation,accepted FROM ce_forum_notification_preferences WHERE user_id=?',[$user])??array_fill_keys(self::KINDS,1);
         return array_map(static fn($v)=>(int)$v===1,$row);
     }
     public function savePreferences(string $user,array $values): void
     {
-        $suffix=$this->db->driver()==='mysql'?' ON DUPLICATE KEY UPDATE reply=VALUES(reply),mention=VALUES(mention),quote=VALUES(quote),reaction=VALUES(reaction),moderation=VALUES(moderation)':' ON CONFLICT(user_id) DO UPDATE SET reply=excluded.reply,mention=excluded.mention,quote=excluded.quote,reaction=excluded.reaction,moderation=excluded.moderation';
-        $this->query('INSERT INTO ce_forum_notification_preferences(user_id,reply,mention,quote,reaction,moderation) VALUES(?,?,?,?,?,?)'.$suffix,[$user,...array_map(static fn($k)=>(int)$values[$k],self::KINDS)]);
+        $suffix=$this->db->driver()==='mysql'?' ON DUPLICATE KEY UPDATE reply=VALUES(reply),mention=VALUES(mention),quote=VALUES(quote),reaction=VALUES(reaction),moderation=VALUES(moderation),accepted=VALUES(accepted)':' ON CONFLICT(user_id) DO UPDATE SET reply=excluded.reply,mention=excluded.mention,quote=excluded.quote,reaction=excluded.reaction,moderation=excluded.moderation,accepted=excluded.accepted';
+        $this->query('INSERT INTO ce_forum_notification_preferences(user_id,reply,mention,quote,reaction,moderation,accepted) VALUES(?,?,?,?,?,?,?)'.$suffix,[$user,...array_map(static fn($k)=>(int)$values[$k],self::KINDS)]);
     }
     public function pending(int $limit): array
-    { return $this->rows('SELECT event_id,recipient_id FROM ce_forum_notifications WHERE state=0 ORDER BY created_at,event_id,recipient_id LIMIT '.max(1,min(1000,$limit))); }
-    public function claim(string $event,string $user): ?array
+    { return $this->rows('SELECT event_id,recipient_id,kind FROM '.self::FEED.' n WHERE state=0 ORDER BY created_at,event_id,recipient_id LIMIT '.max(1,min(1000,$limit))); }
+    public function claim(string $event,string $user,string $kind): ?array
     {
         if (!$this->db->connection()->inTransaction()) throw new \LogicException('Notification claim requires transaction');
-        if ($this->db->driver()==='sqlite') $this->query('UPDATE ce_forum_notifications SET state=state WHERE event_id=? AND recipient_id=? AND state=0',[$event,$user]);
-        return $this->row('SELECT * FROM ce_forum_notifications WHERE event_id=? AND recipient_id=? AND state=0'.($this->db->driver()==='sqlite'?'':' FOR UPDATE'),[$event,$user]);
+        
+        $table=$kind==='accepted'?'ce_forum_answer_notifications':'ce_forum_notifications';
+        if ($this->db->driver()==='sqlite') $this->query('UPDATE '.$table.' SET state=state WHERE event_id=? AND recipient_id=? AND state=0',[$event,$user]);
+        $row=$this->row('SELECT * FROM '.$table.' WHERE event_id=? AND recipient_id=? AND state=0'.($this->db->driver()==='sqlite'?'':' FOR UPDATE'),[$event,$user]);
+        return $row===null?null:$row+['kind'=>'accepted','subscription_kind'=>null];
     }
     public function target(string $post): ?array
     { return $this->row('SELECT t.board_id FROM ce_forum_posts p JOIN ce_forum_threads t ON t.id=p.thread_id WHERE p.id=?',[$post]); }
-    public function finish(string $event,string $user,bool $deliver): void
-    { $this->query(($deliver?'UPDATE ce_forum_notifications SET state=1':'DELETE FROM ce_forum_notifications').' WHERE event_id=? AND recipient_id=? AND state=0',[$event,$user]); }
+    public function finish(string $event,string $user,bool $deliver,string $kind): void
+    { $table=$kind==='accepted'?'ce_forum_answer_notifications':'ce_forum_notifications'; $this->query(($deliver?'UPDATE '.$table.' SET state=1':'DELETE FROM '.$table).' WHERE event_id=? AND recipient_id=? AND state=0',[$event,$user]); }
     private function visible(array $allowed): string
-    { return ' FROM ce_forum_notifications n JOIN ce_forum_posts p ON p.id=n.post_id JOIN ce_forum_threads t ON t.id=p.thread_id WHERE n.recipient_id=? AND n.state=1 AND '.$this->boardFilter('t.board_id',$allowed); }
+    { return ' FROM '.self::FEED.' n JOIN ce_forum_posts p ON p.id=n.post_id JOIN ce_forum_threads t ON t.id=p.thread_id WHERE n.recipient_id=? AND n.state=1 AND '.$this->boardFilter('t.board_id',$allowed); }
     public function inbox(string $user,array $allowed,int $offset,?string $id=null): array
     {
         $params=[$user];if($id!==null)$params[]=$id;
@@ -79,8 +91,10 @@ final readonly class NotificationRepository extends Repository
         // Select in the same snapshot; do not expose foreign or hidden notification IDs.
         if($id!==null && $this->row('SELECT n.event_id'.$where,$params)===null)return false;
         // Correlated EXISTS is portable, including MySQL's target-table restriction.
-        $sql='UPDATE ce_forum_notifications SET is_read=1 WHERE recipient_id=? AND state=1 AND is_read=0 AND EXISTS (SELECT 1 FROM ce_forum_posts p JOIN ce_forum_threads t ON t.id=p.thread_id WHERE p.id=ce_forum_notifications.post_id AND '.$this->boardFilter('t.board_id',$allowed).')';
-        $this->query($sql.($id===null?'':' AND event_id=?'),$params);
+        foreach(['ce_forum_notifications','ce_forum_answer_notifications'] as $table){
+            $sql='UPDATE '.$table.' SET is_read=1 WHERE recipient_id=? AND state=1 AND is_read=0 AND EXISTS (SELECT 1 FROM ce_forum_posts p JOIN ce_forum_threads t ON t.id=p.thread_id WHERE p.id='.$table.'.post_id AND '.$this->boardFilter('t.board_id',$allowed).')';
+            $this->query($sql.($id===null?'':' AND event_id=?'),$params);
+        }
         return true;
     }
 }

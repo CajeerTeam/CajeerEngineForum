@@ -237,6 +237,38 @@ final class ForumDatabaseTest extends TestCase
                 try { $operation(); self::fail('Stale administrator grant accepted'); }
                 catch (\CajeerEngine\Forum\ForumException $e) { self::assertSame(403,$e->status); }
             }
+            // Real service calls on both SQLite and PostgreSQL, with current ACL and durable accepted events.
+            $qa=$discussion->polls();
+            $poll=$discussion->createThread($actor,$board,'PHPUnit poll','Vote','plain',[],'poll',[
+                'question'=>'Which?', 'options'=>['One','Two','Three'], 'max_choices'=>2, 'visibility'=>'voted',
+            ]);
+            self::assertFalse($discussion->thread($poll,0)['interaction']['poll']['results_visible']);
+            self::assertSame([1,2],$qa->vote($reader,$poll,[2,1])['poll']['my_choices']);
+            self::assertSame(1,$qa->vote($reader,$poll,[1,2])['poll']['voters']);
+            self::assertSame([0,0,1],array_column($qa->vote($reader,$poll,[3])['poll']['options'],'votes'));
+            $qa->control($actor,$poll,true);
+            try {$qa->vote($reader,$poll,[1]);self::fail('Closed poll accepted vote');}catch(\CajeerEngine\Forum\ForumException $e){self::assertSame(409,$e->status);}
+            self::assertTrue($discussion->thread($poll,0)['interaction']['poll']['results_visible']);
+            $qa->control($actor,$poll,false);
+            // Test the real deadline check without waiting or a worker.
+            $pdo->prepare('UPDATE ce_forum_polls SET closes_at=? WHERE thread_id=?')->execute([time()-1,$poll]);
+            try {$qa->vote($reader,$poll,[1]);self::fail('Expired poll accepted vote');}catch(\CajeerEngine\Forum\ForumException $e){self::assertSame(409,$e->status);}
+            self::assertTrue($discussion->thread($poll,0)['interaction']['poll']['closed']);
+            $qa->control($actor,$poll,false,time()+3600);
+            $question=$discussion->createThread($actor,$board,'PHPUnit question','How?','plain',[],'question');
+            $answer=$discussion->reply($reader,$question,'Answer');
+            $qa->answerVote($actor,$answer,true);$qa->answerVote($actor,$answer,true);
+            self::assertSame(1,$qa->answers($actor,$question,0,'score')[0]['score']);
+            $qa->accept($actor,$question,$answer);$qa->accept($actor,$question,$answer);
+            self::assertSame($answer,$discussion->thread($question,0)['interaction']['question']['accepted_post_id']);
+            $notifications->dispatch(1000);
+            $accepted=array_values(array_filter($notifications->inbox($reader,0)['items'],static fn($n)=>$n['kind']==='accepted'));
+            self::assertCount(1,$accepted);self::assertSame($answer,$accepted[0]['post_id']);
+            $notifications->mark($reader,['id'=>$accepted[0]['id']]);
+            $qa->accept($actor,$question,null);self::assertNull($discussion->thread($question,0)['interaction']['question']['accepted_post_id']);
+            try {$notifications->target($reader,$accepted[0]['id']);self::fail('Removed accepted notification visible');}catch(\CajeerEngine\Forum\ForumException $e){self::assertSame(404,$e->status);}
+            self::assertTrue($integrity->check()['ok']);
+
             $users->disable($member);
             try { $tx->permissions()->access($m); self::fail('Disabled actor retained ACL'); }
             catch (\CajeerEngine\Forum\ForumException $e) { self::assertSame(401,$e->status); }

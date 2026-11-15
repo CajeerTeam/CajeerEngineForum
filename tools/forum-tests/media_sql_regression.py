@@ -70,7 +70,7 @@ try:
     print('PASS real PHP S3 SigV4 PUT/GET/DELETE, checksum input, bounded download and missing object')
     with tempfile.TemporaryDirectory(prefix='forum-media-regression-') as tmp:
         path=Path(tmp)/'forum.sqlite';db=sqlite3.connect(path);db.execute('PRAGMA foreign_keys=ON')
-        files=sorted((ROOT/'migrations/sqlite').glob('*.sql'));assert files[-1].name=='0030_forum_media_storage.sql'
+        files=sorted((ROOT/'migrations/sqlite').glob('*.sql'));files=[x for x in files if x.name[:4]<='0030'];assert files[-1].name=='0030_forum_media_storage.sql'
         for migration in files[:-1]:db.executescript(migration.read_text())
         db.execute('INSERT INTO ce_users(id,email,name,password_hash) VALUES(?,?,?,?)',(user,user+'@example.test','Owner','test'))
         now=int(time.time());db.execute('INSERT INTO ce_forum_attachments(id,owner_id,filename,mime,size_bytes,sha256,file_data,created_at,expires_at) VALUES (?,?,?,?,?,?,?,?,?)',(aid,user,'old.png','image/png',len(raw),digest(raw),base64.b64encode(raw).decode(),now,now+86400));db.commit()

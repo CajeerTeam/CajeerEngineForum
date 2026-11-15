@@ -535,6 +535,28 @@ export const operations = {
         ],
         "bodyRequired": false
     },
+    "get_Forum_answers": {
+        "method": "GET",
+        "path": "/forum/threads/{id}/answers",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            },
+            {
+                "name": "page",
+                "in": "query",
+                "required": false
+            },
+            {
+                "name": "sort",
+                "in": "query",
+                "required": false
+            }
+        ],
+        "bodyRequired": false
+    },
     "get_Forum_attachment": {
         "method": "GET",
         "path": "/forum/attachments/{id}",
@@ -866,6 +888,23 @@ export const operations = {
                 "name": "kind",
                 "in": "path",
                 "required": true
+            }
+        ],
+        "bodyRequired": false
+    },
+    "get_Forum_questions": {
+        "method": "GET",
+        "path": "/forum/questions",
+        "parameters": [
+            {
+                "name": "page",
+                "in": "query",
+                "required": false
+            },
+            {
+                "name": "status",
+                "in": "query",
+                "required": false
             }
         ],
         "bodyRequired": false
@@ -1514,6 +1553,18 @@ export const operations = {
             },
             {
                 "name": "message_id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
+    },
+    "patch_Forum_pollControl": {
+        "method": "PATCH",
+        "path": "/forum/threads/{id}/poll",
+        "parameters": [
+            {
+                "name": "id",
                 "in": "path",
                 "required": true
             }
@@ -2414,6 +2465,30 @@ export const operations = {
         ],
         "bodyRequired": false
     },
+    "put_Forum_acceptAnswer": {
+        "method": "PUT",
+        "path": "/forum/threads/{id}/accepted-answer",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
+    },
+    "put_Forum_answerVote": {
+        "method": "PUT",
+        "path": "/forum/posts/{id}/answer-vote",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
+    },
     "put_Forum_blockConversationUser": {
         "method": "PUT",
         "path": "/forum/conversation-blocks/{id}",
@@ -2442,6 +2517,18 @@ export const operations = {
         "method": "PUT",
         "path": "/forum/notification-preferences",
         "parameters": [],
+        "bodyRequired": true
+    },
+    "put_Forum_pollVote": {
+        "method": "PUT",
+        "path": "/forum/threads/{id}/poll/vote",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
         "bodyRequired": true
     },
     "put_Forum_reaction": {

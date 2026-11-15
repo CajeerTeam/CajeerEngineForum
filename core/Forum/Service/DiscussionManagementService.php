@@ -80,6 +80,7 @@ final readonly class DiscussionManagementService
         if (in_array($target,$sources,true)) throw new ForumException('Нельзя объединить тему с собой.');
         return $this->tx->write(function()use($actor,$target,$sources){
             $threads=$this->lock($actor,[$target,...$sources]);$this->boards->writable($threads[$target]['board_id']);
+            foreach($sources as $source) if($this->tx->polls()->structured($source)) throw new ForumException('Нельзя объединять исходный опрос или вопрос: будут потеряны голоса или решение.',409);
             // Keep target title/prefix and combine tags without silently dropping metadata.
             $tags=$this->repo->tags($target);
             foreach ($sources as $source) $tags=array_values(array_unique([...$tags,...$this->repo->tags($source)]));
@@ -117,7 +118,7 @@ final readonly class DiscussionManagementService
                 $this->repo->metadata($target,$threads[$source]['prefix'],$this->repo->tags($source));
             }
             $ordinal=$this->posts->nextOrdinal($target);
-            foreach ($chosen as $post) $this->repo->movePost($post['id'],$source,$target,$ordinal++);
+            foreach ($chosen as $post) { $this->tx->polls()->detachAnswer($source,$post['id']); $this->repo->movePost($post['id'],$source,$target,$ordinal++); }
             $this->threads->touch($source);$this->threads->touch($target);
             $this->tx->audit($board===null?'forum.post.move':'forum.thread.split',$actor->userId,['source_id'=>$source,'target_id'=>$target,'post_ids'=>$selected]);
             return ['id'=>$target];

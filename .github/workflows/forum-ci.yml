@@ -59,6 +59,7 @@ jobs:
       - run: php tools/forum-content-regression.php
       - run: python tools/forum-tests/attachment_sql_regression.py
       - run: python tools/forum-tests/media_sql_regression.py
+      - run: python tools/forum-tests/poll_sql_regression.py
       - run: python tools/forum-tests/smtp_regression.py
       - run: php tools/security-regression.php
       - run: php tools/release-regression.php
@@ -171,6 +172,7 @@ jobs:
       - run: python -m pip install -r tools/forum-tests/requirements.txt
       - run: python -m playwright install --with-deps ${{ matrix.browser }}
       - run: python tools/forum-tests/editor_browser_regression.py --browser ${{ matrix.browser }}
+      - run: python tools/forum-tests/poll_browser_regression.py --browser ${{ matrix.browser }}
       - name: Real browser E2E with SMTP
         run: python tools/forum-tests/run.py --suite browser --browser ${{ matrix.browser }} --report storage/tmp/forum-ci/browser
       - name: Upload browser evidence
@@ -210,7 +212,7 @@ jobs:
       DB_PORT: '5432'
       DB_USERNAME: forum_ci
       DB_PASSWORD: 'ForumCI-Disposable-123!'
-      FORUM_BASELINE_REF: ${{ vars.FORUM_BASELINE_REF || '59690aa9d316c302156f6ee409b5766818242431' }}
+      FORUM_BASELINE_REF: ${{ vars.FORUM_BASELINE_REF || 'db8dc4179a21d9fee7fc1d5ab506ce4051ef87c1' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -237,29 +239,29 @@ jobs:
           ln -s pg_dump "$RUNNER_TEMP/pg-client/pg_restore"
           ln -s pg_dump "$RUNNER_TEMP/pg-client/psql"
           echo "$RUNNER_TEMP/pg-client" >> "$GITHUB_PATH"
-      - name: Build and verify physical 0.4.3 artifacts
+      - name: Build and verify physical 0.4.4 artifacts
         run: |
           composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader
           mkdir -p storage/tmp/forum-ci/release
           php tools/build-release.php --all --target-dir="$RUNNER_TEMP/forum-current" --json > storage/tmp/forum-ci/release/build.json
-          php bin/cajeer release:verify --dist --strict --artifact="$RUNNER_TEMP/forum-current/cajeerengine-0.4.3-dist.zip"
-          php bin/cajeer release:verify --strict --artifact="$RUNNER_TEMP/forum-current/cajeerengine-0.4.3-source.zip"
-      - name: Build original 0.4.2 baseline from repository history
+          php bin/cajeer release:verify --dist --strict --artifact="$RUNNER_TEMP/forum-current/cajeerengine-0.4.4-dist.zip"
+          php bin/cajeer release:verify --strict --artifact="$RUNNER_TEMP/forum-current/cajeerengine-0.4.4-source.zip"
+      - name: Build original 0.4.3 baseline from repository history
         run: |
           mkdir -p "$RUNNER_TEMP/forum-previous"
           git archive "$FORUM_BASELINE_REF" | tar -x -C "$RUNNER_TEMP/forum-previous"
           cd "$RUNNER_TEMP/forum-previous"
-          php -r 'if (json_decode(file_get_contents("release.json"),true,512,JSON_THROW_ON_ERROR)["edition_version"]!=="0.4.2") exit(1);'
+          php -r 'if (json_decode(file_get_contents("release.json"),true,512,JSON_THROW_ON_ERROR)["edition_version"]!=="0.4.3") exit(1);'
           composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader
           php tools/build-release.php --dist --target-dir="$RUNNER_TEMP/forum-previous-dist" --json
       - name: Clean install, live HTTP, identity and corrupt-ledger rejection
         env:
           FORUM_TEST_RELEASE_DB: forum_test_release_clean
-        run: python tools/forum-tests/release_acceptance.py --driver ${{ matrix.driver }} --artifact "$RUNNER_TEMP/forum-current/cajeerengine-0.4.3-dist.zip" --report storage/tmp/forum-ci/release/clean
-      - name: Signed upgrade from 0.4.2, recovery and rollback
+        run: python tools/forum-tests/release_acceptance.py --driver ${{ matrix.driver }} --artifact "$RUNNER_TEMP/forum-current/cajeerengine-0.4.4-dist.zip" --report storage/tmp/forum-ci/release/clean
+      - name: Signed upgrade from 0.4.3, recovery and rollback
         env:
           FORUM_TEST_RELEASE_DB: forum_test_release_upgrade
-        run: python tools/forum-tests/release_acceptance.py --driver ${{ matrix.driver }} --artifact "$RUNNER_TEMP/forum-current/cajeerengine-0.4.3-dist.zip" --previous "$RUNNER_TEMP/forum-previous-dist/cajeerengine-0.4.2-dist.zip" --report storage/tmp/forum-ci/release/upgrade
+        run: python tools/forum-tests/release_acceptance.py --driver ${{ matrix.driver }} --artifact "$RUNNER_TEMP/forum-current/cajeerengine-0.4.4-dist.zip" --previous "$RUNNER_TEMP/forum-previous-dist/cajeerengine-0.4.3-dist.zip" --report storage/tmp/forum-ci/release/upgrade
       - name: Upload release acceptance evidence
         if: always()
         uses: actions/upload-artifact@v4

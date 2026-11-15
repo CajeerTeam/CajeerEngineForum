@@ -10,7 +10,7 @@ final class RouteRegistry
     /** These public GET/HEAD operations optionally resolve an existing session. */
     public static function optionalAuthentication(string $name): bool
     {
-        return in_array($name,['api.v1.forum.index','api.v1.forum.board','api.v1.forum.thread','api.v1.forum.search','api.v1.forum.latest','api.v1.forum.profile','api.v1.forum.members','api.v1.forum.profileImage','api.v1.forum.attachment','api.v1.forum.downloadAttachment','api.v1.forum.attachmentImage','api.v1.forum.activity','api.v1.forum.leaderboard'],true);
+        return in_array($name,['api.v1.forum.index','api.v1.forum.board','api.v1.forum.thread','api.v1.forum.search','api.v1.forum.latest','api.v1.forum.profile','api.v1.forum.members','api.v1.forum.profileImage','api.v1.forum.attachment','api.v1.forum.downloadAttachment','api.v1.forum.attachmentImage','api.v1.forum.activity','api.v1.forum.leaderboard','api.v1.forum.questions','api.v1.forum.answers'],true);
     }
 
     /** @return list<array{0:string,1:string,2:string,3:string,4:string,5:?array}> */
@@ -192,6 +192,12 @@ final class RouteRegistry
             ['POST', '/api/v1/forum/posts/{id}/report', 'api.v1.forum.report', 'forum', 'report', ['forum:write']],
             ['GET', '/api/v1/forum/reports', 'api.v1.forum.reports', 'forum', 'reports', ['forum:moderate']],
             ['POST', '/api/v1/forum/reports/{id}/resolve', 'api.v1.forum.resolve', 'forum', 'resolve', ['forum:moderate']],
+            ['PUT', '/api/v1/forum/threads/{id}/poll/vote', 'api.v1.forum.pollVote', 'forum', 'pollVote', ['forum:write']],
+            ['PATCH', '/api/v1/forum/threads/{id}/poll', 'api.v1.forum.pollControl', 'forum', 'pollControl', ['forum:write']],
+            ['PUT', '/api/v1/forum/threads/{id}/accepted-answer', 'api.v1.forum.acceptAnswer', 'forum', 'acceptAnswer', ['forum:write']],
+            ['PUT', '/api/v1/forum/posts/{id}/answer-vote', 'api.v1.forum.answerVote', 'forum', 'answerVote', ['forum:write']],
+            ['GET', '/api/v1/forum/threads/{id}/answers', 'api.v1.forum.answers', 'forum', 'answers', null],
+            ['GET', '/api/v1/forum/questions', 'api.v1.forum.questions', 'forum', 'questions', null],
             ['PUT', '/api/v1/forum/threads/{id}/metadata', 'api.v1.forum.threadMetadata', 'forum', 'threadMetadata', ['forum:moderate']],
             ['POST', '/api/v1/forum/thread-actions/bulk', 'api.v1.forum.bulkThreads', 'forum', 'bulkThreads', ['forum:moderate']],
             ['POST', '/api/v1/forum/threads/{id}/merge', 'api.v1.forum.mergeThreads', 'forum', 'mergeThreads', ['forum:moderate']],

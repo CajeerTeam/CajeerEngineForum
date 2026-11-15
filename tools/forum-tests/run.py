@@ -972,6 +972,51 @@ class NetworkTests(unittest.TestCase):
         c.call('POST',cp+'/leave',200,token=other);c.call('GET','/forum/attachments/'+private+'/image/thumbnail',404,token=other)
         c.call('POST',url+'/moderate',200,{'action':'delete'},token=admin);c.call('GET',path+'/image/thumbnail',404,token=admin)
 
+    def test_17_polls_questions(self):
+        c=Client(self.base);admin=c.login(ADMIN,ADMIN_PASSWORD)[0]['data']['access_token']
+        email=unique_email();member=c.call('POST','/users',201,{'email':email,'name':'Poll member','password':PASSWORD,'roles':['forum-member']},token=admin)['id'];other=c.login(email)[0]['data']['access_token']
+        public=c.call('GET','/forum')['boards'][0]['id'];create='/forum/boards/'+public+'/threads'
+        config={'question':'Which release?','options':['First','Second','Third'],'max_choices':2,'allow_change':True,'visibility':'voted'}
+        poll=c.call('POST',create,201,{'title':'Poll regression','body':'Vote now','kind':'poll','poll':config},token=admin)['id'];path='/forum/threads/'+poll
+        p=c.call('GET',path)['interaction']['poll'];self.assertFalse(p['results_visible']);self.assertIsNone(p['voters']);self.assertNotIn('votes',p['options'][0])
+        c.call('PUT',path+'/poll/vote',401,{'choices':[1]});c.call('PUT',path+'/poll/vote',422,{'choices':[1,1]},token=other)
+        c.call('PUT',path+'/poll/vote',422,{'choices':[1,2,3]},token=other)
+        c.call('PUT',path+'/poll/vote',200,{'choices':[1,2]},token=other)
+        c.call('PUT',path+'/poll/vote',200,{'choices':[2,1]},token=other)
+        p=c.call('GET',path,token=other)['interaction']['poll'];self.assertEqual(1,p['voters']);self.assertEqual([1,1,0],[o['votes'] for o in p['options']]);self.assertEqual([1,2],p['my_choices'])
+        self.assertFalse(c.call('GET',path,token=admin)['interaction']['poll']['results_visible'])
+        c.call('PUT',path+'/poll/vote',200,{'choices':[3]},token=other)
+        c.call('PATCH',path+'/poll',403,{'closed':True},token=other);c.call('PATCH',path+'/poll',200,{'closed':True},token=admin)
+        p=c.call('GET',path)['interaction']['poll'];self.assertTrue(p['closed']);self.assertEqual([0,0,1],[o['votes'] for o in p['options']]);c.call('PUT',path+'/poll/vote',409,{'choices':[1]},token=other)
+        c.call('PATCH',path+'/poll',200,{'closed':False},token=admin);c.call('PUT',path+'/poll/vote',200,{'choices':[]},token=other)
+        self.assertFalse(c.call('GET',path,token=other)['interaction']['poll']['results_visible'])
+        fixed=c.call('POST',create,201,{'title':'Fixed vote poll','body':'One vote','kind':'poll','poll':{**config,'max_choices':1,'allow_change':False,'visibility':'closed'}},token=admin)['id'];fp='/forum/threads/'+fixed
+        c.call('PUT',fp+'/poll/vote',200,{'choices':[1]},token=other);c.call('PUT',fp+'/poll/vote',409,{'choices':[2]},token=other)
+        self.assertFalse(c.call('GET',fp,token=other)['interaction']['poll']['results_visible'])
+        q=c.call('POST',create,201,{'title':'Question regression','body':'How to vote?','kind':'question'},token=admin)['id'];qp='/forum/threads/'+q
+        self.assertIn(q,[x['id'] for x in c.call('GET','/forum/questions?status=unanswered')]);first=c.call('GET',qp)['first_post_id']
+        reply=c.call('POST',qp+'/posts',201,{'body':'Answer'},token=other)['id'];second=c.call('POST',qp+'/posts',201,{'body':'Another answer'},token=admin)['id']
+        c.call('PUT','/forum/posts/'+reply+'/answer-vote',403,{'enabled':True},token=other)
+        c.call('PUT','/forum/posts/'+reply+'/answer-vote',200,{'enabled':True},token=admin);c.call('PUT','/forum/posts/'+reply+'/answer-vote',200,{'enabled':True},token=admin)
+        ranked=c.call('GET',qp+'/answers?sort=score',token=admin);self.assertEqual(reply,ranked[0]['id']);self.assertEqual(1,ranked[0]['score']);self.assertTrue(ranked[0]['voted'])
+        c.call('PUT',qp+'/accepted-answer',404,{'post_id':first},token=admin);c.call('PUT',qp+'/accepted-answer',403,{'post_id':reply},token=other)
+        c.call('PUT',qp+'/accepted-answer',200,{'post_id':reply},token=admin);c.call('PUT',qp+'/accepted-answer',200,{'post_id':reply},token=admin)
+        self.assertIn(q,[x['id'] for x in c.call('GET','/forum/questions?status=solved')]);self.assertEqual(reply,c.call('GET',qp)['interaction']['question']['accepted_post_id'])
+        for _ in range(10):
+            c.call('POST','/queue/work',200,{'limit':10},token=admin)
+            items=[n for n in c.call('GET','/forum/notifications',token=other)['items'] if n['kind']=='accepted']
+            if items:break
+        self.assertEqual(1,len(items));self.assertEqual(reply,items[0]['post_id']);c.call('POST','/forum/notifications/read',200,{'id':items[0]['id']},token=other)
+        c.call('POST',qp+'/merge',409,{'source_ids':[poll]},token=admin)
+        target=c.call('POST',create,201,{'title':'Ordinary target','body':'Target'},token=admin)['id']
+        c.call('POST',qp+'/transfer',200,{'post_ids':[reply],'target_id':target},token=admin)
+        self.assertIsNone(c.call('GET',qp)['interaction']['question']['accepted_post_id']);self.assertEqual(second,c.call('GET',qp+'/answers')[0]['id']);c.call('GET','/forum/notifications/'+items[0]['id'],404,token=other)
+        c.call('PUT','/forum/posts/'+reply+'/answer-vote',404,{'enabled':True},token=admin)
+        cat=c.call('POST','/forum/categories',201,{'name':'Poll hidden','description':''},token=admin)['id'];hidden=c.call('POST','/forum/categories/'+cat+'/boards',201,{'name':'Hidden Q&A','description':''},token=admin)['id'];c.call('PUT','/forum/categories/'+cat+'/permissions',200,{'visibility':'hidden','rules':[]},token=admin)
+        c.call('POST','/forum/thread-actions/bulk',200,{'thread_ids':[poll,q],'action':'move','board_id':hidden},token=admin)
+        c.call('GET',path,404,token=other);c.call('PUT',path+'/poll/vote',404,{'choices':[1]},token=other);c.call('GET',qp+'/answers',404,token=other);self.assertNotIn(q,[x['id'] for x in c.call('GET','/forum/questions',token=other)])
+        self.assertIn(q,[x['id'] for x in c.call('GET','/forum/questions',token=admin)])
+
     def test_99_rate_limit(self):
         # Run last: exhaust the real IP auth bucket without guessing credentials.
         c = Client(self.base)

@@ -34,6 +34,8 @@ final readonly class NotificationService
         $author=$this->repo->postAuthor($post);
         if($author!==null)$this->repo->enqueue('reaction',$actor,$post,[$author]);
     }
+    public function accepted(string $actor,string $post,string $recipient): void { $this->repo->accepted($actor,$post,$recipient); }
+    public function removeAccepted(string $post): void { $this->repo->removeAccepted($post); }
     public function moderated(string $actor,array $thread,string $action): void
     {
         $post=$this->repo->firstPost($thread['id']);
@@ -47,14 +49,14 @@ final readonly class NotificationService
         $done=0;
         foreach($this->repo->pending($limit) as $key){
             $done+=(int)$this->tx->write(function()use($key){
-                $user=$key['recipient_id'];$id=$key['event_id'];$row=$this->repo->claim($id,$user);
+                $user=$key['recipient_id'];$id=$key['event_id'];$row=$this->repo->claim($id,$user,$key['kind']);
                 if($row===null)return false;
                 $target=$this->repo->target($row['post_id']);$deliver=false;
                 if($target!==null && $this->repo->preferences($user)[$row['kind']] && ($row['subscription_kind']===null||$this->repo->subscriptionEligible($user,$row['post_id'],$row['subscription_kind']))){
                     try{$access=$this->tx->permissions()->access(new ForumAccessPolicy($user,['*']));$deliver=in_array($target['board_id'],NodePermissionService::allowed($access),true);}
                     catch(ForumException $e){if($e->status!==401)throw $e;}
                 }
-                $this->repo->finish($id,$user,$deliver);return true;
+                $this->repo->finish($id,$user,$deliver,$key['kind']);return true;
             });
         }
         return $done;
@@ -87,8 +89,8 @@ final readonly class NotificationService
     }
     public function preferences(ForumAccessPolicy $actor,array $body): array
     {
-        if(count($body)!==count(NotificationRepository::KINDS))throw new ForumException('Укажите все типы уведомлений.',422);
-        foreach(NotificationRepository::KINDS as $kind)if(!is_bool($body[$kind]??null))throw new ForumException('Некорректные настройки уведомлений.',422);
-        return $this->tx->write(function()use($actor,$body){$this->tx->permissions()->access($actor,lockActor:true);$this->repo->savePreferences($actor->userId,$body);return ['preferences'=>$this->repo->preferences($actor->userId)];});
+        if(array_diff(array_keys($body),NotificationRepository::KINDS))throw new ForumException('Некорректные настройки уведомлений.',422);
+        foreach(NotificationRepository::KINDS as $kind)if(($kind!=='accepted'||array_key_exists($kind,$body))&&!is_bool($body[$kind]??null))throw new ForumException('Некорректные настройки уведомлений.',422);
+        return $this->tx->write(function()use($actor,$body){$this->tx->permissions()->access($actor,lockActor:true);$this->repo->savePreferences($actor->userId,$body+$this->repo->preferences($actor->userId));return ['preferences'=>$this->repo->preferences($actor->userId)];});
     }
 }

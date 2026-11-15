@@ -693,6 +693,33 @@ final class Operations {
     ),
     'bodyRequired' => false,
   ),
+  'get_Forum_answers' => 
+  array (
+    'method' => 'GET',
+    'path' => '/forum/threads/{id}/answers',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+      1 => 
+      array (
+        'name' => 'page',
+        'in' => 'query',
+        'required' => false,
+      ),
+      2 => 
+      array (
+        'name' => 'sort',
+        'in' => 'query',
+        'required' => false,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
   'get_Forum_attachment' => 
   array (
     'method' => 'GET',
@@ -1115,6 +1142,27 @@ final class Operations {
         'name' => 'kind',
         'in' => 'path',
         'required' => true,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
+  'get_Forum_questions' => 
+  array (
+    'method' => 'GET',
+    'path' => '/forum/questions',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'page',
+        'in' => 'query',
+        'required' => false,
+      ),
+      1 => 
+      array (
+        'name' => 'status',
+        'in' => 'query',
+        'required' => false,
       ),
     ),
     'bodyRequired' => false,
@@ -1950,6 +1998,21 @@ final class Operations {
       1 => 
       array (
         'name' => 'message_id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => true,
+  ),
+  'patch_Forum_pollControl' => 
+  array (
+    'method' => 'PATCH',
+    'path' => '/forum/threads/{id}/poll',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
         'in' => 'path',
         'required' => true,
       ),
@@ -3162,6 +3225,36 @@ final class Operations {
     ),
     'bodyRequired' => false,
   ),
+  'put_Forum_acceptAnswer' => 
+  array (
+    'method' => 'PUT',
+    'path' => '/forum/threads/{id}/accepted-answer',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => true,
+  ),
+  'put_Forum_answerVote' => 
+  array (
+    'method' => 'PUT',
+    'path' => '/forum/posts/{id}/answer-vote',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => true,
+  ),
   'put_Forum_blockConversationUser' => 
   array (
     'method' => 'PUT',
@@ -3198,6 +3291,21 @@ final class Operations {
     'path' => '/forum/notification-preferences',
     'parameters' => 
     array (
+    ),
+    'bodyRequired' => true,
+  ),
+  'put_Forum_pollVote' => 
+  array (
+    'method' => 'PUT',
+    'path' => '/forum/threads/{id}/poll/vote',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
     ),
     'bodyRequired' => true,
   ),

@@ -16,6 +16,7 @@ final readonly class DiscussionService
 
     private function access(?ForumAccessPolicy $actor): array { return $this->tx->permissions()->access($actor??new ForumAccessPolicy('',[])); }
     private function decorated(array $board,array $access): array { $board['permissions']=$access['boards'][$board['id']]; return $board; }
+    public function polls(): PollQuestionService { return $this->tx->polls(); }
     public function attachments(): AttachmentService { return $this->tx->attachments(); }
     public function conversations(): ConversationService { return $this->tx->conversations(); }
     public function watchDelivery(): WatchService { return $this->tx->watches(); }
@@ -96,6 +97,16 @@ final readonly class DiscussionService
             if($firstUnread) $offset=25*(($state['first_unread']['page']??1)-1);
             $result=['thread'=>$thread,'breadcrumbs'=>$this->breadcrumbs($board,$access),'board'=>$this->decorated($board,$access),'posts'=>$this->posts->inThread($id,$offset,$viewer),'first_post_id'=>$this->posts->firstId($id),'page'=>1+intdiv($offset,25)];
             $result['posts']=$this->tx->attachments()->decorate('post',$result['posts']);
+            $result['interaction']=$this->polls()->view($id,$viewer);
+            if($result['interaction']['kind']==='question') {
+                $qa=new \CajeerEngine\Forum\Repository\PollQuestionRepository($this->db);
+                $result['answers']=$qa->answers($id,$viewer,0,true);
+                $stats=$qa->answerStats(array_column($result['posts'],'id'),$viewer);
+                foreach($result['posts'] as &$p) if($p['id']!==$result['first_post_id']) $p['answer_vote']=$stats[$p['id']]??['score'=>0,'voted'=>false];
+                unset($p);
+                $accepted=$result['interaction']['question']['accepted_post_id'];
+                if($accepted!==null) $result['interaction']['question']['accepted_page']=$qa->answerPage($id,$accepted);
+            }
             if ($state!==null) {
                 $result['read_state']=$state;
                 foreach($result['posts'] as &$post) $post['is_unread']=(int)$post['read_sequence']>$result['read_state']['read_sequence'];
@@ -119,15 +130,16 @@ final readonly class DiscussionService
     public function management(): DiscussionManagementService { return new DiscussionManagementService($this->tx,$this->boards,$this->threads,$this->posts,new \CajeerEngine\Forum\Repository\DiscussionManagementRepository($this->db)); }
     public function groups(): GroupService { return $this->tx->groups(); }
     public function permissions(): NodePermissionService { return $this->tx->permissions(); }
-    public function createThread(ForumAccessPolicy $actor, string $board, string $title, mixed $body, string $format='plain', mixed $attachments=[]): string
+    public function createThread(ForumAccessPolicy $actor, string $board, string $title, mixed $body, string $format='plain', mixed $attachments=[], mixed $kind='discussion', mixed $poll=null): string
     {
         $board = V::id($board); $title = V::text($title,'title',180,3); $body = \CajeerEngine\Forum\Content\ForumContentRenderer::source($body,$format);
         $actor->require('forum:write');
-        return $this->tx->write(function () use ($actor,$board,$title,$body,$format,$attachments) {
+        return $this->tx->write(function () use ($actor,$board,$title,$body,$format,$attachments,$kind,$poll) {
             $this->permissions()->assertWrite($actor,$board,'thread:create');
             $this->boards->writable($board);
             $id = Uuid::v4(); $post = Uuid::v4();
             $this->threads->insert($id,$board,$actor->userId,$title);
+            $this->polls()->initialize($id,$kind,$poll);
             $this->posts->insert($post,$id,$actor->userId,$body,1,$format);
             $this->tx->attachments()->attach($actor->userId,'post',$post,$attachments);
             $this->tx->notifications()->published($actor->userId,$id,$post,$body,false,$format);

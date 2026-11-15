@@ -57,7 +57,7 @@ with tempfile.TemporaryDirectory(prefix='forum-community-sql-') as directory:
     for user,read,muted in [(a,1,0),(b,0,1)]:db.execute('INSERT INTO ce_forum_conversation_participants(conversation_id,user_id,joined_sequence,read_sequence,muted) VALUES(?,?,1,?,?)',(conversation,user,read,muted))
     db.execute('INSERT INTO ce_forum_conversation_messages(id,conversation_id,author_id,message_sequence,body,created_at) VALUES(?,?,?,1,?,1)',(message,conversation,a,'Private message'))
     db.execute("INSERT INTO ce_forum_member_relations(user_id,target_id,kind) VALUES(?,?,'follow')",(b,a));db.commit()
-    db.executescript(files[-2].read_text());db.executescript(files[-1].read_text());db.executescript((ROOT/'migrations/sqlite/0030_forum_media_storage.sql').read_text())
+    db.executescript(files[-2].read_text());db.executescript(files[-1].read_text());db.executescript((ROOT/'migrations/sqlite/0030_forum_media_storage.sql').read_text());db.executescript((ROOT/'migrations/sqlite/0031_forum_polls_questions.sql').read_text())
     assert db.execute('SELECT body,body_format FROM ce_forum_posts WHERE id=?',(post,)).fetchone()==('First','plain')
     assert db.execute('SELECT body,body_format FROM ce_forum_conversation_messages WHERE id=?',(message,)).fetchone()==('Private message','plain')
     # Exercise the actual edit SQL, including the compatibility path omitting a format.

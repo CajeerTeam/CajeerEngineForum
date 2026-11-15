@@ -30,6 +30,7 @@ final readonly class ForumTransaction
     }
 
     public function enqueueWatchNotification(string $actor,string $post,array $recipients): void { (new \CajeerEngine\Forum\Repository\NotificationRepository($this->db))->enqueue('reply',$actor,$post,$recipients,null,'board'); }
+    public function polls(): PollQuestionService { return new PollQuestionService($this,new \CajeerEngine\Forum\Repository\PollQuestionRepository($this->db),new \CajeerEngine\Forum\Repository\ThreadRepository($this->db),new \CajeerEngine\Forum\Repository\BoardRepository($this->db),new \CajeerEngine\Forum\Repository\PostRepository($this->db)); }
     public function media(): ForumMediaService { return new ForumMediaService($this,new \CajeerEngine\Forum\Repository\AttachmentRepository($this->db),new \CajeerEngine\Forum\Repository\ForumMediaRepository($this->db)); }
     public function attachments(): AttachmentService { return new AttachmentService($this,new \CajeerEngine\Forum\Repository\AttachmentRepository($this->db),new \CajeerEngine\Forum\Repository\ThreadRepository($this->db),new \CajeerEngine\Forum\Repository\ConversationRepository($this->db),new \CajeerEngine\Forum\Repository\BoardRepository($this->db)); }
     public function conversations(): ConversationService { return new ConversationService($this,new \CajeerEngine\Forum\Repository\ConversationRepository($this->db)); }
