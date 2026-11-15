@@ -1,6 +1,6 @@
 # CajeerEngine Forum Edition
 
-**Forum Edition 0.6.2 — Advanced Search & Discovery**, built on CajeerEngine 1.3.0. Release certification requires all `forum-required` CI jobs to pass.
+**Forum Edition 0.6.3 — Server Rendering & SEO**, built on CajeerEngine 1.3.0. Release certification requires all `forum-required` CI jobs to pass.
 
 Self-hosted forum platform by CajeerTeam. PHP 8.4.1+, CajeerEngine kernel, Symfony Components, REST API, Apache-2.0.
 
@@ -16,7 +16,7 @@ php -S 127.0.0.1:8080 -t public
 
 Откройте http://127.0.0.1:8080/ — главная форума. Для локального запуска используйте loopback. На сервере настройте HTTPS, PHP-FPM и document root `public/`. Не публикуйте корень репозитория и не используйте встроенный PHP server в production.
 
-- `/forum` — категории и разделы, `/forum/latest` — последние темы.
+- `/forum` — категории и разделы, `/forum/latest` — последние темы. Публичные страницы содержат серверный HTML. `/forum/sitemap.xml` — индекс карт сайта, `/forum/rss.xml` — RSS.
 - `/forum/login`, `/forum/register` — вход и регистрация. Для запрета регистрации задайте `FORUM_REGISTRATION=false` в `.env`.
 - `/forum/safety` — личный центр безопасности: жалобы, доверие, блокировки, санкции и апелляции.
 - `/forum/manage` — жалобы и управление форумом. Администратор создаёт категории/разделы, модератор обрабатывает жалобы и темы.

@@ -19546,6 +19546,10 @@
                     "type": "string",
                     "maxLength": 4000,
                     "description": "Plain text posting rules; omitted PATCH preserves existing rules."
+                  },
+                  "seo_index": {
+                    "type": "boolean",
+                    "description": "Allow indexing of this board and its descendants; does not grant read access. Omitted PATCH preserves the existing value."
                   }
                 },
                 "required": [
@@ -22561,6 +22565,10 @@
                     "type": "string",
                     "maxLength": 4000,
                     "description": "Plain text posting rules; omitted PATCH preserves existing rules."
+                  },
+                  "seo_index": {
+                    "type": "boolean",
+                    "description": "Allow indexing of this board and its descendants; does not grant read access. Omitted PATCH preserves the existing value."
                   }
                 },
                 "required": [

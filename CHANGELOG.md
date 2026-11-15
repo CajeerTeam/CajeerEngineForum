@@ -1,3 +1,11 @@
+## 0.6.3 — Server Rendering & SEO
+
+- Render home, boards, discussions, public profiles, latest and question listings as real HTML with the current viewer ACL; existing JavaScript preserves interactive behavior.
+- Guest canonical URLs, descriptions, Open Graph/Twitter metadata, safe JSON-LD discussion/question/profile/breadcrumb markup, correct 404 and merge redirects.
+- Separate paginated forum sitemap and public RSS feed; robots.txt advertises the forum sitemap alongside CMS, configured APP_URL is the sole origin.
+- Board-level indexing switch with inherited exclusions, global configuration and CMS indexing flags; migration 0041 preserves existing visibility and enables indexing by default.
+- Private/authenticated and non-indexable routes use noindex and no-store. Add SSR, sitemap, migration and security regressions.
+
 ## 0.6.2 — Advanced Search & Discovery
 
 - Combine full-text search with exact board, author, tag, UTC date and question-status filters; sort by relevance, publication date, activity or replies.

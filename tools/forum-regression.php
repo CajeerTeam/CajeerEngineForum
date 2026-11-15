@@ -12,7 +12,7 @@ $root=dirname(__DIR__);$driver=getenv('FORUM_TEST_DRIVER')==='pgsql'?'pgsql':'sq
 $tmp=sys_get_temp_dir().'/forum-ci-'.bin2hex(random_bytes(6));mkdir($tmp,0700);
 function check(bool $condition,string $message): void {if(!$condition)throw new RuntimeException($message);echo "PASS $message\n";}
 try {
-    foreach(['APP_NAME=Test <Forum>','APP_ENV=testing','APP_DEBUG=false','APP_URL=https://forum.test','DB_DRIVER='.$driver,'SQLITE_DATABASE='.$tmp.'/forum.sqlite','CACHE_DRIVER=file','QUEUE_DRIVER=file','STORAGE_DRIVER=local','CONTENT_STORAGE=database','CMS_STORAGE=database','FORUM_REGISTRATION=true','FORUM_REQUIRE_EMAIL_VERIFICATION=false','RATE_LIMIT_GLOBAL=1000','RATE_LIMIT_AUTH=1000','PASSWORD_ARGON2_MEMORY=8192','PASSWORD_ARGON2_TIME=2'] as $v)putenv($v);
+    foreach(['APP_NAME=Test <Forum>','APP_ENV=testing','APP_DEBUG=false','APP_URL=https://forum.test','FORUM_SEO_INDEX=true','FORUM_SEO_EXCLUDED_BOARDS=','DB_DRIVER='.$driver,'SQLITE_DATABASE='.$tmp.'/forum.sqlite','CACHE_DRIVER=file','QUEUE_DRIVER=file','STORAGE_DRIVER=local','CONTENT_STORAGE=database','CMS_STORAGE=database','FORUM_REGISTRATION=true','FORUM_REQUIRE_EMAIL_VERIFICATION=false','RATE_LIMIT_GLOBAL=1000','RATE_LIMIT_AUTH=1000','PASSWORD_ARGON2_MEMORY=8192','PASSWORD_ARGON2_TIME=2'] as $v)putenv($v);
     $cfg=new ConfigRepository($root);$db=new DatabaseManager($cfg);(new MigrationRunner($db->connection(),$root.'/migrations'))->run($driver);
     if ((int)$db->connection()->query('SELECT COUNT(*) FROM ce_users')->fetchColumn()!==0) throw new RuntimeException('Disposable forum database must be empty');
     $roles=new RoleRepository($db);$roles->seedDefaults();$users=new UserRepository($db,$roles,new PasswordHasher($cfg));$users->createAdmin('admin@example.test','Admin','AdminPass12345');
@@ -35,6 +35,44 @@ try {
     $m=$login('member@example.test','MemberPass12345');$a=$login('admin@example.test','AdminPass12345');$o=$login('other@example.test','OtherPass12345');
     $t=$call('POST',"/forum/boards/$board/threads",['title'=>'Test topic','body'=>'First <script>not HTML</script>'],$m,201)['id'];
     check($call('GET',"/forum/boards/$board")['threads'][0]['id']===$t,'board listing with joined author');
+    // Real HTTP SSR (no browser JS): verify the body, metadata and guest ACL before JS can run.
+    $htmlRequest=static function(string $path,?string $token=null)use($app): \Symfony\Component\HttpFoundation\Response {
+        $headers=['HTTP_HOST'=>'untrusted-host.example','REMOTE_ADDR'=>'127.0.0.1'];if($token)$headers['HTTP_AUTHORIZATION']='Bearer '.$token;
+        return $app->handle(Request::create('https://untrusted-host.example'.$path,'GET',[],[],[],$headers));
+    };
+    $read=$htmlRequest("/forum/threads/$t?utm_source=test&page=1");$html=(string)$read->getContent();
+    check($read->getStatusCode()===200&&str_contains($html,'First &lt;script&gt;not HTML&lt;/script&gt;')&&!str_contains($html,'<script>not HTML</script>'),'server HTML contains escaped live post without JS');
+    check(str_contains($html,'rel="canonical" href="https://forum.test/forum/threads/'.$t.'"')&&!str_contains($html,'untrusted-host.example'),'canonical uses configured origin and strips tracking parameters');
+    check(str_contains($html,'property="og:title" content="Test topic"')&&str_contains($html,'DiscussionForumPosting')&&str_contains($html,'BreadcrumbList'),'SSR metadata and JSON-LD');
+    check(str_contains((string)$htmlRequest('/forum')->getContent(),'/forum/boards/'.$board)&&str_contains((string)$htmlRequest('/forum/boards/'.$board)->getContent(),'/forum/threads/'.$t),'crawlable links on home and board');
+    $sitemap=(string)$htmlRequest('/forum/sitemap.xml?page=1')->getContent();
+    check(str_contains($sitemap,'https://forum.test/forum/threads/'.$t)&&str_contains($sitemap,'https://forum.test/forum/boards/'.$board),'public sitemap includes live discussion and board');
+    check(str_contains((string)$htmlRequest('/forum/sitemap.xml')->getContent(),'https://forum.test/forum/sitemap.xml?page=1')&&str_contains((string)$htmlRequest('/robots.txt')->getContent(),'Sitemap: https://forum.test/forum/sitemap.xml'),'sitemap index and robots discovery');
+    check($htmlRequest('/forum/sitemap.xml?page=999')->getStatusCode()===404&&$htmlRequest('/forum/threads/'.$t.'?page=2')->getStatusCode()===404&&$htmlRequest('/forum/not-a-route')->getStatusCode()===404,'invalid and empty pages return HTTP 404');
+    check(str_contains((string)$htmlRequest('/forum/account')->headers->get('X-Robots-Tag'),'noindex')&&str_contains((string)$htmlRequest('/forum/search?q=test')->headers->get('X-Robots-Tag'),'noindex'),'private and search pages are noindex');
+    check(str_contains((string)$htmlRequest('/forum/threads/'.$t,$m)->headers->get('X-Robots-Tag'),'noindex'),'authenticated HTML is never indexable');
+    $boardInfo=$call('GET',"/forum/boards/$board")['board'];$patch=['name'=>$boardInfo['name'],'description'=>$boardInfo['description'],'node_type'=>$boardInfo['node_type'],'state'=>$boardInfo['state']];
+    $call('PATCH',"/forum/boards/$board",$patch+['seo_index'=>false],$a);
+    check(str_contains((string)$htmlRequest('/forum/threads/'.$t)->headers->get('X-Robots-Tag'),'noindex')&&!str_contains((string)$htmlRequest('/forum/sitemap.xml?page=1')->getContent(),$t),'board SEO switch excludes thread from sitemap and robots metadata');
+    $call('PATCH',"/forum/boards/$board",$patch,$a);
+    check((int)$call('GET',"/forum/boards/$board")['board']['seo_index']===0,'omitted SEO setting is preserved');
+    $call('PATCH',"/forum/boards/$board",$patch+['seo_index'=>true],$a);
+    // ACL change through the existing versioned permission API.
+    $acl=$call('GET',"/forum/boards/$board/permissions",null,$a);
+    $call('PUT',"/forum/boards/$board/permissions",['visibility'=>'private','rules'=>[],'revision'=>$acl['revision']],$a);
+    $hidden=$htmlRequest('/forum/threads/'.$t);
+    check($hidden->getStatusCode()===404&&!str_contains((string)$hidden->getContent(),'First &lt;script&gt;')&&!str_contains((string)$htmlRequest('/forum/sitemap.xml?page=1')->getContent(),$t),'private board cannot leak through SSR or sitemap');
+    check($htmlRequest('/forum/threads/'.$t,$a)->getStatusCode()===200,'authenticated administrator can still read private thread');
+    $acl=$call('GET',"/forum/boards/$board/permissions",null,$a);
+    $call('PUT',"/forum/boards/$board/permissions",['visibility'=>'public','rules'=>[],'revision'=>$acl['revision']],$a);
+    $call('PATCH','/forum/account/preferences',['profile_visibility'=>'private'],$m);
+    check($htmlRequest('/forum/members/'.$member)->getStatusCode()===404&&$htmlRequest('/forum/members/'.$member,$m)->getStatusCode()===200,'private profile SSR respects guest and owner access');
+    $call('PATCH','/forum/account/preferences',['profile_visibility'=>'public'],$m);
+    check(str_contains((string)$htmlRequest('/forum/members/'.$member)->getContent(),'ProfilePage'),'public profile SSR structured data');
+    putenv('FORUM_SEO_INDEX=false');
+    check($htmlRequest('/forum/sitemap.xml')->getStatusCode()===404&&str_contains((string)$htmlRequest('/forum/threads/'.$t)->headers->get('X-Robots-Tag'),'noindex')&&!str_contains((string)$htmlRequest('/robots.txt')->getContent(),'/forum/sitemap.xml'),'global SEO switch disables indexing and discovery');
+    putenv('FORUM_SEO_INDEX=true');
+
     $post=$call('GET',"/forum/threads/$t")['posts'][0]['id'];
     $call('POST',"/forum/threads/$t/posts",['body'=>''], $o,422);
     $call('POST',"/forum/threads/$t/posts",['body'=>'Second'],$o,201);
@@ -89,11 +127,23 @@ try {
     $call('POST',"/forum/threads/$t/moderate",['action'=>'delete'],$a);$call('GET',"/forum/threads/$t",null,null,404);
     check((int)$db->connection()->query('SELECT COUNT(*) FROM ce_forum_posts')->fetchColumn()===0,'cascade removal');
     check($call('GET','/forum/search?q=searchmarker&mode=posts')===[],'purged post removed from index');
+    check($htmlRequest('/forum/threads/'.$t)->getStatusCode()===404&&!str_contains((string)$htmlRequest('/forum/sitemap.xml?page=1')->getContent(),$t),'purged content disappears from SSR and sitemap');
+    // Merge and multi-page SSR against the actual database; old URLs must not reveal hidden targets.
+    $target=$call('POST',"/forum/boards/$board/threads",['title'=>'SSR target','body'=>'First page marker'],$a,201)['id'];
+    $source=$call('POST',"/forum/boards/$board/threads",['title'=>'SSR source','body'=>'Merged source marker'],$a,201)['id'];
+    $call('POST',"/forum/threads/$target/merge",['source_ids'=>[$source]],$a);
+    $redirect=$htmlRequest('/forum/threads/'.$source);
+    check($redirect->getStatusCode()===301&&$redirect->headers->get('Location')==='/forum/threads/'.$target,'merged thread redirects to live canonical URL');
+    $db->transaction(function()use($db,$target,$member){$repo=new \CajeerEngine\Forum\Repository\PostRepository($db);for($n=3;$n<=26;$n++)$repo->insert(\CajeerEngine\Support\Uuid::v4(),$target,$member,$n===26?'SSR page two marker':'Pagination fixture',$n);});
+    $second=$htmlRequest('/forum/threads/'.$target.'?page=2');$secondHtml=(string)$second->getContent();
+    check($second->getStatusCode()===200&&str_contains($secondHtml,'SSR page two marker')&&str_contains($secondHtml,'rel="canonical" href="https://forum.test/forum/threads/'.$target.'?page=2"')&&!str_contains($secondHtml,'First page marker'),'second page contains only its posts and self canonical');
+    check(str_contains((string)$htmlRequest('/forum/threads/'.$target)->getContent(),'rel="next"')&&$htmlRequest('/forum/threads/'.$target.'?page=3')->getStatusCode()===404,'thread pagination has bounded crawlable links');
+    $feed=(string)$htmlRequest('/forum/rss.xml')->getContent();check(str_contains($feed,$target)&&!str_contains($feed,$source),'RSS excludes merged source and includes live target');
     check($app->handle(Request::create('https://forum.test/'))->getStatusCode()===200,'forum home');
     check(str_contains((string)$app->handle(Request::create('https://forum.test/'))->getContent(),'Test &lt;Forum&gt;'),'configured forum title safely escaped');
     putenv('FORUM_REGISTRATION=false');
     $call('POST','/forum/register',['name'=>'Closed','email'=>'closed@example.test','password'=>'MemberPass12345'],null,403);
     check(str_contains((string)$app->handle(Request::create('https://forum.test/'))->getContent(),'data-registration="false"'),'closed registration UI');
-    check($app->handle(Request::create('https://forum.test/'))->headers->get('X-CajeerEngine-Forum-Version')==='0.6.2','forum version header');
+    check($app->handle(Request::create('https://forum.test/'))->headers->get('X-CajeerEngine-Forum-Version')==='0.6.3','forum version header');
     echo "Forum integration passed\n";
 } finally {foreach(glob($tmp.'/*')?:[] as $f)unlink($f);rmdir($tmp);}

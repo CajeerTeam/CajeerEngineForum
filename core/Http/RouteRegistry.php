@@ -10,7 +10,7 @@ final class RouteRegistry
     /** These public GET/HEAD operations optionally resolve an existing session. */
     public static function optionalAuthentication(string $name): bool
     {
-        return in_array($name,['api.v1.forum.index','api.v1.forum.board','api.v1.forum.thread','api.v1.forum.search','api.v1.forum.latest','api.v1.forum.profile','api.v1.forum.members','api.v1.forum.profileImage','api.v1.forum.attachment','api.v1.forum.downloadAttachment','api.v1.forum.attachmentImage','api.v1.forum.activity','api.v1.forum.leaderboard','api.v1.forum.questions','api.v1.forum.answers'],true);
+        return in_array($name,['forum.home','forum.page','public.home','api.v1.forum.index','api.v1.forum.board','api.v1.forum.thread','api.v1.forum.search','api.v1.forum.latest','api.v1.forum.profile','api.v1.forum.members','api.v1.forum.profileImage','api.v1.forum.attachment','api.v1.forum.downloadAttachment','api.v1.forum.attachmentImage','api.v1.forum.activity','api.v1.forum.leaderboard','api.v1.forum.questions','api.v1.forum.answers'],true);
     }
 
     /** @return list<array{0:string,1:string,2:string,3:string,4:string,5:?array}> */
@@ -298,6 +298,8 @@ final class RouteRegistry
             ['GET', '/api/v1/forum/members/{id}', 'api.v1.forum.profile', 'forum', 'profile', null],
             ['GET', '/forum', 'forum.home', 'forum', 'page', null],
             ['GET', '/api/v1/forum/members/{id}/images/{kind}', 'api.v1.forum.profileImage', 'forum', 'profileImage', null],
+            ['GET', '/forum/sitemap.xml', 'forum.sitemap', 'forum', 'sitemap', null],
+            ['GET', '/forum/rss.xml', 'forum.rss', 'forum', 'rss', null],
             ['GET', '/forum/{path}', 'forum.page', 'forum', 'page', null],
             ['GET', '/', 'public.home', 'forum', 'page', null],
             ['GET', '/{path}', 'public.page.path', 'public', 'renderByPath', null],

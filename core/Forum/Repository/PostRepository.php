@@ -46,6 +46,7 @@ final readonly class PostRepository extends Repository
         if (!$this->db->connection()->inTransaction()) throw new \LogicException('Forum post lock requires a transaction');
         return $this->row('SELECT * FROM ce_forum_posts WHERE id=? AND deleted_at IS NULL'.($this->db->driver() === 'sqlite' ? '' : ' FOR UPDATE'), [$id]);
     }
+    public function countInThread(string $id): int { return (int)$this->query('SELECT COUNT(*) FROM ce_forum_live_posts WHERE thread_id=?',[$id])->fetchColumn(); }
     public function firstId(string $thread): ?string { return $this->row('SELECT id FROM ce_forum_live_posts WHERE thread_id=? ORDER BY ordinal LIMIT 1',[$thread])['id']??null; }
     public function nextOrdinal(string $thread): int
     {

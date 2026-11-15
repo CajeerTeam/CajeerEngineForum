@@ -76,21 +76,21 @@ final readonly class NodeService
             $this->categoryRow($id);$this->boards->updateCategory($id,$name,$description);if ($position!==null) $this->sortCategories($id,$position);return $id;
         });
     }
-    public function createBoard(ForumAccessPolicy $actor,string $category,string $name,string $description,?string $parent=null,string $type='forum',string $state='open',?int $position=null,string $rules=''): string
+    public function createBoard(ForumAccessPolicy $actor,string $category,string $name,string $description,?string $parent=null,string $type='forum',string $state='open',?int $position=null,string $rules='',bool $seoIndex=true): string
     {
         $name=V::text($name,'name',120);$description=V::text($description,'description',1000,0);$this->validateType($type,$state);$rules=V::text($rules,'rules',4000,0);
-        return $this->change($actor,'board.create',function () use ($category,$name,$description,$parent,$type,$state,$position,$rules) {
+        return $this->change($actor,'board.create',function () use ($category,$name,$description,$parent,$type,$state,$position,$rules,$seoIndex) {
             $this->categoryRow($category);if ($parent!==null) $this->boardRow($parent);
             $id=Uuid::v4();$rows=$this->boards->topology();$rows[]=['id'=>$id,'category_id'=>$category,'parent_id'=>$parent];self::validateTree($rows);
-            $this->boards->insertBoard($id,$category,$name,$description);$this->boards->moveBoard($id,$category,$parent);$this->boards->updateBoard($id,$name,$description,$type,$state,$rules);$this->sortBoards($category,$parent,$id,$position);return $id;
+            $this->boards->insertBoard($id,$category,$name,$description);$this->boards->moveBoard($id,$category,$parent);$this->boards->updateBoard($id,$name,$description,$type,$state,$rules,$seoIndex);$this->sortBoards($category,$parent,$id,$position);return $id;
         });
     }
-    public function updateBoard(ForumAccessPolicy $actor,string $id,string $name,string $description,string $type,string $state,?string $rules=null): string
+    public function updateBoard(ForumAccessPolicy $actor,string $id,string $name,string $description,string $type,string $state,?string $rules=null,?bool $seoIndex=null): string
     {
         $name=V::text($name,'name',120);$description=V::text($description,'description',1000,0);$this->validateType($type,$state);if($rules!==null)$rules=V::text($rules,'rules',4000,0);
-        return $this->change($actor,'board.update',function () use ($id,$name,$description,$type,$state,$rules) {
+        return $this->change($actor,'board.update',function () use ($id,$name,$description,$type,$state,$rules,$seoIndex) {
             $this->boardRow($id);if ($type==='container' && $this->boards->hasThreads($id)) throw new ForumException('Раздел содержит темы.',409);
-            $this->boards->updateBoard($id,$name,$description,$type,$state,$rules);return $id;
+            $this->boards->updateBoard($id,$name,$description,$type,$state,$rules,$seoIndex);return $id;
         });
     }
     public function move(ForumAccessPolicy $actor,string $id,string $category,?string $parent,?int $position): string

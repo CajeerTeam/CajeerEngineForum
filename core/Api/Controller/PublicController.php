@@ -19,6 +19,7 @@ final readonly class PublicController
         private PublicPageRenderer $renderer,
         private RedirectRepository $redirects,
         private PreviewTokenService $previewTokens,
+        private ?\CajeerEngine\Forum\ForumSeoSettings $forumSeo=null,
     ) {
     }
 
@@ -41,7 +42,9 @@ final readonly class PublicController
     /** @param array<string, mixed> $parameters */
     public function robotsTxt(Request $request, array $parameters = []): Response
     {
-        return new Response($this->renderer->robotsTxt($this->baseUrl($request)), 200, ['Content-Type' => 'text/plain; charset=UTF-8']);
+        $text=$this->renderer->robotsTxt($this->baseUrl($request));
+        if($this->forumSeo?->sitemapEnabled())$text.='Sitemap: '.$this->forumSeo->baseUrl()."/forum/sitemap.xml\n";
+        return new Response($text, 200, ['Content-Type' => 'text/plain; charset=UTF-8','Cache-Control'=>'no-store']);
     }
 
     /** @param array<string, mixed> $parameters */

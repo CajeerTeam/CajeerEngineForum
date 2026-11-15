@@ -68,7 +68,7 @@ final readonly class DiscussionService
             NodePermissionService::assert($access,$board['id'],'thread:read');
             if (isset($seen[$board['id']]) || count($seen)>=16 || $board['category_id']!==$categoryId) throw new ForumException('Раздел не найден.',404);
             $seen[$board['id']]=true;
-            $path[]=['kind'=>'board','id'=>$board['id'],'name'=>$board['name']];
+            $path[]=['kind'=>'board','id'=>$board['id'],'name'=>$board['name'],'seo_index'=>(int)($board['seo_index']??1)];
             if ($board['parent_id']===null) break;
             $board=$this->boards->find($board['parent_id'])??throw new ForumException('Раздел не найден.',404);
         }
@@ -84,9 +84,42 @@ final readonly class DiscussionService
             return ['categories'=>$this->boards->categories($categories), 'boards'=>$this->readBoards(array_map(fn($b)=>$this->decorated($b,$access),$this->boards->boards($allowed)),$allowed,$actor?->userId??'')];
         });
     }
-    public function board(string $id, int $offset, ?ForumAccessPolicy $actor=null): array
+    /** Only guest-readable boards with an indexable ancestor chain. Called inside a read snapshot. */
+    private function seoBoards(array $excluded): array
     {
-        return $this->db->readSnapshot(function () use ($id,$offset,$actor) {
+        $access=$this->access(null);$allowed=array_fill_keys(NodePermissionService::allowed($access),true);
+        $topology=array_column($this->boards->topology(),null,'id');$blocked=array_fill_keys($excluded,true);$ids=[];
+        foreach($topology as $id=>$board){
+            $cursor=$board;$seen=[];
+            while(true){
+                $key=$cursor['id'];
+                if(!isset($allowed[$key])||isset($blocked[$key])||(int)($cursor['seo_index']??1)!==1||isset($seen[$key])||count($seen)>=16)continue 2;
+                $seen[$key]=true;
+                if($cursor['parent_id']===null)break;
+                if(!isset($topology[$cursor['parent_id']]))continue 2;
+                $cursor=$topology[$cursor['parent_id']];
+            }
+            $ids[]=$id;
+        }
+        return $ids;
+    }
+    /** Resolve guest visibility and SEO exclusions in the same snapshot as sitemap contents. */
+    public function sitemapPage(?int $page,array $excluded): array
+    {
+        return $this->db->readSnapshot(function () use ($page,$excluded) {
+            $ids=$this->seoBoards($excluded);$repo=new \CajeerEngine\Forum\Repository\ForumSitemapRepository($this->db);
+            $result=\CajeerEngine\Forum\ForumSitemapPage::plan($ids,$repo->countThreads($ids),$page);
+            if($page!==null && $result['thread_limit']>0)foreach($repo->threads($ids,$result['thread_offset'],$result['thread_limit']) as $thread)$result['paths'][]='/forum/threads/'.$thread['id'];
+            return $result;
+        });
+    }
+    public function seoLatest(array $excluded): array
+    {
+        return $this->db->readSnapshot(fn()=> (new \CajeerEngine\Forum\Repository\ForumSitemapRepository($this->db))->latest($this->seoBoards($excluded)));
+    }
+    public function board(string $id, int $offset, ?ForumAccessPolicy $actor=null,bool $seo=false): array
+    {
+        return $this->db->readSnapshot(function () use ($id,$offset,$actor,$seo) {
             $access=$this->access($actor);NodePermissionService::assert($access,$id,'thread:read');
             $board=$this->boards->view($id)??throw new ForumException('Раздел не найден.',404);
             $allowed=NodePermissionService::allowed($access);$viewer=$actor?->userId??'';
@@ -94,13 +127,13 @@ final readonly class DiscussionService
             foreach ($children as &$child) $child['effective_state']=($this->boards->view($child['id'])??$child)['effective_state']??'archived';
             unset($child);
             $nodes=$this->readBoards([$this->decorated($board,$access),...array_map(fn($b)=>$this->decorated($b,$access),$children)],$allowed,$viewer);
-            $current=array_shift($nodes);$current['watch_mode']=$this->tx->watches()->mode('board',$id,$viewer);
+            $current=array_shift($nodes);if($seo)$current['threads']=$this->threads->countInBoard($id);$current['watch_mode']=$this->tx->watches()->mode('board',$id,$viewer);
             return ['board'=>$current,'breadcrumbs'=>$this->breadcrumbs($board,$access),'threads'=>$this->tx->readState()->decorateThreads($this->threads->inBoard($id,$offset,$viewer),$viewer),'children'=>$nodes];
         });
     }
-    public function thread(string $id, int $offset, ?ForumAccessPolicy $actor=null, bool $firstUnread=false): array
+    public function thread(string $id, int $offset, ?ForumAccessPolicy $actor=null, bool $firstUnread=false,bool $seo=false): array
     {
-        return $this->db->readSnapshot(function () use ($id,$offset,$actor,$firstUnread) {
+        return $this->db->readSnapshot(function () use ($id,$offset,$actor,$firstUnread,$seo) {
             $repo=new \CajeerEngine\Forum\Repository\DiscussionManagementRepository($this->db);
             $access=$this->access($actor);$thread=$this->threads->find($id);
             if ($thread===null) {
@@ -117,6 +150,7 @@ final readonly class DiscussionService
             if($firstUnread) $offset=25*(($state['first_unread']['page']??1)-1);
             $result=['thread'=>$thread,'breadcrumbs'=>$this->breadcrumbs($board,$access),'board'=>$this->decorated($board,$access),'posts'=>$this->posts->inThread($id,$offset,$viewer),'first_post_id'=>$this->posts->firstId($id),'page'=>1+intdiv($offset,25)];
             $result['posts']=$this->tx->attachments()->decorate('post',$result['posts']);
+            if($seo)$result['total_posts']=$this->posts->countInThread($id);
             $result['interaction']=$this->polls()->view($id,$viewer);
             if($result['interaction']['kind']==='question') {
                 $qa=new \CajeerEngine\Forum\Repository\PollQuestionRepository($this->db);

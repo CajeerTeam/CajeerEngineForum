@@ -7,8 +7,8 @@ uid=lambda:str(uuid.uuid4())
 with tempfile.TemporaryDirectory() as tmp:
     db=sqlite3.connect(Path(tmp)/'forum.sqlite');db.row_factory=sqlite3.Row;db.execute('PRAGMA foreign_keys=ON')
     files=sorted((ROOT/'migrations/sqlite').glob('*.sql'))
-    assert files[-1].name=='0040_forum_full_text_search.sql'
-    for f in files[:-1]:db.executescript(f.read_text())
+    fts=next(f for f in files if f.name=='0040_forum_full_text_search.sql')
+    for f in files[:files.index(fts)]:db.executescript(f.read_text())
     board=db.execute('SELECT id FROM ce_forum_boards').fetchone()[0]
     cat=db.execute('SELECT id FROM ce_forum_categories').fetchone()[0];private=uid()
     db.execute('INSERT INTO ce_forum_boards(id,category_id,name,description) VALUES(?,?,?,?)',(private,cat,'Private',''))
@@ -19,7 +19,8 @@ with tempfile.TemporaryDirectory() as tmp:
     a=thread('Astronomy guide');b=thread('Other title');c=thread('Astronomy private',private);d=thread('Tags only')
     p=post(b,'Astronomy telescopes <script>literal</script>',1);q=post(b,'Astronomy observations',2);post(c,'Astronomy secrets',1)
     db.execute('INSERT INTO ce_forum_thread_tags(thread_id,tag) VALUES(?,?)',(d,'astronomy'))
-    db.commit();db.executescript(files[-1].read_text())
+    db.commit();db.executescript(fts.read_text())
+    for f in files[files.index(fts)+1:]:db.executescript(f.read_text())
     def search(term,mode='threads',tag=None,allowed=board,offset=0):
         # Execute exactly the production query builder, not a reimplementation.
         code='require "core/Forum/Repository/ForumSearchQuery.php"; $a=json_decode($argv[1],true); echo json_encode(\\CajeerEngine\\Forum\\Repository\\ForumSearchQuery::build("sqlite",$a[0],$a[1],"t.board_id=".chr(39).$a[2].chr(39),$a[3],$a[4]),JSON_THROW_ON_ERROR);'

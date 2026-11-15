@@ -28,6 +28,7 @@ final readonly class ThreadRepository extends Repository
     }
     private const AUTHOR = "CASE WHEN u.status='active' AND (COALESCE(pref.profile_visibility,'public')='public' OR (pref.profile_visibility='members' AND ?<>'') OR u.id=?) THEN COALESCE(NULLIF(m.display_name,''),u.name) ELSE u.name END AS author";
     private const AUTHOR_JOIN = ' LEFT JOIN ce_users u ON u.id=t.author_id LEFT JOIN ce_forum_member_profiles m ON m.user_id=u.id LEFT JOIN ce_forum_member_preferences pref ON pref.user_id=u.id ';
+    public function countInBoard(string $id): int { return (int)$this->query('SELECT COUNT(*) FROM ce_forum_live_threads WHERE board_id=?',[$id])->fetchColumn(); }
     public function inBoard(string $id, int $offset,string $viewer=''): array
     { return $this->rows('SELECT t.*,'.self::AUTHOR.',(SELECT COUNT(*) FROM ce_forum_live_posts p WHERE p.thread_id=t.id) AS posts FROM ce_forum_live_threads t'.self::AUTHOR_JOIN.'WHERE t.board_id=? ORDER BY t.pinned DESC,t.updated_at DESC,t.id LIMIT 25 OFFSET '.$offset,[$viewer,$viewer===''?null:$viewer,$id]); }
     public function latest(int $offset,array $allowed,string $viewer=''): array

@@ -12,12 +12,17 @@ final readonly class ForumController
 {
     public function __construct(private DiscussionService $discussions, private EngagementService $engagement, private ModerationService $moderation, private RegistrationService $registration, private string $root, private \CajeerEngine\Forum\Service\IdentityService $identity) {}
 
-    public function page(): Response
+    public function page(Request $request, array $parameters=[]): Response
     {
-        $name = htmlspecialchars(getenv('APP_NAME') ?: 'CajeerEngine Forum Edition', ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
-        $registration = filter_var(getenv('FORUM_REGISTRATION') === false ? 'true' : getenv('FORUM_REGISTRATION'), FILTER_VALIDATE_BOOLEAN);
-        $html = strtr((string)file_get_contents($this->root.'/public/forum-assets/index.html'), ['<!--FORUM_NAME-->'=>$name,'<!--FORUM_REGISTRATION-->'=>$registration?'true':'false']);
-        return new Response($html, 200, ['Content-Type'=>'text/html; charset=UTF-8']);
+        return (new ForumPageRenderer($this->discussions,$this->root))->render($request,$this->reader($request));
+    }
+    public function sitemap(Request $request, array $parameters=[]): Response
+    {
+        return (new ForumPageRenderer($this->discussions,$this->root))->sitemap($request);
+    }
+    public function rss(Request $request, array $parameters=[]): Response
+    {
+        return (new ForumPageRenderer($this->discussions,$this->root))->rss();
     }
     private function respond(callable $operation, int $status = 200): JsonResponse
     {
@@ -203,9 +208,9 @@ final readonly class ForumController
         if (!is_int($value) || $value<0) throw new ForumException('position должен быть целым неотрицательным числом.',422);
         return $value;
     }
-    public function createBoard(Request $r,array $p): JsonResponse { return $this->respond(fn () => ['id'=>$this->discussions->nodes()->createBoard($this->actor($r),$this->id($p),$this->text($r,'name',120),$this->text($r,'description',1000,0),$this->parent($r),V::text($this->field($r,'node_type')??'forum','node_type',16),V::text($this->field($r,'state')??'open','state',16),$this->position($r),V::text($this->field($r,'rules')??'','rules',4000,0))],201); }
+    public function createBoard(Request $r,array $p): JsonResponse { return $this->respond(fn () => ['id'=>$this->discussions->nodes()->createBoard($this->actor($r),$this->id($p),$this->text($r,'name',120),$this->text($r,'description',1000,0),$this->parent($r),V::text($this->field($r,'node_type')??'forum','node_type',16),V::text($this->field($r,'state')??'open','state',16),$this->position($r),V::text($this->field($r,'rules')??'','rules',4000,0),V::enabled($this->field($r,'seo_index')??true))],201); }
     public function updateCategory(Request $r,array $p): JsonResponse { return $this->respond(fn () => ['id'=>$this->discussions->nodes()->updateCategory($this->actor($r),$this->id($p),$this->text($r,'name',120),$this->text($r,'description',1000,0),$this->position($r))]); }
-    public function updateBoard(Request $r,array $p): JsonResponse { return $this->respond(fn () => ['id'=>$this->discussions->nodes()->updateBoard($this->actor($r),$this->id($p),$this->text($r,'name',120),$this->text($r,'description',1000,0),$this->text($r,'node_type',16),$this->text($r,'state',16),$this->field($r,'rules')===null?null:$this->text($r,'rules',4000,0))]); }
+    public function updateBoard(Request $r,array $p): JsonResponse { return $this->respond(fn () => ['id'=>$this->discussions->nodes()->updateBoard($this->actor($r),$this->id($p),$this->text($r,'name',120),$this->text($r,'description',1000,0),$this->text($r,'node_type',16),$this->text($r,'state',16),$this->field($r,'rules')===null?null:$this->text($r,'rules',4000,0),$this->field($r,'seo_index')===null?null:V::enabled($this->field($r,'seo_index')))]); }
     public function moveBoard(Request $r,array $p): JsonResponse { return $this->respond(fn () => ['id'=>$this->discussions->nodes()->move($this->actor($r),$this->id($p),V::id($this->field($r,'category_id')),$this->parent($r),$this->position($r))]); }
     public function reorderNodes(Request $r): JsonResponse { return $this->respond(fn()=> ['id'=>$this->discussions->nodes()->reorder($this->actor($r),$this->text($r,'kind',16),V::id($this->field($r,'id')),$this->text($r,'target_kind',16),V::id($this->field($r,'target_id')),$this->text($r,'placement',16))]); }
     public function permissionInspector(Request $r): JsonResponse { return $this->respond(function () use ($r) {
