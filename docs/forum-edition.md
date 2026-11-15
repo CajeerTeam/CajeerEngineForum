@@ -38,7 +38,7 @@ The inherited `/install` and `/upgrade` front controllers are routed through `pu
 
 ## Releases
 
-`VERSION` and `release.json.version` identify the upstream engine (1.3.0); `release.json.edition_version` is 0.6.5. `ForumVersion` validates both identities. Source/dist artifact names, manifest version, release tags and updater comparisons use the edition version. The signed manifest also records `upstream_version`, checked against VERSION, release metadata and the prebuilt admin manifest. The engine API/SDK compatibility version stays unchanged. Health/admin/system diagnostics expose `edition_version`; HTTP responses include `X-CajeerEngine-Forum-Version`.
+`VERSION` and `release.json.version` identify the upstream engine (1.3.0); `release.json.edition_version` is 0.6.6. `ForumVersion` validates both identities. Source/dist artifact names, manifest version, release tags and updater comparisons use the edition version. The signed manifest also records `upstream_version`, checked against VERSION, release metadata and the prebuilt admin manifest. The engine API/SDK compatibility version stays unchanged. Health/admin/system diagnostics expose `edition_version`; HTTP responses include `X-CajeerEngine-Forum-Version`.
 
 The 0.1.0 updater compared upstream engine versions. Apply the 0.1.1 changed-file archive manually to a backed-up test installation before using the new updater. Do not submit the patch ZIP to `update:apply`: it is not a signed full dist. With 0.1.1 installed, later signed releases can advance edition_version without changing upstream. Legacy forum manifests without upstream_version and ordinary CMS packages are refused by the updater. The upstream signed publication workflow is archived, not active; no production signature or deployment certification is claimed.
 
@@ -505,3 +505,64 @@ with administrator-approved permissions; tune autovacuum from measured dead tupl
 and vacuum behavior, not universal configuration values. Existing statement and
 lock timeouts remain in effect. No production throughput or latency claim is made
 without a representative native PostgreSQL workload.
+
+### High Load & Reliability (0.6.6)
+
+No schema change is required after migration 0043. PostgreSQL publications take
+`FOR SHARE` on the board, allowing independent threads and authors in one board
+to progress together. The existing thread and actor locks still serialize ordinal,
+read-sequence and anti-spam operations. Topology and ACL changes continue to take
+exclusive locks on boards (including the target board of descendant publications).
+Moderation/sanction changes keep their existing exclusive locks. This does not
+remove all potential deadlocks: a transaction conflict remains a 409, not an
+implicit retry of a mutation. Sequence allocation uses `UPDATE ... RETURNING` on
+PostgreSQL. Notifications are inserted in batches of 200, preserving active-user
+and notification-preference checks; PostgreSQL notification claims skip locked rows.
+Expired spam records are deleted in bounded batches (1,000 per pass), with one
+statement on PostgreSQL and at most five DELETE statements on SQLite/MySQL.
+
+A lost DB connection returns a non-cacheable 503 with `Retry-After: 5`. No write
+is automatically replayed, particularly if the connection is lost during COMMIT.
+Clients must reconcile the result of a write with unknown outcome before retrying.
+The transaction manager discards failed connections and preserves the original
+exception even if rollback fails. Queue ticks probe the DB before reserving work;
+when it is unavailable they defer work to a later tick. Redis queue empty responses
+are distinct from failed/unconfirmed transitions, which are reported as failures.
+The next independent call can reconnect; ambiguous acknowledgments remain subject
+to lease expiry and fencing, not blind retries. SQL outboxes remain durable.
+
+#### Reproducible reliability checks
+
+Run on disposable fixtures only:
+
+```sh
+php tools/forum-reliability-regression.php
+python tools/forum-tests/reliability_sql_regression.py
+# Requires composer install and PHP PDO SQLite, POSIX PHP CLI workers:
+python tools/forum-tests/reliability_load.py --report storage/tmp/forum-ci/load
+# Optional native PostgreSQL: use the empty, dedicated loopback forum_test_load DB.
+FORUM_TEST_DRIVER=pgsql FORUM_TEST_NETWORK_DB=forum_test_load \
+  python tools/forum-tests/reliability_load.py --report storage/tmp/forum-ci/load-pg
+```
+
+The HTTP smoke uses a disposable installation, four PHP workers and eight concurrent
+clients by default. It mixes thread reads, cursor feed, full-text search, SSR and
+unique reply writes; it verifies every acknowledged reply and subsequent ACL
+revocation. `load.json` records request counts, errors, RPS and operation-level
+p50/p95/p99; adjustable `--clients`, `--workers` and `--requests` keep the smoke
+bounded. It is not a 200-user production capacity certificate. The SQL regression
+uses a separate WAL database, 1,000 threads, 10,000 initial messages, eight processes,
+640 operations, and an abruptly terminated writer. PostgreSQL CI exercises real
+shared/exclusive board locks, SKIP LOCKED, batched notification fan-out and cleanup,
+and terminates a disposable backend to verify reconnection. Redis CI tests the
+existing recovery/lease protocol plus an unreachable endpoint and reconnection.
+
+For production, monitor `forum:performance:check --json`, `forum:runtime:check --json`,
+`queue:diagnostics --json` and the existing authenticated metrics/operations views.
+Tune PHP-FPM and PostgreSQL connection budgets with measured concurrency, keep
+statement/lock timeouts bounded, retain regular worker ticks, and benchmark with
+production-like data before increasing worker counts. A failed Redis cache may
+fall back to SQL; a Redis-backed rate limiter intentionally still fails closed.
+When a database or queue is unavailable, do not use a stale cache as authorization
+and do not restart/retry every job concurrently. Backoff worker restart loops.
+Redis queue processing remains at-least-once, including SMTP uncertainty.

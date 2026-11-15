@@ -27,13 +27,14 @@ final readonly class ErrorHandlerMiddleware implements MiddlewareInterface
             return $this->jsonError($request, 'search_unavailable', 'Поиск временно недоступен.', 503);
         } catch (\CajeerEngine\Database\DatabaseUnavailable $e) {
             $this->logger->error('Database storage unavailable',['exception'=>$e::class]);
-            return $this->jsonError($request,'database_unavailable','Хранилище временно недоступно.',503);
+            return $this->unavailable($request);
         } catch (\CajeerEngine\Content\RevisionConflict $e) {
             return $this->jsonError($request, 'revision_conflict', $e->getMessage(), Response::HTTP_CONFLICT);
         } catch (\InvalidArgumentException|\DomainException $e) {
             return $this->jsonError($request, 'validation_failed', $e->getMessage(), Response::HTTP_UNPROCESSABLE_ENTITY);
         } catch (\RuntimeException $e) {
             $message = $e->getMessage();
+            if ($e instanceof \PDOException && \CajeerEngine\Database\DatabaseUnavailable::causedBy($e)) { return $this->unavailable($request); }
             if ($e instanceof \PDOException) { return $this->jsonError($request, 'internal_error', 'Внутренняя ошибка базы данных.', 500); }
             $status = str_contains($message, 'не найден') ? Response::HTTP_NOT_FOUND : Response::HTTP_BAD_REQUEST;
             return $this->jsonError($request, $status === Response::HTTP_NOT_FOUND ? 'not_found' : 'runtime_error', $message, $status);
@@ -70,6 +71,14 @@ final readonly class ErrorHandlerMiddleware implements MiddlewareInterface
 
             return new JsonResponse($payload, Response::HTTP_INTERNAL_SERVER_ERROR);
         }
+    }
+
+    private function unavailable(Request $request): JsonResponse
+    {
+        $response=$this->jsonError($request,'database_unavailable','Хранилище временно недоступно.',503);
+        $response->headers->set('Retry-After','5');
+        $response->headers->set('Cache-Control','private, no-store');
+        return $response;
     }
 
     private function jsonError(Request $request, string $code, string $message, int $status): JsonResponse

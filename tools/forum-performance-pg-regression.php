@@ -39,3 +39,38 @@ $a->beginTransaction();$a->prepare('UPDATE ce_forum_threads SET title=? WHERE id
 verify((int)$p->query('SELECT COUNT(*) FROM ce_forum_cache_generation_effective')->fetchColumn()===27,'all generation rows preserved');
 
 $diagnostics=(new \CajeerEngine\Forum\Service\ForumPerformanceCheck($db))->check(true);verify($diagnostics['ok']&&$diagnostics['analyze']&&count($diagnostics['indexes'])===5,'read-only performance diagnostics');
+
+// Shared publication locks allow independent writers in one board, but policy edits
+// still block. Use separate DatabaseManagers so repository code actually takes locks.
+$cfg=new ConfigRepository($root);$db2=new DatabaseManager($cfg);$p2=$db2->connection();
+$boards=new \CajeerEngine\Forum\Repository\BoardRepository($db);$boards2=new \CajeerEngine\Forum\Repository\BoardRepository($db2);
+$p->beginTransaction();$p2->beginTransaction();$p2->exec("SET LOCAL lock_timeout='1s'");
+verify($boards->lockPublicationBoard($board)!==null&&$boards2->lockPublicationBoard($board)!==null,'two independent publications share board lock');
+$p2->rollBack();$p2->beginTransaction();$p2->exec("SET LOCAL lock_timeout='100ms'");
+try{$boards2->lockBoard($board);throw new LogicException('exclusive board lock must wait');}catch(PDOException $e){verify(($e->errorInfo[0]??$e->getCode())==='55P03','exclusive policy edit blocked while publication is active');}$p2->rollBack();$p->commit();
+$p2->beginTransaction();verify($boards2->lockBoard($board)!==null,'policy edit acquires lock after publication commits');$p2->rollBack();
+
+// Real production repository fan-out crosses the chunk boundary. Retain one event
+// ID, skip actor, duplicate recipient, and disabled notification preference.
+$p->exec("INSERT INTO ce_users(id,email,name,password_hash) SELECT md5('reliability-user-'||n)::uuid,'reliability-'||n||'@example.test','Load member','unused' FROM generate_series(1,205) n");
+$users=$p->query("SELECT id FROM ce_users WHERE email LIKE 'reliability-%@example.test' ORDER BY id")->fetchAll(PDO::FETCH_COLUMN);
+$actor=$users[0];$skip=$users[1];$post=Uuid::v4();$tid=$first[0]['id'];
+$p->prepare('INSERT INTO ce_forum_notification_preferences(user_id,mention) VALUES(?,0)')->execute([$skip]);
+$posts=new \CajeerEngine\Forum\Repository\PostRepository($db);
+$db->transaction(function()use($repo,$posts,$tid,$post,$actor){$repo->lockThread($tid);$posts->insert($post,$tid,$actor,'reliability marker',1);});
+verify((int)$p->query("SELECT read_sequence FROM ce_forum_posts WHERE id=".$p->quote($post))->fetchColumn()===1,'UPDATE RETURNING reserves real post sequence');
+$notices=new \CajeerEngine\Forum\Repository\NotificationRepository($db);$notices2=new \CajeerEngine\Forum\Repository\NotificationRepository($db2);
+$db->transaction(fn()=>$notices->enqueue('mention',$actor,$post,[...$users,$users[2],'']));
+$pending=$notices->pending(1000);verify(count($pending)===203&&count(array_unique(array_column($pending,'event_id')))===1,'batched notification fan-out excludes actor, preference, duplicates');
+$k=$pending[0];$k2=$pending[1];$p->beginTransaction();$p2->beginTransaction();$p2->exec("SET LOCAL lock_timeout='100ms'");
+verify($notices->claim($k['event_id'],$k['recipient_id'],$k['kind'])!==null,'first worker claims notice');
+verify($notices2->claim($k['event_id'],$k['recipient_id'],$k['kind'])===null,'second worker skips locked notice');
+verify($notices2->claim($k2['event_id'],$k2['recipient_id'],$k2['kind'])!==null,'second worker claims a different notice');$p2->rollBack();$p->rollBack();
+verify(count($notices->pending(1000))===203,'rolled-back claims retain durable pending notices');
+$p->exec("INSERT INTO ce_forum_spam_events(id,subject,action,created_at,amount) SELECT md5('reliability-spam-'||n)::uuid,'reliability','reply',CASE WHEN n<=1100 THEN 1 ELSE 100 END,1 FROM generate_series(1,1150) n");
+$spam=new \CajeerEngine\Forum\Repository\AntiSpamRepository($db);verify($db->transaction(fn()=>$spam->cleanup(10))===1000,'one bounded PostgreSQL cleanup batch');verify($db->transaction(fn()=>$spam->cleanup(10))===100,'second cleanup batch drains remainder');verify((int)$p->query("SELECT COUNT(*) FROM ce_forum_spam_events WHERE subject='reliability'")->fetchColumn()===50,'fresh spam events retained');
+// End a real backend session, do not replay failed transaction, reconnect next tick.
+$victim=new DatabaseManager($cfg);$victimPdo=$victim->connection();$pid=(int)$victimPdo->query('SELECT pg_backend_pid()')->fetchColumn();
+$reader->query('SELECT pg_terminate_backend('.$pid.')')->fetchColumn();usleep(100000);
+try{$victim->transaction(fn(PDO $c)=>$c->query('SELECT 1')->fetchColumn());throw new LogicException('expected disconnected backend');}catch(\CajeerEngine\Database\DatabaseUnavailable $e){verify(true,'native PostgreSQL connection loss mapped to unavailable');}
+verify((int)$victim->connection()->query('SELECT 1')->fetchColumn()===1,'next independent database operation reconnects');

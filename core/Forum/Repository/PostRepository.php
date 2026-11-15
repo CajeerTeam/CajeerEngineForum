@@ -60,6 +60,7 @@ final readonly class PostRepository extends Repository
     public function reserveReadSequence(string $thread, int $count=1): int
     {
         if (!$this->db->connection()->inTransaction() || $count<1) throw new \LogicException('Read sequence requires a locked thread and positive count');
+        if($this->db->driver()==='pgsql')return (int)$this->query('UPDATE ce_forum_threads SET read_sequence=read_sequence+? WHERE id=? RETURNING read_sequence',[$count,$thread])->fetchColumn();
         $this->query('UPDATE ce_forum_threads SET read_sequence=read_sequence+? WHERE id=?',[$count,$thread]);
         return (int)$this->query('SELECT read_sequence FROM ce_forum_live_threads WHERE id=?',[$thread])->fetchColumn();
     }

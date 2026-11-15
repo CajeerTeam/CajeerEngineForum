@@ -18,6 +18,14 @@ final readonly class BoardRepository extends Repository
 
     public function find(string $id): ?array { return $this->row('SELECT * FROM ce_forum_boards WHERE id=?', [$id]); }
     public function lockBoard(string $id): ?array { return $this->lock('ce_forum_boards', 'id=?', [$id]); }
+    /** Shared PostgreSQL row lock permits independent publications in one board.
+     * Topology, ACL and review-policy edits still take exclusive board locks. */
+    public function lockPublicationBoard(string $id): ?array
+    {
+        if($this->db->driver()!=='pgsql')return $this->lockBoard($id);
+        if(!$this->db->connection()->inTransaction())throw new \LogicException('Publication lock requires a transaction');
+        return $this->row('SELECT * FROM ce_forum_boards WHERE id=? FOR SHARE',[$id]);
+    }
     public function lockCategory(string $id): ?array { return $this->lock('ce_forum_categories', 'id=?', [$id]); }
     public function insertCategory(string $id, string $name, string $description): void { $this->query('INSERT INTO ce_forum_categories(id,name,description) VALUES(?,?,?)', [$id,$name,$description]); }
     public function insertBoard(string $id, string $category, string $name, string $description): void { $this->query('INSERT INTO ce_forum_boards(id,category_id,name,description) VALUES(?,?,?,?)', [$id,$category,$name,$description]); }
@@ -75,7 +83,7 @@ final readonly class BoardRepository extends Repository
     /** Effective publication state includes ancestors. Caller holds target board lock for writes. */
     public function writable(string $id): void
     {
-        $board=$this->lockBoard($id) ?? throw new ForumException('Раздел не найден.',404);
+        $board=$this->lockPublicationBoard($id) ?? throw new ForumException('Раздел не найден.',404);
         if ($board['node_type']!=='forum') throw new ForumException('Контейнер не принимает обсуждения.',409);
         $seen=[];
         while ($board!==null) {

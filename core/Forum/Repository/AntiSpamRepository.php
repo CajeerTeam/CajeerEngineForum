@@ -20,7 +20,16 @@ final readonly class AntiSpamRepository extends Repository
     public function record(?string $user,string $subject,string $action,int $now,int $amount=1,?string $hash=null,?string $reason=null): void
     { $this->query('INSERT INTO ce_forum_spam_events(id,user_id,subject,action,created_at,amount,fingerprint,reason) VALUES(?,?,?,?,?,?,?,?)',[Uuid::v4(),$user,$subject,$action,$now,$amount,$hash,$reason]); }
     public function cleanup(int $before): int
-    { $count=0;foreach($this->rows('SELECT id FROM ce_forum_spam_events WHERE created_at<=? ORDER BY created_at,id LIMIT 1000',[$before]) as $row)$count+=$this->query('DELETE FROM ce_forum_spam_events WHERE id=? AND created_at<=?',[$row['id'],$before])->rowCount();return $count; }
+    {
+        if($this->db->driver()==='pgsql'){
+            return $this->query('WITH expired AS (SELECT id FROM ce_forum_spam_events WHERE created_at<=? ORDER BY created_at,id LIMIT 1000 FOR UPDATE SKIP LOCKED) DELETE FROM ce_forum_spam_events e USING expired WHERE e.id=expired.id AND e.created_at<=?',[$before,$before])->rowCount();
+        }
+        $ids=array_column($this->rows('SELECT id FROM ce_forum_spam_events WHERE created_at<=? ORDER BY created_at,id LIMIT 1000',[$before]),'id');
+        $count=0;foreach(array_chunk($ids,200) as $chunk){
+            $count+=$this->query('DELETE FROM ce_forum_spam_events WHERE created_at<=? AND id IN ('.implode(',',array_fill(0,count($chunk),'?')).')',[$before,...$chunk])->rowCount();
+        }
+        return $count;
+    }
     public function stats(int $since): array
     {return $this->rows('SELECT action,COUNT(*) AS events,COALESCE(SUM(amount),0) AS amount FROM ce_forum_spam_events WHERE created_at>? GROUP BY action ORDER BY action',[$since]);}
     public function reasons(int $since): array

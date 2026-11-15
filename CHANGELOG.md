@@ -1,3 +1,11 @@
+## 0.6.6 — High Load & Reliability
+
+- Shared PostgreSQL publication board locks retain exclusive topology/ACL changes; sequence allocation uses UPDATE RETURNING.
+- Batch notification fan-out and bounded spam cleanup; PostgreSQL workers skip already claimed notification/cleanup rows.
+- Database outages return retryable 503 without replaying writes; workers defer reservations during database outages and preserve durable state.
+- Redis queue distinguishes an empty queue from an unconfirmed transition; existing lease recovery and fencing remain in place.
+- Multi-process HTTP load, SQLite WAL concurrency, native PostgreSQL lock/recovery and Redis outage regressions with measured evidence.
+
 ## 0.6.5 — PostgreSQL Performance
 
 - Live feed indexes with mixed-direction sort, partial live post ranges on PostgreSQL/SQLite, equivalent composite indexes on MySQL/MariaDB.

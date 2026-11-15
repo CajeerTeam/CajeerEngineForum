@@ -34,7 +34,7 @@ final class ForumRuntimeCache
             if(count($generation)!==21)return $load();
             $seo=new ForumSeoSettings($this->root);
             $settings=$view==='page'?[getenv('APP_NAME'),$seo->baseUrl(),$seo->indexEnabled(),$seo->excludedBoards(),getenv('FORUM_REGISTRATION')]:[getenv('FORUM_REGISTRATION')];
-            $key=hash('sha256',json_encode(['v065',$generation,$view,$path,(string)($q['page']??1),$settings],JSON_THROW_ON_ERROR));
+            $key=hash('sha256',json_encode(['v066',$generation,$view,$path,(string)($q['page']??1),$settings],JSON_THROW_ON_ERROR));
             $store=new RedisCacheStore($redis,$prefix.'cache:');$lock=$prefix.'lock:'.$key;$token=bin2hex(random_bytes(16));$owner=false;
             try{
                 $cached=$store->get($key);

@@ -18,7 +18,7 @@ final readonly class ForumTransaction
         try {
             return $this->db->transaction($operation);
         } catch (PDOException $e) {
-            $state = (string) $e->getCode();
+            $state = (string) ($e->errorInfo[0] ?? $e->getCode());
             $native = (int) ($e->errorInfo[1] ?? 0);
             if (in_array($state, ['40001','40P01','55P03'], true)
                 || ($this->db->driver() === 'sqlite' && in_array($native & 255, [5,6], true))

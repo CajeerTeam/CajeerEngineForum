@@ -10,7 +10,7 @@ def sql(prefix):
         if s.startswith(prefix): return s
     raise AssertionError(prefix)
 uid=lambda:str(uuid.uuid4())
-usage=sql('SELECT COALESCE(SUM(amount)');insert=sql('INSERT INTO ce_forum_spam_events');delete=sql('DELETE FROM ce_forum_spam_events');expiry=sql('SELECT id FROM ce_forum_spam_events WHERE created_at<=')
+usage=sql('SELECT COALESCE(SUM(amount)');insert=sql('INSERT INTO ce_forum_spam_events');delete_prefix=sql('DELETE FROM ce_forum_spam_events');expiry=sql('SELECT id FROM ce_forum_spam_events WHERE created_at<=')
 # PHP executes actual renderer, age/verification and content policy without Composer.
 php=r'''require 'core/Forum/ForumException.php';require 'core/Forum/Content/ForumContentRenderer.php';require 'core/Forum/Service/AntiSpamService.php';$s=\CajeerEngine\Forum\Service\AntiSpamService::class;
 function ck($v,$m){if(!$v)throw new RuntimeException($m);echo "PASS $m\n";}
@@ -60,7 +60,15 @@ with tempfile.TemporaryDirectory() as tmp:
     assert db.execute(usage,(subject,'register',now-3600)).fetchone()==(5,)
     record(db,user,user,'reply',now,fp='c'*64,reason='links');record(db,user,user,'private');record(db,user,user,'report',now-86400);db.commit()
     assert db.execute('SELECT fingerprint,reason FROM ce_forum_spam_events WHERE action=\'private\'').fetchone()==(None,None)
-    for (id,) in db.execute(expiry,(now-86400,)).fetchall():db.execute(delete,(id,now-86400))
+    # Exercise the actual bounded batch DELETE prefix and bind order.
+    for _ in range(1100):record(db,user,user,'report',now-86400)
+    db.commit()
+    for expected in (1000,101):
+        ids=[r[0] for r in db.execute(expiry,(now-86400,)).fetchall()]
+        assert len(ids)==expected
+        for offset in range(0,len(ids),200):
+            chunk=ids[offset:offset+200]
+            assert db.execute(delete_prefix+','.join('?' for _ in chunk)+')',(now-86400,*chunk)).rowcount==len(chunk)
     assert db.execute('SELECT COUNT(*) FROM ce_forum_spam_events WHERE created_at<=?',(now-86400,)).fetchone()==(0,)
     db.commit();copy=sqlite3.connect(':memory:');db.backup(copy);assert copy.execute('SELECT COUNT(*) FROM ce_forum_spam_events').fetchone()==db.execute('SELECT COUNT(*) FROM ce_forum_spam_events').fetchone()
     db.execute('DELETE FROM ce_users WHERE id=?',(user,));assert db.execute('SELECT COUNT(*) FROM ce_forum_spam_events WHERE user_id=?',(user,)).fetchone()==(0,);assert not list(db.execute('PRAGMA foreign_key_check'))

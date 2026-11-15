@@ -55,6 +55,13 @@ try{
     putenv('REDIS_PORT='.$port);
     check(str_contains((string)$http('GET',$path)->getContent(),'Offline edit marker'),'old Redis entries are unreachable after offline write');
     $diag=\CajeerEngine\Forum\Service\ForumRuntimeCache::diagnostics();check($diag['connected']&&$diag['stats']['hit']>=2,'runtime diagnostics reports shared hits');
+    $reconnecting=new \CajeerEngine\Queue\RedisQueueDriver(static fn()=>RedisConnection::open(),$queuePrefix.'recovery:',5);
+    check($reconnecting->pop('recovery')===null,'empty queue is distinct from an unconfirmed Redis response');
+    // Simulate an unavailable transport on the next connection; no retry is performed
+    // inside a transition. Once the endpoint is restored the next call reconnects.
+    putenv('REDIS_PORT=1');$offlineQueue=new \CajeerEngine\Queue\RedisQueueDriver(static fn()=>RedisConnection::open(),$queuePrefix.'recovery:',5);
+    try{$offlineQueue->pop('recovery');throw new \LogicException('expected Redis outage');}catch(\RedisException|\RuntimeException $e){check(true,'offline Redis pop reports failure rather than empty');}
+    putenv('REDIS_PORT='.$port);$id=$offlineQueue->push('log.message',['message'=>'recovered'],'recovery');$job=$offlineQueue->pop('recovery');check($job?->id===$id,'next independent Redis operation reconnects');$offlineQueue->complete($job);
     echo "Redis forum regression complete\n";
 }finally{
     foreach([$prefix,$queuePrefix] as $p){$cursor=null;do{foreach($r->scan($cursor,$p.'*',200)?:[] as $k)$r->del($k);}while($cursor!==0);}

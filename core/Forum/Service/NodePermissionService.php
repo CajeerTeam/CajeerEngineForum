@@ -103,7 +103,8 @@ final readonly class NodePermissionService
     /** Board lock serializes with ACL and topology mutations; check only after acquiring it. */
     public function assertWrite(ForumAccessPolicy $actor,string $board,string $permission): void
     {
-        $this->boards->lockBoard($board) ?? throw new ForumException('Раздел не найден.',404);
+        $publication=in_array($permission,['thread:create','post:reply','post:edit_own','post:edit_any'],true);
+        ($publication?$this->boards->lockPublicationBoard($board):$this->boards->lockBoard($board)) ?? throw new ForumException('Раздел не найден.',404);
         self::assert($this->access($actor,lockActor:true),$board,$permission);
         $action=match($permission){'thread:create','post:reply','post:edit_own','post:edit_any'=>'posting','reaction:use'=>'reaction',default=>null};
         if($action!==null)$this->tx->sanctions()->enforce($actor->userId,$action,$board);

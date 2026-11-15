@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import signal
 import socket
 import struct
 import subprocess
@@ -132,7 +133,7 @@ def totp(secret):
 
 
 @contextmanager
-def server(report):
+def server(report, workers=1):
     if not (ROOT / 'vendor/autoload.php').is_file():
         raise RuntimeError('Run composer install first')
     # Copy only source/configuration. Never copy .env, storage, uploads or a database.
@@ -169,8 +170,12 @@ def server(report):
             subprocess.run(['php', str(HERE / 'install.php'), str(site), base], cwd=site, env=env, stdout=log, stderr=subprocess.STDOUT, check=True, timeout=180)
         # Server loads the fixture .env; no external DB credentials or app overrides.
         server_env = {k:v for k,v in env.items() if not k.startswith('DB_')}
+        if workers > 1:
+            if os.name != 'posix':
+                raise RuntimeError('Multi-worker PHP test requires POSIX')
+            server_env['PHP_CLI_SERVER_WORKERS'] = str(workers)
         with (report / 'http.log').open('w') as log:
-            proc = subprocess.Popen(['php', '-S', f'127.0.0.1:{port}', '-t', str(site / 'public'), str(HERE / 'router.php')], cwd=site, env=server_env, stdout=log, stderr=subprocess.STDOUT)
+            proc = subprocess.Popen(['php', '-S', f'127.0.0.1:{port}', '-t', str(site / 'public'), str(HERE / 'router.php')], cwd=site, env=server_env, stdout=log, stderr=subprocess.STDOUT, start_new_session=workers > 1)
             try:
                 deadline = time.monotonic() + 30
                 opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
@@ -188,12 +193,21 @@ def server(report):
                     raise RuntimeError('Forum did not become ready; inspect http.log')
                 yield base
             finally:
-                proc.terminate()
+                if workers > 1:
+                    # PHP CLI master and all forked workers share this process group.
+                    try: os.killpg(proc.pid, signal.SIGTERM)
+                    except ProcessLookupError: pass
+                else:
+                    proc.terminate()
                 try:
                     proc.wait(timeout=10)
                 except subprocess.TimeoutExpired:
                     proc.kill()
                     proc.wait(timeout=10)
+                finally:
+                    if workers > 1:
+                        try: os.killpg(proc.pid, signal.SIGKILL)
+                        except ProcessLookupError: pass
 
 
 class NetworkTests(unittest.TestCase):

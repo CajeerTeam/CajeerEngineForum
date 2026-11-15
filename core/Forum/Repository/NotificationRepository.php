@@ -16,9 +16,12 @@ final readonly class NotificationRepository extends Repository
         if (($subscription!==null && ($subscription!=='board'||$kind!=='reply')) || !$this->db->connection()->inTransaction() || (!in_array($kind,self::KINDS,true)||$kind==='accepted') || ($kind==='moderation'?!in_array($action,['lock','unlock','pin','unpin'],true):$action!==null)) throw new \LogicException('Invalid notification event or missing transaction');
         $event=Uuid::v4();
         $uuid=$this->db->driver()==='pgsql'?'CAST(? AS uuid)':'?';
-        foreach (array_unique($recipients) as $recipient) {
-            if ($recipient==='' || $recipient===$actor) continue;
-            $this->query('INSERT INTO ce_forum_notifications(event_id,recipient_id,actor_id,post_id,kind,moderation_action,subscription_kind) SELECT '.$uuid.',u.id,'.$uuid.','.$uuid.',?,?,? FROM ce_users u WHERE u.id=? AND u.status=\'active\' AND COALESCE((SELECT pref.'.$kind.' FROM ce_forum_notification_preferences pref WHERE pref.user_id=u.id),1)=1',[$event,$actor,$post,$kind,$action,$subscription,$recipient]);
+        $recipients=array_values(array_filter(array_unique($recipients),static fn($id)=>$id!==''&&$id!==$actor));
+        // Bound parameter counts across drivers. A single event ID is shared by all
+        // recipients; preferences and active account status remain SQL predicates.
+        foreach(array_chunk($recipients,200) as $chunk){
+            $slots=implode(',',array_fill(0,count($chunk),'?'));
+            $this->query('INSERT INTO ce_forum_notifications(event_id,recipient_id,actor_id,post_id,kind,moderation_action,subscription_kind) SELECT '.$uuid.',u.id,'.$uuid.','.$uuid.',?,?,? FROM ce_users u WHERE u.id IN ('.$slots.") AND u.status='active' AND COALESCE((SELECT pref.".$kind.' FROM ce_forum_notification_preferences pref WHERE pref.user_id=u.id),1)=1',[$event,$actor,$post,$kind,$action,$subscription,...$chunk]);
         }
     }
     public function reply(string $actor,string $post,string $thread): void
@@ -66,7 +69,7 @@ final readonly class NotificationRepository extends Repository
         
         $table=$kind==='accepted'?'ce_forum_answer_notifications':'ce_forum_notifications';
         if ($this->db->driver()==='sqlite') $this->query('UPDATE '.$table.' SET state=state WHERE event_id=? AND recipient_id=? AND state=0',[$event,$user]);
-        $row=$this->row('SELECT * FROM '.$table.' WHERE event_id=? AND recipient_id=? AND state=0'.($this->db->driver()==='sqlite'?'':' FOR UPDATE'),[$event,$user]);
+        $row=$this->row('SELECT * FROM '.$table.' WHERE event_id=? AND recipient_id=? AND state=0'.(match($this->db->driver()){'sqlite'=>'','pgsql'=>' FOR UPDATE SKIP LOCKED',default=>' FOR UPDATE'}),[$event,$user]);
         return $row===null?null:$row+['kind'=>'accepted','subscription_kind'=>null];
     }
     public function target(string $post): ?array

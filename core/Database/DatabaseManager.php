@@ -56,22 +56,31 @@ final class DatabaseManager
         $started = !$pdo->inTransaction();
 
         $savepoint = null;
-        if ($started) $pdo->beginTransaction();
-        else {
-            $savepoint='ce_sp_'.(++$this->savepointSequence);
-            $pdo->exec('SAVEPOINT '.$savepoint);
-        }
-
+        $entered=false;
         $start=hrtime(true);$wall=microtime(true);$trace=\CajeerEngine\Observability\TraceScope::child();$previousTrace=\CajeerEngine\Observability\TraceScope::enter($trace);$outcome='failure';
         try {
+            if ($started) $pdo->beginTransaction();
+            else {
+                $savepoint='ce_sp_'.(++$this->savepointSequence);
+                $pdo->exec('SAVEPOINT '.$savepoint);
+            }
+            $entered=true;
             $result = $callback($pdo);
             if ($started) $pdo->commit();
             elseif($savepoint!==null) $pdo->exec('RELEASE SAVEPOINT '.$savepoint);
             $outcome='success';return $result;
         } catch (Throwable $e) {
-            if ($pdo->inTransaction()) {
-                if($started)$pdo->rollBack();
-                elseif($savepoint!==null){$pdo->exec('ROLLBACK TO SAVEPOINT '.$savepoint);$pdo->exec('RELEASE SAVEPOINT '.$savepoint);}
+            // A dead connection can also fail rollback. Never mask the original
+            // error or replay a mutation whose COMMIT outcome is unknown.
+            try {
+                if ($entered && $pdo->inTransaction()) {
+                    if($started)$pdo->rollBack();
+                    elseif($savepoint!==null){$pdo->exec('ROLLBACK TO SAVEPOINT '.$savepoint);$pdo->exec('RELEASE SAVEPOINT '.$savepoint);}
+                }
+            } catch (Throwable) { $this->disconnect(); }
+            if ($e instanceof \PDOException && DatabaseUnavailable::causedBy($e)) {
+                $this->disconnect();
+                throw new DatabaseUnavailable('Database connection unavailable',0,$e);
             }
             throw $e;
         }finally{\CajeerEngine\Observability\TraceScope::leave($previousTrace);$duration=(hrtime(true)-$start)/1e9;(new \CajeerEngine\Observability\Metrics($this->config->rootPath()))->buffered('database','transaction',$outcome,$duration);(new \CajeerEngine\Observability\TraceExporter($this->config->rootPath()))->record($trace,'database','transaction',$wall,$duration,$outcome==='success');}
