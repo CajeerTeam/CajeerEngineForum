@@ -1198,6 +1198,49 @@ class NetworkTests(unittest.TestCase):
         c.call('PUT',settings,200,{'incoming':'following'},token=bt)
         c.call('POST',conv,403,payload,token=at) # follow was not restored
 
+    def test_25_safety_stable(self):
+        c=Client(self.base); admin=c.login(ADMIN,ADMIN_PASSWORD)[0]['data']['access_token']
+        _,a,at=self.activated(c); _,b,bt=self.activated(c); _,other,ot=self.activated(c)
+        board=c.call('GET','/forum')['boards'][0]['id']; topic=c.call('POST','/forum/boards/'+board+'/threads',201,{'title':'Safety decision '+uuid.uuid4().hex,'body':'Safety report target'},token=at)['id']
+        thread='/forum/threads/'+topic; post=c.call('GET',thread)['first_post_id']
+        report=c.call('POST','/forum/posts/'+post+'/report',201,{'reason':'Public safety evidence','category':'abuse'},token=bt)['id']
+        own='/forum/my-reports?kind=public'; self.assertEqual([report],[r['id'] for r in c.call('GET',own,token=bt)])
+        self.assertEqual([],c.call('GET',own,token=ot));c.call('GET',own,401)
+        case='/forum/moderation/cases/report/'+report
+        decision={'action':'resolve','revision_number':1,'reason':'Safety rule violation','disposition':'resolved','sanction':{'kind':'posting','duration_seconds':3600}}
+        c.call('POST',case,403,decision,token=bt)
+        c.call('POST',case,422,{**decision,'sanction':{'kind':'suspension'}},token=admin)
+        self.assertEqual('open',c.call('GET',case,token=admin)['item']['status']);self.assertEqual([],c.call('GET','/forum/sanctions',token=at))
+        result=c.call('POST',case,200,decision,token=admin); sid=result['sanction_id'];self.assertEqual('resolved',result['status'])
+        c.call('POST',case,409,decision,token=admin);c.call('POST',thread+'/posts',403,{'body':'Restricted posting'},token=at)
+        row=c.call('GET',own,token=bt)[0];self.assertEqual('resolved',row['status']);self.assertNotIn('sanction_id',row);self.assertNotIn('resolved_by',row);self.assertNotIn('snapshot_body',row)
+        c.call('POST','/forum/sanctions/'+sid+'/appeal',201,{'body':'Please review decision'},token=at)
+        c.call('POST','/forum/sanctions/'+sid+'/appeal/decision',200,{'status':'accepted','reason':'Restored access'},token=admin)
+        c.call('POST',thread+'/posts',201,{'body':'Restored posting'},token=at)
+        file=c.upload_attachment('safety.txt',b'Safety attachment',at)['id']
+        conv=c.call('POST','/forum/conversations',201,{'participant_ids':[b],'title':'Private safety','body':'Private evidence only','attachment_ids':[file],'kind':'group'},token=at);path='/forum/conversations/'+conv['id'];msg=conv['message_id'];rp=path+'/messages/'+msg+'/report'
+        c.call('POST',rp,404,{'reason':'Outsider report'},token=ot)
+        rid=c.call('POST',rp,201,{'reason':'Private safety report','block_author':True},token=bt)['id']
+        for _ in range(12):self.assertEqual(rid,c.call('POST',rp,201,{'reason':'Retry','block_author':True},token=bt)['id'])
+        c.call('POST',path+'/messages',403,{'body':'Blocked contact'},token=at)
+        self.assertFalse(c.call('GET',path,token=at)['contact_allowed'])
+        self.assertTrue(c.call('GET',path,token=at)['can_manage_participants'])
+        c.call('POST',path+'/invite',403,{'participant_ids':[other]},token=at)
+        c.call('DELETE','/forum/attachments/'+file,403,token=at)
+        private='/forum/my-reports?kind=private'; self.assertEqual([],c.call('GET',private,token=at)); own_private=c.call('GET',private,token=bt)[0];self.assertEqual(rid,own_private['id']);self.assertNotIn('body_snapshot',own_private)
+        review='/forum/conversation-reports/'+rid; c.call('GET',review,403,token=bt);self.assertEqual('Private evidence only',c.call('GET',review,token=admin)['body_snapshot'])
+        self.assertIn(rid,[r['id'] for r in c.call('GET','/forum/conversation-reports?status=open',token=admin)])
+        c.call('PUT',review,422,{'status':'dismissed','reason':'Invalid decision','sanction':{'kind':'conversation'}},token=admin)
+        self.assertEqual('open',c.call('GET',review,token=admin)['status'])
+        result=c.call('PUT',review,200,{'status':'resolved','reason':'Contact restriction','sanction':{'kind':'conversation','duration_seconds':3600}},token=admin);sid=result['sanction_id']
+        c.call('PUT',review,409,{'status':'resolved','reason':'Repeat','sanction':{'kind':'conversation'}},token=admin)
+        self.assertEqual('resolved',c.call('GET',private,token=bt)[0]['status']);self.assertNotIn('decision',c.call('GET',private,token=bt)[0])
+        c.call('PUT','/forum/conversation-blocks/'+a,200,{'enabled':False},token=bt)
+        c.call('POST',path+'/messages',403,{'body':'Sanction still active'},token=at)
+        self.assertFalse(c.call('GET',path,token=at)['contact_allowed'])
+        c.call('POST','/forum/sanctions/'+sid+'/revoke',200,{'reason':'Restriction lifted'},token=admin)
+        c.call('POST',path+'/messages',201,{'body':'Contact restored'},token=at)
+
     def test_99_rate_limit(self):
         # Run last: exhaust the real IP auth bucket without guessing credentials.
         c = Client(self.base)

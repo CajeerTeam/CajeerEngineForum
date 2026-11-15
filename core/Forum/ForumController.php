@@ -64,7 +64,7 @@ final readonly class ForumController
     public function saveConversationSettings(Request $r): JsonResponse { return $this->respond(fn()=> $this->discussions->conversations()->setSettings($this->actor($r),$this->body($r))); }
     public function blockConversationUser(Request $r,array $p): JsonResponse { return $this->respond(fn()=> $this->discussions->conversations()->block($this->actor($r),$this->id($p),$this->body($r))); }
     public function reportConversationMessage(Request $r,array $p): JsonResponse { return $this->respond(fn()=> $this->discussions->conversations()->report($this->actor($r),$this->id($p),V::id($p['message_id']??null),$this->body($r)),201); }
-    public function conversationReports(Request $r): JsonResponse { return $this->respond(fn()=> $this->discussions->conversations()->reports($this->actor($r),$this->offset($r))); }
+    public function conversationReports(Request $r): JsonResponse { return $this->respond(fn()=> $this->discussions->conversations()->reports($this->actor($r),$this->offset($r),V::text($r->query->all()['status']??'all','status',12))); }
     public function conversationReport(Request $r,array $p): JsonResponse { return $this->respond(fn()=> $this->discussions->conversations()->reportDetail($this->actor($r),$this->id($p))); }
     public function resolveConversationReport(Request $r,array $p): JsonResponse { return $this->respond(fn()=> $this->discussions->conversations()->resolve($this->actor($r),$this->id($p),$this->body($r))); }
     public function notifications(Request $r): JsonResponse { return $this->respond(fn()=> $this->discussions->notifications()->inbox($this->actor($r),$this->offset($r),($r->query->all()['count_only']??null)==='1')); }
@@ -154,6 +154,7 @@ final readonly class ForumController
     public function unsubscribeEmail(Request $r): JsonResponse { return $this->respond(fn()=> $this->discussions->watchDelivery()->unsubscribe($this->field($r,'token'))); }
     public function watches(Request $r): JsonResponse { return $this->respond(fn () => $this->engagement->watches($this->actor($r),$this->offset($r))); }
     public function report(Request $r,array $p): JsonResponse { return $this->respond(fn () => ['id'=>$this->moderation->report($this->actor($r),$this->id($p),$this->text($r,'reason',500,3),V::text($this->field($r,'category')??'other','category',20))],201); }
+    public function myReports(Request $r): JsonResponse {return $this->respond(fn()=>$this->moderation->mine($this->actor($r),V::text($r->query->all()['kind']??'public','kind',10),$this->offset($r)));}
     public function reports(Request $r): JsonResponse { return $this->respond(fn () => $this->moderation->reports($this->actor($r),$this->offset($r))); }
     public function resolve(Request $r,array $p): JsonResponse { return $this->respond(fn () => ['id'=>$this->moderation->resolve($this->actor($r),$this->id($p))]); }
     public function spamStats(Request $r): JsonResponse {return $this->respond(fn()=>$this->discussions->antiSpam()->stats($this->actor($r)));}

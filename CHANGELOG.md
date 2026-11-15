@@ -1,3 +1,10 @@
+## 0.6.0 — Trust & Safety Stable
+
+- Member safety center with personal public/private report status, without moderator evidence or identities.
+- Report and block private-message authors atomically; repeat reports do not consume abuse budgets.
+- Atomic report resolution and sanctions, board-scoped for public cases and admin-only for private cases.
+- Preserve report history and appeal workflow; migration 0039 and integrated safety regression.
+
 ## 0.5.6 — Trust & Personal Safety
 
 - Live trust based on verified email, account age and published posts, enforced in new conversations and group invitations.

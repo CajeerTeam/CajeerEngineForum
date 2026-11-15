@@ -18,7 +18,7 @@ def sql(source, prefix):
 
 db = sqlite3.connect(':memory:')
 db.execute('PRAGMA foreign_keys=ON')
-files = sorted((ROOT/'migrations/sqlite').glob('*.sql'))
+files = [f for f in sorted((ROOT/'migrations/sqlite').glob('*.sql')) if f.name[:4] <= '0038']
 assert files[-1].name == '0038_forum_trust_safety.sql'
 for f in files[:-1]: db.executescript(f.read_text())
 a,b,c = [str(uuid.uuid4()) for _ in range(3)]

@@ -900,6 +900,12 @@ final class Operations {
         'in' => 'query',
         'required' => false,
       ),
+      1 => 
+      array (
+        'name' => 'status',
+        'in' => 'query',
+        'required' => false,
+      ),
     ),
     'bodyRequired' => false,
   ),
@@ -1203,6 +1209,27 @@ final class Operations {
       3 => 
       array (
         'name' => 'assigned',
+        'in' => 'query',
+        'required' => false,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
+  'get_Forum_myReports' => 
+  array (
+    'method' => 'GET',
+    'path' => '/forum/my-reports',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'page',
+        'in' => 'query',
+        'required' => false,
+      ),
+      1 => 
+      array (
+        'name' => 'kind',
         'in' => 'query',
         'required' => false,
       ),

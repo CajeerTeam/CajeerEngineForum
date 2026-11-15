@@ -27,6 +27,14 @@ final readonly class ModerationService
             return $id;
         });
     }
+    public function mine(ForumAccessPolicy $actor,string $kind,int $offset): array
+    {
+        if(!in_array($kind,['public','private'],true))throw new ForumException('Некорректный тип жалобы.');
+        return $this->tx->read(function()use($actor,$kind,$offset){
+            $this->tx->permissions()->requireCurrent($actor,'forum:write');
+            return $kind==='public'?$this->reports->own($actor->userId,$offset):$this->tx->contacts()->ownReports($actor->userId,$offset);
+        });
+    }
     public function reports(ForumAccessPolicy $actor, int $offset): array
     {
         $actor->require('forum:moderate');

@@ -211,6 +211,7 @@ final class RouteRegistry
             ['GET', '/api/v1/forum/recycle-bin', 'api.v1.forum.recycleBin', 'forum', 'recycleBin', ['forum:moderate']],
             ['GET', '/api/v1/forum/recycle-bin/{kind}/{id}', 'api.v1.forum.recycleDetail', 'forum', 'recycleDetail', ['forum:moderate']],
             ['POST', '/api/v1/forum/recycle-bin/{kind}/{id}', 'api.v1.forum.recycleChange', 'forum', 'recycleChange', ['forum:moderate']],
+            ['GET', '/api/v1/forum/my-reports', 'api.v1.forum.myReports', 'forum', 'myReports', ['forum:write']],
             ['GET', '/api/v1/forum/reports', 'api.v1.forum.reports', 'forum', 'reports', ['forum:moderate']],
             ['POST', '/api/v1/forum/reports/{id}/resolve', 'api.v1.forum.resolve', 'forum', 'resolve', ['forum:moderate']],
             ['GET', '/api/v1/forum/drafts', 'api.v1.forum.drafts', 'forum', 'drafts', ['forum:write']],

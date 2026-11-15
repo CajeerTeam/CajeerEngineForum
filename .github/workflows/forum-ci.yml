@@ -67,6 +67,7 @@ jobs:
       - run: python tools/forum-tests/antispam_sql_regression.py
       - run: python tools/forum-tests/privacy_sql_regression.py
       - run: python tools/forum-tests/trust_sql_regression.py
+      - run: python tools/forum-tests/safety_stable_sql_regression.py
       - run: python tools/forum-tests/smtp_regression.py
       - run: php tools/security-regression.php
       - run: php tools/release-regression.php
@@ -250,29 +251,37 @@ jobs:
           ln -s pg_dump "$RUNNER_TEMP/pg-client/pg_restore"
           ln -s pg_dump "$RUNNER_TEMP/pg-client/psql"
           echo "$RUNNER_TEMP/pg-client" >> "$GITHUB_PATH"
-      - name: Build and verify physical 0.5.6 artifacts
+      - name: Build and verify physical 0.6.0 artifacts
         run: |
           composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader
           mkdir -p storage/tmp/forum-ci/release
           php tools/build-release.php --all --target-dir="$RUNNER_TEMP/forum-current" --json > storage/tmp/forum-ci/release/build.json
-          php bin/cajeer release:verify --dist --strict --artifact="$RUNNER_TEMP/forum-current/cajeerengine-0.5.6-dist.zip"
-          php bin/cajeer release:verify --strict --artifact="$RUNNER_TEMP/forum-current/cajeerengine-0.5.6-source.zip"
-      - name: Build original 0.5.5 baseline from repository history
+          php bin/cajeer release:verify --dist --strict --artifact="$RUNNER_TEMP/forum-current/cajeerengine-0.6.0-dist.zip"
+          php bin/cajeer release:verify --strict --artifact="$RUNNER_TEMP/forum-current/cajeerengine-0.6.0-source.zip"
+      - name: Build authentic previous baseline from repository history
         run: |
           mkdir -p "$RUNNER_TEMP/forum-previous"
-          git archive "$FORUM_BASELINE_REF" | tar -x -C "$RUNNER_TEMP/forum-previous"
+          ref="$FORUM_BASELINE_REF"
+          # Prefer the immediately preceding release when its actual tag is available.
+          if [ "$ref" = '25f00f4b3183ff72e2f857b73b5071ca65d4efeb' ]; then
+            for tag in v0.5.6 0.5.6; do
+              if git rev-parse --verify "refs/tags/$tag^{commit}" >/dev/null 2>&1; then ref="refs/tags/$tag"; break; fi
+            done
+          fi
+          git archive "$ref" | tar -x -C "$RUNNER_TEMP/forum-previous"
           cd "$RUNNER_TEMP/forum-previous"
-          php -r 'if (json_decode(file_get_contents("release.json"),true,512,JSON_THROW_ON_ERROR)["edition_version"]!=="0.5.5") exit(1);'
+          baseline=$(php -r '$v=json_decode(file_get_contents("release.json"),true,512,JSON_THROW_ON_ERROR)["edition_version"]; if(!in_array($v,["0.5.5","0.5.6"],true)) exit(1); echo $v;')
+          echo "FORUM_BASELINE_VERSION=$baseline" >> "$GITHUB_ENV"
           composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader
           php tools/build-release.php --dist --target-dir="$RUNNER_TEMP/forum-previous-dist" --json
       - name: Clean install, live HTTP, identity and corrupt-ledger rejection
         env:
           FORUM_TEST_RELEASE_DB: forum_test_release_clean
-        run: python tools/forum-tests/release_acceptance.py --driver ${{ matrix.driver }} --artifact "$RUNNER_TEMP/forum-current/cajeerengine-0.5.6-dist.zip" --report storage/tmp/forum-ci/release/clean
-      - name: Signed upgrade from 0.5.5, recovery and rollback
+        run: python tools/forum-tests/release_acceptance.py --driver ${{ matrix.driver }} --artifact "$RUNNER_TEMP/forum-current/cajeerengine-0.6.0-dist.zip" --report storage/tmp/forum-ci/release/clean
+      - name: Signed upgrade from authentic baseline, recovery and rollback
         env:
           FORUM_TEST_RELEASE_DB: forum_test_release_upgrade
-        run: python tools/forum-tests/release_acceptance.py --driver ${{ matrix.driver }} --artifact "$RUNNER_TEMP/forum-current/cajeerengine-0.5.6-dist.zip" --previous "$RUNNER_TEMP/forum-previous-dist/cajeerengine-0.5.5-dist.zip" --report storage/tmp/forum-ci/release/upgrade
+        run: python tools/forum-tests/release_acceptance.py --driver ${{ matrix.driver }} --artifact "$RUNNER_TEMP/forum-current/cajeerengine-0.6.0-dist.zip" --previous "$RUNNER_TEMP/forum-previous-dist/cajeerengine-${FORUM_BASELINE_VERSION}-dist.zip" --report storage/tmp/forum-ci/release/upgrade
       - name: Upload release acceptance evidence
         if: always()
         uses: actions/upload-artifact@v4

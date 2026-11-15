@@ -1,6 +1,6 @@
 # CajeerEngine Forum Edition
 
-**Forum Edition 0.5.6 — Trust & Personal Safety**, built on CajeerEngine 1.3.0. Release certification requires all `forum-required` CI jobs to pass.
+**Forum Edition 0.6.0 — Trust & Safety Stable**, built on CajeerEngine 1.3.0. Release certification requires all `forum-required` CI jobs to pass.
 
 Self-hosted forum platform by CajeerTeam. PHP 8.4.1+, CajeerEngine kernel, Symfony Components, REST API, Apache-2.0.
 
@@ -18,6 +18,7 @@ php -S 127.0.0.1:8080 -t public
 
 - `/forum` — категории и разделы, `/forum/latest` — последние темы.
 - `/forum/login`, `/forum/register` — вход и регистрация. Для запрета регистрации задайте `FORUM_REGISTRATION=false` в `.env`.
+- `/forum/safety` — личный центр безопасности: жалобы, доверие, блокировки, санкции и апелляции.
 - `/forum/manage` — жалобы и управление форумом. Администратор создаёт категории/разделы, модератор обрабатывает жалобы и темы.
 - `/admin/` — существующая админка ядра, управление пользователями, ролями, медиа, CMS и расширениями.
 - `/api/v1/forum` — публичный каталог; `/api/openapi.yaml` в репозитории — контракт API.

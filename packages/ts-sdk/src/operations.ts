@@ -699,6 +699,11 @@ export const operations = {
                 "name": "page",
                 "in": "query",
                 "required": false
+            },
+            {
+                "name": "status",
+                "in": "query",
+                "required": false
             }
         ],
         "bodyRequired": false
@@ -940,6 +945,23 @@ export const operations = {
             },
             {
                 "name": "assigned",
+                "in": "query",
+                "required": false
+            }
+        ],
+        "bodyRequired": false
+    },
+    "get_Forum_myReports": {
+        "method": "GET",
+        "path": "/forum/my-reports",
+        "parameters": [
+            {
+                "name": "page",
+                "in": "query",
+                "required": false
+            },
+            {
+                "name": "kind",
                 "in": "query",
                 "required": false
             }

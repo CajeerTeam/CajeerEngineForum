@@ -86,7 +86,7 @@ final readonly class ModerationQueueService
     }
     public function action(ForumAccessPolicy $actor,string $kind,string $id,array $input,DiscussionService $discussion,bool $owner=false): array
     {
-        $this->kind($kind);$id=V::id($id);$action=$input['action']??null;$expected=DraftService::revision($input['revision_number']??null);
+        $this->kind($kind);$id=V::id($id);$action=$input['action']??null;if(isset($input['sanction'])&&($kind!=='report'||$action!=='resolve'||$owner))throw new ForumException('Санкция допустима только при решении по жалобе.');$expected=DraftService::revision($input['revision_number']??null);
         if(!in_array($action,$owner?['cancel']:($kind==='report'?['assign','priority','note','resolve']:['assign','priority','note','approve','reject']),true))throw new ForumException('Некорректное действие.');
         return $this->tx->write(function()use($actor,$kind,$id,$input,$discussion,$owner,$action,$expected){
             [$r,$board]=$this->lockCase($actor,$kind,$id,$owner);
@@ -100,6 +100,15 @@ final readonly class ModerationQueueService
                 if($disposition==='deleted'){
                     $post=$this->trash->lockTarget('post',$r['post_id'])??throw new ForumException('Сообщение не найдено.',404);
                     if(!$post['parent_deleted']&&$post['deleted_at']===null){$isFirst=$this->trash->first($post['thread_id'])===$r['post_id'];$this->tx->recycle()->change($actor,$isFirst?'thread':'post',$isFirst?$post['thread_id']:$r['post_id'],'delete',$reason);}
+                }
+                $sanction=$input['sanction']??null;
+                if($sanction!==null){
+                    if(!is_array($sanction)||$disposition==='dismissed')throw new ForumException('Некорректная санкция по жалобе.');
+                    $post=$this->trash->lockTarget('post',$r['post_id'])??throw new ForumException('Сообщение не найдено.',404);
+                    if($post['author_id']===null)throw new ForumException('Автор недоступен.',409);
+                    $issued=$this->tx->sanctions()->issue($actor,$post['author_id'],['board_id'=>$board,'reason'=>$reason]+$sanction);
+                    $this->reports->linkSanction($id,$issued['id']);
+                    $this->tx->audit('forum.report.sanction',$actor->userId,['report_id'=>$id,'sanction_id'=>$issued['id']]);
                 }
                 $value=['reason'=>$reason,'disposition'=>$disposition];
             }elseif($action==='approve'){

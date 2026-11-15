@@ -44,7 +44,8 @@ final readonly class SanctionService
     private function target(string $user,ForumAccessPolicy $actor): void
     {
         if($user===$actor->userId)throw new ForumException('Нельзя назначать санкции себе.',403);
-        $this->users->lockActor($user)??throw new ForumException('Участник не найден.',404);
+        $target=$this->users->lockActor($user)??throw new ForumException('Участник не найден.',404);
+        if($target['status']!=='active')throw new ForumException('Участник недоступен.',409);
         foreach($this->users->roleRecords($user,true) as $r){$scopes=json_decode($r['permissions'],true,512,JSON_THROW_ON_ERROR);if(in_array('*',$scopes,true)||(!$actor->has('*')&&in_array('forum:moderate',$scopes,true)))throw new ForumException('Защищённый аккаунт.',403);}
     }
     private function own(ForumAccessPolicy $actor,bool $lock=false): void

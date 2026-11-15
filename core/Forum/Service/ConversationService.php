@@ -51,7 +51,7 @@ final readonly class ConversationService
     { return in_array($conversation['owner_id'],$members,true)?$conversation['owner_id']:($members[0]??null); }
     public function view(ForumAccessPolicy $actor,string $id,int $offset): array
     {
-        return $this->read($actor,function()use($actor,$id,$offset){$c=$this->repo->membership($id,$actor->userId);$members=$this->repo->participants($id);$others=array_diff(array_column($members,'user_id'),[$actor->userId]);$contactAllowed=$others!==[];foreach($others as $other)if($this->repo->blocked($actor->userId,$other))$contactAllowed=false;return ['contact_allowed'=>$contactAllowed,'conversation'=>ConversationRepository::normalize($c),'participants'=>$members,'messages'=>$this->tx->attachments()->decorate('message',array_reverse($this->repo->messages($id,(int)$c['joined_sequence'],$offset))),'can_invite'=>$c['kind']==='group'&&$this->owner($c,array_column($members,'user_id'))===$actor->userId,'group_participants_max'=>$this->tx->trust()->status($actor->userId)['group_participants_max']];});
+        return $this->read($actor,function()use($actor,$id,$offset){$c=$this->repo->membership($id,$actor->userId);$members=$this->repo->participants($id);$others=array_diff(array_column($members,'user_id'),[$actor->userId]);$contactAllowed=$others!==[];try{$this->tx->sanctions()->enforce($actor->userId,'conversation',null,false);}catch(ForumException $e){if($e->status!==403)throw $e;$contactAllowed=false;}foreach($others as $other)if($this->repo->blocked($actor->userId,$other))$contactAllowed=false;return ['contact_allowed'=>$contactAllowed,'conversation'=>ConversationRepository::normalize($c),'participants'=>$members,'messages'=>$this->tx->attachments()->decorate('message',array_reverse($this->repo->messages($id,(int)$c['joined_sequence'],$offset))),'can_invite'=>$contactAllowed&&$c['kind']==='group'&&$this->owner($c,array_column($members,'user_id'))===$actor->userId,'can_manage_participants'=>$c['kind']==='group'&&$this->owner($c,array_column($members,'user_id'))===$actor->userId,'group_participants_max'=>$this->tx->trust()->status($actor->userId)['group_participants_max']];});
     }
     public function send(ForumAccessPolicy $actor,string $id,array $body): array
     {
@@ -87,6 +87,7 @@ final readonly class ConversationService
         $ids=$this->recipients($body['participant_ids']??null,$actor->userId);
         return $this->write($actor,function()use($actor,$id,$ids){$user=$actor->userId;$this->tx->sanctions()->enforce($user,'conversation');$c=$this->repo->membership($id,$user);$members=array_column($this->repo->participants($id),'user_id');
             if($c['kind']!=='group'||$this->owner($c,$members)!==$user)throw new ForumException('Недостаточно прав.',403);
+            foreach($members as $member)if($member!==$user&&$this->repo->blocked($user,$member))throw new ForumException('Приглашения в эту переписку недоступны.',403);
             $trust=$this->tx->trust()->status($user);TrustService::assertGroup($trust,count($members)+count($ids));
             foreach($ids as $target){if(in_array($target,$members,true))throw new ForumException('Участник уже в переписке.',409);$this->repo->limit($user,'invite',3600,$trust['invitations_hour']);$this->checkInvite($user,$target,$members,$trust);$members[]=$target;$this->repo->join($id,$target,(int)$c['last_sequence']+1);}
             return ['participants'=>$this->repo->participants($id)];
@@ -122,12 +123,36 @@ final readonly class ConversationService
     }
     public function report(ForumAccessPolicy $actor,string $id,string $msg,array $body): array
     {
-        $reason=V::text($body['reason']??null,'reason',1000);return $this->write($actor,function()use($actor,$id,$msg,$reason){$c=$this->repo->membership($id,$actor->userId);$m=$this->repo->message($id,$msg,(int)$c['joined_sequence']);if($m['author_id']===$actor->userId)throw new ForumException('Нельзя пожаловаться на своё сообщение.');$this->tx->antiSpam()->action($actor->userId,'report');$this->repo->limit($actor->userId,'report',3600,10);return ['id'=>$this->repo->report($actor->userId,$m,$reason)];});
+        $reason=V::text($body['reason']??null,'reason',1000);
+        $block=V::enabled($body['block_author']??false);
+        return $this->write($actor,function()use($actor,$id,$msg,$reason,$block){
+            $c=$this->repo->membership($id,$actor->userId);$m=$this->repo->message($id,$msg,(int)$c['joined_sequence']);
+            if($m['author_id']===$actor->userId)throw new ForumException('Нельзя пожаловаться на своё сообщение.');
+            $report=$this->repo->existingReport($actor->userId,$msg);
+            if($report===null){$this->tx->antiSpam()->action($actor->userId,'report');$this->repo->limit($actor->userId,'report',3600,10);$report=$this->repo->report($actor->userId,$m,$reason);$this->tx->audit('forum.conversation.report.create',$actor->userId,['report_id'=>$report,'message_id'=>$msg]);}
+            if($block&&$m['author_id']!==null&&$this->repo->activeUser($m['author_id'])){$this->repo->block($actor->userId,$m['author_id'],true);$this->repo->removeFollows($actor->userId,$m['author_id']);}
+            return ['id'=>$report];
+        });
     }
-    public function reports(ForumAccessPolicy $actor,int $offset): array
-    { return $this->tx->read(function()use($actor,$offset){$this->tx->permissions()->requireAdmin($actor);return $this->repo->reports($offset);}); }
+    public function reports(ForumAccessPolicy $actor,int $offset,string $status='all'): array
+    { if(!in_array($status,['open','resolved','dismissed','all'],true))throw new ForumException('Некорректный статус.');return $this->tx->read(function()use($actor,$offset,$status){$this->tx->permissions()->requireAdmin($actor);return $this->repo->reports($offset,$status);}); }
     public function reportDetail(ForumAccessPolicy $actor,string $id): array
     { return $this->write($actor,function()use($actor,$id){$r=$this->repo->reportDetail($id);$this->tx->audit('forum.conversation.report.view',$actor->userId,['report_id'=>$id]);return $r;},true); }
     public function resolve(ForumAccessPolicy $actor,string $id,array $body): array
-    { $status=$body['status']??null;if(!in_array($status,['resolved','dismissed'],true))throw new ForumException('Некорректный статус.');return $this->write($actor,function()use($actor,$id,$status){$this->repo->resolve($id,$actor->userId,$status);$this->tx->audit('forum.conversation.report.resolve',$actor->userId,['report_id'=>$id,'status'=>$status]);return ['status'=>$status];},true); }
+    { $status=$body['status']??null;if(!in_array($status,['resolved','dismissed'],true))throw new ForumException('Некорректный статус.');
+        $reason=V::text($body['reason']??'','reason',500,0);
+        $sanction=$body['sanction']??null;
+        if($sanction!==null&&(!is_array($sanction)||$status!=='resolved'||$reason===''))throw new ForumException('Для санкции требуется решение и причина.');
+        return $this->write($actor,function()use($actor,$id,$status,$reason,$sanction){
+            $r=$this->repo->reportDetail($id);
+            if($r['status']!=='open')throw new ForumException('Жалоба уже обработана.',409);
+            $issued=null;
+            if($sanction!==null){
+                if($r['author_id']===null)throw new ForumException('Автор недоступен.',409);
+                $issued=$this->tx->sanctions()->issue($actor,$r['author_id'],['reason'=>$reason,'board_id'=>null]+$sanction);
+            }
+            $this->repo->resolve($id,$actor->userId,$status,$reason,$issued['id']??null);
+            $this->tx->audit('forum.conversation.report.resolve',$actor->userId,['report_id'=>$id,'status'=>$status,'sanction_id'=>$issued['id']??null]);
+            return ['status'=>$status,'sanction_id'=>$issued['id']??null];
+        },true); }
 }
