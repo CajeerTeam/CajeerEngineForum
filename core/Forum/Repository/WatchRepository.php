@@ -36,7 +36,7 @@ final readonly class WatchRepository extends Repository
     public function boards(string $user,array $allowed,int $offset): array
     { return $this->rows('SELECT b.id,b.name,w.mode FROM ce_forum_board_watches w JOIN ce_forum_boards b ON b.id=w.board_id WHERE w.user_id=? AND '.$this->boardFilter('b.id',$allowed).' ORDER BY b.name,b.id LIMIT 25 OFFSET '.$offset,[$user]); }
     public function threadBoard(string $thread): ?string
-    { return $this->row('SELECT board_id FROM ce_forum_threads WHERE id=?',[$thread])['board_id']??null; }
+    { return $this->row('SELECT board_id FROM ce_forum_live_threads WHERE id=?',[$thread])['board_id']??null; }
     public function user(string $user): ?array
     { return $this->row('SELECT id,email,status,email_verified_at FROM ce_users WHERE id=?',[$user]); }
     public function lockUser(string $user): ?array
@@ -72,7 +72,7 @@ final readonly class WatchRepository extends Repository
         return array_column($rows,'id');
     }
     public function leased(string $token): array
-    { return $this->rows("SELECT d.*,p.thread_id,t.board_id AS current_board FROM ce_forum_mail_delivery d JOIN ce_forum_posts p ON p.id=d.post_id JOIN ce_forum_threads t ON t.id=p.thread_id WHERE d.lease_token=? AND d.state='pending' ORDER BY d.id",[$token]); }
+    { return $this->rows("SELECT d.*,p.thread_id,t.board_id AS current_board,p.deleted_at AS post_deleted,t.deleted_at AS thread_deleted FROM ce_forum_mail_delivery d JOIN ce_forum_posts p ON p.id=d.post_id JOIN ce_forum_threads t ON t.id=p.thread_id WHERE d.lease_token=? AND d.state='pending' ORDER BY d.id",[$token]); }
     public function complete(string $token,array $ids,string $state,int $now): int
     {
         $count=0;foreach($ids as $id)$count+=$this->query("UPDATE ce_forum_mail_delivery SET state=?,sent_at=?,lease_token=NULL,lease_until=0,last_error=NULL WHERE id=? AND lease_token=? AND state='pending'",[$state,$state==='sent'?$now:null,$id,$token])->rowCount();
@@ -103,7 +103,7 @@ final readonly class WatchRepository extends Repository
     public function stats(string $user,array $allowed): array
     {
         $counts=array_fill_keys(['pending','sent','cancelled','dead'],0);
-        foreach($this->rows('SELECT d.state,COUNT(*) AS total FROM ce_forum_mail_delivery d JOIN ce_forum_posts p ON p.id=d.post_id JOIN ce_forum_threads t ON t.id=p.thread_id WHERE d.user_id=? AND '.$this->boardFilter('t.board_id',$allowed).' AND '.$this->boardFilter('d.board_id',$allowed).' GROUP BY d.state',[$user]) as $r)$counts[$r['state']]=(int)$r['total'];
+        foreach($this->rows('SELECT d.state,COUNT(*) AS total FROM ce_forum_mail_delivery d JOIN ce_forum_live_posts p ON p.id=d.post_id JOIN ce_forum_live_threads t ON t.id=p.thread_id WHERE d.user_id=? AND '.$this->boardFilter('t.board_id',$allowed).' AND '.$this->boardFilter('d.board_id',$allowed).' GROUP BY d.state',[$user]) as $r)$counts[$r['state']]=(int)$r['total'];
         return $counts;
     }
     public function cancel(string $kind,string $id,string $user): void

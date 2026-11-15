@@ -1272,6 +1272,54 @@ final class Operations {
     ),
     'bodyRequired' => false,
   ),
+  'get_Forum_recycleBin' => 
+  array (
+    'method' => 'GET',
+    'path' => '/forum/recycle-bin',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'page',
+        'in' => 'query',
+        'required' => false,
+      ),
+      1 => 
+      array (
+        'name' => 'kind',
+        'in' => 'query',
+        'required' => false,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
+  'get_Forum_recycleDetail' => 
+  array (
+    'method' => 'GET',
+    'path' => '/forum/recycle-bin/{kind}/{id}',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'kind',
+        'in' => 'path',
+        'required' => true,
+      ),
+      1 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+      2 => 
+      array (
+        'name' => 'page',
+        'in' => 'query',
+        'required' => false,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
   'get_Forum_relations' => 
   array (
     'method' => 'GET',
@@ -2833,6 +2881,27 @@ final class Operations {
     'parameters' => 
     array (
       0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => true,
+  ),
+  'post_Forum_recycleChange' => 
+  array (
+    'method' => 'POST',
+    'path' => '/forum/recycle-bin/{kind}/{id}',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'kind',
+        'in' => 'path',
+        'required' => true,
+      ),
+      1 => 
       array (
         'name' => 'id',
         'in' => 'path',

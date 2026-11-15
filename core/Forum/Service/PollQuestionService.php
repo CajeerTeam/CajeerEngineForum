@@ -36,7 +36,7 @@ final readonly class PollQuestionService
     private function closed(array $p): bool { return (int)$p['closed']===1||($p['closes_at']!==null&&(int)$p['closes_at']<=time()); }
     public function view(string $id,string $viewer): array
     {
-        $p=$this->repo->poll($id);$q=$this->repo->question($id);
+        $p=$this->repo->poll($id);$q=$this->repo->visibleQuestion($id);
         if($p!==null){
             $mine=$viewer===''?[]:$this->repo->choices($id,$viewer);$closed=$this->closed($p);
             $visible=$p['visibility']==='always'||$closed||($p['visibility']==='voted'&&$mine!==[]);

@@ -70,6 +70,7 @@ final readonly class WatchService
                 try{$allowed=NodePermissionService::allowed($this->tx->permissions()->access(new ForumAccessPolicy($user['id'],['*'])),'watch:use');}catch(ForumException $e){if($e->status!==401)throw $e;}
             }
             foreach($rows as $r){
+                if($r['post_deleted']!==null||$r['thread_deleted']!==null)continue;
                 if(!in_array($r['current_board'],$allowed,true)||!in_array($r['board_id'],$allowed,true))continue;
                 $kind=$r['source_kind'];$id=$kind==='thread'?$r['thread_id']:$r['board_id'];
                 if($kind==='board'&&$r['current_board']!==$r['board_id'])continue;

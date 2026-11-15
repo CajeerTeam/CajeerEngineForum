@@ -1,3 +1,10 @@
+## 0.5.1 — Soft Delete & Recycle Bin
+
+- Soft-delete forum topics and replies; restore original content and linked data with current node ACL.
+- Add moderator recycle bin, administrator-only purge, open-report protection and bounded retention worker.
+- Apply visibility to search, counters, activity, Q&A, notifications and attachment delivery.
+- Preserve migration history and verify 0.5.0 upgrade and rollback.
+
 # Changelog
 
 ## Forum Edition 0.5.0 — Content Platform Stable

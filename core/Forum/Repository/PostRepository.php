@@ -7,7 +7,7 @@ final readonly class PostRepository extends Repository
 {
     public function inThread(string $id, int $offset,string $viewer=''): array
     {
-        $rows=$this->rows("SELECT p.*,u.name AS author,u.status AS author_status, m.display_name,m.signature,COALESCE(pref.profile_visibility,'public') AS profile_visibility,CASE WHEN img.user_id IS NULL THEN 0 ELSE 1 END AS has_avatar,(SELECT COUNT(*) FROM ce_forum_reactions a WHERE a.post_id=p.id AND a.reaction_type='like') AS likes FROM ce_forum_posts p LEFT JOIN ce_users u ON u.id=p.author_id LEFT JOIN ce_forum_member_profiles m ON m.user_id=u.id LEFT JOIN ce_forum_member_preferences pref ON pref.user_id=u.id LEFT JOIN ce_forum_profile_images img ON img.user_id=u.id AND img.kind='avatar' WHERE p.thread_id=? ORDER BY p.ordinal LIMIT 25 OFFSET ".$offset,[$id]);
+        $rows=$this->rows("SELECT p.*,u.name AS author,u.status AS author_status, m.display_name,m.signature,COALESCE(pref.profile_visibility,'public') AS profile_visibility,CASE WHEN img.user_id IS NULL THEN 0 ELSE 1 END AS has_avatar,(SELECT COUNT(*) FROM ce_forum_reactions a WHERE a.post_id=p.id AND a.reaction_type='like') AS likes FROM ce_forum_live_posts p LEFT JOIN ce_users u ON u.id=p.author_id LEFT JOIN ce_forum_member_profiles m ON m.user_id=u.id LEFT JOIN ce_forum_member_preferences pref ON pref.user_id=u.id LEFT JOIN ce_forum_profile_images img ON img.user_id=u.id AND img.kind='avatar' WHERE p.thread_id=? ORDER BY p.ordinal LIMIT 25 OFFSET ".$offset,[$id]);
         $show=$viewer===''|| (int)(new ProfileRepository($this->db))->preferences($viewer)['show_signatures']===1;
         $counts=[];$mine=[];$ignored=[];
         if($rows){
@@ -36,7 +36,7 @@ final readonly class PostRepository extends Repository
         // Only current-thread references are resolved. Never look up titles or bodies elsewhere.
         if($quotes){
             $pages=[];$ids=array_keys($quotes);$in=implode(',',array_fill(0,count($ids),'?'));
-            foreach($this->rows("SELECT p.id,(SELECT COUNT(*) FROM ce_forum_posts q WHERE q.thread_id=p.thread_id AND q.ordinal<=p.ordinal) AS position FROM ce_forum_posts p WHERE p.thread_id=? AND p.id IN ($in)",[$id,...$ids]) as $q)$pages[$q['id']]=1+intdiv((int)$q['position']-1,25);
+            foreach($this->rows("SELECT p.id,(SELECT COUNT(*) FROM ce_forum_live_posts q WHERE q.thread_id=p.thread_id AND q.ordinal<=p.ordinal) AS position FROM ce_forum_live_posts p WHERE p.thread_id=? AND p.id IN ($in)",[$id,...$ids]) as $q)$pages[$q['id']]=1+intdiv((int)$q['position']-1,25);
             foreach($rows as &$row)$row['body_html']=preg_replace_callback('/href="#post-([a-f0-9-]{36})"/',static fn($m)=>isset($pages[$m[1]])?'href="/forum/threads/'.$id.'?page='.$pages[$m[1]].'#post-'.$m[1].'"':'', $row['body_html'])??$row['body_html'];unset($row);
         }
         return $rows;
@@ -44,9 +44,9 @@ final readonly class PostRepository extends Repository
     public function findForWrite(string $id): ?array
     {
         if (!$this->db->connection()->inTransaction()) throw new \LogicException('Forum post lock requires a transaction');
-        return $this->row('SELECT * FROM ce_forum_posts WHERE id=?'.($this->db->driver() === 'sqlite' ? '' : ' FOR UPDATE'), [$id]);
+        return $this->row('SELECT * FROM ce_forum_posts WHERE id=? AND deleted_at IS NULL'.($this->db->driver() === 'sqlite' ? '' : ' FOR UPDATE'), [$id]);
     }
-    public function firstId(string $thread): ?string { return $this->row('SELECT id FROM ce_forum_posts WHERE thread_id=? ORDER BY ordinal LIMIT 1',[$thread])['id']??null; }
+    public function firstId(string $thread): ?string { return $this->row('SELECT id FROM ce_forum_live_posts WHERE thread_id=? ORDER BY ordinal LIMIT 1',[$thread])['id']??null; }
     public function nextOrdinal(string $thread): int
     {
         // The caller holds the thread lock. A locking read also avoids stale
@@ -60,7 +60,7 @@ final readonly class PostRepository extends Repository
     {
         if (!$this->db->connection()->inTransaction() || $count<1) throw new \LogicException('Read sequence requires a locked thread and positive count');
         $this->query('UPDATE ce_forum_threads SET read_sequence=read_sequence+? WHERE id=?',[$count,$thread]);
-        return (int)$this->query('SELECT read_sequence FROM ce_forum_threads WHERE id=?',[$thread])->fetchColumn();
+        return (int)$this->query('SELECT read_sequence FROM ce_forum_live_threads WHERE id=?',[$thread])->fetchColumn();
     }
     public function insert(string $id, string $thread, string $actor, string $body, int $ordinal, string $format='plain'): void
     {

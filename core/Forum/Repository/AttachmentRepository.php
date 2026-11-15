@@ -34,10 +34,10 @@ final readonly class AttachmentRepository extends Repository
     public function bind(string $kind,string $target,string $id,string $user,int $now): bool
     { $column=$kind==='post'?'post_id':'message_id';return $this->query("UPDATE ce_forum_attachments SET $column=?,expires_at=0 WHERE id=? AND owner_id=? AND post_id IS NULL AND message_id IS NULL AND expires_at>?",[$target,$id,$user,$now])->rowCount()===1; }
     public function post(string $id): ?array
-    {return $this->row('SELECT p.id,p.author_id,p.thread_id,t.board_id,t.locked FROM ce_forum_posts p JOIN ce_forum_threads t ON t.id=p.thread_id WHERE p.id=?',[$id]);}
+    {return $this->row('SELECT p.id,p.author_id,p.thread_id,t.board_id,t.locked FROM ce_forum_live_posts p JOIN ce_forum_live_threads t ON t.id=p.thread_id WHERE p.id=?',[$id]);}
     /** Called only after the parent thread has been locked and edit ACL checked. */
     public function postContent(string $id): ?array
-    {return $this->row('SELECT id,author_id,body,body_format,revision_number FROM ce_forum_posts WHERE id=?',[$id]);}
+    {return $this->row('SELECT id,author_id,body,body_format,revision_number FROM ce_forum_live_posts WHERE id=?',[$id]);}
     public function message(string $id): ?array
     {return $this->row('SELECT id,author_id,conversation_id,message_sequence FROM ce_forum_conversation_messages WHERE id=?',[$id]);}
     public function delete(string $id): void {$this->query('DELETE FROM ce_forum_attachments WHERE id=?',[$id]);}

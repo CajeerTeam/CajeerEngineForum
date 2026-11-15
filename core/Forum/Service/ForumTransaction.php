@@ -31,6 +31,7 @@ final readonly class ForumTransaction
 
     public function enqueueWatchNotification(string $actor,string $post,array $recipients): void { (new \CajeerEngine\Forum\Repository\NotificationRepository($this->db))->enqueue('reply',$actor,$post,$recipients,null,'board'); }
     public function revisions(): \CajeerEngine\Forum\Repository\RevisionRepository { return new \CajeerEngine\Forum\Repository\RevisionRepository($this->db); }
+    public function recycle(): RecycleBinService { return new RecycleBinService($this,new \CajeerEngine\Forum\Repository\RecycleBinRepository($this->db),new \CajeerEngine\Forum\Repository\BoardRepository($this->db)); }
     public function drafts(): DraftService { return new DraftService($this,new \CajeerEngine\Forum\Repository\DraftRepository($this->db),new \CajeerEngine\Forum\Repository\AttachmentRepository($this->db),new \CajeerEngine\Forum\Repository\BoardRepository($this->db),new \CajeerEngine\Forum\Repository\ThreadRepository($this->db),new \CajeerEngine\Forum\Repository\ConversationRepository($this->db)); }
     public function polls(): PollQuestionService { return new PollQuestionService($this,new \CajeerEngine\Forum\Repository\PollQuestionRepository($this->db),new \CajeerEngine\Forum\Repository\ThreadRepository($this->db),new \CajeerEngine\Forum\Repository\BoardRepository($this->db),new \CajeerEngine\Forum\Repository\PostRepository($this->db)); }
     public function media(): ForumMediaService { return new ForumMediaService($this,new \CajeerEngine\Forum\Repository\AttachmentRepository($this->db),new \CajeerEngine\Forum\Repository\ForumMediaRepository($this->db)); }
@@ -48,7 +49,7 @@ final readonly class ForumTransaction
 
     public function groups(): GroupService { return new GroupService($this,new \CajeerEngine\Forum\Repository\GroupRepository($this->db),new \CajeerEngine\Database\Repository\RoleRepository($this->db),new \CajeerEngine\Forum\Repository\BoardRepository($this->db)); }
 
-    public function audit(string $event, string $actor, array $context): void
+    public function audit(string $event, ?string $actor, array $context): void
     {
         if (!$this->db->connection()->inTransaction()) throw new \LogicException('Forum audit requires a transaction');
         $this->audit->record($event, $actor, $context);

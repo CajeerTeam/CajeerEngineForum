@@ -22,6 +22,8 @@ assert db.execute('SELECT mode FROM ce_forum_watches').fetchone()==('internal',)
 assert db.execute('SELECT subscription_kind FROM ce_forum_notifications').fetchone()==(None,)
 assert db.execute('SELECT COUNT(*) FROM ce_forum_mail_delivery').fetchone()==(0,)
 assert db.execute('SELECT body FROM ce_forum_posts').fetchone()==('Original',)
+for later in sorted((ROOT/'migrations/sqlite').glob('*.sql')):
+    if later.name[:4]>'0025':db.executescript(later.read_text())
 # Execute the actual set-based notification SQL, with the same bind order as PHP.
 notify=(ROOT/'core/Forum/Repository/NotificationRepository.php').read_text()
 reply_sql=re.search(r'\$this->query\("(INSERT INTO ce_forum_notifications\(event_id,recipient_id,actor_id,post_id,kind,subscription_kind\).*?)",\[Uuid::v4\(\)',notify).group(1).replace('$uuid','?')

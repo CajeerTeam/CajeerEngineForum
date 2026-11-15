@@ -12,21 +12,21 @@ final readonly class ActivityRepository extends Repository
     public function stats(string $id,array $publicBoards): array
     {
         $filter=$this->boardFilter('t.board_id',$publicBoards);
-        $p=$this->row('SELECT COUNT(*) AS posts FROM ce_forum_posts p JOIN ce_forum_threads t ON t.id=p.thread_id WHERE p.author_id=? AND '.$filter,[$id]);
-        $t=$this->row('SELECT COUNT(*) AS threads FROM ce_forum_threads t WHERE t.author_id=? AND '.$filter,[$id]);
-        $r=$this->row('SELECT COUNT(*) AS reactions,COALESCE(SUM('.self::SCORE.'),0) AS reputation FROM ce_forum_reactions r JOIN ce_forum_posts p ON p.id=r.post_id JOIN ce_forum_threads t ON t.id=p.thread_id JOIN ce_users u ON u.id=r.user_id AND u.status=\'active\' WHERE p.author_id=? AND r.user_id<>p.author_id AND '.$filter,[$id]);
+        $p=$this->row('SELECT COUNT(*) AS posts FROM ce_forum_live_posts p JOIN ce_forum_live_threads t ON t.id=p.thread_id WHERE p.author_id=? AND '.$filter,[$id]);
+        $t=$this->row('SELECT COUNT(*) AS threads FROM ce_forum_live_threads t WHERE t.author_id=? AND '.$filter,[$id]);
+        $r=$this->row('SELECT COUNT(*) AS reactions,COALESCE(SUM('.self::SCORE.'),0) AS reputation FROM ce_forum_reactions r JOIN ce_forum_live_posts p ON p.id=r.post_id JOIN ce_forum_live_threads t ON t.id=p.thread_id JOIN ce_users u ON u.id=r.user_id AND u.status=\'active\' WHERE p.author_id=? AND r.user_id<>p.author_id AND '.$filter,[$id]);
         return ['posts'=>(int)$p['posts'],'threads'=>(int)$t['threads'],'reactions'=>(int)$r['reactions'],'reputation'=>(int)$r['reputation']];
     }
     public function leaderboard(array $publicBoards,int $offset): array
     {
-        $sql="SELECT u.id,COALESCE(NULLIF(m.display_name,''),u.name) AS name,SUM(".self::SCORE.") AS reputation,COUNT(*) AS reactions FROM ce_forum_reactions r JOIN ce_forum_posts p ON p.id=r.post_id JOIN ce_forum_threads t ON t.id=p.thread_id JOIN ce_users u ON u.id=p.author_id AND u.status='active' JOIN ce_users voter ON voter.id=r.user_id AND voter.status='active' LEFT JOIN ce_forum_member_preferences pref ON pref.user_id=u.id LEFT JOIN ce_forum_member_profiles m ON m.user_id=u.id WHERE r.user_id<>p.author_id AND ".self::PUBLIC_PROFILE.' AND '.$this->boardFilter('t.board_id',$publicBoards).' GROUP BY u.id,u.name,m.display_name ORDER BY reputation DESC,u.id LIMIT 25 OFFSET '.$offset;
+        $sql="SELECT u.id,COALESCE(NULLIF(m.display_name,''),u.name) AS name,SUM(".self::SCORE.") AS reputation,COUNT(*) AS reactions FROM ce_forum_reactions r JOIN ce_forum_live_posts p ON p.id=r.post_id JOIN ce_forum_live_threads t ON t.id=p.thread_id JOIN ce_users u ON u.id=p.author_id AND u.status='active' JOIN ce_users voter ON voter.id=r.user_id AND voter.status='active' LEFT JOIN ce_forum_member_preferences pref ON pref.user_id=u.id LEFT JOIN ce_forum_member_profiles m ON m.user_id=u.id WHERE r.user_id<>p.author_id AND ".self::PUBLIC_PROFILE.' AND '.$this->boardFilter('t.board_id',$publicBoards).' GROUP BY u.id,u.name,m.display_name ORDER BY reputation DESC,u.id LIMIT 25 OFFSET '.$offset;
         return $this->rows($sql);
     }
     public function feed(string $viewer,string $scope,array $boards,int $offset): array
     {
         $uid=$viewer===''?null:$viewer;
         // SQL applies ACL, profile/activity visibility and relationship filters BEFORE pagination.
-        $sql="SELECT p.id AS post_id,p.thread_id,p.ordinal,p.created_at,t.title,t.board_id,u.id AS author_id,COALESCE(NULLIF(m.display_name,''),u.name) AS author FROM ce_forum_posts p JOIN ce_forum_threads t ON t.id=p.thread_id JOIN ce_users u ON u.id=p.author_id AND u.status='active' LEFT JOIN ce_forum_member_preferences pref ON pref.user_id=u.id LEFT JOIN ce_forum_member_profiles m ON m.user_id=u.id WHERE ".$this->boardFilter('t.board_id',$boards)." AND (u.id=? OR ((COALESCE(pref.profile_visibility,'public')='public' OR (pref.profile_visibility='members' AND ?=1)) AND (COALESCE(pref.activity_visibility,'public')='public' OR (pref.activity_visibility='members' AND ?=1))))";
+        $sql="SELECT p.id AS post_id,p.thread_id,p.ordinal,p.created_at,t.title,t.board_id,u.id AS author_id,COALESCE(NULLIF(m.display_name,''),u.name) AS author FROM ce_forum_live_posts p JOIN ce_forum_live_threads t ON t.id=p.thread_id JOIN ce_users u ON u.id=p.author_id AND u.status='active' LEFT JOIN ce_forum_member_preferences pref ON pref.user_id=u.id LEFT JOIN ce_forum_member_profiles m ON m.user_id=u.id WHERE ".$this->boardFilter('t.board_id',$boards)." AND (u.id=? OR ((COALESCE(pref.profile_visibility,'public')='public' OR (pref.profile_visibility='members' AND ?=1)) AND (COALESCE(pref.activity_visibility,'public')='public' OR (pref.activity_visibility='members' AND ?=1))))";
         $params=[$uid,$viewer===''?0:1,$viewer===''?0:1];
         if($scope==='mine'){$sql.=' AND p.author_id=?';$params[]=$uid;}
         if($scope==='following'){$sql.=" AND EXISTS (SELECT 1 FROM ce_forum_member_relations f WHERE f.user_id=? AND f.target_id=p.author_id AND f.kind='follow')";$params[]=$uid;}

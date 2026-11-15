@@ -90,7 +90,7 @@ final readonly class DiscussionManagementService
                 $this->repo->appendAll($source,$target,$this->posts->nextOrdinal($target)-1);
                 $this->repo->mergeWatches($source,$target);
                 $this->repo->redirect($source,$threads[$source]['board_id'],$target);
-                $this->threads->moderate($source,'delete');
+                $this->threads->moderate($source,'purge');
             }
             $this->threads->touch($target);
             $this->tx->audit('forum.thread.merge',$actor->userId,['target_id'=>$target,'source_ids'=>$sources]);

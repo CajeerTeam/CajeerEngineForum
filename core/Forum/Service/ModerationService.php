@@ -49,15 +49,17 @@ final readonly class ModerationService
             return $id;
         });
     }
-    public function moderate(ForumAccessPolicy $actor, string $id, string $action): string
+    public function recycle(): RecycleBinService { return $this->tx->recycle(); }
+    public function moderate(ForumAccessPolicy $actor, string $id, string $action, string $reason=''): string
     {
         $id = V::id($id);
         $actor->require('forum:moderate');
         if (!in_array($action,['lock','unlock','pin','unpin','delete'],true)) throw new ForumException('Неизвестное действие.');
+        if($action==='delete'){ $this->tx->recycle()->change($actor,'thread',$id,'delete',$reason); return $id; }
         return $this->tx->write(function () use ($actor,$id,$action) {
             $thread=$this->threads->lockThread($id) ?? throw new ForumException('Тема не найдена.',404);
             $this->tx->permissions()->assertWrite($actor,$thread['board_id'],'thread:moderate');
-            if($action!=='delete')$this->tx->notifications()->moderated($actor->userId,$thread,$action);
+            $this->tx->notifications()->moderated($actor->userId,$thread,$action);
             $this->threads->moderate($id,$action);
             $this->tx->audit('forum.moderate',$actor->userId,['thread_id'=>$id,'action'=>$action]);
             return $id;

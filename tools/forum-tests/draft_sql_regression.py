@@ -11,7 +11,7 @@ def sql(prefix):
 def connect(path):
     db=sqlite3.connect(path,timeout=20);db.execute('PRAGMA foreign_keys=ON');return db
 with tempfile.TemporaryDirectory(prefix='forum-drafts-') as temp:
-    path=Path(temp)/'db.sqlite';db=connect(path);files=sorted((ROOT/'migrations/sqlite').glob('*.sql'));assert files[-1].name=='0032_forum_drafts_revisions.sql'
+    path=Path(temp)/'db.sqlite';db=connect(path);files=sorted(f for f in (ROOT/'migrations/sqlite').glob('*.sql') if f.name[:4]<='0032');assert files[-1].name=='0032_forum_drafts_revisions.sql'
     for f in files[:-1]:db.executescript(f.read_text())
     a,b,t,p,c,m,d,attachment=[uid() for _ in range(8)];board='22222222-2222-4222-8222-222222222222'
     for user in (a,b):db.execute('INSERT INTO ce_users(id,email,name,password_hash) VALUES(?,?,?,?)',(user,user+'@example.test','Member','test'))

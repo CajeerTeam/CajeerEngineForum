@@ -28,6 +28,8 @@ for board in (public,private):
  db.execute('INSERT INTO ce_forum_reactions(post_id,user_id) VALUES(?,?)',(p,b))
 db.commit();db.executescript(files[-1].read_text())
 assert [r[0] for r in db.execute('SELECT reaction_type FROM ce_forum_reactions')]==['like','like']
+for f in sorted((ROOT/'migrations/sqlite').glob('*.sql')):
+ if f.name[:4]>'0027':db.executescript(f.read_text())
 source=(ROOT/'core/Forum/Repository/ActivityRepository.php').read_text()
 # Extract the literal SQL fragments used by the PHP repository and substitute its server-resolved filters.
 score=re.search(r'private const SCORE="(.*?)";',source).group(1)

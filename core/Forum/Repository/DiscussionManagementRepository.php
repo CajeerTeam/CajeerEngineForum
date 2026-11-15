@@ -8,7 +8,7 @@ final readonly class DiscussionManagementRepository extends Repository
     public function moveThread(string $id,string $board): void
     { $this->query('UPDATE ce_forum_threads SET board_id=? WHERE id=?',[$board,$id]); }
     public function selectedPosts(string $thread,array $ids): array
-    { return $this->rows('SELECT id,author_id,ordinal,created_at FROM ce_forum_posts WHERE thread_id=? AND id IN ('.implode(',',array_fill(0,count($ids),'?')).') ORDER BY ordinal',[$thread,...$ids]); }
+    { return $this->rows('SELECT id,author_id,ordinal,created_at FROM ce_forum_live_posts WHERE thread_id=? AND id IN ('.implode(',',array_fill(0,count($ids),'?')).') ORDER BY ordinal',[$thread,...$ids]); }
     public function appendAll(string $source,string $target,int $offset): void
     {
         $count=(int)$this->query('SELECT MAX(ordinal) FROM ce_forum_posts WHERE thread_id=?',[$source])->fetchColumn();

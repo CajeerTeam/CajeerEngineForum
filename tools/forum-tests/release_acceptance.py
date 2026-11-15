@@ -275,6 +275,18 @@ def verify_content(base, state, fixture, f):
     print('PASS content platform snapshot: drafts, receipts, revisions, poll votes, Q&A, originals, derivatives and private history',flush=True)
 
 
+def verify_recycle(base,state,fixture,f):
+    c=Client(base);admin=state[0];token=fixture['token'];poll='/forum/threads/'+f['poll'];path='/forum/recycle-bin/thread/'+f['poll']
+    generation=c.call('POST',path,200,{'action':'delete','reason':'Acceptance restore'},token=admin)['deletion_id']
+    c.call('GET',poll,404,token=token);c.call('GET','/forum/attachments/'+f['image'],404,token=token)
+    c.call('GET','/forum/posts/'+f['post']+'/revisions',404,token=token)
+    require(c.call('GET',path,token=admin)['posts'][0]['id']==f['post'],'Trash lost original message')
+    c.call('PUT',poll+'/poll/vote',404,{'choices':[1]},token=admin)
+    c.call('POST',path,200,{'action':'restore','deletion_id':generation},token=admin)
+    verify_content(base,state,fixture,f)
+    print('PASS recycle on existing content: same UUID, revisions, votes, attachment, derivative and receipt',flush=True)
+
+
 def verify_groups(base,state):
     token, _, _, member=state; c=Client(base)
     groups=c.call('GET','/forum/groups',token=token)
@@ -316,7 +328,7 @@ def verify_navigation(base,state):
 
 
 def seed_structure(base, state):
-    """Create real 0.4.5 structure before updating, not just after the upgrade."""
+    """Create real 0.5.0 structure before updating, not just after the upgrade."""
     admin, _, _, member = state
     c=Client(base)
     member_group=next(g['id'] for g in c.call('GET','/forum/groups',token=admin) if g['handle']=='forum-member')
@@ -418,7 +430,7 @@ def verify_read_tracking(base, state):
 
 def verify_notifications(base, state, fixture):
     c=Client(base); admin,thread,post,_=state
-    # The original 0.4.5 topic has no synthetic historical notifications.
+    # The original 0.5.0 topic has no synthetic historical notifications.
     path='/forum/notifications'
     c.call('POST','/queue/work',200,{'limit':10},token=admin)
     c.call('POST',path+'/read',200,{'all':True},token=admin)
@@ -629,7 +641,7 @@ def verify_community_live(base,f):
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--artifact',type=Path,required=True)
-    parser.add_argument('--previous',type=Path,help='Original 0.4.5 dist; enables real signed upgrade and rollback')
+    parser.add_argument('--previous',type=Path,help='Original 0.5.0 dist; enables real signed upgrade and rollback')
     parser.add_argument('--driver',choices=('sqlite','pgsql'),default='sqlite')
     parser.add_argument('--report',type=Path,required=True)
     args=parser.parse_args(); report=args.report.resolve(); report.mkdir(parents=True,exist_ok=True)
@@ -638,7 +650,7 @@ def main():
         work=Path(tmp); port=free_port()
         # With --previous use the authentic baseline for upgrade, not a relabelled current tree.
         previous=args.previous.resolve() if args.previous else None
-        initial='0.4.5' if previous else current
+        initial='0.5.0' if previous else current
         site=unpack(previous or artifact,work/'live',initial)
         install(site,env,report,'initial',port,args.driver)
         with http(site,env,report,'initial',port,initial) as base:
@@ -668,6 +680,7 @@ def main():
                 verify_media(base,state,fixture,media)
                 verify_polls_questions(base,state,fixture)
                 verify_drafts_revisions(base,state)
+                verify_recycle(base,state,fixture,content)
         if previous:
             key=work/'backup.key'; secret=work/'release.secret'; public=work/'release.public'
             run(site,env,report,'backup-key',['php','bin/cajeer','backup:keygen','--key='+str(key)])
@@ -695,6 +708,7 @@ def main():
                 verify_media(base,state,fixture,media)
                 verify_polls_questions(base,state,fixture)
                 verify_drafts_revisions(base,state)
+                verify_recycle(base,state,fixture,content)
             run(site,env,report,'rollback',['php','bin/cajeer','update:rollback','--yes','--json'],timeout=600)
             require(version(site)==initial,'Rollback did not restore release')
             with http(site,env,report,'rollback',port,initial) as base:

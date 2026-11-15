@@ -121,6 +121,10 @@ try {
     $moderation->moderate($a,$t,'unlock');
     check($runner->run($driver)['applied']===0 && $discussion->thread($t,0)['posts'][0]['body']==='Moderator edit','existing migration ledger and data unchanged');
     $moderation->moderate($a,$t,'delete');
+    expectStatus(404,fn()=>$discussion->thread($t,0,$m));
+    $moderation->recycle()->change($a,'thread',$t,'restore','',$moderation->recycle()->detail($a,'thread',$t)['item']['deletion_id']);
+    check(count($discussion->thread($t,0)['posts'])===21,'restore preserves all posts');
+    $moderation->moderate($a,$t,'delete');$moderation->recycle()->change($a,'thread',$t,'purge','',$moderation->recycle()->detail($a,'thread',$t)['item']['deletion_id']);
     foreach(['ce_forum_posts','ce_forum_reactions','ce_forum_watches','ce_forum_reports'] as $table) check((int)$pdo->query('SELECT COUNT(*) FROM '.$table)->fetchColumn()===0,'cascade '.$table);
     // Real topology operations, preserving content and enforcing inherited publication state.
     $nodes=$discussion->nodes();$cat=$nodes->createCategory($a,'Node category','');$other=$nodes->createCategory($a,'Destination','');
@@ -156,7 +160,7 @@ try {
     $nodes->updateBoard($a,$child,'Child','','forum','open');$discussion->reply($m,$topic,'Open again');
     $nodes->updateCategory($a,$other,'Renamed destination','Updated',0);
     check($discussion->index()['categories'][0]['id']===$other,'category rename and reorder');
-    $moderation->moderate($a,$topic,'delete');$nodes->delete($a,$nested,false);$nodes->delete($a,$child,false);$nodes->delete($a,$other,true);
+    $moderation->moderate($a,$topic,'delete');$moderation->recycle()->change($a,'thread',$topic,'purge','',$moderation->recycle()->detail($a,'thread',$topic)['item']['deletion_id']);$nodes->delete($a,$nested,false);$nodes->delete($a,$child,false);$nodes->delete($a,$other,true);
     check(!in_array($other,array_column($discussion->index()['categories'],'id'),true),'empty nodes removed safely');
     // Discussion management uses the same real transactions and audit log on both drivers.
     $management=$discussion->management();
@@ -241,7 +245,7 @@ try {
     touch($barrier);
     foreach ($workers as [$proc,$log]) check(proc_close($proc)===0,'report/delete worker '.file_get_contents($log));
     expectStatus(404,fn()=> $discussion->thread($raceThread,0));
-    expectStatus(404,fn()=> $moderation->resolve($a,$raceReport));
+    $moderation->resolve($a,$raceReport);$moderation->recycle()->change($a,'thread',$raceThread,'purge','',$moderation->recycle()->detail($a,'thread',$raceThread)['item']['deletion_id']);
     check((new \CajeerEngine\Forum\ForumIntegrityCheck($db))->check()['ok'],'forum data integrity after concurrent moderation');
 
     // Exercise actual service, transaction, live ACL, and quotas on both DB drivers.
@@ -281,11 +285,11 @@ try {
     $history=$discussion->revisionHistory($m,$dp['id']);check(count($history)===2&&$history[0]['body']==='Second version','revision history contains original and edit');
     $discussion->restoreRevision($m,$dp['id'],1,2);check($discussion->thread($published['id'],0,$m)['posts'][0]['body']==='New draft text','restore through actual edit service');
     check(count($discussion->revisionHistory($m,$dp['id']))===3,'restore is a new revision');
-    $moderation->moderate($a,$published['id'],'delete');
+    $moderation->moderate($a,$published['id'],'delete');$moderation->recycle()->change($a,'thread',$published['id'],'purge','',$moderation->recycle()->detail($a,'thread',$published['id'])['item']['deletion_id']);
     check((int)$pdo->query("SELECT COUNT(*) FROM ce_forum_post_revisions WHERE post_id=".$pdo->quote($dp['id']))->fetchColumn()===0,'revision cascade');
 
     if($driver==='sqlite')check($pdo->query('PRAGMA foreign_key_check')->fetchAll()===[],'foreign keys intact');
-    $v=new ForumVersion($root);check($v->current()==='0.5.0' && $v->upstream()==='1.3.0','independent product/core versions');
+    $v=new ForumVersion($root);check($v->current()==='0.5.1' && $v->upstream()==='1.3.0','independent product/core versions');
     echo "Forum core regression passed\n";
 } finally {
     unset($db,$discussion,$engagement,$moderation,$registration,$pdo,$runner);

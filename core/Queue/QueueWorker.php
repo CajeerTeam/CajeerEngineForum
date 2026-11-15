@@ -26,7 +26,7 @@ final class QueueWorker
         $root=$this->webhooks->rootPath();$metrics=new \CajeerEngine\Observability\Metrics($root);\CajeerEngine\Observability\OperationsMonitor::marker($root,'worker','running');
         $processed=0;$failed=0;$errors=[];$lost=0;$signals=PHP_SAPI==='cli'&&function_exists('pcntl_signal')&&function_exists('pcntl_alarm');
         if($signals){$async=pcntl_async_signals(true);$old=[];foreach([SIGTERM,SIGINT,SIGALRM]as $s)$old[$s]=pcntl_signal_get_handler($s);pcntl_signal(SIGTERM,fn()=> $this->stop());pcntl_signal(SIGINT,fn()=> $this->stop());pcntl_signal(SIGALRM,static function(){throw new \RuntimeException('Job execution timeout');});}
-        $forumProcessed=0;$attachmentsCleaned=0;$draftsCleaned=0;$mediaStats=['image'=>'disabled','replica'=>'disabled'];$mailStats=['sent'=>0,'failed'=>0,'cancelled'=>0];
+        $forumProcessed=0;$recyclePurged=0;$attachmentsCleaned=0;$draftsCleaned=0;$mediaStats=['image'=>'disabled','replica'=>'disabled'];$mailStats=['sent'=>0,'failed'=>0,'cancelled'=>0];
         try {
             // Poll the database outbox even when the external queue is empty. No enqueue/commit gap.
             if (($queue===null || $queue==='default') && $this->database!==null && $this->database->tableExists('ce_forum_notifications')) {
@@ -47,6 +47,10 @@ final class QueueWorker
             if (($queue===null || $queue==='default') && $this->database!==null && $this->database->tableExists('ce_forum_drafts') && !$this->stopping) {
                 try{$tx=new \CajeerEngine\Forum\Service\ForumTransaction($this->database,new \CajeerEngine\Database\Repository\AuditLogRepository($this->database));$draftsCleaned=$tx->drafts()->cleanup();}
                 catch(\Throwable $e){$failed++;$errors[]=['name'=>'forum.drafts.cleanup','error'=>'Draft cleanup failed'];}
+            }
+            if (($queue===null || $queue==='default') && $this->database!==null && $this->database->columnExists('ce_forum_threads','deleted_at') && !$this->stopping) {
+                try{$tx=new \CajeerEngine\Forum\Service\ForumTransaction($this->database,new \CajeerEngine\Database\Repository\AuditLogRepository($this->database));$recyclePurged=$tx->recycle()->cleanup();}
+                catch(\Throwable $e){$failed++;$errors[]=['name'=>'forum.recycle.purge','error'=>'Recycle bin cleanup failed'];}
             }
             if (($queue===null || $queue==='default') && $this->database!==null && $this->database->tableExists('ce_forum_attachments') && !$this->stopping) {
                 try{$tx=new \CajeerEngine\Forum\Service\ForumTransaction($this->database,new \CajeerEngine\Database\Repository\AuditLogRepository($this->database));$attachmentsCleaned=$tx->attachments()->cleanup();}
@@ -72,7 +76,7 @@ final class QueueWorker
             }
         }finally{if($signals){pcntl_alarm(0);foreach($old as $s=>$handler)pcntl_signal($s,$handler);pcntl_async_signals($async);}}
         \CajeerEngine\Observability\OperationsMonitor::marker($root,'worker',$failed?'failure':'success');
-        return ['processed'=>$processed,'forum_notifications_processed'=>$forumProcessed,'forum_mail'=>$mailStats,'forum_attachments_cleaned'=>$attachmentsCleaned,'forum_drafts_cleaned'=>$draftsCleaned,'forum_media'=>$mediaStats,'failed'=>$failed,'lost_reservations'=>$lost,'stopping'=>$this->stopping,'errors'=>$errors,'diagnostics'=>$this->queue->diagnostics()];
+        return ['processed'=>$processed,'forum_notifications_processed'=>$forumProcessed,'forum_mail'=>$mailStats,'forum_attachments_cleaned'=>$attachmentsCleaned,'forum_drafts_cleaned'=>$draftsCleaned,'forum_recycle_purged'=>$recyclePurged,'forum_media'=>$mediaStats,'failed'=>$failed,'lost_reservations'=>$lost,'stopping'=>$this->stopping,'errors'=>$errors,'diagnostics'=>$this->queue->diagnostics()];
     }
     private function logMessage(array $payload,JobContext $context): void
     {

@@ -994,6 +994,45 @@ export const operations = {
         ],
         "bodyRequired": false
     },
+    "get_Forum_recycleBin": {
+        "method": "GET",
+        "path": "/forum/recycle-bin",
+        "parameters": [
+            {
+                "name": "page",
+                "in": "query",
+                "required": false
+            },
+            {
+                "name": "kind",
+                "in": "query",
+                "required": false
+            }
+        ],
+        "bodyRequired": false
+    },
+    "get_Forum_recycleDetail": {
+        "method": "GET",
+        "path": "/forum/recycle-bin/{kind}/{id}",
+        "parameters": [
+            {
+                "name": "kind",
+                "in": "path",
+                "required": true
+            },
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            },
+            {
+                "name": "page",
+                "in": "query",
+                "required": false
+            }
+        ],
+        "bodyRequired": false
+    },
     "get_Forum_relations": {
         "method": "GET",
         "path": "/forum/member-relations",
@@ -2185,6 +2224,23 @@ export const operations = {
         "method": "POST",
         "path": "/forum/conversations/{id}/read",
         "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
+    },
+    "post_Forum_recycleChange": {
+        "method": "POST",
+        "path": "/forum/recycle-bin/{kind}/{id}",
+        "parameters": [
+            {
+                "name": "kind",
+                "in": "path",
+                "required": true
+            },
             {
                 "name": "id",
                 "in": "path",

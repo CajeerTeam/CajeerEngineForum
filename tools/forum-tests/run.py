@@ -343,6 +343,7 @@ class NetworkTests(unittest.TestCase):
         self.assertEqual('Preserved',c.call('GET',f'/forum/threads/{t}')['posts'][0]['body'])
         c.call('PATCH',f'/forum/boards/{root}',200,{**data,'node_type':'container','state':'open'},token=admin)
         c.call('POST',f'/forum/threads/{t}/moderate',200,{'action':'delete'},token=admin)
+        recycle_action(c,admin,'thread',t,'purge')
         c.call('DELETE',f'/forum/boards/{child}',200,token=admin)
         c.call('DELETE',f'/forum/boards/{root}',200,token=admin)
         c.call('DELETE',f'/forum/categories/{dest}',200,token=admin)
@@ -433,6 +434,7 @@ class NetworkTests(unittest.TestCase):
         c.call('PUT',policy,200,{'visibility':'private','rules':[]},token=admin)
         c.call('GET',url,404,token=other)
         c.call('POST',url+'/moderate',200,{'action':'delete'},token=admin)
+        recycle_action(c,admin,'thread',url.rsplit('/',1)[1],'purge')
         c.call('DELETE',f'/forum/boards/{board}',200,token=admin)
         c.call('DELETE',f'/forum/boards/{root}',200,token=admin)
         c.call('DELETE',f'/forum/categories/{category}',200,token=admin)
@@ -526,6 +528,7 @@ class NetworkTests(unittest.TestCase):
         self.assertIn(target,[x['id'] for x in c.call('GET','/forum/watches',token=admin)])
         c.call('POST',url(target)+'/moderate',200,{'action':'delete'},token=admin)
         c.call('GET',url(source),404,token=admin)
+        recycle_action(c,admin,'thread',target,'purge')
         c.call('DELETE',f'/forum/boards/{dest}',200,token=admin)
         c.call('DELETE',f'/forum/categories/{category}',200,token=admin)
 
@@ -663,6 +666,7 @@ class NetworkTests(unittest.TestCase):
         self.assertEqual(1,c.call('GET','/forum/threads/'+secret,token=member)['read_state']['unread_posts'])
         c.call('POST','/forum/threads/'+target+'/moderate',200,{'action':'delete'},token=admin)
         c.call('POST','/forum/threads/'+secret+'/moderate',200,{'action':'delete'},token=admin)
+        for tid in (target,secret):recycle_action(c,admin,'thread',tid,'purge')
         for b in (hidden,board,parent): c.call('DELETE',f'/forum/boards/{b}',200,token=admin)
         c.call('DELETE',f'/forum/categories/{category}',200,token=admin)
 
@@ -726,7 +730,9 @@ class NetworkTests(unittest.TestCase):
         c.call('PUT','/forum/posts/'+first+'/reaction',200,{'enabled':True},token=writer)
         drain();self.assertNotIn('reaction',[x['kind'] for x in c.call('GET',inbox,token=owner)['items']])
         self.assertEqual(0,c.call('POST',mark,200,{'all':True},token=owner)['unread'])
-        for thread in (t,target,secret):c.call('POST','/forum/threads/'+thread+'/moderate',200,{'action':'delete'},token=admin)
+        for thread in (t,target,secret):
+            c.call('POST','/forum/threads/'+thread+'/moderate',200,{'action':'delete'},token=admin)
+            recycle_action(c,admin,'thread',thread,'purge')
         self.assertEqual([],c.call('GET',inbox,token=owner)['items'])
         c.call('DELETE',f'/forum/boards/{board}',200,token=admin)
         c.call('DELETE',f'/forum/categories/{category}',200,token=admin)
@@ -781,7 +787,9 @@ class NetworkTests(unittest.TestCase):
         result=c.call('POST','/queue/work',200,{'limit':10},token=admin)
         self.assertEqual(1,result['forum_mail']['cancelled']);self.assertEqual(0,result['forum_mail']['sent'])
         c.call('PUT',acl,200,{'visibility':'public','rules':[]},token=admin)
-        for t in (thread,topic):c.call('POST','/forum/threads/'+t+'/moderate',200,{'action':'delete'},token=admin)
+        for t in (thread,topic):
+            c.call('POST','/forum/threads/'+t+'/moderate',200,{'action':'delete'},token=admin)
+            recycle_action(c,admin,'thread',t,'purge')
         c.call('DELETE',f'/forum/boards/{board}',200,token=admin)
         c.call('DELETE',f'/forum/categories/{cat}',200,token=admin)
 
@@ -886,6 +894,7 @@ class NetworkTests(unittest.TestCase):
         c.call('PUT',reaction,200,{'enabled':False},token=admin)
         self.assertEqual(0,c.call('GET',profile)['member']['reputation']['reputation'])
         c.call('POST',path+'/moderate',200,{'action':'delete'},token=admin)
+        recycle_action(c,admin,'thread',path.rsplit('/',1)[1],'purge')
         c.call('DELETE','/forum/boards/'+board,200,token=admin);c.call('DELETE','/forum/categories/'+cat,200,token=admin)
 
     def test_13_conversation_invitation_budget(self):
@@ -1037,6 +1046,27 @@ class NetworkTests(unittest.TestCase):
         # A draft cannot bypass revoked permission or a now-locked topic.
         rid=str(uuid.uuid4());rp='/forum/drafts/'+rid;rd={'scope':'reply','target_id':result['id'],'revision_number':0,'payload':{'body':'Pending answer','body_format':'plain','attachment_ids':[]}};c.call('PUT',rp,200,rd,token=member);c.call('POST',topic+'/moderate',200,{'action':'lock'},token=admin);c.call('POST',rp+'/publish',409,{'revision_number':1},token=member);self.assertIsNone(c.call('GET',rp,token=member)['result']);c.call('DELETE',rp,200,{'revision_number':1},token=member)
 
+    def test_19_recycle_bin(self):
+        c=Client(self.base);admin=c.login(ADMIN,ADMIN_PASSWORD)[0]['data']['access_token'];email=unique_email()
+        c.call('POST','/users',201,{'email':email,'name':'Recycle member','password':PASSWORD,'roles':['forum-member']},token=admin);member=c.login(email)[0]['data']['access_token']
+        board=c.call('GET','/forum')['boards'][0]['id'];title='Recycle '+uuid.uuid4().hex;path='/forum/threads/'
+        thread=c.call('POST','/forum/boards/'+board+'/threads',201,{'title':title,'body':'Question','kind':'question'},token=member)['id'];path+=thread
+        file=c.upload_attachment('recycle.txt',b'Recoverable bytes',member)['id'];reply=c.call('POST',path+'/posts',201,{'body':'Recoverable answer','attachment_ids':[file]},token=member)['id'];pp='/forum/posts/'+reply
+        c.call('PUT',path+'/accepted-answer',200,{'post_id':reply},token=member);c.call('PATCH',pp,200,{'body':'Edited recoverable answer','expected_revision':1},token=member)
+        report=c.call('POST',pp+'/report',201,{'reason':'Preserve evidence'},token=admin)['id']
+        trash='/forum/recycle-bin/post/'+reply;whole='/forum/recycle-bin/thread/'+thread
+        c.call('POST',trash,403,{'action':'delete'},token=member);c.call('POST','/forum/recycle-bin/post/'+c.call('GET',path)['first_post_id'],409,{'action':'delete'},token=admin)
+        deleted=c.call('POST',trash,200,{'action':'delete','reason':'Review'},token=admin);generation=deleted['deletion_id'];self.assertEqual('Edited recoverable answer',c.call('GET',trash,token=admin)['posts'][0]['body']);c.call('GET',trash,403,token=member)
+        self.assertIsNone(c.call('GET',path)['interaction']['question']['accepted_post_id']);self.assertNotIn(reply,[p['id'] for p in c.call('GET',path)['posts']]);c.call('GET',pp+'/revisions',404,token=member);c.call('GET','/forum/attachments/'+file,404,token=member)
+        c.call('POST',trash,409,{'action':'purge','deletion_id':generation},token=admin)
+        c.call('POST',whole,200,{'action':'delete'},token=admin);c.call('GET',path,404);c.call('GET',path,404,token=admin);c.call('POST',path+'/posts',404,{'body':'Cannot reply'},token=member)
+        self.assertNotIn(thread,[t['id'] for t in c.call('GET','/forum/search?q='+title,token=member)])
+        recycle_action(c,admin,'thread',thread,'restore');self.assertNotIn(reply,[p['id'] for p in c.call('GET',path)['posts']]);recycle_action(c,admin,'post',reply,'restore')
+        self.assertEqual(reply,c.call('GET',path)['interaction']['question']['accepted_post_id']);self.assertEqual(b'Recoverable bytes',c.download_attachment(file,member));self.assertEqual(2,len(c.call('GET',pp+'/revisions',token=member)))
+        c.call('POST',trash,200,{'action':'delete'},token=admin);c.call('POST',trash,409,{'action':'restore','deletion_id':generation},token=admin)
+        c.call('POST','/forum/reports/'+report+'/resolve',200,token=admin);recycle_action(c,admin,'post',reply,'purge');c.call('GET',trash,404,token=admin);c.call('GET','/forum/attachments/'+file,404,token=member)
+        c.call('POST',whole,200,{'action':'delete'},token=admin);recycle_action(c,admin,'thread',thread,'purge');c.call('GET',whole,404,token=admin)
+
     def test_99_rate_limit(self):
         # Run last: exhaust the real IP auth bucket without guessing credentials.
         c = Client(self.base)
@@ -1048,6 +1078,12 @@ class NetworkTests(unittest.TestCase):
             c.request('GET', '/auth/me', 401)
         _, headers = c.request('GET', '/auth/me', 429)
         self.assertGreater(int(headers['Retry-After']), 0)
+
+
+def recycle_action(c,token,kind,id,action):
+    path='/forum/recycle-bin/'+kind+'/'+id
+    generation=c.call('GET',path,token=token)['item']['deletion_id']
+    return c.call('POST',path,200,{'action':action,'deletion_id':generation},token=token)
 
 
 class BrowserTests(unittest.TestCase):

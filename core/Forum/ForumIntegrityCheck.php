@@ -43,6 +43,13 @@ final readonly class ForumIntegrityCheck
                 'invalid_achievement_rule'=> "SELECT COUNT(*) FROM ce_forum_achievement_rules WHERE code NOT IN ('first_post','active_member','topic_author','helpful_member','veteran') OR threshold<1 OR threshold>1000000 OR enabled NOT IN (0,1)",
                 'missing_achievement_rule'=> "SELECT 5-COUNT(*) FROM ce_forum_achievement_rules WHERE code IN ('first_post','active_member','topic_author','helpful_member','veteran')",
 
+                'invalid_thread_delete_metadata'=> 'SELECT COUNT(*) FROM ce_forum_threads WHERE (deleted_at IS NULL AND (deleted_by IS NOT NULL OR delete_reason IS NOT NULL OR deletion_id IS NOT NULL)) OR (deleted_at IS NOT NULL AND (deleted_at<1 OR deleted_by IS NULL OR delete_reason IS NULL OR deletion_id IS NULL))',
+                'invalid_post_delete_metadata'=> 'SELECT COUNT(*) FROM ce_forum_posts WHERE (deleted_at IS NULL AND (deleted_by IS NOT NULL OR delete_reason IS NOT NULL OR deletion_id IS NOT NULL)) OR (deleted_at IS NOT NULL AND (deleted_at<1 OR deleted_by IS NULL OR delete_reason IS NULL OR deletion_id IS NULL))',
+                'invalid_live_threads'=> 'SELECT COUNT(*) FROM ce_forum_live_threads WHERE deleted_at IS NOT NULL',
+                'invalid_live_posts'=> 'SELECT COUNT(*) FROM ce_forum_live_posts p JOIN ce_forum_threads t ON t.id=p.thread_id WHERE p.deleted_at IS NOT NULL OR t.deleted_at IS NOT NULL',
+                'missing_live_threads'=> 'SELECT COUNT(*) FROM ce_forum_threads t WHERE t.deleted_at IS NULL AND NOT EXISTS (SELECT 1 FROM ce_forum_live_threads v WHERE v.id=t.id)',
+                'missing_live_posts'=> 'SELECT COUNT(*) FROM ce_forum_posts p JOIN ce_forum_threads t ON t.id=p.thread_id WHERE p.deleted_at IS NULL AND t.deleted_at IS NULL AND NOT EXISTS (SELECT 1 FROM ce_forum_live_posts v WHERE v.id=p.id)',
+                'deleted_first_post'=> 'SELECT COUNT(*) FROM ce_forum_posts p WHERE p.deleted_at IS NOT NULL AND p.ordinal=(SELECT MIN(p2.ordinal) FROM ce_forum_posts p2 WHERE p2.thread_id=p.thread_id)',
                 'empty_threads'=> 'SELECT COUNT(*) FROM ce_forum_threads t WHERE NOT EXISTS (SELECT 1 FROM ce_forum_posts p WHERE p.thread_id=t.id)',
                 'container_threads'=> "SELECT COUNT(*) FROM ce_forum_threads t JOIN ce_forum_boards b ON b.id=t.board_id WHERE b.node_type<>'forum'",
                 'invalid_publication_sequence'=> 'SELECT COUNT(*) FROM ce_forum_posts p JOIN ce_forum_threads t ON t.id=p.thread_id WHERE p.read_sequence<1 OR p.read_sequence>t.read_sequence',

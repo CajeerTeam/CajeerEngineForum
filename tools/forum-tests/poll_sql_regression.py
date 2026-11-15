@@ -36,6 +36,8 @@ with tempfile.TemporaryDirectory(prefix='forum-poll-') as tmp:
     db.commit();db.executescript(migrations[-1].read_text())
     assert db.execute('SELECT body FROM ce_forum_posts WHERE id=?',(first,)).fetchone()==('Original',)
     assert db.execute('SELECT COUNT(*) FROM ce_forum_polls').fetchone()==(0,)
+    for later in sorted((ROOT/'migrations/sqlite').glob('*.sql')):
+        if later.name[:4]>'0031':db.executescript(later.read_text())
     create=sql('INSERT INTO ce_forum_polls(');option=sql('INSERT INTO ce_forum_poll_options(');vote=sql('INSERT INTO ce_forum_poll_votes(');delete=sql('DELETE FROM ce_forum_poll_votes');tally=sql('SELECT option_no,COUNT(*)');voters=sql('SELECT COUNT(DISTINCT user_id)');accept=sql('UPDATE ce_forum_questions SET accepted_post_id=?');av=sql('INSERT INTO ce_forum_answer_votes(')
     db.execute(create,(poll,'Choose',2,1,'voted',None))
     for n in range(1,4):db.execute(option,(poll,n,'Option '+str(n)))

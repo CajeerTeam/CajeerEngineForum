@@ -26,18 +26,18 @@ final readonly class NotificationRepository extends Repository
         if (!$this->db->connection()->inTransaction()) throw new \LogicException('Notification event requires a transaction');
         // One set-based insert, independent of the number of subscribers.
         $uuid=$this->db->driver()==='pgsql'?'CAST(? AS uuid)':'?';
-        $this->query("INSERT INTO ce_forum_notifications(event_id,recipient_id,actor_id,post_id,kind,subscription_kind) SELECT $uuid,u.id,$uuid,$uuid,'reply',CASE WHEN t.author_id=u.id THEN NULL ELSE 'thread' END FROM (SELECT author_id AS user_id FROM ce_forum_threads WHERE id=? UNION SELECT user_id FROM ce_forum_watches WHERE thread_id=? AND mode='internal') candidates JOIN ce_forum_threads t ON t.id=? JOIN ce_users u ON u.id=candidates.user_id LEFT JOIN ce_forum_notification_preferences pref ON pref.user_id=u.id WHERE u.status='active' AND u.id<>? AND COALESCE(pref.reply,1)=1",[Uuid::v4(),$actor,$post,$thread,$thread,$thread,$actor]);
+        $this->query("INSERT INTO ce_forum_notifications(event_id,recipient_id,actor_id,post_id,kind,subscription_kind) SELECT $uuid,u.id,$uuid,$uuid,'reply',CASE WHEN t.author_id=u.id THEN NULL ELSE 'thread' END FROM (SELECT author_id AS user_id FROM ce_forum_live_threads WHERE id=? UNION SELECT user_id FROM ce_forum_watches WHERE thread_id=? AND mode='internal') candidates JOIN ce_forum_live_threads t ON t.id=? JOIN ce_users u ON u.id=candidates.user_id LEFT JOIN ce_forum_notification_preferences pref ON pref.user_id=u.id WHERE u.status='active' AND u.id<>? AND COALESCE(pref.reply,1)=1",[Uuid::v4(),$actor,$post,$thread,$thread,$thread,$actor]);
     }
     public function subscriptionEligible(string $user,string $post,string $kind): bool
     {
         $sql=$kind==='thread'?"EXISTS (SELECT 1 FROM ce_forum_watches w WHERE w.thread_id=t.id AND w.user_id=? AND w.mode='internal')":"p.ordinal=1 AND EXISTS (SELECT 1 FROM ce_forum_board_watches b WHERE b.board_id=t.board_id AND b.user_id=? AND b.mode='internal')";
-        return $this->row('SELECT p.id FROM ce_forum_posts p JOIN ce_forum_threads t ON t.id=p.thread_id WHERE p.id=? AND '.$sql,[$post,$user])!==null;
+        return $this->row('SELECT p.id FROM ce_forum_live_posts p JOIN ce_forum_live_threads t ON t.id=p.thread_id WHERE p.id=? AND '.$sql,[$post,$user])!==null;
     }
     public function quotedAuthor(string $id,string $thread): ?string
-    { return $this->row('SELECT author_id FROM ce_forum_posts WHERE id=? AND thread_id=?',[$id,$thread])['author_id']??null; }
-    public function firstPost(string $thread): ?string { return $this->row('SELECT id FROM ce_forum_posts WHERE thread_id=? ORDER BY ordinal LIMIT 1',[$thread])['id']??null; }
+    { return $this->row('SELECT author_id FROM ce_forum_live_posts WHERE id=? AND thread_id=?',[$id,$thread])['author_id']??null; }
+    public function firstPost(string $thread): ?string { return $this->row('SELECT id FROM ce_forum_live_posts WHERE thread_id=? ORDER BY ordinal LIMIT 1',[$thread])['id']??null; }
     public function postAuthor(string $id): ?string
-    { return $this->row('SELECT author_id FROM ce_forum_posts WHERE id=?',[$id])['author_id']??null; }
+    { return $this->row('SELECT author_id FROM ce_forum_live_posts WHERE id=?',[$id])['author_id']??null; }
     public function removeReaction(string $actor,string $post): void
     { $this->query("DELETE FROM ce_forum_notifications WHERE actor_id=? AND post_id=? AND kind='reaction'",[$actor,$post]); }
     public function accepted(string $actor,string $post,string $recipient): void
@@ -70,15 +70,15 @@ final readonly class NotificationRepository extends Repository
         return $row===null?null:$row+['kind'=>'accepted','subscription_kind'=>null];
     }
     public function target(string $post): ?array
-    { return $this->row('SELECT t.board_id FROM ce_forum_posts p JOIN ce_forum_threads t ON t.id=p.thread_id WHERE p.id=?',[$post]); }
+    { return $this->row('SELECT t.board_id FROM ce_forum_live_posts p JOIN ce_forum_live_threads t ON t.id=p.thread_id WHERE p.id=?',[$post]); }
     public function finish(string $event,string $user,bool $deliver,string $kind): void
     { $table=$kind==='accepted'?'ce_forum_answer_notifications':'ce_forum_notifications'; $this->query(($deliver?'UPDATE '.$table.' SET state=1':'DELETE FROM '.$table).' WHERE event_id=? AND recipient_id=? AND state=0',[$event,$user]); }
     private function visible(array $allowed): string
-    { return ' FROM '.self::FEED.' n JOIN ce_forum_posts p ON p.id=n.post_id JOIN ce_forum_threads t ON t.id=p.thread_id WHERE n.recipient_id=? AND n.state=1 AND '.$this->boardFilter('t.board_id',$allowed); }
+    { return ' FROM '.self::FEED.' n JOIN ce_forum_live_posts p ON p.id=n.post_id JOIN ce_forum_live_threads t ON t.id=p.thread_id WHERE n.recipient_id=? AND n.state=1 AND '.$this->boardFilter('t.board_id',$allowed); }
     public function inbox(string $user,array $allowed,int $offset,?string $id=null): array
     {
         $params=[$user];if($id!==null)$params[]=$id;
-        $rows=$this->rows('SELECT n.event_id AS id,n.kind,n.moderation_action,n.subscription_kind,n.is_read,n.created_at,n.actor_id,(SELECT u.name FROM ce_users u WHERE u.id=n.actor_id) AS actor_name,n.post_id,t.id AS thread_id,t.title,(SELECT COUNT(*) FROM ce_forum_posts p2 WHERE p2.thread_id=p.thread_id AND p2.ordinal<p.ordinal) AS preceding'.$this->visible($allowed).($id===null?'':' AND n.event_id=?').' ORDER BY n.created_at DESC,n.event_id DESC LIMIT 25 OFFSET '.$offset,$params);
+        $rows=$this->rows('SELECT n.event_id AS id,n.kind,n.moderation_action,n.subscription_kind,n.is_read,n.created_at,n.actor_id,(SELECT u.name FROM ce_users u WHERE u.id=n.actor_id) AS actor_name,n.post_id,t.id AS thread_id,t.title,(SELECT COUNT(*) FROM ce_forum_live_posts p2 WHERE p2.thread_id=p.thread_id AND p2.ordinal<p.ordinal) AS preceding'.$this->visible($allowed).($id===null?'':' AND n.event_id=?').' ORDER BY n.created_at DESC,n.event_id DESC LIMIT 25 OFFSET '.$offset,$params);
         foreach($rows as &$r){$r['is_read']=(int)$r['is_read']===1;$r['page']=1+intdiv((int)$r['preceding'],25);unset($r['preceding']);}unset($r);
         return $rows;
     }
@@ -92,7 +92,7 @@ final readonly class NotificationRepository extends Repository
         if($id!==null && $this->row('SELECT n.event_id'.$where,$params)===null)return false;
         // Correlated EXISTS is portable, including MySQL's target-table restriction.
         foreach(['ce_forum_notifications','ce_forum_answer_notifications'] as $table){
-            $sql='UPDATE '.$table.' SET is_read=1 WHERE recipient_id=? AND state=1 AND is_read=0 AND EXISTS (SELECT 1 FROM ce_forum_posts p JOIN ce_forum_threads t ON t.id=p.thread_id WHERE p.id='.$table.'.post_id AND '.$this->boardFilter('t.board_id',$allowed).')';
+            $sql='UPDATE '.$table.' SET is_read=1 WHERE recipient_id=? AND state=1 AND is_read=0 AND EXISTS (SELECT 1 FROM ce_forum_live_posts p JOIN ce_forum_live_threads t ON t.id=p.thread_id WHERE p.id='.$table.'.post_id AND '.$this->boardFilter('t.board_id',$allowed).')';
             $this->query($sql.($id===null?'':' AND event_id=?'),$params);
         }
         return true;
