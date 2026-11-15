@@ -28,6 +28,7 @@ final readonly class NodePermissionService
         }
         return [$actor->restrict($scopes),$roles,$globalModerator];
     }
+    public function currentPolicy(ForumAccessPolicy $actor): ForumAccessPolicy { return $this->principal($actor)[0]; }
     public function requireAdmin(ForumAccessPolicy $actor,bool $lock=false): void
     {
         $this->requireCurrent($actor,'*',$lock);

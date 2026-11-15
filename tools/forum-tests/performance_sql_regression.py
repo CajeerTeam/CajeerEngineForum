@@ -4,7 +4,7 @@ import sqlite3, uuid
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[2]
 db=sqlite3.connect(':memory:');db.execute('PRAGMA foreign_keys=ON')
-files=sorted((ROOT/'migrations/sqlite').glob('*.sql'))
+files=sorted(f for f in (ROOT/'migrations/sqlite').glob('*.sql') if f.name[:4]<='0043')
 for f in files[:-1]:db.executescript(f.read_text())
 board='22222222-2222-4222-8222-222222222222';cat='11111111-1111-4111-8111-111111111111'
 hidden=str(uuid.uuid4());db.execute('INSERT INTO ce_forum_boards(id,category_id,name,description) VALUES(?,?,?,?)',(hidden,cat,'Hidden',''))

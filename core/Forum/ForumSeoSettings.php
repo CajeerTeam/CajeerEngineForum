@@ -24,10 +24,11 @@ final class ForumSeoSettings
         sort($excluded,SORT_STRING);
         $data=['base'=>PublicPath::base((new ConfigRepository($this->root))->string('app.url')),
             'index'=>($flag===false||filter_var($flag,FILTER_VALIDATE_BOOLEAN))&&filter_var($theme['robots_index']??true,FILTER_VALIDATE_BOOLEAN),
-            'follow'=>filter_var($theme['robots_follow']??true,FILTER_VALIDATE_BOOLEAN),'sitemap'=>filter_var($theme['sitemap_enabled']??true,FILTER_VALIDATE_BOOLEAN),'excluded'=>$excluded];
+            'follow'=>filter_var($theme['robots_follow']??true,FILTER_VALIDATE_BOOLEAN),'sitemap'=>filter_var($theme['sitemap_enabled']??true,FILTER_VALIDATE_BOOLEAN),'excluded'=>$excluded, 'community'=>$this->db===null?\CajeerEngine\Forum\Service\ForumCommunitySettings::effective([]):(new \CajeerEngine\Forum\Service\ForumCommunitySettings($this->db))->snapshot()['values']];
         if($this->freeze)$this->policy=$data;
         return $data;
     }
+    public function community(): array { return $this->policy()['community']; }
     public function baseUrl(): string { return $this->policy()['base']; }
     public function indexEnabled(): bool { return $this->policy()['index']; }
     public function followEnabled(): bool { return $this->policy()['follow']; }

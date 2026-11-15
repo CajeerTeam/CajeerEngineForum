@@ -2344,6 +2344,12 @@ export const operations = {
         ],
         "bodyRequired": false
     },
+    "post_Forum_acp_maintenance": {
+        "method": "POST",
+        "path": "/forum/acp/maintenance",
+        "parameters": [],
+        "bodyRequired": true
+    },
     "post_Forum_appealSanction": {
         "method": "POST",
         "path": "/forum/sanctions/{id}/appeal",
@@ -3014,6 +3020,24 @@ export const operations = {
                 "required": true
             }
         ],
+        "bodyRequired": true
+    },
+    "put_Forum_acp_delegation": {
+        "method": "PUT",
+        "path": "/forum/acp/delegation/{id}",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
+    },
+    "put_Forum_acp_policy": {
+        "method": "PUT",
+        "path": "/forum/acp/policy",
+        "parameters": [],
         "bodyRequired": true
     },
     "put_Forum_answerVote": {

@@ -15,6 +15,7 @@ final readonly class ForumDatabaseCheck
     public function check(): array
     {
         $required = [
+            'ce_forum_community_settings'=>['id','revision','payload'],
             'ce_forum_cache_generation'=>['name','generation','scope'],
             'ce_identity_challenges'=>['user_id','purpose','token_hash','secret','issued_at','expires_at'],
             'ce_users'=>['id','email','password_hash','status','email_verified_at','password_changed_at','two_factor_enabled','two_factor_secret','two_factor_recovery_codes','two_factor_last_step'],
@@ -86,7 +87,7 @@ final readonly class ForumDatabaseCheck
         foreach(['ce_forum_live_threads','ce_forum_live_posts'] as $view) if(!$this->db->columnExists($view,'deleted_at')) $missing[]=$view;
         $roles = new RoleRepository($this->db);
         $invalidRoles=[];
-        foreach (['admin'=>['*'],'forum-member'=>['forum:write'],'forum-moderator'=>['forum:write','forum:moderate']] as $handle=>$permissions) {
+        foreach (['admin'=>['*'],'forum-member'=>['forum:write'],'forum-moderator'=>['forum:write','forum:moderate'],'forum-acp-settings'=>['forum:acp:settings'],'forum-acp-members'=>['forum:acp:members'],'forum-acp-audit'=>['forum:acp:audit'],'forum-acp-maintenance'=>['forum:acp:maintenance']] as $handle=>$permissions) {
             $role=$roles->find($handle);
             if ($role===null || array_diff($permissions,$role['permissions'] ?? [])!==[] || array_diff($role['permissions'] ?? [],$permissions)!==[]) $invalidRoles[]=$handle;
         }

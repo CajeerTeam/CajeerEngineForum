@@ -38,7 +38,7 @@ The inherited `/install` and `/upgrade` front controllers are routed through `pu
 
 ## Releases
 
-`VERSION` and `release.json.version` identify the upstream engine (1.3.0); `release.json.edition_version` is 0.7.1. `ForumVersion` validates both identities. Source/dist artifact names, manifest version, release tags and updater comparisons use the edition version. The signed manifest also records `upstream_version`, checked against VERSION, release metadata and the prebuilt admin manifest. The engine API/SDK compatibility version stays unchanged. Health/admin/system diagnostics expose `edition_version`; HTTP responses include `X-CajeerEngine-Forum-Version`.
+`VERSION` and `release.json.version` identify the upstream engine (1.3.0); `release.json.edition_version` is 0.7.2. `ForumVersion` validates both identities. Source/dist artifact names, manifest version, release tags and updater comparisons use the edition version. The signed manifest also records `upstream_version`, checked against VERSION, release metadata and the prebuilt admin manifest. The engine API/SDK compatibility version stays unchanged. Health/admin/system diagnostics expose `edition_version`; HTTP responses include `X-CajeerEngine-Forum-Version`.
 
 The 0.1.0 updater compared upstream engine versions. Apply the 0.1.1 changed-file archive manually to a backed-up test installation before using the new updater. Do not submit the patch ZIP to `update:apply`: it is not a signed full dist. With 0.1.1 installed, later signed releases can advance edition_version without changing upstream. Legacy forum manifests without upstream_version and ordinary CMS packages are refused by the updater. The upstream signed publication workflow is archived, not active; no production signature or deployment certification is claimed.
 
@@ -581,3 +581,16 @@ Certification: the `forum-required` CI aggregate must pass, including native Pos
 ### Forum ACP (0.7.1)
 
 Open `/admin/#/forum` using a current administrator session. The overview, structure, members, groups, discussions, messages, moderation, attachments and audit screens use the forum API; writes use existing transactional services. The ACP read API is `/api/v1/forum/acp` (view, page, q, status, board_id, thread_id); lists are limited to 25 rows with a lookahead. Member name/status changes use PATCH `/api/v1/forum/acp/members/{id}`, reject self and administrative targets, and audit the change atomically. The original `/forum/manage` remains available. ACL rules use the existing revision check; moderation decisions use case revisions and recycle generations. Private conversation attachments are not listed in ACP. Existing system roles, account creation and token management remain in the Access screen. No schema change beyond 0043.
+
+
+### Advanced Administration (0.7.2)
+
+Open `/admin/#/forum`, then **Настройки сообщества**, **Делегирование**, **История политики**, or **Обслуживание**. Migration 0044 seeds the policy singleton and four managed roles. Back up DB and stop old workers before migration.
+
+The policy controls SSR name/description, registration, established trust thresholds, topic/reply rate limits and base attachment quotas. Existing environment values are the defaults until saved; `FORUM_REGISTRATION=false` always disables registration, group-specific attachment limits still override the base quota. Email verification remains operator-controlled. Save requires the current revision; stale writes return 409.
+
+Schedule publication pause using local datetime fields (stored as UTC epoch seconds). New topics/replies, draft publication and moderation approval are rejected during the window; reads, editing existing posts, private messages and safety operations remain available. Empty start disables the pause; empty end means indefinite. This is not global maintenance or a backup freeze.
+
+Global administrators assign managed roles `forum-acp-settings`, `forum-acp-members`, `forum-acp-audit`, `forum-acp-maintenance` via the Delegation screen using the member UUID. Empty selection revokes these roles; other roles/groups are preserved. Existing custom roles can also carry these scopes and must be managed separately. Members delegates cannot change their own account or privileged accounts. Policy scheduling requires both settings and maintenance. Audit delegates see policy, maintenance and delegation history, not all moderation audit metadata.
+
+Maintenance runs bounded cleanup of expired spam events, drafts and unbound uploads and checks indexes, query plans and Redis. Rebuild, backup and global maintenance remain operator operations. Audit records include actor and action; policy changes include before/after values. Run full CI before deployment.

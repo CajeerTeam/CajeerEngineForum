@@ -8,7 +8,11 @@ use CajeerEngine\Support\Uuid;
 final readonly class ModerationQueueRepository extends Repository
 {
     public function required(string $board): bool
-    {return (int)($this->lock('ce_forum_boards','id=?',[$board])['review_required']??0)===1;}
+    {
+        // Publication already holds a shared board lock on PostgreSQL. Do not upgrade it.
+        $row=$this->db->driver()==='pgsql'?$this->row('SELECT review_required FROM ce_forum_boards WHERE id=? FOR SHARE',[$board]):$this->lock('ce_forum_boards','id=?',[$board]);
+        return (int)($row['review_required']??0)===1;
+    }
     public function policy(string $board,bool $enabled): void
     {$this->query('UPDATE ce_forum_boards SET review_required=? WHERE id=?',[(int)$enabled,$board]);}
     public function insert(array $row): void

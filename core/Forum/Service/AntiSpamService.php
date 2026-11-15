@@ -62,11 +62,16 @@ final readonly class AntiSpamService
     {
         foreach(explode(',',$rules) as $rule){$rule=self::host(trim($rule," \t\r\n."));if($rule==='')continue;foreach($hosts as $host)if($host===$rule||str_ends_with($host,'.'.$rule))return true;}return false;
     }
+    private function effectiveLimits(bool $new): array
+    {
+        $v=$this->tx->settings()->snapshot()['values'];$limits=self::limits($new);
+        $limits['thread'][1]=$v[$new?'new_threads_hour':'threads_hour'];$limits['reply'][1]=$v[$new?'new_replies_10min':'replies_10min'];return $limits;
+    }
     private function newUser(string $user,int $now): bool
     {return self::isNew($this->repo->user($user)??throw new ForumException('Аккаунт недоступен.',403),$now);}
     private function consume(string $user,string $action,int $now,int $amount=1,?string $hash=null,?string $reason=null): void
     {
-        [$window,$limit]=self::limits($this->newUser($user,$now))[$action]??throw new \LogicException('Unknown abuse action');
+        [$window,$limit]=$this->effectiveLimits($this->newUser($user,$now))[$action]??throw new \LogicException('Unknown abuse action');
         if($amount>$limit||$this->repo->usage($user,$action,$now-$window)>$limit-$amount)throw new ForumException('Слишком много действий. Повторите позже.',429);
         $this->repo->record($user,$user,$action,$now,$amount,$hash,$reason);
     }
@@ -74,6 +79,7 @@ final readonly class AntiSpamService
     { $this->consume($user,$action,time(),$amount); }
     public function publication(string $user,string $action,string $body,string $format,bool $staff=false,string $extra=''): ?string
     {
+        if(in_array($action,['thread','reply'],true))$this->tx->settings()->assertPublishing();
         $now=time();$a=self::analyze($body,$format);if($extra!==''){$b=self::analyze($extra,'plain');$a['hosts']=array_merge($a['hosts'],$b['hosts']);$a['mentions']+=$b['mentions'];}$new=$this->newUser($user,$now);
         if(self::blocked($a['hosts'],getenv('FORUM_SPAM_BLOCKED_DOMAINS')?:''))throw new ForumException('Ссылка на запрещённый домен.',422);
         // Do not retain raw content or fingerprints of private messages. HMAC also separates accounts.
@@ -96,6 +102,6 @@ final readonly class AntiSpamService
         $this->tx->write(function()use($subject){$this->repo->registrationLock();$now=time();if($this->repo->usage($subject,'register',$now-3600)>=self::setting('REGISTRATIONS_HOUR',5)||$this->repo->registrationUsage($now-3600)>=self::setting('REGISTRATIONS_GLOBAL_HOUR',100))throw new ForumException('Слишком много попыток регистрации. Повторите позже.',429);$this->repo->record(null,$subject,'register',$now);});
     }
     public function stats(ForumAccessPolicy $actor): array
-    {return $this->tx->read(function()use($actor){$this->tx->permissions()->requireAdmin($actor);$now=time();return ['actions'=>$this->repo->stats($now-86400),'review_reasons'=>$this->repo->reasons($now-86400),'new_limits'=>self::limits(true),'regular_limits'=>self::limits(false)];});}
+    {return $this->tx->read(function()use($actor){$this->tx->permissions()->requireAdmin($actor);$now=time();return ['actions'=>$this->repo->stats($now-86400),'review_reasons'=>$this->repo->reasons($now-86400),'new_limits'=>$this->effectiveLimits(true),'regular_limits'=>$this->effectiveLimits(false)];});}
     public function cleanup(): int {return $this->tx->write(fn()=>$this->repo->cleanup(time()-86400));}
 }

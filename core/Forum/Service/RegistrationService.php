@@ -20,12 +20,13 @@ final readonly class RegistrationService
     public function register(string $email, string $name, string $password): string
     {
         $email = V::text($email,'email',254); $name = V::text($name,'name',60,2); $password = V::password($password);
-        if (!filter_var(getenv('FORUM_REGISTRATION') === false ? 'true' : getenv('FORUM_REGISTRATION'),FILTER_VALIDATE_BOOLEAN)) throw new ForumException('Регистрация отключена.',403);
+        if (!ForumCommunitySettings::operatorRegistration()) throw new ForumException('Регистрация отключена.',403);
         if (!filter_var($email,FILTER_VALIDATE_EMAIL)) throw new ForumException('Некорректный email пользователя.');
         try { $hash = $this->passwords->hash($password); }
         catch (\InvalidArgumentException $e) { throw new ForumException($e->getMessage()); }
         try {
             return $this->tx->write(function () use ($email,$name,$hash) {
+                if (!$this->tx->settings()->snapshot(true)['values']['registration_open']) throw new ForumException('Регистрация отключена.',403);
                 if ($this->users->findByEmail($email) !== null) throw new ForumException('Регистрация невозможна.',409);
                 try { $id = $this->users->create($email,$name,$hash,['forum-member'],self::verificationRequired() ? 'pending' : 'active'); }
                 catch (\InvalidArgumentException $e) {

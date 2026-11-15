@@ -82,7 +82,7 @@ final readonly class RoleRepository
         if ($role === null) {
             return false;
         }
-        if (in_array($role['handle'], ['admin', 'developer', 'editor', 'viewer', 'forum-member', 'forum-moderator'], true)) {
+        if (str_starts_with($role['handle'],'forum-acp-') || in_array($role['handle'], ['admin', 'developer', 'editor', 'viewer', 'forum-member', 'forum-moderator'], true)) {
             throw new \InvalidArgumentException('Системную роль нельзя удалить.');
         }
         $stmt = $this->database->connection()->prepare('DELETE FROM ce_roles WHERE id = :id');

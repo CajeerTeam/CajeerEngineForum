@@ -204,6 +204,7 @@ final readonly class DiscussionService
         return $this->tx->write(function () use ($actor,$board,$title,$body,$format,$attachments,$kind,$poll,$reviewed) {
             $this->permissions()->assertWrite($actor,$board,'thread:create');
             $this->boards->writable($board);
+            $this->tx->settings()->assertPublishing();
             if(!$reviewed&&$this->moderationQueue()->requires($actor,$board))throw new ForumException('Публикация требует предварительной проверки.',409);
             if(!$reviewed&&$this->tx->antiSpam()->publication($actor->userId,'thread',$body,$format,$this->access($actor)['boards'][$board]['thread:moderate']??false,$title)!==null)throw new ForumException('Публикация требует предварительной проверки.',409);
             $id = Uuid::v4(); $post = Uuid::v4();
@@ -225,6 +226,7 @@ final readonly class DiscussionService
             $thread = $this->threads->lockThread($id) ?? throw new ForumException('Тема не найдена.',404);
             $this->permissions()->assertWrite($actor,$thread['board_id'],'post:reply');
             $this->boards->writable($thread['board_id']);
+            $this->tx->settings()->assertPublishing();
             if(!$reviewed&&$this->moderationQueue()->requires($actor,$thread['board_id']))throw new ForumException('Публикация требует предварительной проверки.',409);
             if ((int) $thread['locked'] !== 0) throw new ForumException('Тема закрыта.',409);
             if(!$reviewed&&$this->tx->antiSpam()->publication($actor->userId,'reply',$body,$format??'plain',$this->access($actor)['boards'][$thread['board_id']]['thread:moderate']??false)!==null)throw new ForumException('Публикация требует предварительной проверки.',409);

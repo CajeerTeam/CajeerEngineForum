@@ -54,6 +54,38 @@ try {
     $call('PATCH',"/forum/acp/members/$other",['name'=>'Other','status'=>'active'],null,403,['ce_session'=>$adminCookie]);
     $call('PATCH',"/forum/acp/members/$other",['name'=>'Other','status'=>'active'],null,200,['ce_session'=>$adminCookie],['HTTP_X_CSRF_TOKEN'=>$adminCsrf]);
     check($users->findById($other)['name']==='Other','ACP CSRF protected member edit');
+
+    // Advanced administration: real role assignment, scoped authorization and live policy.
+    $policy=$call('GET','/forum/acp?view=settings',null,$a);
+    $defaults=array_diff_key($policy['values'],['paused'=>true,'registration_open'=>true]);
+    $call('PUT','/forum/acp/policy',['revision'=>$policy['revision'],'values'=>$defaults],$m,403);
+    $call('PUT',"/forum/acp/delegation/$other",['scopes'=>['forum:acp:settings','forum:acp:audit']],$a);
+    $delegated=$login('other@example.test','OtherPass12345');
+    $caps=$call('GET','/forum/acp?view=access',null,$delegated)['capabilities'];
+    check($caps['settings']&&$caps['audit']&&!$caps['admin']&&!$caps['members'],'ACP scoped capabilities');
+    $call('GET','/forum/acp?view=users',null,$delegated,403);
+    $call('GET','/forum/acp?view=structure',null,$delegated,403);
+    $call('PUT',"/forum/acp/delegation/$member",['scopes'=>['forum:acp:settings']],$delegated,403);
+    $call('POST','/forum/acp/maintenance',['action'=>'cleanup_spam'],$delegated,403);
+    $changed=$defaults;$changed['name']='Community policy test';$changed['description']='Live community description';$changed['new_threads_hour']=1;$changed['registration_enabled']=false;$changed['attachment_mb']=1;
+    $policy=$call('PUT','/forum/acp/policy',['revision'=>$policy['revision'],'values'=>$changed],$delegated);
+    $call('PUT','/forum/acp/policy',['revision'=>$policy['revision']-1,'values'=>$defaults],$delegated,409);
+    check($policy['values']['name']==='Community policy test'&&!$policy['values']['registration_open'],'community policy persisted');
+    $call('POST','/forum/register',['name'=>'Blocked','email'=>'blocked@example.test','password'=>'BlockedPass12345'],null,403);
+    $call('POST',"/forum/boards/$board/threads",['title'=>'Blocked by budget','body'=>'Budget check'],$m,429);
+    check($call('GET','/forum/attachments',null,$m)['limits']['file_bytes']===1048576,'live attachment limit');
+    $history=$call('GET','/forum/acp?view=policy_history',null,$delegated);check($history['items'][0]['context']['after']['values']['name']==='Community policy test','policy before/after audit');
+    $paused=$changed;$paused['pause_from']=time()-10;$paused['pause_until']=time()+600;
+    $call('PUT','/forum/acp/policy',['revision'=>$policy['revision'],'values'=>$paused],$delegated,403);
+    $policy=$call('PUT','/forum/acp/policy',['revision'=>$policy['revision'],'values'=>$paused],$a);
+    $call('POST',"/forum/threads/$t/posts",['body'=>'Maintenance rejected'],$m,503);
+    $call('GET',"/forum/threads/$t",null,$m);
+    $call('PUT','/forum/acp/policy',['revision'=>$policy['revision'],'values'=>$defaults],$a);
+    $call('POST','/forum/acp/maintenance',['action'=>'cleanup_spam'],$a);
+    $call('PUT',"/forum/acp/delegation/$other",['scopes'=>[]],$a);
+    $call('GET','/forum/acp?view=settings',null,$delegated,403);
+    check(in_array('forum-member',$users->findById($other)['roles'],true),'revocation preserves forum membership');
+
     check($call('GET',"/forum/boards/$board")['threads'][0]['id']===$t,'board listing with joined author');
     check($call('GET','/forum/latest?cursor=')['items'][0]['id']===$t,'cursor feed reads published thread');
     // Real HTTP SSR (no browser JS): verify the body, metadata and guest ACL before JS can run.
@@ -172,6 +204,6 @@ try {
     putenv('FORUM_REGISTRATION=false');
     $call('POST','/forum/register',['name'=>'Closed','email'=>'closed@example.test','password'=>'MemberPass12345'],null,403);
     check(str_contains((string)$app->handle(Request::create('https://forum.test/'))->getContent(),'data-registration="false"'),'closed registration UI');
-    check($app->handle(Request::create('https://forum.test/'))->headers->get('X-CajeerEngine-Forum-Version')==='0.7.1','forum version header');
+    check($app->handle(Request::create('https://forum.test/'))->headers->get('X-CajeerEngine-Forum-Version')==='0.7.2','forum version header');
     echo "Forum integration passed\n";
 } finally {foreach(glob($tmp.'/*')?:[] as $f)unlink($f);rmdir($tmp);}

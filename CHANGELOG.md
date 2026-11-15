@@ -1,3 +1,10 @@
+## 0.7.2 — Advanced Administration
+
+- Live community settings, optimistic revisions and audited before/after history.
+- Scoped ACP roles with transactional assignment and revocation.
+- Scheduled public publication pause, bounded cleanup, and search/database/Redis diagnostics.
+- Migration 0044; preserve previous settings defaults and forum ACL.
+
 ## 0.7.1 — Forum ACP
 
 - Integrated Forum ACP into the production admin SPA with live statistics, paginated operator lists, structure/ACL, groups, member administration, content actions and moderation.

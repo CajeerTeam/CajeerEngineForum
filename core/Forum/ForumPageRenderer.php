@@ -19,8 +19,8 @@ final readonly class ForumPageRenderer
     {
         $path=rtrim($request->getPathInfo(),'/')?:'/';
         $path=$path==='/'?'/forum':$path;
-        $name=getenv('APP_NAME')?:'CajeerEngine Forum Edition';
-        $title=$name;$description='Обсуждайте идеи, делитесь опытом и находите ответы вместе.';
+        $community=$this->settings->community();$name=$community['name'];
+        $title=$name;$description=$community['description'];
         $canonical=null;$body='';$schema=[];$status=200;$index=false;
         // Do not expose user-specific metadata or index private content, even on an authenticated request.
         $guest=$actor->userId==='';
@@ -105,12 +105,12 @@ final readonly class ForumPageRenderer
             $meta.='<meta name="twitter:card" content="summary"><meta name="twitter:title" content="'.self::e($title).'"><meta name="twitter:description" content="'.self::e($description).'">';
             foreach($schema as $item)$meta.='<script type="application/ld+json">'.json_encode($item,JSON_THROW_ON_ERROR|JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_UNICODE|JSON_INVALID_UTF8_SUBSTITUTE).'</script>';
         }
-        $registration=filter_var(getenv('FORUM_REGISTRATION')===false?'true':getenv('FORUM_REGISTRATION'),FILTER_VALIDATE_BOOLEAN);
+        $registration=$community['registration_open'];
         $html=strtr((string)file_get_contents($this->root.'/public/forum-assets/index.html'),[
             '<!--FORUM_NAME-->'=>self::e($name),'<!--FORUM_REGISTRATION-->'=>$registration?'true':'false',
             '<!--FORUM_TITLE-->'=>self::e($title.($title===$name?'':' — '.$name).($page>1?' · '.$page:'')),
             '<!--FORUM_HEADING-->'=>self::e($title),'<!--FORUM_DESCRIPTION-->'=>self::e($description),
-            '<meta name="robots" content="noindex, nofollow" data-forum-template>'=>$meta,'<!--FORUM_BODY-->'=>$body,'<!--FORUM_RENDERED-->'=>$canonical!==null||$path==='/forum/latest'||$path==='/forum/questions'?'true':'false','<!--FORUM_SCRIPT-->'=>$status===200?'<script src="/forum-assets/forum.js" defer></script>':'',
+            '<meta name="robots" content="noindex, nofollow" data-forum-template>'=>$meta,'<!--FORUM_MAINTENANCE-->'=>$community['paused']?'<p role="status" class="panel">Публикация новых тем и ответов временно приостановлена.</p>':'','<!--FORUM_BODY-->'=>$body,'<!--FORUM_RENDERED-->'=>$canonical!==null||$path==='/forum/latest'||$path==='/forum/questions'?'true':'false','<!--FORUM_SCRIPT-->'=>$status===200?'<script src="/forum-assets/forum.js" defer></script>':'',
         ]);
         return new Response($html,$status,['Content-Type'=>'text/html; charset=UTF-8','Cache-Control'=>'private, no-store','Vary'=>'Cookie, Authorization, X-API-Token','X-Robots-Tag'=>$robots]);
     }
@@ -134,7 +134,7 @@ final readonly class ForumPageRenderer
     {
         $headers=['Content-Type'=>'application/rss+xml; charset=UTF-8','Cache-Control'=>'no-store','X-Robots-Tag'=>'noindex'];
         if(!$this->settings->indexEnabled())return new Response('',404,$headers);
-        $base=$this->settings->baseUrl();$name=getenv('APP_NAME')?:'CajeerEngine Forum Edition';
+        $base=$this->settings->baseUrl();$community=$this->settings->community();$name=$community['name'];
         $xml='<?xml version="1.0" encoding="UTF-8"?><rss version="2.0"><channel><title>'.self::xml($name).'</title><link>'.self::xml($base.'/forum').'</link><description>Последние общедоступные обсуждения</description>';
         foreach($this->discussions->seoLatest($this->settings->excludedBoards()) as $t){
             $url=self::xml($base.'/forum/threads/'.$t['id']);$date=(new \DateTimeImmutable($t['updated_at'],new \DateTimeZone('UTC')))->format(DATE_RSS);

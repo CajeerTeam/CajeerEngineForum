@@ -3015,6 +3015,15 @@ final class Operations {
     ),
     'bodyRequired' => false,
   ),
+  'post_Forum_acp_maintenance' => 
+  array (
+    'method' => 'POST',
+    'path' => '/forum/acp/maintenance',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => true,
+  ),
   'post_Forum_appealSanction' => 
   array (
     'method' => 'POST',
@@ -3906,6 +3915,30 @@ final class Operations {
         'in' => 'path',
         'required' => true,
       ),
+    ),
+    'bodyRequired' => true,
+  ),
+  'put_Forum_acp_delegation' => 
+  array (
+    'method' => 'PUT',
+    'path' => '/forum/acp/delegation/{id}',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => true,
+  ),
+  'put_Forum_acp_policy' => 
+  array (
+    'method' => 'PUT',
+    'path' => '/forum/acp/policy',
+    'parameters' => 
+    array (
     ),
     'bodyRequired' => true,
   ),

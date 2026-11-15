@@ -19,7 +19,7 @@ final readonly class AttachmentService
     }
     private function limitsFor(string $user): array
     {
-        $limits=self::limits();$configured=getenv('FORUM_ATTACHMENT_GROUP_LIMITS');
+        $limits=self::limits();$v=$this->tx->settings()->snapshot()['values'];$limits['file_bytes']=$v['attachment_mb']*1048576;$limits['quota_bytes']=$v['attachment_quota_mb']*1048576;$configured=getenv('FORUM_ATTACHMENT_GROUP_LIMITS');
         if($configured===false||$configured==='')return $limits;
         $map=json_decode($configured,true);$group=$this->repo->primaryGroup($user);
         if(!is_array($map)||$group===null||!is_array($map[$group]??null))return $limits;
