@@ -1,3 +1,9 @@
+## 0.7.1 — Forum ACP
+
+- Integrated Forum ACP into the production admin SPA with live statistics, paginated operator lists, structure/ACL, groups, member administration, content actions and moderation.
+- Added current-administrator checks and transactional member-update audit; self, administrative and erased-account changes are rejected.
+- Existing forum services enforce ACL, revisions, moderation decisions and cache invalidation; no new migration.
+
 ## 0.7.0 — Search, SEO & Performance Stable
 
 - Search and discovery exclude threads without a published post, before count/ranking; PostgreSQL quoted phrases verify literal tokens against a non-positional candidate query.

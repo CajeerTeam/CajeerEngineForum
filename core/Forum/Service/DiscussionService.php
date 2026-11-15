@@ -18,6 +18,7 @@ final readonly class DiscussionService
 
     private function access(?ForumAccessPolicy $actor): array { return $this->tx->permissions()->access($actor??new ForumAccessPolicy('',[])); }
     private function decorated(array $board,array $access): array { $board['permissions']=$access['boards'][$board['id']]; return $board; }
+    public function admin(): ForumAdminService { return new ForumAdminService($this->db,$this->tx); }
     public function antiSpam(): AntiSpamService {return $this->tx->antiSpam();}
     public function sanctions(): SanctionService {return $this->tx->sanctions();}
     public function moderationQueue(): ModerationQueueService { return $this->tx->moderationQueue(); }

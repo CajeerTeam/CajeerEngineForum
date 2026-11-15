@@ -44,6 +44,8 @@ final readonly class ForumController
     private function reader(Request $r): ForumAccessPolicy { return ForumAccessPolicy::optional($r->attributes->get('auth')); }
     private function id(array $p): string { return V::id($p['id'] ?? null); }
     private function offset(Request $r): int { return V::offset($r->query->all()['page'] ?? 1); }
+    public function adminListing(Request $r): JsonResponse { return $this->respond(fn()=> $this->discussions->admin()->listing($this->actor($r),$r->query->all())); }
+    public function adminUpdateMember(Request $r,array $p): JsonResponse { return $this->respond(fn()=> $this->discussions->admin()->updateMember($this->actor($r),$this->id($p),$this->body($r))); }
     public function index(Request $r): JsonResponse { return $this->cachedJson($r,'index',fn()=> $this->respond(fn () => $this->discussions->index($this->reader($r)))); }
     public function board(Request $r,array $p): JsonResponse { return $this->cachedJson($r,'board',fn()=> $this->respond(fn () => $this->discussions->board($this->id($p),$this->offset($r),$this->reader($r)))); }
     public function thread(Request $r,array $p): JsonResponse { return $this->cachedJson($r,'thread',fn()=> $this->respond(fn () => $this->discussions->thread($this->id($p),$this->offset($r),$this->reader($r),($r->query->all()['first_unread']??null)==='1'))); }

@@ -708,6 +708,57 @@ final class Operations {
     ),
     'bodyRequired' => false,
   ),
+  'get_Forum_acp' => 
+  array (
+    'method' => 'GET',
+    'path' => '/forum/acp',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'view',
+        'in' => 'query',
+        'required' => false,
+      ),
+      1 => 
+      array (
+        'name' => 'page',
+        'in' => 'query',
+        'required' => false,
+      ),
+      2 => 
+      array (
+        'name' => 'q',
+        'in' => 'query',
+        'required' => false,
+      ),
+      3 => 
+      array (
+        'name' => 'status',
+        'in' => 'query',
+        'required' => false,
+      ),
+      4 => 
+      array (
+        'name' => 'board_id',
+        'in' => 'query',
+        'required' => false,
+      ),
+      5 => 
+      array (
+        'name' => 'thread_id',
+        'in' => 'query',
+        'required' => false,
+      ),
+      6 => 
+      array (
+        'name' => 'id',
+        'in' => 'query',
+        'required' => false,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
   'get_Forum_activity' => 
   array (
     'method' => 'GET',
@@ -2367,6 +2418,21 @@ final class Operations {
     'path' => '/extensions/config',
     'parameters' => 
     array (
+    ),
+    'bodyRequired' => true,
+  ),
+  'patch_Forum_acp_members_id' => 
+  array (
+    'method' => 'PATCH',
+    'path' => '/forum/acp/members/{id}',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
     ),
     'bodyRequired' => true,
   ),

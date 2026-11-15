@@ -167,6 +167,8 @@ final class RouteRegistry
             ['GET', '/preview/{token}', 'public.preview_token', 'public', 'previewToken', null],
             ['GET', '/search', 'public.search', 'search', 'publicPage', null],
             ['GET', '/search/', 'public.search.trailing', 'search', 'publicPage', null],
+            ['GET', '/api/v1/forum/acp', 'api.v1.forum.acp.index', 'forum', 'adminListing', ['*']],
+            ['PATCH', '/api/v1/forum/acp/members/{id}', 'api.v1.forum.acp.member', 'forum', 'adminUpdateMember', ['*']],
             ['GET', '/api/v1/forum', 'api.v1.forum.index', 'forum', 'index', null],
             ['GET', '/api/v1/forum/boards/{id}', 'api.v1.forum.board', 'forum', 'board', null],
             ['GET', '/api/v1/forum/threads/{id}', 'api.v1.forum.thread', 'forum', 'thread', null],

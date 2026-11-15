@@ -37,6 +37,23 @@ try {
     $call('POST','/forum/register',['name'=>'Member','email'=>'member@example.test','password'=>'MemberPass12345'],null,409);
     $m=$login('member@example.test','MemberPass12345');$a=$login('admin@example.test','AdminPass12345');$o=$login('other@example.test','OtherPass12345');
     $t=$call('POST',"/forum/boards/$board/threads",['title'=>'Test topic','body'=>'First <script>not HTML</script>'],$m,201)['id'];
+    // Forum ACP uses actual sessions, scope checks, bounded SQL and transactional audit.
+    $call('GET','/forum/acp',null,null,401);
+    $call('GET','/forum/acp?view=users',null,$m,403);
+    $call('PATCH',"/forum/acp/members/$other",['name'=>'Forbidden','status'=>'active'],$m,403);
+    $overview=$call('GET','/forum/acp',null,$a)['counts'];check($overview['users']===3&&$overview['threads']===1,'ACP live counts');
+    $list=$call('GET','/forum/acp?view=users&q=Other&status=active',null,$a);check(count($list['items'])===1&&$list['items'][0]['id']===$other&&!isset($list['items'][0]['password_hash']),'ACP member filter and safe projection');
+    check($call('GET','/forum/acp?view=threads&board_id='.$board,null,$a)['items'][0]['id']===$t,'ACP discussion filter');
+    $adminId=$users->findByEmail('admin@example.test')['id'];
+    $call('PATCH',"/forum/acp/members/$adminId",['name'=>'Admin','status'=>'disabled'],$a,403);
+    $call('PATCH',"/forum/acp/members/$other",['name'=>'Other ACP','status'=>'active'],$a);
+    check($users->findById($other)['name']==='Other ACP','ACP member change persisted');
+    $audit=$call('GET','/forum/acp?view=audit&q=forum.acp.member.update',null,$a);check(count($audit['items'])===1&&$audit['items'][0]['actor_id']===$adminId,'ACP transactional audit');
+    $adminBrowser=$app->handle(Request::create('https://forum.test/api/v1/auth/login','POST',[],[],[],['CONTENT_TYPE'=>'application/json','HTTP_X_CAJEER_BROWSER'=>'1','REMOTE_ADDR'=>'127.0.0.1'],json_encode(['email'=>'admin@example.test','password'=>'AdminPass12345'])));
+    check($adminBrowser->getStatusCode()===201,'ACP administrator browser login');$adminCookie=$adminBrowser->headers->getCookies()[0]->getValue();$adminCsrf=json_decode($adminBrowser->getContent(),true)['data']['csrf_token'];
+    $call('PATCH',"/forum/acp/members/$other",['name'=>'Other','status'=>'active'],null,403,['ce_session'=>$adminCookie]);
+    $call('PATCH',"/forum/acp/members/$other",['name'=>'Other','status'=>'active'],null,200,['ce_session'=>$adminCookie],['HTTP_X_CSRF_TOKEN'=>$adminCsrf]);
+    check($users->findById($other)['name']==='Other','ACP CSRF protected member edit');
     check($call('GET',"/forum/boards/$board")['threads'][0]['id']===$t,'board listing with joined author');
     check($call('GET','/forum/latest?cursor=')['items'][0]['id']===$t,'cursor feed reads published thread');
     // Real HTTP SSR (no browser JS): verify the body, metadata and guest ACL before JS can run.
@@ -155,6 +172,6 @@ try {
     putenv('FORUM_REGISTRATION=false');
     $call('POST','/forum/register',['name'=>'Closed','email'=>'closed@example.test','password'=>'MemberPass12345'],null,403);
     check(str_contains((string)$app->handle(Request::create('https://forum.test/'))->getContent(),'data-registration="false"'),'closed registration UI');
-    check($app->handle(Request::create('https://forum.test/'))->headers->get('X-CajeerEngine-Forum-Version')==='0.7.0','forum version header');
+    check($app->handle(Request::create('https://forum.test/'))->headers->get('X-CajeerEngine-Forum-Version')==='0.7.1','forum version header');
     echo "Forum integration passed\n";
 } finally {foreach(glob($tmp.'/*')?:[] as $f)unlink($f);rmdir($tmp);}

@@ -55,6 +55,8 @@ jobs:
       - run: php tools/generate-api-sdk.php --check
       - run: php bin/cajeer api:lint --strict --json
       - run: node --check public/forum-assets/forum.js
+      - run: node --check public/admin/assets/admin-app.js
+      - run: python tools/forum-tests/acp_sql_regression.py
       - run: php tools/forum-regression.php
       - run: php tools/forum-identity-regression.php
       - run: php tools/forum-core-regression.php
@@ -264,6 +266,7 @@ jobs:
       - run: python tools/forum-tests/antispam_browser_regression.py --browser ${{ matrix.browser }}
       - run: python tools/forum-tests/draft_browser_regression.py --browser ${{ matrix.browser }}
       - run: python tools/forum-tests/advanced_search_browser_regression.py --browser ${{ matrix.browser }}
+      - run: python tools/forum-tests/acp_browser_regression.py --browser ${{ matrix.browser }}
       - name: Real browser E2E with SMTP
         run: python tools/forum-tests/run.py --suite browser --browser ${{ matrix.browser }} --report storage/tmp/forum-ci/browser
       - name: Upload browser evidence
@@ -303,7 +306,7 @@ jobs:
       DB_PORT: '5432'
       DB_USERNAME: forum_ci
       DB_PASSWORD: 'ForumCI-Disposable-123!'
-      FORUM_BASELINE_REF: ${{ vars.FORUM_BASELINE_REF || '7d8bcf10043b23f157b48eeca4d258a7c8edc294' }}
+      FORUM_BASELINE_REF: ${{ vars.FORUM_BASELINE_REF || 'e20bbd106fbd051be00f8f9f2aeee7b45cc7a0c6' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -330,37 +333,37 @@ jobs:
           ln -s pg_dump "$RUNNER_TEMP/pg-client/pg_restore"
           ln -s pg_dump "$RUNNER_TEMP/pg-client/psql"
           echo "$RUNNER_TEMP/pg-client" >> "$GITHUB_PATH"
-      - name: Build and verify physical 0.7.0 artifacts
+      - name: Build and verify physical 0.7.1 artifacts
         run: |
           composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader
           mkdir -p storage/tmp/forum-ci/release
           php tools/build-release.php --all --target-dir="$RUNNER_TEMP/forum-current" --json > storage/tmp/forum-ci/release/build.json
-          php bin/cajeer release:verify --dist --strict --artifact="$RUNNER_TEMP/forum-current/cajeerengine-0.7.0-dist.zip"
-          php bin/cajeer release:verify --strict --artifact="$RUNNER_TEMP/forum-current/cajeerengine-0.7.0-source.zip"
+          php bin/cajeer release:verify --dist --strict --artifact="$RUNNER_TEMP/forum-current/cajeerengine-0.7.1-dist.zip"
+          php bin/cajeer release:verify --strict --artifact="$RUNNER_TEMP/forum-current/cajeerengine-0.7.1-source.zip"
       - name: Build authentic previous baseline from repository history
         run: |
           mkdir -p "$RUNNER_TEMP/forum-previous"
           ref="$FORUM_BASELINE_REF"
           # Prefer the immediately preceding release when its actual tag is available.
-          if [ "$ref" = '7d8bcf10043b23f157b48eeca4d258a7c8edc294' ]; then
-            for tag in v0.6.6 0.6.6; do
+          if [ "$ref" = 'e20bbd106fbd051be00f8f9f2aeee7b45cc7a0c6' ]; then
+            for tag in v0.7.0 0.7.0; do
               if git rev-parse --verify "refs/tags/$tag^{commit}" >/dev/null 2>&1; then ref="refs/tags/$tag"; break; fi
             done
           fi
           git archive "$ref" | tar -x -C "$RUNNER_TEMP/forum-previous"
           cd "$RUNNER_TEMP/forum-previous"
-          baseline=$(php -r '$v=json_decode(file_get_contents("release.json"),true,512,JSON_THROW_ON_ERROR)["edition_version"]; if($v!=="0.6.6") exit(1); echo $v;')
+          baseline=$(php -r '$v=json_decode(file_get_contents("release.json"),true,512,JSON_THROW_ON_ERROR)["edition_version"]; if($v!=="0.7.0") exit(1); echo $v;')
           echo "FORUM_BASELINE_VERSION=$baseline" >> "$GITHUB_ENV"
           composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader
           php tools/build-release.php --dist --target-dir="$RUNNER_TEMP/forum-previous-dist" --json
       - name: Clean install, live HTTP, identity and corrupt-ledger rejection
         env:
           FORUM_TEST_RELEASE_DB: forum_test_release_clean
-        run: python tools/forum-tests/release_acceptance.py --driver ${{ matrix.driver }} --artifact "$RUNNER_TEMP/forum-current/cajeerengine-0.7.0-dist.zip" --report storage/tmp/forum-ci/release/clean
+        run: python tools/forum-tests/release_acceptance.py --driver ${{ matrix.driver }} --artifact "$RUNNER_TEMP/forum-current/cajeerengine-0.7.1-dist.zip" --report storage/tmp/forum-ci/release/clean
       - name: Signed upgrade from authentic baseline, recovery and rollback
         env:
           FORUM_TEST_RELEASE_DB: forum_test_release_upgrade
-        run: python tools/forum-tests/release_acceptance.py --driver ${{ matrix.driver }} --artifact "$RUNNER_TEMP/forum-current/cajeerengine-0.7.0-dist.zip" --previous "$RUNNER_TEMP/forum-previous-dist/cajeerengine-${FORUM_BASELINE_VERSION}-dist.zip" --report storage/tmp/forum-ci/release/upgrade
+        run: python tools/forum-tests/release_acceptance.py --driver ${{ matrix.driver }} --artifact "$RUNNER_TEMP/forum-current/cajeerengine-0.7.1-dist.zip" --previous "$RUNNER_TEMP/forum-previous-dist/cajeerengine-${FORUM_BASELINE_VERSION}-dist.zip" --report storage/tmp/forum-ci/release/upgrade
       - name: Upload release acceptance evidence
         if: always()
         uses: actions/upload-artifact@v4

@@ -547,6 +547,48 @@ export const operations = {
         "parameters": [],
         "bodyRequired": false
     },
+    "get_Forum_acp": {
+        "method": "GET",
+        "path": "/forum/acp",
+        "parameters": [
+            {
+                "name": "view",
+                "in": "query",
+                "required": false
+            },
+            {
+                "name": "page",
+                "in": "query",
+                "required": false
+            },
+            {
+                "name": "q",
+                "in": "query",
+                "required": false
+            },
+            {
+                "name": "status",
+                "in": "query",
+                "required": false
+            },
+            {
+                "name": "board_id",
+                "in": "query",
+                "required": false
+            },
+            {
+                "name": "thread_id",
+                "in": "query",
+                "required": false
+            },
+            {
+                "name": "id",
+                "in": "query",
+                "required": false
+            }
+        ],
+        "bodyRequired": false
+    },
     "get_Forum_activity": {
         "method": "GET",
         "path": "/forum/activity",
@@ -1854,6 +1896,18 @@ export const operations = {
         "method": "PATCH",
         "path": "/extensions/config",
         "parameters": [],
+        "bodyRequired": true
+    },
+    "patch_Forum_acp_members_id": {
+        "method": "PATCH",
+        "path": "/forum/acp/members/{id}",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
         "bodyRequired": true
     },
     "patch_Forum_conversationFlags": {

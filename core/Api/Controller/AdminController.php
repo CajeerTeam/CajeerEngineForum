@@ -119,6 +119,7 @@ final readonly class AdminController
     private function sections(): array
     {
         return [
+            ['key' => 'forum', 'label' => 'Forum ACP', 'path' => '/admin/#/forum', 'scope' => '*'],
             ['key' => 'dashboard', 'label' => 'Обзор', 'path' => '/admin/#/dashboard', 'scope' => null],
             ['key' => 'content_types', 'label' => 'Типы контента', 'path' => '/admin/#/content-types', 'scope' => 'content:write'],
             ['key' => 'content', 'label' => 'Контент', 'path' => '/admin/#/content', 'scope' => 'content:write'],
