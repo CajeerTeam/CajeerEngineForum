@@ -43,6 +43,7 @@ final readonly class BoardRepository extends Repository
     public function moveBoard(string $id,string $category,?string $parent): void { $this->query('UPDATE ce_forum_boards SET category_id=?,parent_id=? WHERE id=?',[$category,$parent,$id]); }
     public function boardPosition(string $id,int $position): void { $this->query('UPDATE ce_forum_boards SET position=? WHERE id=?',[$position,$id]); }
     public function hasThreads(string $id): bool { return $this->row('SELECT id FROM ce_forum_threads WHERE board_id=? LIMIT 1',[$id])!==null; }
+    public function hasPendingReview(string $id): bool {return $this->row("SELECT id FROM ce_forum_review_submissions WHERE board_id=? AND thread_id IS NULL AND status='pending' LIMIT 1",[$id])!==null;}
     public function deleteBoard(string $id): void { $this->query('DELETE FROM ce_forum_boards WHERE id=?',[$id]); }
     public function deleteCategory(string $id): void { $this->query('DELETE FROM ce_forum_categories WHERE id=?',[$id]); }
 

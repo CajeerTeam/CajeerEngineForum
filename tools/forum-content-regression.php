@@ -41,3 +41,7 @@ $receipt=$row;$receipt['payload']='{}';$receipt['result_json']=json_encode(['id'
 $receipt['result_json']=json_encode(['id'=>$id,'thread_id'=>'wrong','page'=>2]);verify(!I::draft($receipt),'receipt target mismatch rejected');
 $replica=['attachment_id'=>$id,'destination'=>str_repeat('a',64),'sha256'=>str_repeat('b',64),'object_key'=>'forum-media/stable/'.$id.'/'.str_repeat('b',64)];
 verify(I::replica($replica),'valid replica key');$replica['sha256']=null;verify(I::replica($replica),'valid remote deletion tombstone');$replica['object_key'].='/extra';verify(!I::replica($replica),'invalid replica key rejected');
+$review=['thread_id'=>$id,'board_id'=>$id,'status'=>'pending','payload'=>json_encode(['body'=>'Review this','body_format'=>'plain','attachment_ids'=>[$id]])];
+verify(I::submission($review,[$id])&&!I::submission($review,[]),'pending submission payload matches reservation');
+$review['status']='approved';verify(I::submission($review,[])&&!I::submission($review,[$id]),'decided submission cannot retain reservations');
+$receipt['result_json']=json_encode(['id'=>$id,'submission_id'=>$id,'pending_review'=>true]);verify(I::draft($receipt),'valid pending moderation receipt');

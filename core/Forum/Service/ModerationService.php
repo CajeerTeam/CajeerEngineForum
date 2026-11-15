@@ -12,14 +12,16 @@ use CajeerEngine\Support\Uuid;
 final readonly class ModerationService
 {
     public function __construct(private ForumTransaction $tx, private ReportRepository $reports, private ThreadRepository $threads) {}
-    public function report(ForumAccessPolicy $actor, string $post, string $reason): string
+    public function report(ForumAccessPolicy $actor, string $post, string $reason,string $category='other'): string
     {
         $post = V::id($post); $reason = V::text($reason,'reason',500,3);
+        if(!in_array($category,['spam','abuse','privacy','unsafe_file','other'],true))throw new ForumException('Некорректная категория жалобы.');
         $actor->require('forum:write');
-        return $this->tx->write(function () use ($actor,$post,$reason) {
+        return $this->tx->write(function () use ($actor,$post,$reason,$category) {
             $thread=$this->threads->lockForPost($post) ?? throw new ForumException('Сообщение не найдено.',404);
             $this->tx->permissions()->assertWrite($actor,$thread['board_id'],'report:create');
-            $id = Uuid::v4(); $this->reports->insert($id,$post,$actor->userId,$reason);
+            $existing=$this->reports->existing($post,$actor->userId);if($existing!==null)return $existing;
+            $id = Uuid::v4(); $this->reports->insert($id,$post,$actor->userId,$reason,$category);$this->tx->moderationQueue()->reportEvent($id,$actor->userId,'submit','');
             $this->tx->audit('forum.report.create',$actor->userId,['report_id'=>$id,'post_id'=>$post]);
             return $id;
         });
@@ -43,7 +45,7 @@ final readonly class ModerationService
             $report=$this->reports->lockReport($id)??throw new ForumException('Жалоба не найдена.',404);
             // A repeated resolve is idempotent; do not overwrite the original reviewer.
             if ($report['status'] === 'open') {
-                $this->reports->resolve($id,$actor->userId);
+                $this->reports->resolve($id,$actor->userId);$this->tx->moderationQueue()->reportEvent($id,$actor->userId,'resolve','Resolved',(int)$report['revision_number']+1);
                 $this->tx->audit('forum.report.resolve',$actor->userId,['report_id'=>$id]);
             }
             return $id;

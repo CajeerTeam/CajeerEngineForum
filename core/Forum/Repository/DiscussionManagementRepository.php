@@ -6,7 +6,8 @@ namespace CajeerEngine\Forum\Repository;
 final readonly class DiscussionManagementRepository extends Repository
 {
     public function moveThread(string $id,string $board): void
-    { $this->query('UPDATE ce_forum_threads SET board_id=? WHERE id=?',[$board,$id]); }
+    { $this->query('UPDATE ce_forum_threads SET board_id=? WHERE id=?',[$board,$id]);$this->query('UPDATE ce_forum_review_submissions SET board_id=? WHERE thread_id=?',[$board,$id]); }
+    public function hasPendingReview(string $thread): bool {return $this->row("SELECT id FROM ce_forum_review_submissions WHERE thread_id=? AND status='pending' LIMIT 1",[$thread])!==null;}
     public function selectedPosts(string $thread,array $ids): array
     { return $this->rows('SELECT id,author_id,ordinal,created_at FROM ce_forum_live_posts WHERE thread_id=? AND id IN ('.implode(',',array_fill(0,count($ids),'?')).') ORDER BY ordinal',[$thread,...$ids]); }
     public function appendAll(string $source,string $target,int $offset): void

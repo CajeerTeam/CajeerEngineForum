@@ -19,6 +19,7 @@ final class ContentIntegrity
             if($row['result_json']!==null){
                 $r=json_decode($row['result_json'],false,32,JSON_THROW_ON_ERROR);
                 if(get_object_vars($p)!==[]||!$r instanceof \stdClass||!self::id($r->id??null))return false;
+                if(($r->pending_review??false)===true)return in_array($scope,['thread','reply'],true)&&($r->submission_id??null)===$r->id;
                 return match($scope){
                     'thread'=>true,
                     'reply'=>($r->thread_id??null)===$target&&is_int($r->page??null)&&$r->page>=1,
@@ -45,6 +46,17 @@ final class ContentIntegrity
             }
             return true;
         }catch(\JsonException|\CajeerEngine\Forum\ForumException){return false;}
+    }
+
+    /** Pending review payload and its file reservations must agree exactly. */
+    public static function submission(array $row,array $held): bool
+    {
+        $draft=['scope'=>$row['thread_id']===null?'thread':'reply','target_id'=>$row['thread_id']??$row['board_id'],'payload'=>$row['payload'],'result_json'=>null];
+        if(!self::draft($draft))return false;
+        $p=json_decode($row['payload'],true,32,JSON_THROW_ON_ERROR);
+        $expected=$row['status']==='pending'?$p['attachment_ids']:[];
+        sort($held);sort($expected);
+        return $held===$expected;
     }
 
     /** The ledger may outlive its attachment (remote deletion tombstone). */

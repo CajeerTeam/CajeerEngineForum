@@ -46,6 +46,7 @@ with tempfile.TemporaryDirectory(prefix='forum-attachment-') as directory:
     db.commit();db.executescript(migrations[-1].read_text())
     assert db.execute('SELECT body,body_format FROM ce_forum_posts WHERE id=?',(p,)).fetchone()==('**Legacy**','markdown')
     assert db.execute('SELECT COUNT(*) FROM ce_forum_attachments').fetchone()[0]==0
+    for migration in sorted(p for p in (ROOT/'migrations/sqlite').glob('*.sql') if p.name[:4]>'0029'):db.executescript(migration.read_text())
     now=int(time.time());data=b'Attachment regression content\n';digest=hashlib.sha256(data).hexdigest();encoded=base64.b64encode(data).decode()
     def upload(owner,expiry=now+86400):
         aid=uid();db.execute(insert,(aid,owner,'test.txt','text/plain',len(data),digest,encoded,min(now,expiry-1),expiry));return aid

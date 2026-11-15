@@ -30,7 +30,7 @@ final readonly class ForumDatabaseCheck
             'ce_forum_categories'=>['id','name','description','position','visibility'],
             'ce_forum_category_permissions'=>['node_id','subject_type','subject_id','permission','effect'],
             'ce_forum_board_permissions'=>['node_id','subject_type','subject_id','permission','effect'],
-            'ce_forum_boards'=>['id','category_id','name','description','position','parent_id','node_type','state','visibility','rules'],
+            'ce_forum_boards'=>['id','category_id','name','description','position','parent_id','node_type','state','visibility','rules','review_required'],
             'ce_forum_tree_lock'=>['id'],
             'ce_forum_thread_tags'=>['thread_id','tag'],
             'ce_forum_thread_redirects'=>['source_id','source_board_id','target_id'],
@@ -64,7 +64,10 @@ final readonly class ForumDatabaseCheck
             'ce_forum_conversation_messages'=>['id','conversation_id','author_id','message_sequence','body','body_format','created_at','edited_at','revision_number'],
             'ce_forum_conversation_preferences'=>['user_id','incoming'],
             'ce_forum_user_blocks'=>['user_id','blocked_id'],
-            'ce_forum_conversation_reports'=>['id','message_id','user_id','reason','body_snapshot','status','created_at','resolved_by'],
+            'ce_forum_conversation_reports'=>['id','message_id','user_id','reason','body_snapshot','status','created_at','resolved_by','priority','assigned_to','revision_number','decision','category','decision_kind','snapshot_body','snapshot_format','resolved_at'],
+            'ce_forum_review_submissions'=>['id','author_id','board_id','thread_id','payload','status','priority','assigned_to','revision_number','decision','decided_by','result_id','created_at','updated_at'],
+            'ce_forum_review_files'=>['attachment_id','submission_id'],
+            'ce_forum_moderation_events'=>['id','kind','case_id','actor_id','revision_number','action','detail','created_at'],
             'ce_forum_conversation_limits'=>['user_id','action','window_start','hits'],
             'ce_forum_reports'=>['id','post_id','user_id','reason','status','created_at','resolved_by'],
         ];
@@ -88,7 +91,7 @@ final readonly class ForumDatabaseCheck
             'sqlite' => $pdo->query("SELECT name FROM sqlite_master WHERE type='index'")->fetchAll(\PDO::FETCH_COLUMN),
             default => $pdo->query('SELECT DISTINCT index_name FROM information_schema.statistics WHERE table_schema=DATABASE()')->fetchAll(\PDO::FETCH_COLUMN),
         };
-        $missingIndexes = array_values(array_diff(['ce_forum_thread_trash','ce_forum_post_trash','ce_forum_draft_owner','ce_forum_draft_expiry','ce_forum_answer_notify_pending','ce_forum_answer_notify_inbox','ce_forum_answer_notify_actor','ce_forum_poll_tally','ce_forum_poll_user','ce_forum_answer_user','ce_forum_media_due','ce_forum_replica_due','ce_forum_attachment_owner','ce_forum_attachment_post','ce_forum_attachment_message','ce_forum_attachment_expiry','ce_forum_relation_target','ce_forum_activity_post','ce_forum_conv_member','ce_forum_conv_blocked','ce_forum_conv_report_queue','ce_forum_mail_sent','ce_forum_mail_due','ce_forum_mail_user','ce_forum_mail_post','ce_forum_board_watch_user','ce_forum_notify_pending','ce_forum_notify_inbox','ce_forum_notify_page','ce_forum_notify_post','ce_forum_notify_actor','ce_forum_post_read_sequence','ce_forum_read_thread','ce_forum_profile_field_lookup','ce_forum_tag_lookup','ce_forum_redirect_target','ce_forum_group_members','ce_forum_board_parent','ce_identity_expiry_idx','ce_forum_post_thread','ce_forum_thread_latest','ce_forum_thread_author','ce_forum_post_author','ce_forum_watch_user','ce_forum_reaction_user','ce_forum_report_post','ce_forum_report_user','ce_forum_report_resolver'],$indexes));
+        $missingIndexes = array_values(array_diff(['ce_forum_review_queue','ce_forum_review_author','ce_forum_review_files_case','ce_forum_mod_events_case','ce_forum_reports_priority','ce_forum_thread_trash','ce_forum_post_trash','ce_forum_draft_owner','ce_forum_draft_expiry','ce_forum_answer_notify_pending','ce_forum_answer_notify_inbox','ce_forum_answer_notify_actor','ce_forum_poll_tally','ce_forum_poll_user','ce_forum_answer_user','ce_forum_media_due','ce_forum_replica_due','ce_forum_attachment_owner','ce_forum_attachment_post','ce_forum_attachment_message','ce_forum_attachment_expiry','ce_forum_relation_target','ce_forum_activity_post','ce_forum_conv_member','ce_forum_conv_blocked','ce_forum_conv_report_queue','ce_forum_mail_sent','ce_forum_mail_due','ce_forum_mail_user','ce_forum_mail_post','ce_forum_board_watch_user','ce_forum_notify_pending','ce_forum_notify_inbox','ce_forum_notify_page','ce_forum_notify_post','ce_forum_notify_actor','ce_forum_post_read_sequence','ce_forum_read_thread','ce_forum_profile_field_lookup','ce_forum_tag_lookup','ce_forum_redirect_target','ce_forum_group_members','ce_forum_board_parent','ce_identity_expiry_idx','ce_forum_post_thread','ce_forum_thread_latest','ce_forum_thread_author','ce_forum_post_author','ce_forum_watch_user','ce_forum_reaction_user','ce_forum_report_post','ce_forum_report_user','ce_forum_report_resolver'],$indexes));
         if ((int)$pdo->query('SELECT COUNT(*) FROM ce_forum_conversation_lock WHERE id=1')->fetchColumn()!==1) $missing[]='ce_forum_conversation_lock.id=1';
         try {
             if ((int)$pdo->query('SELECT COUNT(*) FROM ce_forum_tree_lock WHERE id=1')->fetchColumn()!==1) $missing[]='ce_forum_tree_lock.id=1';

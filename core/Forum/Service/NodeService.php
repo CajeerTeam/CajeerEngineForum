@@ -143,7 +143,7 @@ final readonly class NodeService
             $old=$category?$this->categoryRow($id):$this->boardRow($id);
             foreach ($this->boards->topology() as $row) if ($category?$row['category_id']===$id:$row['parent_id']===$id) throw new ForumException('Сначала переместите или удалите подразделы.',409);
             if ($category) $this->boards->deleteCategory($id);
-            else {if ($this->boards->hasThreads($id)) throw new ForumException('Нельзя удалить раздел с темами.',409);$this->boards->deleteBoard($id);$this->sortBoards($old['category_id'],$old['parent_id'],null,null);}
+            else {if ($this->boards->hasPendingReview($id))throw new ForumException('Сначала рассмотрите ожидающие темы.',409);if ($this->boards->hasThreads($id)) throw new ForumException('Нельзя удалить раздел с темами.',409);$this->boards->deleteBoard($id);$this->sortBoards($old['category_id'],$old['parent_id'],null,null);}
             return $id;
         });
     }

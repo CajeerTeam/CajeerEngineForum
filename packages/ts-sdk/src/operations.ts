@@ -863,6 +863,67 @@ export const operations = {
         ],
         "bodyRequired": false
     },
+    "get_Forum_moderationDetail": {
+        "method": "GET",
+        "path": "/forum/moderation/cases/{kind}/{id}",
+        "parameters": [
+            {
+                "name": "kind",
+                "in": "path",
+                "required": true
+            },
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            },
+            {
+                "name": "page",
+                "in": "query",
+                "required": false
+            }
+        ],
+        "bodyRequired": false
+    },
+    "get_Forum_moderationQueue": {
+        "method": "GET",
+        "path": "/forum/moderation/queue",
+        "parameters": [
+            {
+                "name": "page",
+                "in": "query",
+                "required": false
+            },
+            {
+                "name": "kind",
+                "in": "query",
+                "required": false
+            },
+            {
+                "name": "status",
+                "in": "query",
+                "required": false
+            },
+            {
+                "name": "assigned",
+                "in": "query",
+                "required": false
+            }
+        ],
+        "bodyRequired": false
+    },
+    "get_Forum_mySubmissions": {
+        "method": "GET",
+        "path": "/forum/submissions",
+        "parameters": [
+            {
+                "name": "page",
+                "in": "query",
+                "required": false
+            }
+        ],
+        "bodyRequired": false
+    },
     "get_Forum_notificationTarget": {
         "method": "GET",
         "path": "/forum/notifications/{id}",
@@ -1070,6 +1131,23 @@ export const operations = {
                 "name": "page",
                 "in": "query",
                 "required": false
+            }
+        ],
+        "bodyRequired": false
+    },
+    "get_Forum_reviewDownload": {
+        "method": "GET",
+        "path": "/forum/moderation/submissions/{id}/files/{file_id}",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            },
+            {
+                "name": "file_id",
+                "in": "path",
+                "required": true
             }
         ],
         "bodyRequired": false
@@ -2070,6 +2148,18 @@ export const operations = {
         "parameters": [],
         "bodyRequired": true
     },
+    "post_Forum_cancelSubmission": {
+        "method": "POST",
+        "path": "/forum/submissions/{id}/cancel",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
+    },
     "post_Forum_category": {
         "method": "POST",
         "path": "/forum/categories",
@@ -2182,6 +2272,23 @@ export const operations = {
         "method": "POST",
         "path": "/forum/members/{id}/moderate-profile",
         "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
+    },
+    "post_Forum_moderationAction": {
+        "method": "POST",
+        "path": "/forum/moderation/cases/{kind}/{id}",
+        "parameters": [
+            {
+                "name": "kind",
+                "in": "path",
+                "required": true
+            },
             {
                 "name": "id",
                 "in": "path",
@@ -2728,6 +2835,18 @@ export const operations = {
     "put_Forum_resolveConversationReport": {
         "method": "PUT",
         "path": "/forum/conversation-reports/{id}",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
+    },
+    "put_Forum_reviewPolicy": {
+        "method": "PUT",
+        "path": "/forum/boards/{id}/review-policy",
         "parameters": [
             {
                 "name": "id",

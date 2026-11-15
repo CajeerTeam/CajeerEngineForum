@@ -17,6 +17,9 @@ final readonly class ForumIntegrityCheck
             // Run only after schema verification. These checks may scan the discussion corpus,
             // so deliberately keep them out of the per-request readiness endpoint.
             $queries=[
+                'invalid_review_files'=> "SELECT COUNT(*) FROM ce_forum_review_files h JOIN ce_forum_review_submissions s ON s.id=h.submission_id JOIN ce_forum_attachments a ON a.id=h.attachment_id WHERE s.status<>'pending' OR a.owner_id<>s.author_id OR a.post_id IS NOT NULL OR a.message_id IS NOT NULL",
+                'invalid_review_state'=> "SELECT COUNT(*) FROM ce_forum_review_submissions WHERE (status='pending' AND (result_id IS NOT NULL OR decided_by IS NOT NULL OR decision IS NOT NULL)) OR (status<>'pending' AND decided_by IS NULL) OR (status='approved' AND result_id IS NULL) OR (status<>'approved' AND result_id IS NOT NULL) OR updated_at<created_at",
+                'invalid_report_snapshot'=> "SELECT COUNT(*) FROM ce_forum_reports WHERE (snapshot_body IS NULL AND snapshot_format IS NOT NULL) OR (snapshot_body IS NOT NULL AND (snapshot_format IS NULL OR snapshot_format NOT IN ('plain','markdown','bbcode')))",
                 'invalid_post_revision'=> 'SELECT COUNT(*) FROM ce_forum_posts p WHERE (p.revision_number<>(SELECT COUNT(*) FROM ce_forum_post_revisions r WHERE r.post_id=p.id) OR p.revision_number<>(SELECT MAX(r.revision_number) FROM ce_forum_post_revisions r WHERE r.post_id=p.id) OR NOT EXISTS (SELECT 1 FROM ce_forum_post_revisions r WHERE r.post_id=p.id AND r.revision_number=p.revision_number AND r.body=p.body AND r.body_format=p.body_format))',
                 'invalid_message_revision'=> 'SELECT COUNT(*) FROM ce_forum_conversation_messages p WHERE (p.revision_number<>(SELECT COUNT(*) FROM ce_forum_conversation_revisions r WHERE r.message_id=p.id) OR p.revision_number<>(SELECT MAX(r.revision_number) FROM ce_forum_conversation_revisions r WHERE r.message_id=p.id) OR NOT EXISTS (SELECT 1 FROM ce_forum_conversation_revisions r WHERE r.message_id=p.id AND r.revision_number=p.revision_number AND r.body=p.body AND r.body_format=p.body_format))',
                 'invalid_draft_expiry'=> 'SELECT COUNT(*) FROM ce_forum_drafts WHERE expires_at<=updated_at OR revision_number<1',
@@ -110,6 +113,14 @@ final readonly class ForumIntegrityCheck
                 foreach($rows as $row){$owner=$row['user_id'];$id=$row['id'];if(!\CajeerEngine\Forum\Content\ContentIntegrity::draft($row))++$badDrafts;}
             }while(count($rows)===50);
             if($badDrafts)$violations['invalid_draft_payload']=$badDrafts;
+            $badSubmissions=0;$id=null;
+            do {
+                $stmt=$pdo->prepare('SELECT id,board_id,thread_id,status,payload FROM ce_forum_review_submissions'.($id===null?'':' WHERE id>?').' ORDER BY id LIMIT 50');
+                $stmt->execute($id===null?[]:[$id]);$rows=$stmt->fetchAll(\PDO::FETCH_ASSOC);$stmt->closeCursor();
+                $held=$pdo->prepare('SELECT attachment_id FROM ce_forum_review_files WHERE submission_id=?');
+                foreach($rows as $row){$id=$row['id'];$held->execute([$id]);$files=$held->fetchAll(\PDO::FETCH_COLUMN);$held->closeCursor();if(!\CajeerEngine\Forum\Content\ContentIntegrity::submission($row,$files))++$badSubmissions;}
+            }while(count($rows)===50);
+            if($badSubmissions)$violations['invalid_review_payload']=$badSubmissions;
             $badReplicas=0;$id=null;
             do {
                 $stmt=$pdo->prepare('SELECT r.attachment_id,r.destination,r.object_key,a.sha256 FROM ce_forum_media_replicas r LEFT JOIN ce_forum_attachments a ON a.id=r.attachment_id'.($id===null?'':' WHERE r.attachment_id>?').' ORDER BY r.attachment_id LIMIT 100');

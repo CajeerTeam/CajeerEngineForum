@@ -16,6 +16,7 @@ final readonly class DiscussionService
 
     private function access(?ForumAccessPolicy $actor): array { return $this->tx->permissions()->access($actor??new ForumAccessPolicy('',[])); }
     private function decorated(array $board,array $access): array { $board['permissions']=$access['boards'][$board['id']]; return $board; }
+    public function moderationQueue(): ModerationQueueService { return $this->tx->moderationQueue(); }
     public function drafts(): DraftService { return $this->tx->drafts(); }
     public function revisionHistory(ForumAccessPolicy $actor,string $id,int $offset=0,?int $number=null): array
     {
@@ -147,13 +148,14 @@ final readonly class DiscussionService
     public function management(): DiscussionManagementService { return new DiscussionManagementService($this->tx,$this->boards,$this->threads,$this->posts,new \CajeerEngine\Forum\Repository\DiscussionManagementRepository($this->db)); }
     public function groups(): GroupService { return $this->tx->groups(); }
     public function permissions(): NodePermissionService { return $this->tx->permissions(); }
-    public function createThread(ForumAccessPolicy $actor, string $board, string $title, mixed $body, string $format='plain', mixed $attachments=[], mixed $kind='discussion', mixed $poll=null): string
+    public function createThread(ForumAccessPolicy $actor, string $board, string $title, mixed $body, string $format='plain', mixed $attachments=[], mixed $kind='discussion', mixed $poll=null,bool $reviewed=false): string
     {
         $board = V::id($board); $title = V::text($title,'title',180,3); $body = \CajeerEngine\Forum\Content\ForumContentRenderer::source($body,$format);
         $actor->require('forum:write');
-        return $this->tx->write(function () use ($actor,$board,$title,$body,$format,$attachments,$kind,$poll) {
+        return $this->tx->write(function () use ($actor,$board,$title,$body,$format,$attachments,$kind,$poll,$reviewed) {
             $this->permissions()->assertWrite($actor,$board,'thread:create');
             $this->boards->writable($board);
+            if(!$reviewed&&$this->moderationQueue()->requires($actor,$board))throw new ForumException('Публикация требует предварительной проверки.',409);
             $id = Uuid::v4(); $post = Uuid::v4();
             $this->threads->insert($id,$board,$actor->userId,$title);
             $this->polls()->initialize($id,$kind,$poll);
@@ -165,14 +167,15 @@ final readonly class DiscussionService
             return $id;
         });
     }
-    public function reply(ForumAccessPolicy $actor, string $id, mixed $body, ?string $format=null, mixed $attachments=[]): string
+    public function reply(ForumAccessPolicy $actor, string $id, mixed $body, ?string $format=null, mixed $attachments=[],bool $reviewed=false): string
     {
         $id = V::id($id); $body = \CajeerEngine\Forum\Content\ForumContentRenderer::source($body,$format??'plain');
         $actor->require('forum:write');
-        return $this->tx->write(function () use ($actor,$id,$body,$format,$attachments) {
+        return $this->tx->write(function () use ($actor,$id,$body,$format,$attachments,$reviewed) {
             $thread = $this->threads->lockThread($id) ?? throw new ForumException('Тема не найдена.',404);
             $this->permissions()->assertWrite($actor,$thread['board_id'],'post:reply');
             $this->boards->writable($thread['board_id']);
+            if(!$reviewed&&$this->moderationQueue()->requires($actor,$thread['board_id']))throw new ForumException('Публикация требует предварительной проверки.',409);
             if ((int) $thread['locked'] !== 0) throw new ForumException('Тема закрыта.',409);
             $post = Uuid::v4();
             $this->posts->insert($post,$id,$actor->userId,$body,$this->posts->nextOrdinal($id),$format??'plain');

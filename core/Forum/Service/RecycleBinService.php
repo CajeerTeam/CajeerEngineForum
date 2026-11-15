@@ -65,6 +65,7 @@ final readonly class RecycleBinService
                 if($action==='restore')$this->repo->restore($kind,$id);
                 else{
                     if($this->repo->hasOpenReports($kind,$id))throw new ForumException('Сначала рассмотрите открытые жалобы.',409);
+                    if($kind==='thread'&&$this->repo->hasPendingReview($id))throw new ForumException('Сначала рассмотрите ожидающие ответы.',409);
                     $this->repo->purge($kind,$id);
                 }
             }
@@ -79,6 +80,7 @@ final readonly class RecycleBinService
             $count+=(int)$this->tx->write(function()use($candidate,$cutoff){
                 $kind=$candidate['kind'];$id=$candidate['id'];$row=$this->repo->lockTarget($kind,$id);
                 if(!$row||$row['deleted_at']===null||(int)$row['deleted_at']>$cutoff||($row['parent_deleted']??false)||$this->repo->hasOpenReports($kind,$id))return false;
+                if($kind==='thread'&&$this->repo->hasPendingReview($id))return false;
                 if($kind==='post'&&$this->repo->first($row['thread_id'])===$id)return false;
                 if(!$this->repo->purge($kind,$id))return false;
                 $this->tx->audit('forum.recycle.expire',null,['kind'=>$kind,'id'=>$id]);return true;

@@ -1060,12 +1060,37 @@ class NetworkTests(unittest.TestCase):
         self.assertIsNone(c.call('GET',path)['interaction']['question']['accepted_post_id']);self.assertNotIn(reply,[p['id'] for p in c.call('GET',path)['posts']]);c.call('GET',pp+'/revisions',404,token=member);c.call('GET','/forum/attachments/'+file,404,token=member)
         c.call('POST',trash,409,{'action':'purge','deletion_id':generation},token=admin)
         c.call('POST',whole,200,{'action':'delete'},token=admin);c.call('GET',path,404);c.call('GET',path,404,token=admin);c.call('POST',path+'/posts',404,{'body':'Cannot reply'},token=member)
-        self.assertNotIn(thread,[t['id'] for t in c.call('GET','/forum/search?q='+title,token=member)])
+        self.assertNotIn(thread,[t['id'] for t in c.call('GET','/forum/search?q='+urllib.parse.quote(title),token=member)])
         recycle_action(c,admin,'thread',thread,'restore');self.assertNotIn(reply,[p['id'] for p in c.call('GET',path)['posts']]);recycle_action(c,admin,'post',reply,'restore')
         self.assertEqual(reply,c.call('GET',path)['interaction']['question']['accepted_post_id']);self.assertEqual(b'Recoverable bytes',c.download_attachment(file,member));self.assertEqual(2,len(c.call('GET',pp+'/revisions',token=member)))
         c.call('POST',trash,200,{'action':'delete'},token=admin);c.call('POST',trash,409,{'action':'restore','deletion_id':generation},token=admin)
         c.call('POST','/forum/reports/'+report+'/resolve',200,token=admin);recycle_action(c,admin,'post',reply,'purge');c.call('GET',trash,404,token=admin);c.call('GET','/forum/attachments/'+file,404,token=member)
         c.call('POST',whole,200,{'action':'delete'},token=admin);recycle_action(c,admin,'thread',thread,'purge');c.call('GET',whole,404,token=admin)
+
+    def test_20_moderation_center(self):
+        c=Client(self.base);admin=c.login(ADMIN,ADMIN_PASSWORD)[0]['data']['access_token'];email=unique_email()
+        c.call('POST','/users',201,{'email':email,'name':'Review member','password':PASSWORD,'roles':['forum-member']},token=admin);member=c.login(email)[0]['data']['access_token'];uid=c.call('GET','/auth/me',token=member)['user_id']
+        admin_id=c.call('GET','/auth/me',token=admin)['user_id'];board=c.call('GET','/forum')['boards'][0]['id'];policy='/forum/boards/'+board+'/review-policy';create='/forum/boards/'+board+'/threads'
+        c.call('PUT',policy,403,{'review_required':True},token=member);c.call('PUT',policy,200,{'review_required':True},token=admin)
+        try:
+            file=c.upload_attachment('review.txt',b'Pending review bytes',member)['id'];title='Review '+uuid.uuid4().hex
+            draft='/forum/drafts/'+str(uuid.uuid4());c.call('PUT',draft,200,{'scope':'thread','target_id':board,'revision_number':0,'payload':{'title':title,'body':'**Pending review**','body_format':'markdown','attachment_ids':[file],'kind':'poll','poll':{'question':'Choose','options':['One','Two'],'max_choices':1,'allow_change':True,'visibility':'always'}}},token=member)
+            receipt=c.call('POST',draft+'/publish',200,{'revision_number':1},token=member);sid=receipt['submission_id'];self.assertTrue(receipt['pending_review']);self.assertEqual(receipt,c.call('POST',draft+'/publish',200,{'revision_number':1},token=member))
+            c.call('GET','/forum/threads/'+sid,404,token=member);self.assertNotIn(title,[x['title'] for x in c.call('GET','/forum/search?q='+urllib.parse.quote(title))])
+            path='/forum/moderation/cases/submission/'+sid;c.call('GET',path,403,token=member);c.call('GET','/forum/attachments/'+file,404,token=admin);c.call('DELETE','/forum/attachments/'+file,409,token=member)
+            self.assertTrue(any(x['id']==sid for x in c.call('GET','/forum/submissions',token=member)))
+            with c.opener.open(urllib.request.Request(self.base+'/api/v1/forum/moderation/submissions/'+sid+'/files/'+file,headers={'Authorization':'Bearer '+admin}),timeout=20) as res:self.assertEqual(b'Pending review bytes',res.read())
+            r=c.call('POST',path,200,{'action':'assign','assigned_to':admin_id,'revision_number':1},token=admin);self.assertEqual(2,r['revision_number']);c.call('POST',path,409,{'action':'approve','revision_number':1},token=admin)
+            r=c.call('POST',path,200,{'action':'priority','priority':2,'revision_number':2},token=admin);r=c.call('POST',path,200,{'action':'note','reason':'Internal note','revision_number':3},token=admin);self.assertEqual(4,r['revision_number']);self.assertEqual('note',c.call('GET',path,token=admin)['history'][0]['action'])
+            r=c.call('POST',path,200,{'action':'approve','revision_number':4},token=admin);self.assertEqual('approved',r['status']);tid=r['result_id'];topic='/forum/threads/'+tid;data=c.call('GET',topic);self.assertEqual(uid,data['thread']['author_id']);self.assertEqual('poll',data['interaction']['kind']);self.assertEqual(b'Pending review bytes',c.download_attachment(file));c.call('POST',path,409,{'action':'approve','revision_number':4},token=admin)
+            reply=c.call('POST',topic+'/posts',201,{'body':'Queued reply'},token=member);self.assertTrue(reply['pending_review']);self.assertEqual(1,len(c.call('GET',topic)['posts']));rid=reply['submission_id'];rp='/forum/moderation/cases/submission/'+rid
+            c.call('POST',topic+'/moderate',200,{'action':'lock'},token=admin);c.call('POST',rp,409,{'action':'approve','revision_number':1},token=admin);c.call('POST',topic+'/moderate',200,{'action':'unlock'},token=admin)
+            accepted=c.call('POST',rp,200,{'action':'approve','revision_number':1},token=admin)['result_id'];self.assertEqual(2,len(c.call('GET',topic)['posts']))
+            report=c.call('POST','/forum/posts/'+accepted+'/report',201,{'reason':'Review evidence','category':'abuse'},token=admin)['id'];self.assertEqual(report,c.call('POST','/forum/posts/'+accepted+'/report',201,{'reason':'Duplicate'},token=admin)['id']);c.call('PATCH','/forum/posts/'+accepted,200,{'body':'Changed reply'},token=member)
+            report_path='/forum/moderation/cases/report/'+report;detail=c.call('GET',report_path,token=admin)['item'];self.assertEqual('Queued reply',detail['snapshot_body']);self.assertEqual('Changed reply',detail['current_body']);c.call('POST',report_path,200,{'action':'resolve','revision_number':1,'reason':'Remove reply','disposition':'deleted'},token=admin);self.assertEqual(1,len(c.call('GET',topic)['posts']))
+            queued=c.call('POST',topic+'/posts',201,{'body':'Cancel me'},token=member)['submission_id'];c.call('POST','/forum/submissions/'+queued+'/cancel',200,{'revision_number':1},token=member);self.assertEqual('cancelled',c.call('GET','/forum/moderation/cases/submission/'+queued,token=admin)['item']['status'])
+            rejected=c.call('POST',topic+'/posts',201,{'body':'Reject me'},token=member)['submission_id'];c.call('POST','/forum/moderation/cases/submission/'+rejected,200,{'action':'reject','revision_number':1,'reason':'Rule violation'},token=admin);self.assertEqual(1,len(c.call('GET',topic)['posts']))
+        finally:c.call('PUT',policy,200,{'review_required':False},token=admin)
 
     def test_99_rate_limit(self):
         # Run last: exhaust the real IP auth bucket without guessing credentials.

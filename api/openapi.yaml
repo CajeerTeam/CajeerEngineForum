@@ -20488,7 +20488,33 @@
                     "data"
                   ],
                   "properties": {
-                    "data": {}
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "thread_id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "page": {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        "pending_review": {
+                          "type": "boolean"
+                        },
+                        "submission_id": {
+                          "type": "string",
+                          "format": "uuid"
+                        }
+                      },
+                      "required": [
+                        "id"
+                      ]
+                    }
                   }
                 }
               }
@@ -20584,7 +20610,8 @@
               }
             }
           }
-        }
+        },
+        "description": "Returns a published ID or pending_review=true with the submission ID when board premoderation is enabled."
       }
     },
     "/forum/threads/{id}/posts": {
@@ -20671,7 +20698,33 @@
                     "data"
                   ],
                   "properties": {
-                    "data": {}
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "thread_id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "page": {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        "pending_review": {
+                          "type": "boolean"
+                        },
+                        "submission_id": {
+                          "type": "string",
+                          "format": "uuid"
+                        }
+                      },
+                      "required": [
+                        "id"
+                      ]
+                    }
                   }
                 }
               }
@@ -20767,7 +20820,8 @@
               }
             }
           }
-        }
+        },
+        "description": "Returns a published ID or pending_review=true with the submission ID when board premoderation is enabled."
       }
     },
     "/forum/posts/{id}": {
@@ -21496,6 +21550,17 @@
                   "reason": {
                     "type": "string",
                     "maxLength": 500
+                  },
+                  "category": {
+                    "type": "string",
+                    "enum": [
+                      "spam",
+                      "abuse",
+                      "privacy",
+                      "unsafe_file",
+                      "other"
+                    ],
+                    "default": "other"
                   }
                 },
                 "required": [
@@ -38195,6 +38260,13 @@
                         "page": {
                           "type": "integer",
                           "minimum": 1
+                        },
+                        "pending_review": {
+                          "type": "boolean"
+                        },
+                        "submission_id": {
+                          "type": "string",
+                          "format": "uuid"
                         }
                       },
                       "required": [
@@ -39633,6 +39705,2062 @@
           }
         },
         "description": "Delete or restore content with current node moderation permission. Permanent purge requires * and no open reports."
+      }
+    },
+    "/forum/moderation/queue": {
+      "get": {
+        "tags": [
+          "Forum"
+        ],
+        "operationId": "get_Forum_moderationQueue",
+        "summary": "GET /forum/moderation/queue",
+        "x-cajeer-route": "api.v1.forum.moderationQueue",
+        "x-cajeer-required-scopes": [
+          "forum:moderate"
+        ],
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "BrowserSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            }
+          },
+          {
+            "name": "kind",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "report",
+                "submission"
+              ],
+              "default": "report"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "all",
+                "open",
+                "resolved",
+                "pending",
+                "approved",
+                "rejected",
+                "cancelled"
+              ],
+              "default": "all"
+            }
+          },
+          {
+            "name": "assigned",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "oneOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string",
+                                "format": "uuid"
+                              },
+                              "status": {
+                                "type": "string"
+                              },
+                              "priority": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 2
+                              },
+                              "assigned_to": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "format": "uuid"
+                              },
+                              "revision_number": {
+                                "type": "integer",
+                                "minimum": 1
+                              },
+                              "decision": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "current_board_id": {
+                                "type": "string",
+                                "format": "uuid"
+                              },
+                              "thread_id": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "format": "uuid"
+                              },
+                              "author_id": {
+                                "type": "string",
+                                "format": "uuid"
+                              },
+                              "board_id": {
+                                "type": "string",
+                                "format": "uuid"
+                              },
+                              "payload": {
+                                "type": "object"
+                              },
+                              "result_id": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "format": "uuid"
+                              },
+                              "created_at": {
+                                "type": "integer"
+                              },
+                              "updated_at": {
+                                "type": "integer"
+                              },
+                              "decided_by": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "format": "uuid"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "status",
+                              "revision_number",
+                              "payload"
+                            ]
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string",
+                                "format": "uuid"
+                              },
+                              "status": {
+                                "type": "string"
+                              },
+                              "priority": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 2
+                              },
+                              "assigned_to": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "format": "uuid"
+                              },
+                              "revision_number": {
+                                "type": "integer",
+                                "minimum": 1
+                              },
+                              "decision": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "current_board_id": {
+                                "type": "string",
+                                "format": "uuid"
+                              },
+                              "thread_id": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "format": "uuid"
+                              },
+                              "post_id": {
+                                "type": "string",
+                                "format": "uuid"
+                              },
+                              "user_id": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "format": "uuid"
+                              },
+                              "reason": {
+                                "type": "string",
+                                "maxLength": 500
+                              },
+                              "title": {
+                                "type": "string"
+                              },
+                              "snapshot_body": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "snapshot_format": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "current_body": {
+                                "type": "string"
+                              },
+                              "current_format": {
+                                "type": "string"
+                              },
+                              "resolved_by": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "format": "uuid"
+                              },
+                              "resolved_at": {
+                                "type": [
+                                  "integer",
+                                  "null"
+                                ]
+                              },
+                              "created_at": {
+                                "type": "string"
+                              },
+                              "category": {
+                                "type": "string",
+                                "enum": [
+                                  "spam",
+                                  "abuse",
+                                  "privacy",
+                                  "unsafe_file",
+                                  "other"
+                                ]
+                              },
+                              "decision_kind": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "enum": [
+                                  "resolved",
+                                  "dismissed",
+                                  "deleted",
+                                  null
+                                ]
+                              },
+                              "related_open": {
+                                "type": "integer",
+                                "minimum": 0
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "status",
+                              "revision_number",
+                              "post_id"
+                            ]
+                          }
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "description": "ACL-scoped cases, sorted by priority and creation time. assigned accepts me, unassigned or a moderator UUID."
+      }
+    },
+    "/forum/moderation/cases/{kind}/{id}": {
+      "get": {
+        "tags": [
+          "Forum"
+        ],
+        "operationId": "get_Forum_moderationDetail",
+        "summary": "GET /forum/moderation/cases/{kind}/{id}",
+        "x-cajeer-route": "api.v1.forum.moderationDetail",
+        "x-cajeer-required-scopes": [
+          "forum:moderate"
+        ],
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "BrowserSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "report",
+                "submission"
+              ]
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "item": {
+                          "oneOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string",
+                                  "format": "uuid"
+                                },
+                                "status": {
+                                  "type": "string"
+                                },
+                                "priority": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 2
+                                },
+                                "assigned_to": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ],
+                                  "format": "uuid"
+                                },
+                                "revision_number": {
+                                  "type": "integer",
+                                  "minimum": 1
+                                },
+                                "decision": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                },
+                                "current_board_id": {
+                                  "type": "string",
+                                  "format": "uuid"
+                                },
+                                "thread_id": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ],
+                                  "format": "uuid"
+                                },
+                                "author_id": {
+                                  "type": "string",
+                                  "format": "uuid"
+                                },
+                                "board_id": {
+                                  "type": "string",
+                                  "format": "uuid"
+                                },
+                                "payload": {
+                                  "type": "object"
+                                },
+                                "result_id": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ],
+                                  "format": "uuid"
+                                },
+                                "created_at": {
+                                  "type": "integer"
+                                },
+                                "updated_at": {
+                                  "type": "integer"
+                                },
+                                "decided_by": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ],
+                                  "format": "uuid"
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "status",
+                                "revision_number",
+                                "payload"
+                              ]
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string",
+                                  "format": "uuid"
+                                },
+                                "status": {
+                                  "type": "string"
+                                },
+                                "priority": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 2
+                                },
+                                "assigned_to": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ],
+                                  "format": "uuid"
+                                },
+                                "revision_number": {
+                                  "type": "integer",
+                                  "minimum": 1
+                                },
+                                "decision": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                },
+                                "current_board_id": {
+                                  "type": "string",
+                                  "format": "uuid"
+                                },
+                                "thread_id": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ],
+                                  "format": "uuid"
+                                },
+                                "post_id": {
+                                  "type": "string",
+                                  "format": "uuid"
+                                },
+                                "user_id": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ],
+                                  "format": "uuid"
+                                },
+                                "reason": {
+                                  "type": "string",
+                                  "maxLength": 500
+                                },
+                                "title": {
+                                  "type": "string"
+                                },
+                                "snapshot_body": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                },
+                                "snapshot_format": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                },
+                                "current_body": {
+                                  "type": "string"
+                                },
+                                "current_format": {
+                                  "type": "string"
+                                },
+                                "resolved_by": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ],
+                                  "format": "uuid"
+                                },
+                                "resolved_at": {
+                                  "type": [
+                                    "integer",
+                                    "null"
+                                  ]
+                                },
+                                "created_at": {
+                                  "type": "string"
+                                },
+                                "category": {
+                                  "type": "string",
+                                  "enum": [
+                                    "spam",
+                                    "abuse",
+                                    "privacy",
+                                    "unsafe_file",
+                                    "other"
+                                  ]
+                                },
+                                "decision_kind": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ],
+                                  "enum": [
+                                    "resolved",
+                                    "dismissed",
+                                    "deleted",
+                                    null
+                                  ]
+                                },
+                                "related_open": {
+                                  "type": "integer",
+                                  "minimum": 0
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "status",
+                                "revision_number",
+                                "post_id"
+                              ]
+                            }
+                          ]
+                        },
+                        "history": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string",
+                                "format": "uuid"
+                              },
+                              "kind": {
+                                "type": "string"
+                              },
+                              "case_id": {
+                                "type": "string",
+                                "format": "uuid"
+                              },
+                              "actor_id": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "format": "uuid"
+                              },
+                              "action": {
+                                "type": "string"
+                              },
+                              "detail": {
+                                "type": "string",
+                                "maxLength": 500
+                              },
+                              "created_at": {
+                                "type": "integer"
+                              },
+                              "revision_number": {
+                                "type": "integer",
+                                "minimum": 1
+                              }
+                            }
+                          }
+                        }
+                      },
+                      "required": [
+                        "item",
+                        "history"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "description": "Case evidence and paginated internal history."
+      },
+      "post": {
+        "tags": [
+          "Forum"
+        ],
+        "operationId": "post_Forum_moderationAction",
+        "summary": "POST /forum/moderation/cases/{kind}/{id}",
+        "x-cajeer-route": "api.v1.forum.moderationAction",
+        "x-cajeer-required-scopes": [
+          "forum:moderate"
+        ],
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "BrowserSession": [],
+            "CsrfToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "report",
+                "submission"
+              ]
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "action": {
+                    "type": "string",
+                    "enum": [
+                      "assign",
+                      "priority",
+                      "note",
+                      "resolve",
+                      "approve",
+                      "reject"
+                    ]
+                  },
+                  "revision_number": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "assigned_to": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "uuid"
+                  },
+                  "priority": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2
+                  },
+                  "reason": {
+                    "type": "string",
+                    "maxLength": 500
+                  },
+                  "disposition": {
+                    "type": "string",
+                    "enum": [
+                      "resolved",
+                      "dismissed",
+                      "deleted"
+                    ],
+                    "default": "resolved",
+                    "description": "Report resolution only; deleted moves target to recycle bin atomically."
+                  }
+                },
+                "required": [
+                  "action",
+                  "revision_number"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "oneOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "format": "uuid"
+                            },
+                            "status": {
+                              "type": "string"
+                            },
+                            "priority": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 2
+                            },
+                            "assigned_to": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "format": "uuid"
+                            },
+                            "revision_number": {
+                              "type": "integer",
+                              "minimum": 1
+                            },
+                            "decision": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "current_board_id": {
+                              "type": "string",
+                              "format": "uuid"
+                            },
+                            "thread_id": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "format": "uuid"
+                            },
+                            "author_id": {
+                              "type": "string",
+                              "format": "uuid"
+                            },
+                            "board_id": {
+                              "type": "string",
+                              "format": "uuid"
+                            },
+                            "payload": {
+                              "type": "object"
+                            },
+                            "result_id": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "format": "uuid"
+                            },
+                            "created_at": {
+                              "type": "integer"
+                            },
+                            "updated_at": {
+                              "type": "integer"
+                            },
+                            "decided_by": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "format": "uuid"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "status",
+                            "revision_number",
+                            "payload"
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "format": "uuid"
+                            },
+                            "status": {
+                              "type": "string"
+                            },
+                            "priority": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 2
+                            },
+                            "assigned_to": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "format": "uuid"
+                            },
+                            "revision_number": {
+                              "type": "integer",
+                              "minimum": 1
+                            },
+                            "decision": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "current_board_id": {
+                              "type": "string",
+                              "format": "uuid"
+                            },
+                            "thread_id": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "format": "uuid"
+                            },
+                            "post_id": {
+                              "type": "string",
+                              "format": "uuid"
+                            },
+                            "user_id": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "format": "uuid"
+                            },
+                            "reason": {
+                              "type": "string",
+                              "maxLength": 500
+                            },
+                            "title": {
+                              "type": "string"
+                            },
+                            "snapshot_body": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "snapshot_format": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "current_body": {
+                              "type": "string"
+                            },
+                            "current_format": {
+                              "type": "string"
+                            },
+                            "resolved_by": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "format": "uuid"
+                            },
+                            "resolved_at": {
+                              "type": [
+                                "integer",
+                                "null"
+                              ]
+                            },
+                            "created_at": {
+                              "type": "string"
+                            },
+                            "category": {
+                              "type": "string",
+                              "enum": [
+                                "spam",
+                                "abuse",
+                                "privacy",
+                                "unsafe_file",
+                                "other"
+                              ]
+                            },
+                            "decision_kind": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "enum": [
+                                "resolved",
+                                "dismissed",
+                                "deleted",
+                                null
+                              ]
+                            },
+                            "related_open": {
+                              "type": "integer",
+                              "minimum": 0
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "status",
+                            "revision_number",
+                            "post_id"
+                          ]
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "description": "Versioned decision; stale or closed cases return 409. Approval publishes using the author’s current ACL."
+      }
+    },
+    "/forum/boards/{id}/review-policy": {
+      "put": {
+        "tags": [
+          "Forum"
+        ],
+        "operationId": "put_Forum_reviewPolicy",
+        "summary": "PUT /forum/boards/{id}/review-policy",
+        "x-cajeer-route": "api.v1.forum.reviewPolicy",
+        "x-cajeer-required-scopes": [
+          "*"
+        ],
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "BrowserSession": [],
+            "CsrfToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "review_required": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "review_required"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "review_required": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "review_required"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "description": "Enable board-level premoderation of new topics and replies by non-moderators."
+      }
+    },
+    "/forum/submissions": {
+      "get": {
+        "tags": [
+          "Forum"
+        ],
+        "operationId": "get_Forum_mySubmissions",
+        "summary": "GET /forum/submissions",
+        "x-cajeer-route": "api.v1.forum.mySubmissions",
+        "x-cajeer-required-scopes": [
+          "forum:write"
+        ],
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "BrowserSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "status": {
+                            "type": "string"
+                          },
+                          "priority": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 2
+                          },
+                          "assigned_to": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "format": "uuid"
+                          },
+                          "revision_number": {
+                            "type": "integer",
+                            "minimum": 1
+                          },
+                          "decision": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "current_board_id": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "thread_id": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "format": "uuid"
+                          },
+                          "author_id": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "board_id": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "payload": {
+                            "type": "object"
+                          },
+                          "result_id": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "format": "uuid"
+                          },
+                          "created_at": {
+                            "type": "integer"
+                          },
+                          "updated_at": {
+                            "type": "integer"
+                          },
+                          "decided_by": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "format": "uuid"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "status",
+                          "revision_number",
+                          "payload"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "description": "Own submission status; no internal notes or assigned moderator data."
+      }
+    },
+    "/forum/submissions/{id}/cancel": {
+      "post": {
+        "tags": [
+          "Forum"
+        ],
+        "operationId": "post_Forum_cancelSubmission",
+        "summary": "POST /forum/submissions/{id}/cancel",
+        "x-cajeer-route": "api.v1.forum.cancelSubmission",
+        "x-cajeer-required-scopes": [
+          "forum:write"
+        ],
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "BrowserSession": [],
+            "CsrfToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "revision_number": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                },
+                "required": [
+                  "revision_number"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "status": {
+                          "type": "string"
+                        },
+                        "priority": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 2
+                        },
+                        "assigned_to": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "uuid"
+                        },
+                        "revision_number": {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        "decision": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "current_board_id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "thread_id": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "uuid"
+                        },
+                        "author_id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "board_id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "payload": {
+                          "type": "object"
+                        },
+                        "result_id": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "uuid"
+                        },
+                        "created_at": {
+                          "type": "integer"
+                        },
+                        "updated_at": {
+                          "type": "integer"
+                        },
+                        "decided_by": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "uuid"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "status",
+                        "revision_number",
+                        "payload"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "description": "Cancel own pending submission and release reserved attachments."
+      }
+    },
+    "/forum/moderation/submissions/{id}/files/{file_id}": {
+      "get": {
+        "tags": [
+          "Forum"
+        ],
+        "operationId": "get_Forum_reviewDownload",
+        "summary": "GET /forum/moderation/submissions/{id}/files/{file_id}",
+        "x-cajeer-route": "api.v1.forum.reviewDownload",
+        "x-cajeer-required-scopes": [
+          "forum:moderate"
+        ],
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "ApiTokenAuth": []
+          },
+          {
+            "BrowserSession": []
+          }
+        ],
+        "responses": {
+          "400": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "File bytes (forced download)",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "file_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "description": "Download reserved submission file as an attachment; current node ACL and SHA-256 checked."
       }
     }
   },

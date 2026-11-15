@@ -80,6 +80,7 @@ final readonly class DiscussionManagementService
         if (in_array($target,$sources,true)) throw new ForumException('Нельзя объединить тему с собой.');
         return $this->tx->write(function()use($actor,$target,$sources){
             $threads=$this->lock($actor,[$target,...$sources]);$this->boards->writable($threads[$target]['board_id']);
+            foreach($sources as $source) if($this->repo->hasPendingReview($source))throw new ForumException('Сначала рассмотрите ожидающие ответы исходной темы.',409);
             foreach($sources as $source) if($this->tx->polls()->structured($source)) throw new ForumException('Нельзя объединять исходный опрос или вопрос: будут потеряны голоса или решение.',409);
             // Keep target title/prefix and combine tags without silently dropping metadata.
             $tags=$this->repo->tags($target);

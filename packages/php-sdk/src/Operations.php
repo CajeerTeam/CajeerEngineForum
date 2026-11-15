@@ -1107,6 +1107,81 @@ final class Operations {
     ),
     'bodyRequired' => false,
   ),
+  'get_Forum_moderationDetail' => 
+  array (
+    'method' => 'GET',
+    'path' => '/forum/moderation/cases/{kind}/{id}',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'kind',
+        'in' => 'path',
+        'required' => true,
+      ),
+      1 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+      2 => 
+      array (
+        'name' => 'page',
+        'in' => 'query',
+        'required' => false,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
+  'get_Forum_moderationQueue' => 
+  array (
+    'method' => 'GET',
+    'path' => '/forum/moderation/queue',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'page',
+        'in' => 'query',
+        'required' => false,
+      ),
+      1 => 
+      array (
+        'name' => 'kind',
+        'in' => 'query',
+        'required' => false,
+      ),
+      2 => 
+      array (
+        'name' => 'status',
+        'in' => 'query',
+        'required' => false,
+      ),
+      3 => 
+      array (
+        'name' => 'assigned',
+        'in' => 'query',
+        'required' => false,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
+  'get_Forum_mySubmissions' => 
+  array (
+    'method' => 'GET',
+    'path' => '/forum/submissions',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'page',
+        'in' => 'query',
+        'required' => false,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
   'get_Forum_notificationTarget' => 
   array (
     'method' => 'GET',
@@ -1367,6 +1442,27 @@ final class Operations {
         'name' => 'page',
         'in' => 'query',
         'required' => false,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
+  'get_Forum_reviewDownload' => 
+  array (
+    'method' => 'GET',
+    'path' => '/forum/moderation/submissions/{id}/files/{file_id}',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+      1 => 
+      array (
+        'name' => 'file_id',
+        'in' => 'path',
+        'required' => true,
       ),
     ),
     'bodyRequired' => false,
@@ -2676,6 +2772,21 @@ final class Operations {
     ),
     'bodyRequired' => true,
   ),
+  'post_Forum_cancelSubmission' => 
+  array (
+    'method' => 'POST',
+    'path' => '/forum/submissions/{id}/cancel',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => true,
+  ),
   'post_Forum_category' => 
   array (
     'method' => 'POST',
@@ -2827,6 +2938,27 @@ final class Operations {
     'parameters' => 
     array (
       0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => true,
+  ),
+  'post_Forum_moderationAction' => 
+  array (
+    'method' => 'POST',
+    'path' => '/forum/moderation/cases/{kind}/{id}',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'kind',
+        'in' => 'path',
+        'required' => true,
+      ),
+      1 => 
       array (
         'name' => 'id',
         'in' => 'path',
@@ -3553,6 +3685,21 @@ final class Operations {
   array (
     'method' => 'PUT',
     'path' => '/forum/conversation-reports/{id}',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => true,
+  ),
+  'put_Forum_reviewPolicy' => 
+  array (
+    'method' => 'PUT',
+    'path' => '/forum/boards/{id}/review-policy',
     'parameters' => 
     array (
       0 => 

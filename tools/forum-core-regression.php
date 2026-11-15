@@ -289,7 +289,7 @@ try {
     check((int)$pdo->query("SELECT COUNT(*) FROM ce_forum_post_revisions WHERE post_id=".$pdo->quote($dp['id']))->fetchColumn()===0,'revision cascade');
 
     if($driver==='sqlite')check($pdo->query('PRAGMA foreign_key_check')->fetchAll()===[],'foreign keys intact');
-    $v=new ForumVersion($root);check($v->current()==='0.5.1' && $v->upstream()==='1.3.0','independent product/core versions');
+    $v=new ForumVersion($root);check($v->current()==='0.5.2' && $v->upstream()==='1.3.0','independent product/core versions');
     echo "Forum core regression passed\n";
 } finally {
     unset($db,$discussion,$engagement,$moderation,$registration,$pdo,$runner);

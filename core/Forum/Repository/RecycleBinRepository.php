@@ -38,6 +38,8 @@ final readonly class RecycleBinRepository extends Repository
         $filter=$kind==='thread'?'p.thread_id=?':'p.id=?';
         return $this->row("SELECT r.id FROM ce_forum_reports r JOIN ce_forum_posts p ON p.id=r.post_id WHERE r.status='open' AND $filter LIMIT 1",[$id])!==null;
     }
+    public function hasPendingReview(string $thread): bool
+    {return $this->row("SELECT id FROM ce_forum_review_submissions WHERE thread_id=? AND status='pending' LIMIT 1",[$thread])!==null;}
     public function purge(string $kind,string $id): bool
     {return $this->query('DELETE FROM '.$this->table($kind).' WHERE id=? AND deleted_at IS NOT NULL',[$id])->rowCount()===1;}
     /** Cancel only pending deliveries; previously delivered notifications remain hidden by the live views. */
@@ -58,6 +60,6 @@ final readonly class RecycleBinRepository extends Repository
     /** Exclude open cases before LIMIT so protected records cannot starve cleanup. */
     public function expired(int $cutoff): array
     {
-        return $this->rows("SELECT * FROM (SELECT 'thread' AS kind,t.id,t.deleted_at FROM ce_forum_threads t WHERE t.deleted_at<=? AND NOT EXISTS (SELECT 1 FROM ce_forum_reports r JOIN ce_forum_posts p ON p.id=r.post_id WHERE p.thread_id=t.id AND r.status='open') UNION ALL SELECT 'post' AS kind,p.id,p.deleted_at FROM ce_forum_posts p JOIN ce_forum_threads t ON t.id=p.thread_id WHERE p.deleted_at<=? AND t.deleted_at IS NULL AND NOT EXISTS (SELECT 1 FROM ce_forum_reports r WHERE r.post_id=p.id AND r.status='open')) trash ORDER BY deleted_at,id LIMIT 100",[$cutoff,$cutoff]);
+        return $this->rows("SELECT * FROM (SELECT 'thread' AS kind,t.id,t.deleted_at FROM ce_forum_threads t WHERE t.deleted_at<=? AND NOT EXISTS (SELECT 1 FROM ce_forum_review_submissions s WHERE s.thread_id=t.id AND s.status='pending') AND NOT EXISTS (SELECT 1 FROM ce_forum_reports r JOIN ce_forum_posts p ON p.id=r.post_id WHERE p.thread_id=t.id AND r.status='open') UNION ALL SELECT 'post' AS kind,p.id,p.deleted_at FROM ce_forum_posts p JOIN ce_forum_threads t ON t.id=p.thread_id WHERE p.deleted_at<=? AND t.deleted_at IS NULL AND NOT EXISTS (SELECT 1 FROM ce_forum_reports r WHERE r.post_id=p.id AND r.status='open')) trash ORDER BY deleted_at,id LIMIT 100",[$cutoff,$cutoff]);
     }
 }

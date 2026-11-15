@@ -1,3 +1,10 @@
+## 0.5.2 — Moderation Center
+
+- Add ACL-filtered report and publication queues, assignment, priority, evidence snapshots, private notes and versioned decisions.
+- Hold pending topic/reply submissions and their files outside published content; approve atomically as the original author.
+- Protect pending files and target discussions from cleanup, add author status/cancellation and moderator review UI.
+- Migration 0034, API/SDK, SQL/browser regression and release acceptance coverage.
+
 ## 0.5.1 — Soft Delete & Recycle Bin
 
 - Soft-delete forum topics and replies; restore original content and linked data with current node ACL.

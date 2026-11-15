@@ -25,12 +25,13 @@ final readonly class AttachmentRepository extends Repository
     public function pendingCount(string $user): int
     {return (int)$this->query('SELECT COUNT(*) FROM ce_forum_attachments WHERE owner_id=? AND post_id IS NULL AND message_id IS NULL',[$user])->fetchColumn();}
     public function pending(string $user,int $now): array
-    {return $this->rows('SELECT '.self::META.' FROM ce_forum_attachments WHERE owner_id=? AND post_id IS NULL AND message_id IS NULL AND expires_at>? ORDER BY created_at DESC,id LIMIT 100',[$user,$now]);}
+    {return $this->rows('SELECT '.self::META.' FROM ce_forum_attachments WHERE owner_id=? AND post_id IS NULL AND message_id IS NULL AND expires_at>? AND NOT EXISTS (SELECT 1 FROM ce_forum_review_files h WHERE h.attachment_id=ce_forum_attachments.id) ORDER BY created_at DESC,id LIMIT 100',[$user,$now]);}
     public function attached(string $kind,array $ids): array
     {
         if(!$ids)return [];$column=$kind==='post'?'post_id':'message_id';
         return $this->rows('SELECT '.self::META.' FROM ce_forum_attachments WHERE '.$this->boardFilter($column,$ids).' ORDER BY created_at,id');
     }
+    public function held(string $id): bool {return $this->row('SELECT attachment_id FROM ce_forum_review_files WHERE attachment_id=?'.($this->db->driver()==='sqlite'?'':' FOR UPDATE'),[$id])!==null;}
     public function bind(string $kind,string $target,string $id,string $user,int $now): bool
     { $column=$kind==='post'?'post_id':'message_id';return $this->query("UPDATE ce_forum_attachments SET $column=?,expires_at=0 WHERE id=? AND owner_id=? AND post_id IS NULL AND message_id IS NULL AND expires_at>?",[$target,$id,$user,$now])->rowCount()===1; }
     public function post(string $id): ?array
@@ -43,7 +44,7 @@ final readonly class AttachmentRepository extends Repository
     public function delete(string $id): void {$this->query('DELETE FROM ce_forum_attachments WHERE id=?',[$id]);}
     public function cleanup(int $now): int
     {
-        $rows=$this->rows('SELECT id FROM ce_forum_attachments WHERE post_id IS NULL AND message_id IS NULL AND expires_at<=? ORDER BY expires_at,id LIMIT 100',[$now]);$n=0;usort($rows,static fn($a,$b)=>strcmp($a['id'],$b['id']));
-        foreach($rows as $row)$n+=$this->query('DELETE FROM ce_forum_attachments WHERE id=? AND post_id IS NULL AND message_id IS NULL AND expires_at<=?',[$row['id'],$now])->rowCount();return $n;
+        $rows=$this->rows('SELECT id FROM ce_forum_attachments WHERE post_id IS NULL AND message_id IS NULL AND expires_at<=? AND NOT EXISTS (SELECT 1 FROM ce_forum_review_files h WHERE h.attachment_id=ce_forum_attachments.id) ORDER BY expires_at,id LIMIT 100',[$now]);$n=0;usort($rows,static fn($a,$b)=>strcmp($a['id'],$b['id']));
+        foreach($rows as $row)$n+=$this->query('DELETE FROM ce_forum_attachments WHERE id=? AND post_id IS NULL AND message_id IS NULL AND expires_at<=? AND NOT EXISTS (SELECT 1 FROM ce_forum_review_files h WHERE h.attachment_id=ce_forum_attachments.id)',[$row['id'],$now])->rowCount();return $n;
     }
 }

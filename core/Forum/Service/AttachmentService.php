@@ -63,7 +63,7 @@ final readonly class AttachmentService
         if(!is_array($ids)||!array_is_list($ids)||count($ids)>10)throw new ForumException('Недопустимый список вложений.',422);
         if(!$ids)return;$ids=array_map(V::id(...),$ids);if(count(array_unique($ids))!==count($ids))throw new ForumException('Повторяющиеся вложения.',422);sort($ids);
         $existing=$this->repo->attached($kind,[$target]);$bytes=array_sum(array_column($existing,'size_bytes'));$now=time();$new=[];
-        foreach($ids as $id){$a=$this->repo->lockItem($id);if(!$a||$a['owner_id']!==$user||$a['post_id']!==null||$a['message_id']!==null||(int)$a['expires_at']<=$now)throw new ForumException('Вложение недоступно.',404);$bytes+=(int)$a['size_bytes'];$new[]=$id;}
+        foreach($ids as $id){$a=$this->repo->lockItem($id);if(!$a||$a['owner_id']!==$user||$a['post_id']!==null||$a['message_id']!==null||(int)$a['expires_at']<=$now||$this->repo->held($id))throw new ForumException('Вложение недоступно.',404);$bytes+=(int)$a['size_bytes'];$new[]=$id;}
         if(count($existing)+count($new)>10||$bytes>self::limits()['message_bytes'])throw new ForumException('Превышен лимит вложений сообщения.',422);
         foreach($new as $id)if(!$this->repo->bind($kind,$target,$id,$user,$now))throw new ForumException('Вложение изменилось. Повторите запрос.',409);
         $this->tx->audit('forum.attachment.bind',$user,['kind'=>$kind,'target_id'=>$target,'attachment_ids'=>$new]);
@@ -97,6 +97,7 @@ final readonly class AttachmentService
             elseif($a['message_id']!==null){$this->conversations->lockWrites();$this->tx->permissions()->requireCurrent($actor,'forum:write',true);$m=$this->repo->message($a['message_id'])??throw new ForumException('Вложение не найдено.',404);$c=$this->conversations->membership($m['conversation_id'],$actor->userId);$this->conversations->message($m['conversation_id'],$m['id'],(int)$c['joined_sequence']);if($m['author_id']!==$actor->userId)throw new ForumException('Недостаточно прав.',403);}
             else{$this->tx->permissions()->requireCurrent($actor,'forum:write',true);if($a['owner_id']!==$actor->userId)throw new ForumException('Вложение не найдено.',404);}
             $locked=$this->repo->lockItem($id);if(!$locked||$locked['post_id']!==$a['post_id']||$locked['message_id']!==$a['message_id'])throw new ForumException('Вложение изменилось.',409);
+            if($this->repo->held($id))throw new ForumException('Файл ожидает проверки. Сначала отмените заявку.',409);
             if($a['post_id']!==null||$a['message_id']!==null){
                 $kind=$a['post_id']!==null?'post':'message';
                 $content=$kind==='post'?$this->repo->postContent($a['post_id']):$this->conversations->message($m['conversation_id'],$m['id'],(int)$c['joined_sequence']);

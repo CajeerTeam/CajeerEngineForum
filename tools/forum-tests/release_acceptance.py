@@ -275,6 +275,21 @@ def verify_content(base, state, fixture, f):
     print('PASS content platform snapshot: drafts, receipts, revisions, poll votes, Q&A, originals, derivatives and private history',flush=True)
 
 
+def verify_moderation(base,state,fixture):
+    c=Client(base);admin=state[0]
+    # The private upgrade fixture is a delegated moderator and bypasses review.
+    email=unique_email();c.call('POST','/users',201,{'email':email,'name':'Acceptance review author','password':PASSWORD,'roles':['forum-member']},token=admin);token=c.login(email)[0]['data']['access_token']
+    category=c.call('POST','/forum/categories',201,{'name':'Acceptance review category','description':''},token=admin)['id'];board=c.call('POST','/forum/categories/'+category+'/boards',201,{'name':'Acceptance review board','description':''},token=admin)['id'];policy='/forum/boards/'+board+'/review-policy'
+    old=c.call('GET','/forum/moderation/cases/report/'+fixture['report'],token=admin)['item'];require(old['reason']=='Release confidential report' and old['post_id']==fixture['post'],'Original report lost')
+    c.call('PUT',policy,200,{'review_required':True},token=admin)
+    try:
+        file=c.upload_attachment('moderation.txt',b'Acceptance moderation',token)['id'];r=c.call('POST','/forum/boards/'+board+'/threads',201,{'title':'Moderated topic','body':'**Pending review**','body_format':'markdown','attachment_ids':[file]},token=token)
+        require(r['pending_review'],'Submission bypassed review');sid=r['submission_id'];path='/forum/moderation/cases/submission/'+sid;c.call('GET','/forum/threads/'+sid,404,token=token);c.call('GET',path,403,token=token)
+        r=c.call('POST',path,200,{'action':'approve','revision_number':1},token=admin);require(r['status']=='approved','Approval failed');topic='/forum/threads/'+r['result_id'];data=c.call('GET',topic,token=token);require(data['posts'][0]['body']=='**Pending review**' and c.download_attachment(file,token)==b'Acceptance moderation','Approval lost content or bytes')
+        report=c.call('POST','/forum/posts/'+data['first_post_id']+'/report',201,{'reason':'Acceptance evidence','category':'other'},token=admin)['id'];rp='/forum/moderation/cases/report/'+report;require(c.call('GET',rp,token=admin)['item']['snapshot_body']=='**Pending review**','Report snapshot missing');c.call('POST',rp,200,{'action':'resolve','revision_number':1,'reason':'Accepted evidence','disposition':'resolved'},token=admin)
+    finally:c.call('PUT',policy,200,{'review_required':False},token=admin)
+    print('PASS moderation queue, approval, attachment and report evidence',flush=True)
+
 def verify_recycle(base,state,fixture,f):
     c=Client(base);admin=state[0];token=fixture['token'];poll='/forum/threads/'+f['poll'];path='/forum/recycle-bin/thread/'+f['poll']
     generation=c.call('POST',path,200,{'action':'delete','reason':'Acceptance restore'},token=admin)['deletion_id']
@@ -328,7 +343,7 @@ def verify_navigation(base,state):
 
 
 def seed_structure(base, state):
-    """Create real 0.5.0 structure before updating, not just after the upgrade."""
+    """Create real 0.5.1 structure before updating, not just after the upgrade."""
     admin, _, _, member = state
     c=Client(base)
     member_group=next(g['id'] for g in c.call('GET','/forum/groups',token=admin) if g['handle']=='forum-member')
@@ -641,7 +656,7 @@ def verify_community_live(base,f):
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--artifact',type=Path,required=True)
-    parser.add_argument('--previous',type=Path,help='Original 0.5.0 dist; enables real signed upgrade and rollback')
+    parser.add_argument('--previous',type=Path,help='Original 0.5.1 dist; enables real signed upgrade and rollback')
     parser.add_argument('--driver',choices=('sqlite','pgsql'),default='sqlite')
     parser.add_argument('--report',type=Path,required=True)
     args=parser.parse_args(); report=args.report.resolve(); report.mkdir(parents=True,exist_ok=True)
@@ -650,7 +665,7 @@ def main():
         work=Path(tmp); port=free_port()
         # With --previous use the authentic baseline for upgrade, not a relabelled current tree.
         previous=args.previous.resolve() if args.previous else None
-        initial='0.5.0' if previous else current
+        initial='0.5.1' if previous else current
         site=unpack(previous or artifact,work/'live',initial)
         install(site,env,report,'initial',port,args.driver)
         with http(site,env,report,'initial',port,initial) as base:
@@ -681,6 +696,7 @@ def main():
                 verify_polls_questions(base,state,fixture)
                 verify_drafts_revisions(base,state)
                 verify_recycle(base,state,fixture,content)
+                verify_moderation(base,state,fixture)
         if previous:
             key=work/'backup.key'; secret=work/'release.secret'; public=work/'release.public'
             run(site,env,report,'backup-key',['php','bin/cajeer','backup:keygen','--key='+str(key)])
@@ -709,6 +725,7 @@ def main():
                 verify_polls_questions(base,state,fixture)
                 verify_drafts_revisions(base,state)
                 verify_recycle(base,state,fixture,content)
+                verify_moderation(base,state,fixture)
             run(site,env,report,'rollback',['php','bin/cajeer','update:rollback','--yes','--json'],timeout=600)
             require(version(site)==initial,'Rollback did not restore release')
             with http(site,env,report,'rollback',port,initial) as base:

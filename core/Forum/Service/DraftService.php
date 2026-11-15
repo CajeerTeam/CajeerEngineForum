@@ -73,7 +73,7 @@ final readonly class DraftService
             if(!$row&&$expected!==0)throw new ForumException('Черновик не найден.',404);
             if(!$row&&$this->repo->countActive($user)>=100)throw new ForumException('Достигнут лимит черновиков.',409);
             $this->context($actor,$scope,$target);$now=time();$expires=$replay?(int)$row['expires_at']:$now+2592000;$ids=$payload['attachment_ids'];sort($ids);
-            foreach($ids as $file){$a=$this->files->lockItem($file);if(!$a||$a['owner_id']!==$user||$a['post_id']!==null||$a['message_id']!==null||(int)$a['expires_at']<=$now)throw new ForumException('Временное вложение недоступно.',404);$this->repo->extendAttachment($file,$user,$expires);}
+            foreach($ids as $file){$a=$this->files->lockItem($file);if(!$a||$a['owner_id']!==$user||$a['post_id']!==null||$a['message_id']!==null||(int)$a['expires_at']<=$now||$this->files->held($file))throw new ForumException('Временное вложение недоступно.',404);$this->repo->extendAttachment($file,$user,$expires);}
             if($replay)return $this->publicRow($row);
             if(!$row)$this->repo->insert(['id'=>$id,'user_id'=>$user,'scope'=>$scope,'target_id'=>$target,'payload'=>$json,'updated_at'=>$now,'expires_at'=>$expires]);
             elseif(!$this->repo->save($id,$user,$expected,$json,$now,$expires))throw new ForumException('Черновик изменён.',409);
@@ -90,19 +90,13 @@ final readonly class DraftService
             if($row['result_json']!==null)return json_decode($row['result_json'],true,32,JSON_THROW_ON_ERROR);
             $p=json_decode($row['payload'],true,32,JSON_THROW_ON_ERROR);$target=$row['target_id'];$scope=$row['scope'];
             $result=match($scope){
-                'thread'=>['id'=>$discussions->createThread($actor,$target,$p['title'],$p['body'],$p['body_format'],$p['attachment_ids'],$p['kind'],$p['poll']??null)],
-                'reply'=>$this->publishReply($actor,$target,$p,$discussions),
+                'thread','reply'=>$this->tx->moderationQueue()->submit($actor,$scope,$target,$p,$discussions),
                 'conversation'=>$this->tx->conversations()->send($actor,$target,$p)+['conversation_id'=>$target],
                 'new_conversation'=>$this->tx->conversations()->create($actor,$p),
                 default=>throw new \LogicException('Invalid draft scope')};
             if(!$this->repo->complete($id,$actor->userId,$expected,json_encode($result,JSON_THROW_ON_ERROR),time()))throw new ForumException('Черновик изменён.',409);
             return $result;
         });
-    }
-    private function publishReply(ForumAccessPolicy $actor,string $thread,array $payload,DiscussionService $discussions): array
-    {
-        $id=$discussions->reply($actor,$thread,$payload['body'],$payload['body_format'],$payload['attachment_ids']);
-        return ['id'=>$id,'thread_id'=>$thread,'page'=>$this->threads->pageForPost($thread,$id)];
     }
     public function cleanup(): int {return $this->tx->write(fn()=>$this->repo->cleanup(time()));}
 }

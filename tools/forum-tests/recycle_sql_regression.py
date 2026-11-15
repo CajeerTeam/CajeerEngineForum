@@ -4,7 +4,7 @@ import base64, hashlib, re, sqlite3, tempfile, time, uuid
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[2]
 uid=lambda: str(uuid.uuid4())
-files=sorted((ROOT/'migrations/sqlite').glob('*.sql'))
+files=sorted(f for f in (ROOT/'migrations/sqlite').glob('*.sql') if f.name[:4]<='0033')
 assert files[-1].name=='0033_forum_soft_delete.sql'
 repo=(ROOT/'core/Forum/Repository/RecycleBinRepository.php').read_text()
 def count(db,table,where='1=1',args=()):return db.execute('SELECT COUNT(*) FROM '+table+' WHERE '+where,args).fetchone()[0]
@@ -30,6 +30,7 @@ with tempfile.TemporaryDirectory() as tmp:
     db.execute('INSERT INTO ce_forum_reports(id,post_id,user_id,reason) VALUES(?,?,?,?)',(report,r,a,'Keep evidence'))
     db.commit();db.executescript(files[-1].read_text());assert count(db,'ce_forum_live_posts')==4
     assert count(db,'ce_forum_post_revisions')==4
+    db.executescript((ROOT/'migrations/sqlite/0034_forum_moderation_center.sql').read_text())
     def hide(kind,id,generation,stamp=now):
         table='ce_forum_threads' if kind=='thread' else 'ce_forum_posts'
         assert db.execute('UPDATE '+table+' '+sql(' SET deleted_at=?,deleted_by=').lstrip(),(stamp,a,'Reason',generation,id)).rowcount==1
