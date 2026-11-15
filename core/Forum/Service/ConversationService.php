@@ -21,9 +21,9 @@ final readonly class ConversationService
         $ids=array_map(V::id(...),$value);
         if(count(array_unique($ids))!==count($ids)||in_array($actor,$ids,true))throw new ForumException('Повторяющийся или собственный участник.');return $ids;
     }
-    private function checkInvite(string $actor,string $target,array $members): void
+    private function checkInvite(string $actor,string $target,array $members,array $trust): void
     {
-        if(!$this->repo->eligibleUser($target)||$this->repo->incoming($target)==='none'||$this->repo->blocked($actor,$target))throw new ForumException('Приглашение этого участника недоступно.',403);
+        if(!$this->repo->eligibleUser($target)||!TrustService::accepts($this->repo->incoming($target),$trust['level']==='established',$this->repo->follows($target,$actor))||$this->repo->blocked($actor,$target))throw new ForumException('Приглашение этого участника недоступно.',403);
         foreach($members as $member)if($this->repo->blocked($member,$target))throw new ForumException('Приглашение этого участника недоступно.',403);
     }
     public function create(ForumAccessPolicy $actor,array $body): array
@@ -31,8 +31,8 @@ final readonly class ConversationService
         $user=$actor->userId;$ids=$this->recipients($body['participant_ids']??null,$user);$title=V::text($body['title']??null,'title',180);$format=array_key_exists('body_format',$body)?\CajeerEngine\Forum\Content\ForumContentRenderer::format($body['body_format']):null;$text=\CajeerEngine\Forum\Content\ForumContentRenderer::source($body['body']??null,$format??'plain');
         $kind=$body['kind']??(count($ids)===1?'direct':'group');if(!in_array($kind,['direct','group'],true)||($kind==='direct'&&count($ids)!==1))throw new ForumException('Некорректный тип переписки.');
         return $this->write($actor,function()use($user,$ids,$title,$text,$kind,$format,$body){
-            $this->tx->sanctions()->enforce($user,'conversation');$this->tx->antiSpam()->publication($user,'private',$text,$format??'plain',false,$title);$this->repo->limit($user,'create',3600,5);$members=[$user];
-            foreach($ids as $target){$this->repo->limit($user,'invite',3600,20);$this->checkInvite($user,$target,$members);$members[]=$target;}
+            $this->tx->sanctions()->enforce($user,'conversation');$this->tx->antiSpam()->publication($user,'private',$text,$format??'plain',false,$title);$trust=$this->tx->trust()->status($user);if($kind==='group')TrustService::assertGroup($trust,count($ids)+1);$this->repo->limit($user,'create',3600,$trust['new_conversations_hour']);$members=[$user];
+            foreach($ids as $target){$this->repo->limit($user,'invite',3600,$trust['invitations_hour']);$this->checkInvite($user,$target,$members,$trust);$members[]=$target;}
             $id=$this->repo->create($user,$title,$kind);foreach($members as $member)$this->repo->join($id,$member,1);
             $msg=$this->repo->append($id,$user,$text,1,$format??'plain');$this->tx->revisions()->initial('message',$msg,$text,$format??'plain',$user);$this->tx->attachments()->attach($user,'message',$msg,$body['attachment_ids']??[]);$this->repo->mark($id,$user,1);return ['id'=>$id,'message_id'=>$msg];
         });
@@ -51,7 +51,7 @@ final readonly class ConversationService
     { return in_array($conversation['owner_id'],$members,true)?$conversation['owner_id']:($members[0]??null); }
     public function view(ForumAccessPolicy $actor,string $id,int $offset): array
     {
-        return $this->read($actor,function()use($actor,$id,$offset){$c=$this->repo->membership($id,$actor->userId);$members=$this->repo->participants($id);return ['conversation'=>ConversationRepository::normalize($c),'participants'=>$members,'messages'=>$this->tx->attachments()->decorate('message',array_reverse($this->repo->messages($id,(int)$c['joined_sequence'],$offset))),'can_invite'=>$c['kind']==='group'&&$this->owner($c,array_column($members,'user_id'))===$actor->userId];});
+        return $this->read($actor,function()use($actor,$id,$offset){$c=$this->repo->membership($id,$actor->userId);$members=$this->repo->participants($id);$others=array_diff(array_column($members,'user_id'),[$actor->userId]);$contactAllowed=$others!==[];foreach($others as $other)if($this->repo->blocked($actor->userId,$other))$contactAllowed=false;return ['contact_allowed'=>$contactAllowed,'conversation'=>ConversationRepository::normalize($c),'participants'=>$members,'messages'=>$this->tx->attachments()->decorate('message',array_reverse($this->repo->messages($id,(int)$c['joined_sequence'],$offset))),'can_invite'=>$c['kind']==='group'&&$this->owner($c,array_column($members,'user_id'))===$actor->userId,'group_participants_max'=>$this->tx->trust()->status($actor->userId)['group_participants_max']];});
     }
     public function send(ForumAccessPolicy $actor,string $id,array $body): array
     {
@@ -87,8 +87,8 @@ final readonly class ConversationService
         $ids=$this->recipients($body['participant_ids']??null,$actor->userId);
         return $this->write($actor,function()use($actor,$id,$ids){$user=$actor->userId;$this->tx->sanctions()->enforce($user,'conversation');$c=$this->repo->membership($id,$user);$members=array_column($this->repo->participants($id),'user_id');
             if($c['kind']!=='group'||$this->owner($c,$members)!==$user)throw new ForumException('Недостаточно прав.',403);
-            if(count($members)+count($ids)>20)throw new ForumException('Не более 20 участников.');
-            foreach($ids as $target){if(in_array($target,$members,true))throw new ForumException('Участник уже в переписке.',409);$this->repo->limit($user,'invite',3600,20);$this->checkInvite($user,$target,$members);$members[]=$target;$this->repo->join($id,$target,(int)$c['last_sequence']+1);}
+            $trust=$this->tx->trust()->status($user);TrustService::assertGroup($trust,count($members)+count($ids));
+            foreach($ids as $target){if(in_array($target,$members,true))throw new ForumException('Участник уже в переписке.',409);$this->repo->limit($user,'invite',3600,$trust['invitations_hour']);$this->checkInvite($user,$target,$members,$trust);$members[]=$target;$this->repo->join($id,$target,(int)$c['last_sequence']+1);}
             return ['participants'=>$this->repo->participants($id)];
         });
     }
@@ -112,12 +112,13 @@ final readonly class ConversationService
     }
     public function leave(ForumAccessPolicy $actor,string $id): array
     { return $this->write($actor,function()use($actor,$id){$this->repo->membership($id,$actor->userId);$this->repo->leave($id,$actor->userId);return ['left'=>true];}); }
-    public function settings(ForumAccessPolicy $actor): array { return $this->read($actor,fn()=>$this->repo->settings($actor->userId)); }
+    private function personalSettings(string $user): array { return $this->repo->settings($user)+['trust'=>$this->tx->trust()->status($user)]; }
+    public function settings(ForumAccessPolicy $actor): array { return $this->read($actor,fn()=>$this->personalSettings($actor->userId)); }
     public function setSettings(ForumAccessPolicy $actor,array $body): array
-    { $mode=$body['incoming']??null;if(!in_array($mode,['members','none'],true))throw new ForumException('Некорректная настройка.');return $this->write($actor,function()use($actor,$mode){$this->repo->setIncoming($actor->userId,$mode);return $this->repo->settings($actor->userId);}); }
+    { $mode=$body['incoming']??null;if(!in_array($mode,['members','trusted','following','none'],true))throw new ForumException('Некорректная настройка.');return $this->write($actor,function()use($actor,$mode){$this->repo->setIncoming($actor->userId,$mode);return $this->personalSettings($actor->userId);}); }
     public function block(ForumAccessPolicy $actor,string $target,array $body): array
     {
-        $enabled=V::enabled($body['enabled']??null);return $this->write($actor,function()use($actor,$target,$enabled){if($target===$actor->userId||($enabled&&!$this->repo->activeUser($target)))throw new ForumException('Участник недоступен.',404);$this->repo->block($actor->userId,$target,$enabled);return $this->repo->settings($actor->userId);});
+        $enabled=V::enabled($body['enabled']??null);return $this->write($actor,function()use($actor,$target,$enabled){if($target===$actor->userId||($enabled&&!$this->repo->activeUser($target)))throw new ForumException('Участник недоступен.',404);$this->repo->block($actor->userId,$target,$enabled);if($enabled)$this->repo->removeFollows($actor->userId,$target);return $this->personalSettings($actor->userId);});
     }
     public function report(ForumAccessPolicy $actor,string $id,string $msg,array $body): array
     {

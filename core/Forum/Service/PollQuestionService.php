@@ -111,9 +111,11 @@ final readonly class PollQuestionService
     {
         $post=V::id($post);$enabled=V::enabled($enabled);
         return $this->tx->write(function()use($actor,$post,$enabled){
+            if($enabled)$this->tx->contacts()->lockWrites();
             $t=$this->threads->lockForPost($post)??throw new ForumException('Ответ не найден.',404);$id=$t['id'];$this->lock($actor,$id);
             if($this->repo->question($id)===null)throw new ForumException('Вопрос не найден.',404);
             $p=$this->answer($id,$post);if($p['author_id']===$actor->userId)throw new ForumException('Нельзя голосовать за свой ответ.',403);
+            if($enabled&&$p['author_id']!==null&&$this->tx->contacts()->blocked($actor->userId,$p['author_id']))throw new ForumException('Взаимодействие недоступно.',403);
             if($enabled)$this->tx->antiSpam()->action($actor->userId,'vote');
             $this->repo->answerVote($post,$actor->userId,$enabled);return ['id'=>$post,'enabled'=>$enabled];
         });

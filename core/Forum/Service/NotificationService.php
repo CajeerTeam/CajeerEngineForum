@@ -52,7 +52,7 @@ final readonly class NotificationService
                 $user=$key['recipient_id'];$id=$key['event_id'];$row=$this->repo->claim($id,$user,$key['kind']);
                 if($row===null)return false;
                 $target=$this->repo->target($row['post_id']);$deliver=false;
-                if($target!==null && $this->repo->preferences($user)[$row['kind']] && ($row['subscription_kind']===null||$this->repo->subscriptionEligible($user,$row['post_id'],$row['subscription_kind']))){
+                if($target!==null && ($row['kind']==='moderation'||!$this->tx->contacts()->blocked($user,$row['actor_id'])) && $this->repo->preferences($user)[$row['kind']] && ($row['subscription_kind']===null||$this->repo->subscriptionEligible($user,$row['post_id'],$row['subscription_kind']))){
                     try{$access=$this->tx->permissions()->access(new ForumAccessPolicy($user,['*']));$deliver=in_array($target['board_id'],NodePermissionService::allowed($access),true);}
                     catch(ForumException $e){if($e->status!==401)throw $e;}
                 }

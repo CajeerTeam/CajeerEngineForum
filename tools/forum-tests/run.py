@@ -904,11 +904,12 @@ class NetworkTests(unittest.TestCase):
         for i in range(11):
             recipients.append(c.call('POST','/users',201,{'email':unique_email(),'name':'Quota recipient '+str(i),'password':PASSWORD,'roles':['forum-member']},token=admin)['id'])
         path='/forum/conversations'; payload={'kind':'group','title':'Quota test','body':'Initial message','participant_ids':recipients}
+        c.call('POST',path,403,payload,token=token)
+        payload['participant_ids']=recipients[:3]
         first=c.call('POST',path,201,payload,token=token)['id']
+        second=c.call('POST',path,201,payload,token=token)['id']
         c.call('POST',path,429,payload,token=token)
-        self.assertEqual([first],[r['id'] for r in c.call('GET',path,token=token)['items']])
-        # The failed creation must not consume the remaining invite budget.
-        payload['participant_ids']=recipients[:9];c.call('POST',path,201,payload,token=token)
+        self.assertEqual({first,second},{r['id'] for r in c.call('GET',path,token=token)['items']})
         payload['participant_ids']=recipients[:1];c.call('POST',path,429,payload,token=token)
 
     def test_14_rich_content(self):
@@ -1163,6 +1164,39 @@ class NetworkTests(unittest.TestCase):
         c.call('PATCH','/users/'+member,422,{'status':'active'},token=admin)
         c.call('GET','/forum/threads/'+thread,200,token=foreign)
         c.call('GET','/forum/members/'+member,404,token=foreign)
+
+    def test_24_trust_personal_safety(self):
+        c=Client(self.base); admin=c.login(ADMIN,ADMIN_PASSWORD)[0]['data']['access_token']
+        _,a,at=self.activated(c); _,b,bt=self.activated(c)
+        settings='/forum/conversation-settings'; conv='/forum/conversations'
+        trust=c.call('GET',settings,token=at)['trust']
+        self.assertEqual('new',trust['level']); self.assertEqual(4,trust['group_participants_max'])
+        payload={'title':'Safety policy','body':'New contact','participant_ids':[b]}
+        c.call('PUT',settings,200,{'incoming':'trusted'},token=bt)
+        c.call('POST',conv,403,payload,token=at)
+        c.call('PUT',settings,200,{'incoming':'following'},token=bt)
+        c.call('POST',conv,403,payload,token=at)
+        c.call('PUT','/forum/members/'+a+'/relationship',200,{'kind':'follow','enabled':True},token=bt)
+        made=c.call('POST',conv,201,payload,token=at)['id']
+        c.call('PUT',settings,200,{'incoming':'none'},token=bt)
+        c.call('POST',conv+'/'+made+'/messages',201,{'body':'Existing conversation unaffected'},token=at)
+        board=c.call('GET','/forum')['boards'][0]['id']
+        topic=c.call('POST','/forum/boards/'+board+'/threads',201,{'title':'Safety public topic','body':'Safety public content'},token=at)['id']
+        post=c.call('GET','/forum/threads/'+topic,token=bt)['posts'][0]['id']
+        reaction='/forum/posts/'+post+'/reaction'
+        c.call('PUT',reaction,200,{'enabled':True},token=bt)
+        c.call('PUT','/forum/conversation-blocks/'+a,200,{'enabled':True},token=bt)
+        c.call('POST',conv+'/'+made+'/messages',403,{'body':'Blocked contact'},token=at)
+        c.call('PUT',reaction,403,{'enabled':True},token=bt)
+        c.call('PUT',reaction,200,{'enabled':False},token=bt)
+        c.call('PUT','/forum/members/'+b+'/relationship',403,{'kind':'follow','enabled':True},token=at)
+        self.assertFalse(c.call('GET','/forum/members/'+a+'/relationship',token=bt)['follow'])
+        self.assertFalse(any(x['post_id']==post for x in c.call('GET','/forum/activity',token=bt)))
+        c.call('GET','/forum/threads/'+topic,200,token=bt)
+        c.call('PUT','/forum/conversation-blocks/'+a,200,{'enabled':False},token=bt)
+        c.call('PUT',reaction,200,{'enabled':True},token=bt)
+        c.call('PUT',settings,200,{'incoming':'following'},token=bt)
+        c.call('POST',conv,403,payload,token=at) # follow was not restored
 
     def test_99_rate_limit(self):
         # Run last: exhaust the real IP auth bucket without guessing credentials.

@@ -62,7 +62,7 @@ final readonly class ForumDatabaseCheck
             'ce_forum_conversations'=>['id','owner_id','title','kind','last_sequence','created_at','updated_at'],
             'ce_forum_conversation_participants'=>['conversation_id','user_id','joined_sequence','read_sequence','active','archived','muted'],
             'ce_forum_conversation_messages'=>['id','conversation_id','author_id','message_sequence','body','body_format','created_at','edited_at','revision_number'],
-            'ce_forum_conversation_preferences'=>['user_id','incoming'],
+            'ce_forum_conversation_preferences'=>['user_id','incoming','contact_mode'],
             'ce_forum_user_blocks'=>['user_id','blocked_id'],
             'ce_forum_conversation_reports'=>['id','message_id','user_id','reason','body_snapshot','status','created_at','resolved_by'],
             'ce_forum_erased_accounts'=>['user_id','erased_at'],

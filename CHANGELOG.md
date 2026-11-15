@@ -1,3 +1,10 @@
+## 0.5.6 — Trust & Personal Safety
+
+- Live trust based on verified email, account age and published posts, enforced in new conversations and group invitations.
+- Recipient-controlled trusted/following contact policies and preserved existing preferences.
+- Bilateral blocks on new follows, reactions and answer votes; filtered activity and social notifications, including subscription email.
+- Personal progress UI, profile blocking, migration 0038 and regression coverage.
+
 ## 0.5.5 — Member Privacy & Personal Data
 
 - Dedicated privacy center links existing live visibility, communication and notification controls.

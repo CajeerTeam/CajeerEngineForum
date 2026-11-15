@@ -21,7 +21,15 @@ final readonly class ConversationRepository extends Repository
     }
     public function participants(string $id): array
     { return $this->rows('SELECT p.user_id,u.name FROM ce_forum_conversation_participants p JOIN ce_users u ON u.id=p.user_id WHERE p.conversation_id=? AND p.active=1 ORDER BY p.joined_sequence,p.user_id',[$id]); }
-    public function incoming(string $user): string { return $this->row('SELECT incoming FROM ce_forum_conversation_preferences WHERE user_id=?',[$user])['incoming']??'members'; }
+    public function incoming(string $user): string {  $r=$this->row('SELECT incoming,contact_mode FROM ce_forum_conversation_preferences WHERE user_id=?',[$user]);return ($r['incoming']??'members')==='none'?'none':($r['contact_mode']??'members'); }
+    public function publishedCount(string $user): int
+    { return (int)$this->query('SELECT COUNT(*) FROM ce_forum_live_posts WHERE author_id=?',[$user])->fetchColumn(); }
+    public function follows(string $user,string $target): bool
+    { return $this->row("SELECT user_id FROM ce_forum_member_relations WHERE user_id=? AND target_id=? AND kind='follow'",[$user,$target])!==null; }
+    public function removeFollows(string $a,string $b): void
+    { $this->query("DELETE FROM ce_forum_member_relations WHERE kind='follow' AND ((user_id=? AND target_id=?) OR (user_id=? AND target_id=?))",[$a,$b,$b,$a]); }
+    public function postAuthor(string $id): ?string
+    { return $this->row('SELECT author_id FROM ce_forum_live_posts WHERE id=?',[$id])['author_id']??null; }
     public function blocked(string $a,string $b): bool { return $this->row('SELECT user_id FROM ce_forum_user_blocks WHERE (user_id=? AND blocked_id=?) OR (user_id=? AND blocked_id=?)',[$a,$b,$b,$a])!==null; }
     public function limit(string $user,string $action,int $seconds,int $max): void
     {
@@ -71,7 +79,7 @@ final readonly class ConversationRepository extends Repository
     { return array_map(static function(array $m): array { $content=\CajeerEngine\Forum\Content\ForumContentRenderer::render($m['body'],$m['body_format']);$m['body_html']=$content['html'];$m['renderer_version']=$content['renderer_version'];return self::normalize($m); },$this->rows('SELECT m.id,m.author_id,u.name AS author_name,m.message_sequence,m.body,m.body_format,m.created_at,m.edited_at,m.revision_number FROM ce_forum_conversation_messages m LEFT JOIN ce_users u ON u.id=m.author_id WHERE m.conversation_id=? AND m.message_sequence>=? ORDER BY m.message_sequence DESC LIMIT 25 OFFSET '.$offset,[$id,$joined])); }
     public function settings(string $user): array { return ['incoming'=>$this->incoming($user),'blocked'=>$this->rows('SELECT b.blocked_id AS id,u.name FROM ce_forum_user_blocks b JOIN ce_users u ON u.id=b.blocked_id WHERE b.user_id=? ORDER BY u.name,u.id',[$user])]; }
     public function setIncoming(string $user,string $mode): void
-    { if($this->row('SELECT user_id FROM ce_forum_conversation_preferences WHERE user_id=?',[$user])===null)$this->query('INSERT INTO ce_forum_conversation_preferences(user_id,incoming) VALUES (?,?)',[$user,$mode]);else $this->query('UPDATE ce_forum_conversation_preferences SET incoming=? WHERE user_id=?',[$mode,$user]); }
+    { $legacy=$mode==='none'?'none':'members';$contact=in_array($mode,['trusted','following'],true)?$mode:'members';if($this->row('SELECT user_id FROM ce_forum_conversation_preferences WHERE user_id=?',[$user])===null)$this->query('INSERT INTO ce_forum_conversation_preferences(user_id,incoming,contact_mode) VALUES (?,?,?)',[$user,$legacy,$contact]);else $this->query('UPDATE ce_forum_conversation_preferences SET incoming=?,contact_mode=? WHERE user_id=?',[$legacy,$contact,$user]); }
     public function block(string $user,string $target,bool $enabled): void
     { if(!$enabled){$this->query('DELETE FROM ce_forum_user_blocks WHERE user_id=? AND blocked_id=?',[$user,$target]);return;}if($this->row('SELECT user_id FROM ce_forum_user_blocks WHERE user_id=? AND blocked_id=?',[$user,$target])===null)$this->query('INSERT INTO ce_forum_user_blocks(user_id,blocked_id) VALUES (?,?)',[$user,$target]); }
     public function report(string $user,array $message,string $reason): string

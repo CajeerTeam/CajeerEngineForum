@@ -74,7 +74,7 @@ final readonly class NotificationRepository extends Repository
     public function finish(string $event,string $user,bool $deliver,string $kind): void
     { $table=$kind==='accepted'?'ce_forum_answer_notifications':'ce_forum_notifications'; $this->query(($deliver?'UPDATE '.$table.' SET state=1':'DELETE FROM '.$table).' WHERE event_id=? AND recipient_id=? AND state=0',[$event,$user]); }
     private function visible(array $allowed): string
-    { return ' FROM '.self::FEED.' n JOIN ce_forum_live_posts p ON p.id=n.post_id JOIN ce_forum_live_threads t ON t.id=p.thread_id WHERE n.recipient_id=? AND n.state=1 AND '.$this->boardFilter('t.board_id',$allowed); }
+    { return ' FROM '.self::FEED.' n JOIN ce_forum_live_posts p ON p.id=n.post_id JOIN ce_forum_live_threads t ON t.id=p.thread_id WHERE n.recipient_id=? AND n.state=1 AND (n.kind=\'moderation\' OR NOT EXISTS (SELECT 1 FROM ce_forum_user_blocks b WHERE (b.user_id=n.recipient_id AND b.blocked_id=n.actor_id) OR (b.blocked_id=n.recipient_id AND b.user_id=n.actor_id))) AND '.$this->boardFilter('t.board_id',$allowed); }
     public function inbox(string $user,array $allowed,int $offset,?string $id=null): array
     {
         $params=[$user];if($id!==null)$params[]=$id;

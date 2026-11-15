@@ -39,6 +39,8 @@ final readonly class ForumTransaction
     public function polls(): PollQuestionService { return new PollQuestionService($this,new \CajeerEngine\Forum\Repository\PollQuestionRepository($this->db),new \CajeerEngine\Forum\Repository\ThreadRepository($this->db),new \CajeerEngine\Forum\Repository\BoardRepository($this->db),new \CajeerEngine\Forum\Repository\PostRepository($this->db)); }
     public function media(): ForumMediaService { return new ForumMediaService($this,new \CajeerEngine\Forum\Repository\AttachmentRepository($this->db),new \CajeerEngine\Forum\Repository\ForumMediaRepository($this->db)); }
     public function attachments(): AttachmentService { return new AttachmentService($this,new \CajeerEngine\Forum\Repository\AttachmentRepository($this->db),new \CajeerEngine\Forum\Repository\ThreadRepository($this->db),new \CajeerEngine\Forum\Repository\ConversationRepository($this->db),new \CajeerEngine\Forum\Repository\BoardRepository($this->db)); }
+    public function contacts(): \CajeerEngine\Forum\Repository\ConversationRepository { return new \CajeerEngine\Forum\Repository\ConversationRepository($this->db); }
+    public function trust(): TrustService { return new TrustService(new \CajeerEngine\Forum\Repository\AntiSpamRepository($this->db),$this->contacts()); }
     public function conversations(): ConversationService { return new ConversationService($this,new \CajeerEngine\Forum\Repository\ConversationRepository($this->db)); }
     public function watches(): WatchService { return new WatchService($this,new \CajeerEngine\Forum\Repository\WatchRepository($this->db),new \CajeerEngine\Forum\Repository\ThreadRepository($this->db)); }
 

@@ -71,6 +71,7 @@ final readonly class WatchService
             }
             foreach($rows as $r){
                 if($r['post_deleted']!==null||$r['thread_deleted']!==null)continue;
+                if($r['author_id']!==null&&$this->tx->contacts()->blocked($recipient,$r['author_id']))continue;
                 if(!in_array($r['current_board'],$allowed,true)||!in_array($r['board_id'],$allowed,true))continue;
                 $kind=$r['source_kind'];$id=$kind==='thread'?$r['thread_id']:$r['board_id'];
                 if($kind==='board'&&$r['current_board']!==$r['board_id'])continue;

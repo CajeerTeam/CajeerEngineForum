@@ -269,6 +269,33 @@ final class ForumDatabaseTest extends TestCase
             try {$notifications->target($reader,$accepted[0]['id']);self::fail('Removed accepted notification visible');}catch(\CajeerEngine\Forum\ForumException $e){self::assertSame(404,$e->status);}
             self::assertTrue($integrity->check()['ok']);
 
+            // Real trust progression and contact enforcement on the database under test.
+            $trustUser=$users->create('trust-member@example.test','Trust member','unused-test-hash',['forum-member']);
+            $trustActor=new \CajeerEngine\Forum\Security\ForumAccessPolicy($trustUser,['forum:write']);
+            $contacts=$tx->conversations();
+            $contacts->setSettings($reader,['incoming'=>'trusted']);
+            $payload=['title'=>'Trust contact','body'=>'Initial private content','participant_ids'=>[$member]];
+            self::assertSame('new',$contacts->settings($trustActor)['trust']['level']);
+            try {$contacts->create($trustActor,$payload);self::fail('New contact passed trusted policy');}
+            catch (\CajeerEngine\Forum\ForumException $e) {self::assertSame(403,$e->status);}
+            $pdo->prepare('UPDATE ce_users SET created_at=?,email_verified_at=? WHERE id=?')->execute([gmdate('Y-m-d H:i:s',time()-8*86400),gmdate('Y-m-d H:i:s'),$trustUser]);
+            $trustThread=$discussion->createThread($trustActor,$board,'Trust progress','First contribution');
+            $discussion->reply($trustActor,$trustThread,'Second contribution');
+            self::assertSame('new',$contacts->settings($trustActor)['trust']['level']);
+            $discussion->reply($trustActor,$trustThread,'Third contribution');
+            self::assertSame('established',$contacts->settings($trustActor)['trust']['level']);
+            $made=$contacts->create($trustActor,$payload);
+            self::assertTrue($contacts->view($reader,$made['id'],0)['contact_allowed']);
+            $contacts->block($reader,$trustUser,['enabled'=>true]);
+            self::assertFalse($contacts->view($trustActor,$made['id'],0)['contact_allowed']);
+            try {$contacts->send($trustActor,$made['id'],['body'=>'Blocked send']);self::fail('Blocked contact sent');}
+            catch (\CajeerEngine\Forum\ForumException $e) {self::assertSame(403,$e->status);}
+            $contacts->block($reader,$trustUser,['enabled'=>false]);
+            $contacts->send($trustActor,$made['id'],['body'=>'Allowed send']);
+            $pdo->prepare('UPDATE ce_users SET email_verified_at=NULL WHERE id=?')->execute([$trustUser]);
+            self::assertSame('new',$contacts->settings($trustActor)['trust']['level']);
+            $contacts->setSettings($reader,['incoming'=>'members']);
+
             $users->disable($member);
             try { $tx->permissions()->access($m); self::fail('Disabled actor retained ACL'); }
             catch (\CajeerEngine\Forum\ForumException $e) { self::assertSame(401,$e->status); }

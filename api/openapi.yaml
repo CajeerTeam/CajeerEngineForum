@@ -31503,7 +31503,98 @@
                     "data"
                   ],
                   "properties": {
-                    "data": {}
+                    "data": {
+                      "type": "object",
+                      "required": [
+                        "incoming",
+                        "blocked",
+                        "trust"
+                      ],
+                      "properties": {
+                        "incoming": {
+                          "type": "string",
+                          "enum": [
+                            "members",
+                            "trusted",
+                            "following",
+                            "none"
+                          ]
+                        },
+                        "blocked": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "required": [
+                              "id",
+                              "name"
+                            ],
+                            "properties": {
+                              "id": {
+                                "type": "string",
+                                "format": "uuid"
+                              },
+                              "name": {
+                                "type": "string"
+                              }
+                            }
+                          }
+                        },
+                        "trust": {
+                          "type": "object",
+                          "required": [
+                            "level",
+                            "email_verified",
+                            "account_days",
+                            "published_posts",
+                            "required_days",
+                            "required_posts",
+                            "new_conversations_hour",
+                            "group_participants_max",
+                            "invitations_hour"
+                          ],
+                          "properties": {
+                            "level": {
+                              "type": "string",
+                              "enum": [
+                                "new",
+                                "established"
+                              ]
+                            },
+                            "email_verified": {
+                              "type": "boolean"
+                            },
+                            "account_days": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "published_posts": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "required_days": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "required_posts": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "new_conversations_hour": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "group_participants_max": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "invitations_hour": {
+                              "type": "integer",
+                              "minimum": 0
+                            }
+                          }
+                        }
+                      }
+                    }
                   }
                 }
               }
@@ -31600,7 +31691,7 @@
             }
           }
         },
-        "description": "Perform conversationSettings with current membership and permissions."
+        "description": "Return current contact policy, blocked members and live trust progress and limits."
       },
       "put": {
         "tags": [
@@ -31635,6 +31726,8 @@
                     "type": "string",
                     "enum": [
                       "members",
+                      "trusted",
+                      "following",
                       "none"
                     ]
                   }
@@ -31658,7 +31751,98 @@
                     "data"
                   ],
                   "properties": {
-                    "data": {}
+                    "data": {
+                      "type": "object",
+                      "required": [
+                        "incoming",
+                        "blocked",
+                        "trust"
+                      ],
+                      "properties": {
+                        "incoming": {
+                          "type": "string",
+                          "enum": [
+                            "members",
+                            "trusted",
+                            "following",
+                            "none"
+                          ]
+                        },
+                        "blocked": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "required": [
+                              "id",
+                              "name"
+                            ],
+                            "properties": {
+                              "id": {
+                                "type": "string",
+                                "format": "uuid"
+                              },
+                              "name": {
+                                "type": "string"
+                              }
+                            }
+                          }
+                        },
+                        "trust": {
+                          "type": "object",
+                          "required": [
+                            "level",
+                            "email_verified",
+                            "account_days",
+                            "published_posts",
+                            "required_days",
+                            "required_posts",
+                            "new_conversations_hour",
+                            "group_participants_max",
+                            "invitations_hour"
+                          ],
+                          "properties": {
+                            "level": {
+                              "type": "string",
+                              "enum": [
+                                "new",
+                                "established"
+                              ]
+                            },
+                            "email_verified": {
+                              "type": "boolean"
+                            },
+                            "account_days": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "published_posts": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "required_days": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "required_posts": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "new_conversations_hour": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "group_participants_max": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "invitations_hour": {
+                              "type": "integer",
+                              "minimum": 0
+                            }
+                          }
+                        }
+                      }
+                    }
                   }
                 }
               }
@@ -31755,7 +31939,7 @@
             }
           }
         },
-        "description": "Perform saveConversationSettings with current membership and permissions."
+        "description": "Set invitation policy: members, trusted, following (recipient follows sender), or none. Existing conversation membership is unchanged."
       }
     },
     "/forum/conversation-blocks/{id}": {

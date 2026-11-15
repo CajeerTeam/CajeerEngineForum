@@ -31,6 +31,7 @@ final readonly class ActivityRepository extends Repository
         if($scope==='mine'){$sql.=' AND p.author_id=?';$params[]=$uid;}
         if($scope==='following'){$sql.=" AND EXISTS (SELECT 1 FROM ce_forum_member_relations f WHERE f.user_id=? AND f.target_id=p.author_id AND f.kind='follow')";$params[]=$uid;}
         if($viewer!==''){$sql.=" AND NOT EXISTS (SELECT 1 FROM ce_forum_member_relations i WHERE i.user_id=? AND i.target_id=p.author_id AND i.kind='ignore')";$params[]=$uid;}
+        if($viewer!==''){$sql.=" AND NOT EXISTS (SELECT 1 FROM ce_forum_user_blocks b WHERE (b.user_id=? AND b.blocked_id=p.author_id) OR (b.blocked_id=? AND b.user_id=p.author_id))";$params[]=$viewer;$params[]=$viewer;}
         return $this->rows($sql.' ORDER BY p.created_at DESC,p.id DESC LIMIT 25 OFFSET '.$offset,$params);
     }
     public function relations(string $user,string $kind,int $offset): array

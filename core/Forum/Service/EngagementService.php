@@ -17,8 +17,10 @@ final readonly class EngagementService
         $type??='like';if(!is_string($type)||!isset(\CajeerEngine\Forum\Repository\ActivityRepository::TYPES[$type]))throw new ForumException('Некорректная реакция.',422);
         $actor->require('forum:write');
         return $this->tx->write(function () use ($actor,$id,$enabled,$type) {
+            if($enabled)$this->tx->contacts()->lockWrites();
             $thread=$this->threads->lockForPost($id) ?? throw new ForumException('Объект не найден.',404);
             $this->tx->permissions()->assertWrite($actor,$thread['board_id'],'reaction:use');
+            if($enabled){$author=$this->tx->contacts()->postAuthor($id);if($author!==null&&$this->tx->contacts()->blocked($actor->userId,$author))throw new ForumException('Взаимодействие недоступно.',403);}
             if($enabled)$this->tx->antiSpam()->action($actor->userId,'reaction');
             if (($change=$this->engagement->reaction($id,$actor->userId,$enabled,$type))!=='unchanged') {
                 if($change!=='changed')$this->tx->notifications()->reaction($actor->userId,$id,$enabled);

@@ -72,7 +72,7 @@ final readonly class WatchRepository extends Repository
         return array_column($rows,'id');
     }
     public function leased(string $token): array
-    { return $this->rows("SELECT d.*,p.thread_id,t.board_id AS current_board,p.deleted_at AS post_deleted,t.deleted_at AS thread_deleted FROM ce_forum_mail_delivery d JOIN ce_forum_posts p ON p.id=d.post_id JOIN ce_forum_threads t ON t.id=p.thread_id WHERE d.lease_token=? AND d.state='pending' ORDER BY d.id",[$token]); }
+    { return $this->rows("SELECT d.*,p.thread_id,p.author_id,t.board_id AS current_board,p.deleted_at AS post_deleted,t.deleted_at AS thread_deleted FROM ce_forum_mail_delivery d JOIN ce_forum_posts p ON p.id=d.post_id JOIN ce_forum_threads t ON t.id=p.thread_id WHERE d.lease_token=? AND d.state='pending' ORDER BY d.id",[$token]); }
     public function complete(string $token,array $ids,string $state,int $now): int
     {
         $count=0;foreach($ids as $id)$count+=$this->query("UPDATE ce_forum_mail_delivery SET state=?,sent_at=?,lease_token=NULL,lease_until=0,last_error=NULL WHERE id=? AND lease_token=? AND state='pending'",[$state,$state==='sent'?$now:null,$id,$token])->rowCount();

@@ -23,7 +23,7 @@ final readonly class PersonalDataRepository extends Repository
             'preferences'=>['SELECT profile_visibility,activity_visibility,show_groups,show_signatures,theme,locale,timezone FROM ce_forum_member_preferences WHERE user_id=?','user_id'],
             'notification_preferences'=>['SELECT reply,mention,quote,reaction,moderation,accepted FROM ce_forum_notification_preferences WHERE user_id=?','user_id'],
             'watch_preferences'=>['SELECT auto_mode FROM ce_forum_watch_preferences WHERE user_id=?','user_id'],
-            'conversation_preferences'=>['SELECT incoming FROM ce_forum_conversation_preferences WHERE user_id=?','user_id'],
+            'conversation_preferences'=>['SELECT incoming,contact_mode FROM ce_forum_conversation_preferences WHERE user_id=?','user_id'],
             'threads'=>["SELECT t.id,t.board_id,t.title,t.prefix,t.created_at,t.updated_at FROM ce_forum_live_threads t WHERE t.author_id=? AND $threadBoard",'t.id'],
             'posts'=>["SELECT p.id,p.thread_id,p.body,p.body_format,p.created_at,p.edited_at FROM ce_forum_live_posts p JOIN ce_forum_live_threads t ON t.id=p.thread_id WHERE p.author_id=? AND $board",'p.id'],
             'post_revisions'=>["SELECT r.post_id,r.revision_number,r.body,r.body_format,r.created_at FROM ce_forum_post_revisions r JOIN ce_forum_live_posts p ON p.id=r.post_id JOIN ce_forum_live_threads t ON t.id=p.thread_id WHERE r.editor_id=? AND r.editor_id=p.author_id AND $board",'r.post_id,r.revision_number'],

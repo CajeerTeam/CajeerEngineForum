@@ -45,7 +45,9 @@ final readonly class ActivityService
         $kind=$data['kind']??null;if(!in_array($kind,['follow','ignore'],true)||$id===$actor->userId)throw new ForumException('Некорректное назначение.',422);
         $enabled=V::enabled($data['enabled']??null);
         return $this->tx->write(function()use($actor,$id,$kind,$enabled){
+            if($kind==='follow')$this->tx->contacts()->lockWrites();
             $this->tx->permissions()->requireCurrent($actor,'forum:write',true);
+            if($kind==='follow'&&$enabled&&$this->tx->contacts()->blocked($actor->userId,$id))throw new ForumException('Взаимодействие недоступно.',403);
             if($enabled)$this->profiles->publicProfile($id,$actor);
             $this->repo->setRelation($actor->userId,$id,$kind,$enabled);
             return ['kind'=>$kind,'enabled'=>$enabled];
