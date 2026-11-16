@@ -49,6 +49,8 @@ final readonly class OperationsMonitor
         try {
         $db=new DatabaseManager($this->config);
         $probe('database',function()use($db){$this->assertDatabasePresent();$h=$db->health();return ['ok'=>(bool)($h['ok']??false)&&(bool)($h['schema_ready']??false),'driver'=>$db->driver(),'schema_ready'=>(bool)($h['schema_ready']??false)];});
+        $probe('forum_database',function()use($db){$this->assertDatabasePresent();return ForumMetrics::database($db);});
+        $probe('forum_cache',fn()=>ForumMetrics::cache());
         $probe('storage',function(){ $s=new StorageManager($this->root,$this->config);$d=$s->diagnostics();return ['ok'=>(bool)($d['local_probe_write']??false)&&(bool)($d['local_probe_delete']??false)&&(bool)($d['driver_probe']['ok']??false),'driver'=>$s->driver()];});
         $probe('queue',function()use($db){if($this->config->string('queue.default')==='pgsql')$this->assertDatabasePresent();$d=(new QueueFactory($this->root,$this->config,$db))->make()->diagnostics();$counts=array_fill_keys(['pending','reserved','processed','failed'],0);foreach($d['queues']??[] as $q)foreach($counts as $k=>$v)$counts[$k]+=(int)($q[$k]??0);return ['ok'=>($d['writable']??true)&&($d['connected']??true),'driver'=>$d['driver']??'unknown','counts'=>$counts,'oldest_ready_age_seconds'=>(int)($d['oldest_ready_age_seconds']??0)];});
         $probe('scheduler',function()use($db){if($this->config->string('scheduler.driver')==='pgsql')$this->assertDatabasePresent();$store=TaskRunStore::fromConfig($this->root,$this->config,$db);$tasks=[];foreach(['tmp.cleanup'=>3600,'queue.cleanup_processed'=>86400,'search.index_published'=>60,'webhooks.dispatch_pending'=>60] as $name=>$interval){$s=$store->status($name);$last=strtotime((string)($s['last_success_at']??''))?:0;$tasks[$name]=['status'=>$s['status']??'never','last_success'=>$last,'stale'=>$last===0||time()-$last>max(180,$interval*2)];}return ['ok'=>!in_array(true,array_column($tasks,'stale'),true),'tasks'=>$tasks];});
@@ -62,13 +64,18 @@ final readonly class OperationsMonitor
         if (is_file($this->root.'/storage/logs/observability/backup-automation.json')) $probe('backup_automation',fn()=> \CajeerEngine\Backup\AutomatedBackup::status($this->root));
         if(TraceExporter::enabled())$probe('traces',function()use($db){$store=TaskRunStore::fromConfig($this->root,$this->config,$db);$state=$store->status('observability.export_traces');$pending=count(glob($this->root.'/storage/logs/observability/traces/span-*.json')?:[]);return ['ok'=>$pending<1000&&($state['status']??'never')!=='failed','pending'=>$pending,'status'=>$state['status']??'never'];});
         $probe('update',function(){ $d=(new JsonFile($this->root.'/storage/logs/observability/update.json'))->readObject();return ['ok'=>($d['status']??'never')!=='failure','last_success'=>(int)($d['last_success']??0),'status'=>$d['status']??'never'];});
-        $probe('worker',function(){ $p=$this->root.'/storage/logs/observability/worker.json';$d=(new JsonFile($p))->readObject();$last=(int)($d['timestamp']??0);return ['ok'=>$last>0&&time()-$last<=max(60,$this->config->int('observability.worker_max_age',300)),'last_seen'=>$last,'status'=>$d['status']??'never'];});
+        $probe('worker',function(){ $p=$this->root.'/storage/logs/observability/worker.json';$d=(new JsonFile($p))->readObject();$last=(int)($d['timestamp']??0);$success=(int)($d['last_success']??0);return ['ok'=>$success>0&&time()-$success<=max(60,$this->config->int('observability.worker_max_age',300))&&($d['status']??'never')!=='failure','last_seen'=>$last,'last_success'=>$success,'status'=>$d['status']??'never'];});
         $free=@disk_free_space($this->root.'/storage');$total=@disk_total_space($this->root.'/storage');
         if($free===false||$free<$this->minFree())$alerts[]='disk_low';
         if(($checks['queue']['counts']['failed']??0)>0)$alerts[]='queue_failed_jobs';
         if(($checks['queue']['oldest_ready_age_seconds']??0)>$this->config->int('observability.queue_max_age',300))$alerts[]='queue_backlog_stale';
+        $fq=$checks['forum_database']['queues']??[];
+        foreach(['notifications','answer_notifications','mail','extensions','media','replicas'] as $name)if(($fq[$name]['oldest_age_seconds']??0)>$this->config->int('observability.queue_max_age',300))$alerts[]='forum_'.$name.'_stale';
+        foreach(['extension_dead','mail_dead','media_failed'] as $name)if(($fq[$name]['count']??0)>0)$alerts[]='forum_'.$name;
+        if(($fq['imports']['oldest_age_seconds']??0)>3600)$alerts[]='forum_import_stalled';
         try{$http=(new Metrics($this->root))->httpSummary();}catch(\Throwable){$http=['requests'=>null,'errors_5xx'=>null,'average_ms'=>null,'p95_bucket_ms'=>null];$alerts[]='metrics_unavailable';}
-        return ['ok'=>$ready['ok'],'status'=>!$ready['ok']?'not_ready':($alerts?'degraded':'ready'),'time'=>gmdate(DATE_ATOM),'readiness'=>$ready,'checks'=>$checks,'http'=>$http,'disk'=>['free_bytes'=>$free===false?null:(int)$free,'total_bytes'=>$total===false?null:(int)$total],'alerts'=>$alerts];
+        try{$forumHttp=(new Metrics($this->root))->forumSummary();}catch(\Throwable){$forumHttp=[];}
+        return ['ok'=>$ready['ok'],'status'=>!$ready['ok']?'not_ready':($alerts?'degraded':'ready'),'time'=>gmdate(DATE_ATOM),'readiness'=>$ready,'checks'=>$checks,'http'=>$http,'forum_http'=>$forumHttp,'disk'=>['free_bytes'=>$free===false?null:(int)$free,'total_bytes'=>$total===false?null:(int)$total],'alerts'=>$alerts];
         }finally{OperationLock::release($lock);}
     }
     private function assertDatabasePresent(): void
@@ -101,6 +108,9 @@ final readonly class OperationsMonitor
         $r=$this->cachedReport();$out=(new Metrics($this->root))->prometheus();
         $out.="# TYPE cajeer_ready gauge\ncajeer_ready ".(int)$r['ok']."\n# TYPE cajeer_dependency_up gauge\n";
         foreach($r['checks'] as $name=>$d)$out.='cajeer_dependency_up{component="'.$name.'"} '.(int)$d['ok']."\n";
+        $out.="# TYPE cajeer_dependency_probe_duration_seconds gauge\n";
+        foreach($r['checks'] as $name=>$d)if(isset($d['latency_ms']))$out.='cajeer_dependency_probe_duration_seconds{component="'.$name.'"} '.sprintf('%.6F',$d['latency_ms']/1000)."\n";
+        if(isset($r['checks']['worker']['last_success']))$out.="# TYPE cajeer_worker_last_success_timestamp_seconds gauge\ncajeer_worker_last_success_timestamp_seconds ".(int)($r['checks']['worker']['last_success']??0)."\n";
         foreach(['free_bytes','total_bytes'] as $key)if($r['disk'][$key]!==null)$out.="# TYPE cajeer_disk_$key gauge\ncajeer_disk_$key ".$r['disk'][$key]."\n";
         $out.="# TYPE cajeer_queue_jobs gauge\n";foreach($r['checks']['queue']['counts']??[] as $k=>$v)$out.='cajeer_queue_jobs{state="'.$k.'"} '.$v."\n";
         $out.="# TYPE cajeer_queue_oldest_ready_age_seconds gauge\ncajeer_queue_oldest_ready_age_seconds ".(int)($r['checks']['queue']['oldest_ready_age_seconds']??0)."\n";
@@ -111,7 +121,7 @@ final readonly class OperationsMonitor
             foreach (['last_local'=>'local_last_success_timestamp_seconds','last_offsite'=>'offsite_last_success_timestamp_seconds','pending'=>'offsite_pending','checked_at'=>'automation_last_check_timestamp_seconds'] as $field=>$metric) $out.="# TYPE cajeer_backup_$metric gauge\ncajeer_backup_$metric ".(int)($b[$field]??0)."\n";
         }
         if(isset($r['checks']['traces']['pending']))$out.="# TYPE cajeer_trace_spool_pending gauge\ncajeer_trace_spool_pending ".$r['checks']['traces']['pending']."\n";
-        return $out;
+        return $out.ForumMetrics::prometheus($r['checks']);
     }
     /** Scrapes reuse a short-lived sample; a concurrent scrape never queues expensive probes. */
     public function cachedReport(): array
@@ -123,7 +133,7 @@ final readonly class OperationsMonitor
         $saved=$file->readObject();if(($saved['sampled_at']??0)>=$now-15)return $saved['report'];
         $h=fopen($dir.'/report.lock','c+');if(!$h)throw new \RuntimeException('Cannot lock diagnostics');
         try{
-            if(!flock($h,LOCK_EX|LOCK_NB))throw new \RuntimeException('Diagnostic sample in progress');
+            if(!flock($h,LOCK_EX|LOCK_NB)){if(($saved['sampled_at']??0)>=$now-60&&isset($saved['report']))return $saved['report'];throw new \RuntimeException('Diagnostic sample in progress');}
             $saved=$file->readObject();if(($saved['sampled_at']??0)>=$now-15)return $saved['report'];
             $report=$this->report();$file->writeObject(['sampled_at'=>time(),'report'=>$report]);return $report;
         }finally{fclose($h);}

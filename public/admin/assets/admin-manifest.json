@@ -9,13 +9,13 @@
             "path": "/admin/index.html",
             "exists": true,
             "size": 734,
-            "sha256": "a85676c84e31b5ea8cf6934dce0fcc8989f11b5c8dd82d2bfe6d7f889e8e2c05"
+            "sha256": "7aef341b90a53300e1432d750ba33adf24161db5e56020eb0f604931604ef0d0"
         },
         "assets/admin-app.js": {
             "path": "/admin/assets/admin-app.js",
             "exists": true,
-            "size": 134837,
-            "sha256": "1935d8cc0e619dac037fa907ea6ac7bf7e2eeec42094f1b4f01f5050b92a1b9d"
+            "size": 137680,
+            "sha256": "85d8f03d61418775422170b98029c00d22a58a3dd81b0ae586b79ed58be42004"
         },
         "assets/admin-app.css": {
             "path": "/admin/assets/admin-app.css",

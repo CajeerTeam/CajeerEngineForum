@@ -9,6 +9,7 @@ scrape_configs:
       type: Bearer
       credentials_file: /etc/prometheus/secrets/cajeerengine-metrics-token
     static_configs:
-      - targets: ['cms.example.com:443']
+      - targets: ['forum.example.com:443']
 rule_files:
   - /etc/prometheus/rules/cajeerengine.yml
+  - /etc/prometheus/rules/forum.yml

@@ -12,7 +12,7 @@ groups:
         for: 2m
         labels: {severity: critical}
         annotations:
-          summary: "CMS is not ready; check maintenance and database"
+          summary: "Forum is not ready; check maintenance and database"
       - alert: CajeerEngineDependencyUnavailable
         expr: cajeer_dependency_up{component=~"database|storage|queue|cache|search|scheduler|worker|backup|backup_automation|traces|update"} == 0
         for: 5m

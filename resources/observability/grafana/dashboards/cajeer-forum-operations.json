@@ -1,0 +1,355 @@
+{
+  "uid": "cajeer-forum-operations",
+  "title": "Forum \u00b7 Queues, backup & recovery",
+  "tags": [
+    "cajeerforum"
+  ],
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": false,
+  "refresh": "30s",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Forum queue items (capped at 10001)",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cajeer-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "cajeer_forum_queue_items",
+          "legendFormat": "{{instance}} {{operation}} {{queue}} {{component}} {{result}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cajeer-prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 2,
+      "title": "Queue age / overdue time",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cajeer-prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "cajeer_forum_queue_oldest_age_seconds",
+          "legendFormat": "{{instance}} {{operation}} {{queue}} {{component}} {{result}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cajeer-prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 3,
+      "title": "Core queue states",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cajeer-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "cajeer_queue_jobs",
+          "legendFormat": "{{instance}} {{operation}} {{queue}} {{component}} {{result}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cajeer-prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 4,
+      "title": "Worker last successful cycle age",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cajeer-prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "time()-cajeer_worker_last_success_timestamp_seconds",
+          "legendFormat": "{{instance}} {{operation}} {{queue}} {{component}} {{result}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cajeer-prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 5,
+      "title": "Local and off-site backup age",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cajeer-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 16,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "time()-cajeer_backup_last_success_timestamp_seconds",
+          "legendFormat": "local {{instance}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cajeer-prometheus"
+          }
+        },
+        {
+          "refId": "B",
+          "expr": "time()-cajeer_backup_offsite_last_success_timestamp_seconds",
+          "legendFormat": "off-site {{instance}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cajeer-prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 6,
+      "title": "Off-site pending",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cajeer-prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 16,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "cajeer_backup_offsite_pending",
+          "legendFormat": "{{instance}} {{operation}} {{queue}} {{component}} {{result}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cajeer-prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 7,
+      "title": "Recovery duration and snapshot age",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cajeer-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 24,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "cajeer_forum_recovery_duration_seconds",
+          "legendFormat": "duration {{instance}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cajeer-prometheus"
+          }
+        },
+        {
+          "refId": "B",
+          "expr": "cajeer_forum_recovery_snapshot_age_seconds",
+          "legendFormat": "snapshot age {{instance}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cajeer-prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 8,
+      "title": "Recovery objectives met",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cajeer-prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 24,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "cajeer_forum_recovery_objectives_met",
+          "legendFormat": "{{instance}} {{operation}} {{queue}} {{component}} {{result}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cajeer-prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 9,
+      "title": "Migration checkpoint age",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cajeer-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 32,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "cajeer_forum_queue_oldest_age_seconds{queue=\"imports\"}",
+          "legendFormat": "{{instance}} {{operation}} {{queue}} {{component}} {{result}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cajeer-prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 10,
+      "title": "Firing alerts",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cajeer-prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 32,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "ALERTS{alertstate=\"firing\"}",
+          "legendFormat": "{{instance}} {{operation}} {{queue}} {{component}} {{result}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cajeer-prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      }
+    }
+  ]
+}

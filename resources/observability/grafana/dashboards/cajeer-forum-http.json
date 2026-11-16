@@ -1,0 +1,382 @@
+{
+  "uid": "cajeer-forum-http",
+  "title": "Forum \u00b7 HTTP & infrastructure",
+  "tags": [
+    "cajeerforum"
+  ],
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": false,
+  "refresh": "30s",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Readiness and scrape",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cajeer-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "up{job=\"cajeerengine\"}",
+          "legendFormat": "scrape {{instance}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cajeer-prometheus"
+          }
+        },
+        {
+          "refId": "B",
+          "expr": "cajeer_ready",
+          "legendFormat": "readiness {{instance}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cajeer-prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 2,
+      "title": "HTTP requests / s",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cajeer-prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by(instance,status_class) (rate(cajeer_http_requests_total[5m]))",
+          "legendFormat": "{{instance}} {{operation}} {{queue}} {{component}} {{result}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cajeer-prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 3,
+      "title": "HTTP 5xx ratio",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cajeer-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by(instance)(rate(cajeer_http_requests_total{status_class=\"5xx\"}[5m])) / clamp_min(sum by(instance)(rate(cajeer_http_requests_total[5m])),0.001)",
+          "legendFormat": "{{instance}} {{operation}} {{queue}} {{component}} {{result}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cajeer-prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 4,
+      "title": "Forum request p95",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cajeer-prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95,sum by(instance,operation,le)(rate(cajeer_forum_request_duration_seconds_bucket{outcome=\"2xx\"}[5m])))",
+          "legendFormat": "{{instance}} {{operation}} {{queue}} {{component}} {{result}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cajeer-prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 5,
+      "title": "Forum p50 and p99",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cajeer-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 16,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.50,sum by(instance,operation,le)(rate(cajeer_forum_request_duration_seconds_bucket{outcome=\"2xx\"}[5m])))",
+          "legendFormat": "p50 {{operation}} {{instance}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cajeer-prometheus"
+          }
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.99,sum by(instance,operation,le)(rate(cajeer_forum_request_duration_seconds_bucket{outcome=\"2xx\"}[5m])))",
+          "legendFormat": "p99 {{operation}} {{instance}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cajeer-prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 6,
+      "title": "Dependency probe duration",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cajeer-prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 16,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "cajeer_dependency_probe_duration_seconds",
+          "legendFormat": "{{instance}} {{operation}} {{queue}} {{component}} {{result}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cajeer-prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 7,
+      "title": "PostgreSQL connections",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cajeer-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 24,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "cajeer_forum_postgres_connections",
+          "legendFormat": "connections {{instance}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cajeer-prometheus"
+          }
+        },
+        {
+          "refId": "B",
+          "expr": "cajeer_forum_postgres_max_connections",
+          "legendFormat": "limit {{instance}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cajeer-prometheus"
+          }
+        },
+        {
+          "refId": "C",
+          "expr": "cajeer_forum_postgres_lock_waiters",
+          "legendFormat": "lock waiters {{instance}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cajeer-prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 8,
+      "title": "Redis cache hits / misses",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cajeer-prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 24,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by(instance,result)(rate(cajeer_forum_cache_requests_total[5m]))",
+          "legendFormat": "{{instance}} {{operation}} {{queue}} {{component}} {{result}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cajeer-prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 9,
+      "title": "Redis memory",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cajeer-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 32,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "cajeer_forum_redis_used_memory_bytes",
+          "legendFormat": "used {{instance}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cajeer-prometheus"
+          }
+        },
+        {
+          "refId": "B",
+          "expr": "cajeer_forum_redis_maxmemory_bytes",
+          "legendFormat": "limit {{instance}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cajeer-prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 10,
+      "title": "Free storage",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cajeer-prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 32,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "cajeer_disk_free_bytes",
+          "legendFormat": "{{instance}} {{operation}} {{queue}} {{component}} {{result}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cajeer-prometheus"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        },
+        "overrides": []
+      }
+    }
+  ]
+}

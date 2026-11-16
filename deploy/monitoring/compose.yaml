@@ -1,0 +1,49 @@
+services:
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    restart: unless-stopped
+    command: [--config.file=/etc/prometheus/prometheus.json, --storage.tsdb.path=/prometheus, --storage.tsdb.retention.time=30d, --storage.tsdb.retention.size=10GB]
+    ports: ['127.0.0.1:${CE_PROMETHEUS_PORT:-19090}:9090']
+    volumes:
+      - ${CE_MONITOR_CONFIG_DIR:?set absolute config directory}/prometheus.json:/etc/prometheus/prometheus.json:ro
+      - ${CE_MONITOR_CONFIG_DIR}/forum-ca.pem:/etc/prometheus/forum-ca.pem:ro
+      - ${CE_MONITOR_CONFIG_DIR}/metrics-token:/run/secrets/metrics-token:ro
+      - ../../resources/observability/prometheus-rules.yml:/etc/prometheus/rules/core.yml:ro
+      - ../../resources/observability/forum-rules.yml:/etc/prometheus/rules/forum.yml:ro
+      - prometheus_data:/prometheus
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: [no-new-privileges:true]
+  alertmanager:
+    image: prom/alertmanager:v0.28.1
+    restart: unless-stopped
+    command: [--config.file=/etc/alertmanager/alertmanager.json, --storage.path=/alertmanager, --cluster.listen-address=]
+    ports: ['127.0.0.1:${CE_ALERTMANAGER_PORT:-19093}:9093']
+    volumes:
+      - ${CE_MONITOR_CONFIG_DIR}/alertmanager.json:/etc/alertmanager/alertmanager.json:ro
+      - ${CE_MONITOR_CONFIG_DIR}/alert-webhook:/run/secrets/alert-webhook:ro
+      - ${CE_MONITOR_CONFIG_DIR}/forum-ca.pem:/etc/alertmanager/forum-ca.pem:ro
+      - alertmanager_data:/alertmanager
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: [no-new-privileges:true]
+  grafana:
+    image: grafana/grafana:12.1.1
+    restart: unless-stopped
+    ports: ['127.0.0.1:${CE_GRAFANA_PORT:-13000}:3000']
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD__FILE: /run/secrets/grafana-password
+      GF_USERS_ALLOW_SIGN_UP: 'false'
+      GF_AUTH_ANONYMOUS_ENABLED: 'false'
+      GF_ANALYTICS_REPORTING_ENABLED: 'false'
+      GF_SECURITY_DISABLE_GRAVATAR: 'true'
+    volumes:
+      - ${CE_MONITOR_CONFIG_DIR}/grafana-password:/run/secrets/grafana-password:ro
+      - ../../resources/observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../../resources/observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    security_opt: [no-new-privileges:true]
+volumes:
+  prometheus_data:
+  alertmanager_data:
+  grafana_data:

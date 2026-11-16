@@ -10,7 +10,7 @@ p=argparse.ArgumentParser()
 p.add_argument('--domain', required=True); p.add_argument('--port', type=int, required=True)
 p.add_argument('--ca', type=Path, required=True); p.add_argument('--email', required=True)
 p.add_argument('--password-file', type=Path, required=True); p.add_argument('--state', type=Path, required=True)
-p.add_argument('--version', default='0.8.5'); p.add_argument('--verify-only', action='store_true')
+p.add_argument('--version', default='0.8.6'); p.add_argument('--verify-only', action='store_true')
 a=p.parse_args(); c=Client(a.domain,a.ca,a.port)
 password=a.password_file.read_text().strip()
 def call(path,status=200,**kw): return expect(c,path,status,**kw)
@@ -43,6 +43,18 @@ require(any(x['id']==thread for x in data(call('/api/v1/forum/search?q=Container
 hits=[]
 for _ in range(3): hits.append(call('/forum/threads/'+thread)[0].get('x-forum-cache'))
 require('HIT' in hits,'Redis cache hit not observed')
+if tuple(map(int,a.version.split('.'))) >= (0,8,6):
+    # The report cache has a 15-second lifetime; allow one fresh sample after the writes.
+    for _ in range(25):
+        report=json.loads(call('/api/v1/system/operations',headers=admin)[1])
+        checks=report['checks']; http=report.get('forum_http',{})
+        if (checks.get('forum_database',{}).get('ok') and checks['forum_database']['postgres']['max_connections']>0
+            and checks.get('forum_cache',{}).get('stats',{}).get('hit',0)>0
+            and all(http.get(group,{}).get('requests',0)>0 for group in ('ssr','search','publication'))): break
+        time.sleep(1)
+    else: raise RuntimeError('Forum observability did not report real PostgreSQL, Redis and HTTP traffic')
+    call('/metrics',401)
+
 for _ in range(45):
     if any(x.get('post_id')==reply for x in data(call('/api/v1/forum/notifications',headers=admin)[1])['items']): break
     time.sleep(1)

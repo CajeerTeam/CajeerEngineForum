@@ -1,0 +1,98 @@
+groups:
+  - name: cajeerforum.operations
+    rules:
+      - alert: CajeerForumSQLSampleUnavailable
+        expr: cajeer_dependency_up{component="forum_database"} == 0
+        for: 2m
+        labels: {severity: warning}
+        annotations: {summary: "Forum SQL telemetry is unavailable"}
+      - alert: CajeerForumSQLSampleStale
+        expr: time() - cajeer_forum_sample_timestamp_seconds > 120
+        for: 2m
+        labels: {severity: warning}
+        annotations: {summary: "Forum SQL telemetry is stale"}
+      - alert: CajeerForumSlowSearch
+        expr: histogram_quantile(0.95, sum by (instance, le) (rate(cajeer_forum_request_duration_seconds_bucket{operation="search",outcome="2xx"}[5m]))) > 0.5
+        for: 10m
+        labels: {severity: warning}
+        annotations: {summary: "Successful forum search p95 exceeds 500 ms"}
+      - alert: CajeerForumSlowPublication
+        expr: histogram_quantile(0.95, sum by (instance, le) (rate(cajeer_forum_request_duration_seconds_bucket{operation="publication",outcome="2xx"}[5m]))) > 0.5
+        for: 10m
+        labels: {severity: warning}
+        annotations: {summary: "Successful publication HTTP p95 exceeds 500 ms"}
+      - alert: CajeerForumSlowSSR
+        expr: histogram_quantile(0.95, sum by (instance, le) (rate(cajeer_forum_request_duration_seconds_bucket{operation="ssr",outcome="2xx"}[5m]))) > 0.3
+        for: 10m
+        labels: {severity: warning}
+        annotations: {summary: "Successful SSR p95 exceeds 300 ms"}
+      - alert: CajeerForumQueueStale
+        expr: cajeer_forum_queue_oldest_age_seconds{queue=~"notifications|answer_notifications|mail|extensions|media|replicas"} > 300
+        for: 5m
+        labels: {severity: warning}
+        annotations: {summary: "Forum queue {{ $labels.queue }} is delayed"}
+      - alert: CajeerForumDeadLetters
+        expr: cajeer_forum_queue_items{queue=~"extension_dead|mail_dead|media_failed"} > 0
+        for: 5m
+        labels: {severity: warning}
+        annotations: {summary: "Forum queue {{ $labels.queue }} requires attention"}
+      - alert: CajeerForumQueueSaturated
+        expr: cajeer_forum_queue_count_capped == 1
+        for: 5m
+        labels: {severity: warning}
+        annotations: {summary: "Forum queue {{ $labels.queue }} has at least 10001 items"}
+      - alert: CajeerForumModerationStale
+        expr: cajeer_forum_queue_oldest_age_seconds{queue=~"moderation|reports"} > 86400
+        for: 15m
+        labels: {severity: warning}
+        annotations: {summary: "Forum moderation case has been waiting over 24 hours"}
+      - alert: CajeerForumImportStalled
+        expr: cajeer_forum_queue_oldest_age_seconds{queue="imports"} > 3600
+        for: 10m
+        labels: {severity: warning}
+        annotations: {summary: "Forum migration has not checkpointed for an hour"}
+      - alert: CajeerForumPostgresConnections
+        expr: cajeer_forum_postgres_connections / clamp_min(cajeer_forum_postgres_max_connections, 1) > 0.85
+        for: 5m
+        labels: {severity: warning}
+        annotations: {summary: "PostgreSQL client connections exceed 85%"}
+      - alert: CajeerForumPostgresLockWaiters
+        expr: cajeer_forum_postgres_lock_waiters > 0
+        for: 5m
+        labels: {severity: warning}
+        annotations: {summary: "PostgreSQL has persistent lock waiters"}
+      - alert: CajeerForumRedisMemory
+        expr: (cajeer_forum_redis_used_memory_bytes / clamp_min(cajeer_forum_redis_maxmemory_bytes, 1) > 0.85) and (cajeer_forum_redis_maxmemory_bytes > 0)
+        for: 5m
+        labels: {severity: warning}
+        annotations: {summary: "Forum Redis memory exceeds 85%"}
+      - alert: CajeerForumCacheUnavailable
+        expr: cajeer_dependency_up{component="forum_cache"} == 0
+        for: 2m
+        labels: {severity: warning}
+        annotations: {summary: "Configured forum Redis cache is unavailable"}
+      - alert: CajeerForumWorkerStalled
+        expr: time() - cajeer_worker_last_success_timestamp_seconds > 300
+        for: 5m
+        labels: {severity: critical}
+        annotations: {summary: "No successful worker cycle for over five minutes"}
+      - alert: CajeerForumBackupStale
+        expr: time() - cajeer_backup_last_success_timestamp_seconds > 86400
+        for: 5m
+        labels: {severity: critical}
+        annotations: {summary: "No verified backup within 24 hours"}
+      - alert: CajeerForumOffsiteStale
+        expr: time() - cajeer_backup_offsite_last_success_timestamp_seconds > 86400
+        for: 5m
+        labels: {severity: warning}
+        annotations: {summary: "No verified off-site backup within 24 hours"}
+      - alert: CajeerForumRecoveryObjectivesMissed
+        expr: cajeer_forum_recovery_objectives_met == 0
+        for: 5m
+        labels: {severity: warning}
+        annotations: {summary: "Last cold recovery did not satisfy its objectives"}
+      - alert: CajeerForumDiskPercentLow
+        expr: cajeer_disk_free_bytes / clamp_min(cajeer_disk_total_bytes, 1) < 0.15
+        for: 5m
+        labels: {severity: warning}
+        annotations: {summary: "Storage disk has less than 15% free"}

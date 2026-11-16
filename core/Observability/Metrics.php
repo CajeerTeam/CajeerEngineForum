@@ -71,7 +71,7 @@ final class Metrics
             static $routes=null; $routes??=array_column(\CajeerEngine\Http\RouteRegistry::all(),2);
             return in_array($name,$routes,true)||in_array($name,['unmatched','bootstrap','maintenance','install','upgrade','health','metrics'],true)?$name:'other';
         }
-        $known=match($kind){'job'=>['log.message','search.index_all','webhook.dispatch','webhook.deliver','webhooks.dispatch_pending','forum.notifications.dispatch','forum.mail.dispatch','forum.media.image','forum.media.replica','worker'], 'scheduler'=>['tmp.cleanup','queue.cleanup_processed','search.index_published','webhooks.dispatch_pending','runner','observability.export_traces'], 'database'=>['connect','transaction','query','health'],default=>[]};
+        $known=match($kind){'job'=>['log.message','search.index_all','webhook.dispatch','webhook.deliver','webhooks.dispatch_pending','forum.notifications.dispatch','forum.mail.dispatch','forum.media.image','forum.media.replica','forum.extensions.dispatch','worker'], 'scheduler'=>['tmp.cleanup','queue.cleanup_processed','search.index_published','webhooks.dispatch_pending','runner','observability.export_traces'], 'database'=>['connect','transaction','query','health'],default=>[]};
         return in_array($name,$known,true)?$name:(str_starts_with($name,'extension.')?'extension':'other');
     }
     public function snapshot(): array
@@ -80,6 +80,30 @@ final class Metrics
             $path=$this->root.'/storage/logs/observability/metrics-'.$i.'.json';
             foreach((new JsonFile($path))->readObject() as $key=>$row)$result[$key]=$row;
         }ksort($result);return $result;
+    }
+    private const FORUM_ROUTES = [
+        'ssr'=>['forum.home','forum.page','public.home'],
+        'search'=>['api.v1.forum.search'],
+        'publication'=>['api.v1.forum.createThread','api.v1.forum.reply','api.v1.forum.edit'],
+    ];
+    private function forumRows(array $rows): array
+    {
+        $result=[];
+        foreach(self::FORUM_ROUTES as $group=>$routes)foreach($rows as $key=>$row){
+            [$kind,$route,$outcome]=explode('|',$key);
+            if($kind==='http'&&in_array($route,$routes,true))$result[$group][$outcome]=self::combine($result[$group][$outcome]??null,$row);
+        }
+        return $result;
+    }
+    public function forumSummary(): array
+    {
+        $result=[];
+        foreach($this->forumRows($this->snapshot()) as $group=>$outcomes){
+            $total=null;foreach($outcomes as $row)$total=self::combine($total,$row);
+            $result[$group]=['requests'=>$total['count'],'errors_5xx'=>$outcomes['5xx']['count']??0,'average_ms'=>round($total['sum']*1000/$total['count'],2)];
+            foreach([50,95,99] as $q){$value=null;foreach(self::BUCKETS as $i=>$bound)if($total['buckets'][$i]>=ceil($total['count']*$q/100)){$value=$bound*1000;break;}$result[$group]['p'.$q.'_bucket_ms']=$value;}
+        }
+        return $result;
     }
     public function httpSummary(): array
     {
@@ -103,6 +127,14 @@ final class Metrics
         }
         $out[]='# TYPE cajeer_http_requests_total counter';
         foreach($rows as $key=>$row){[$k,$operation,$status]=explode('|',$key);if($k==='http')$out[]='cajeer_http_requests_total{route="'.$operation.'",status_class="'.$status.'"} '.$row['count'];}
+        $out[]='# TYPE cajeer_forum_request_duration_seconds histogram';
+        foreach($this->forumRows($rows) as $group=>$outcomes)foreach($outcomes as $status=>$row){
+            $label='operation="'.$group.'",outcome="'.$status.'"';
+            foreach(self::BUCKETS as $i=>$bound)$out[]='cajeer_forum_request_duration_seconds_bucket{'.$label.',le="'.$bound.'"} '.$row['buckets'][$i];
+            $out[]='cajeer_forum_request_duration_seconds_bucket{'.$label.',le="+Inf"} '.$row['count'];
+            $out[]='cajeer_forum_request_duration_seconds_sum{'.$label.'} '.sprintf('%.9F',$row['sum']);
+            $out[]='cajeer_forum_request_duration_seconds_count{'.$label.'} '.$row['count'];
+        }
         return implode("\n",$out)."\n";
     }
 }

@@ -1,0 +1,45 @@
+rule_files:
+  - ../../resources/observability/forum-rules.yml
+  - ../../resources/observability/prometheus-rules.yml
+evaluation_interval: 1m
+tests:
+  - interval: 1m
+    input_series:
+      - series: 'cajeer_forum_queue_oldest_age_seconds{instance="forum",queue="extensions"}'
+        values: '601 601 601 601 601 601 0 0'
+      - series: 'cajeer_forum_queue_oldest_age_seconds{instance="forum",queue="mail"}'
+        values: '0 0 0 0 0 0 0 0'
+      - series: 'cajeer_forum_queue_items{instance="forum",queue="extension_dead"}'
+        values: '2 2 2 2 2 2 0 0'
+      - series: 'cajeer_forum_postgres_connections{instance="forum"}'
+        values: '90 90 90 90 90 90 10 10'
+      - series: 'cajeer_forum_postgres_max_connections{instance="forum"}'
+        values: '100 100 100 100 100 100 100 100'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: CajeerForumQueueStale
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: CajeerForumQueueStale
+        exp_alerts:
+          - exp_labels: {instance: forum, queue: extensions, severity: warning}
+            exp_annotations: {summary: 'Forum queue extensions is delayed'}
+      - eval_time: 5m
+        alertname: CajeerForumDeadLetters
+        exp_alerts:
+          - exp_labels: {instance: forum, queue: extension_dead, severity: warning}
+            exp_annotations: {summary: 'Forum queue extension_dead requires attention'}
+      - eval_time: 5m
+        alertname: CajeerForumPostgresConnections
+        exp_alerts:
+          - exp_labels: {instance: forum, severity: warning}
+            exp_annotations: {summary: 'PostgreSQL client connections exceed 85%'}
+      - eval_time: 6m
+        alertname: CajeerForumQueueStale
+        exp_alerts: []
+      - eval_time: 6m
+        alertname: CajeerForumDeadLetters
+        exp_alerts: []
+      - eval_time: 6m
+        alertname: CajeerForumPostgresConnections
+        exp_alerts: []

@@ -1,3 +1,10 @@
+## Forum Edition 0.8.6 — Forum Observability & Monitoring
+
+- Reuse real HTTP histograms for SSR, search and publication, with bounded labels and p50/p95/p99; worker success rather than mere process activity controls health.
+- Read-only capped SQL queue and overdue-age probes, PostgreSQL connection and lock statistics, Redis cache counters, verified backup and recovery gauges. Migration 0048 adds queue probe indexes.
+- Operations ACP shows real forum latency and queue state; authenticated Prometheus scrape, provisioned Grafana dashboards, TLS webhook Alertmanager and production alert rules.
+- Monitoring runs independently of application processes; native SQL and container monitoring acceptance are required by CI. Engine 1.3.0 unchanged.
+
 ## Forum Edition 0.8.5 — Disaster Recovery & Restore
 
 - Restore authenticated encrypted off-site bundles into a fresh SQLite path or newly allocated PostgreSQL 17+ database, without connecting to or replacing the source database.

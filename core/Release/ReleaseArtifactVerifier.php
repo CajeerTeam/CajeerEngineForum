@@ -113,6 +113,11 @@ final class ReleaseArtifactVerifier
             $required=array_merge($required,['core/Backup/ColdRecovery.php','tools/recovery-probe.php','docs/disaster-recovery.md']);
             if ($mode==='source') $required=array_merge($required,['tools/cold-recovery-regression.php','tools/forum-tests/cold_recovery_acceptance.py']);
         }
+        if (($manifest['edition']??null)==='forum' && version_compare($version,'0.8.6','>=')) {
+            $required=array_merge($required,['core/Observability/ForumMetrics.php','docs/forum-monitoring.md','resources/observability/forum-rules.yml','resources/observability/grafana/dashboards/cajeer-forum-http.json','resources/observability/grafana/dashboards/cajeer-forum-operations.json','resources/observability/grafana/provisioning/datasources/prometheus.yml','resources/observability/grafana/provisioning/dashboards/forum.yml']);
+            foreach(['sqlite','pgsql','mysql'] as $driver)$required[]='migrations/'.$driver.'/0048_forum_observability_indexes.sql';
+            if($mode==='source')$required=array_merge($required,['deploy/monitoring/compose.yaml','deploy/monitoring/configure.py','deploy/monitoring/test_monitoring.py','deploy/monitoring/rules-test.yml','tools/forum-observability-regression.php','tools/forum-tests/observability_sql_regression.py']);
+        }
         foreach ($required as $file) if (!in_array($file, $files, true)) throw new \RuntimeException('Required ZIP entry missing: ' . $file);
         foreach (['pgsql', 'mysql', 'sqlite'] as $driver) {
             if (!array_filter($files, static fn ($file) => str_starts_with($file, 'migrations/' . $driver . '/') && str_ends_with($file, '.sql'))) throw new \RuntimeException('Missing migrations: ' . $driver);

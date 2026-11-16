@@ -44,3 +44,5 @@
 /deploy/container/artifacts/
 /deploy/container/site.env
 /deploy/container/__pycache__/
+
+/deploy/monitoring/__pycache__/

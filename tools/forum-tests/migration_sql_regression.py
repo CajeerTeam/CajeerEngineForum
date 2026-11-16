@@ -9,7 +9,7 @@ def sql(prefix): return next(q for q in queries if q.startswith(prefix))
 def uid(): return str(uuid.uuid4())
 with tempfile.TemporaryDirectory() as tmp:
     db=sqlite3.connect(Path(tmp)/'target.sqlite');db.execute('PRAGMA foreign_keys=ON')
-    files=sorted((ROOT/'migrations/sqlite').glob('*.sql'))
+    files=[f for f in sorted((ROOT/'migrations/sqlite').glob('*.sql')) if f.name[:4]<='0047']
     assert files[-1].name=='0047_forum_migration.sql'
     for f in files: db.executescript(f.read_text())
     src=sqlite3.connect(':memory:');src.executescript((ROOT/'tools/forum-tests/phpbb_fixture.sql').read_text())

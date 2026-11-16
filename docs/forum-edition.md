@@ -646,3 +646,7 @@ Use [automated backup](automated-backup.md) for scheduled authenticated recovery
 ### 0.8.5 — Disaster Recovery & Restore
 
 The operator can recover an authenticated 0.8.4+ recovery bundle to a new installation and new PostgreSQL database or SQLite file. See [disaster recovery](disaster-recovery.md). The recovered site remains in maintenance until deployment and acceptance are complete.
+
+### 0.8.6 — Forum Observability & Monitoring
+
+Forum SSR/search/publication latency, bounded SQL queue samples, Redis and PostgreSQL diagnostics, backup and recovery metrics, Operations ACP and provisioned monitoring stack. Apply migration 0048. See [Forum monitoring](forum-monitoring.md).
