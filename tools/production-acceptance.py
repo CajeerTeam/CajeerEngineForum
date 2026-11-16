@@ -137,7 +137,7 @@ def load_pass(report):
                     and nonnegative_number(r['p95_ms']) and r['p95_ms'] <= MAX_P95_MS for r in report['routes'].values()))
 
 
-def run(client, version, email, password, report):
+def run(client, version, email, password, report, soak_seconds=0):
     checks = report['checks']
     def passed(name): checks[name] = True; print('PASS', name, flush=True)
     def call(path, status=200, **kwargs): return expect(client, path, status, **kwargs)
@@ -228,6 +228,14 @@ def run(client, version, email, password, report):
             'editorial':('/api/v1/forum/acp?view=overview',auth,lambda b:isinstance(data(b),dict))}
     report['load']=load(client,routes)
     require(load_pass(report['load']),'load budget failed'); print('PASS mixed load',flush=True)
+    if soak_seconds:
+        # Reuse the bounded, paced runner; use the same real response assertions.
+        import importlib.util
+        spec=importlib.util.spec_from_file_location('qualification', Path(__file__).resolve().parents[1]/'deploy/container/qualify.py')
+        qualification=importlib.util.module_from_spec(spec); spec.loader.exec_module(qualification)
+        report['soak']=qualification.load(client, [(name,*route) for name,route in routes.items()], 8, soak_seconds, 10)
+        qualification.assert_load(report['soak'],1000,0.001,5)
+        print('PASS sustained mixed load',flush=True)
     # Verify rate limiting even for malformed auth input and concurrent requests.
     def attack(_):
         return client.request('/api/v1/auth/login',method='POST',raw=b'{',headers={'Content-Type':'application/json'})
@@ -245,14 +253,16 @@ def main():
     parser.add_argument('--ca',type=Path,required=True); parser.add_argument('--domain',required=True)
     parser.add_argument('--secrets',type=Path,required=True); parser.add_argument('--email',required=True)
     parser.add_argument('--report',type=Path,required=True)
+    parser.add_argument('--soak-seconds',type=int,default=0,help='Optional sustained TLS workload (5–600 seconds)')
     args=parser.parse_args()
+    require(args.soak_seconds==0 or 5<=args.soak_seconds<=600,'invalid host soak duration')
     require(os.environ.get('CE_DEPLOY_DISPOSABLE')=='yes','disposable host required')
     require(not args.report.exists(),'report already exists')
     report={'schema':1,'version':args.version,'artifact_sha256':sha(args.artifact),'profile':'nginx-tls-fpm-pgsql',
             'checks':{},'ok':False}
     try:
         password=json.loads(args.secrets.read_text())['admin_password']
-        run(Client(args.domain,args.ca),args.version,args.email,password,report)
+        run(Client(args.domain,args.ca),args.version,args.email,password,report,args.soak_seconds)
         require(set(report['checks'])==set(SECURITY),'incomplete security checks')
         report['ok']=True
     finally:

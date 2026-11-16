@@ -24,6 +24,12 @@ try {
     $namespace=getenv('CE_NAMESPACE')?:'';
     if (!preg_match('/^[A-Za-z0-9_.-]{1,80}$/D',$namespace)) throw new RuntimeException('Invalid Redis namespace');
     $runtime=['REDIS_HOST'=>'redis','REDIS_PORT'=>'6379','REDIS_PASSWORD'=>$redisPassword,'REDIS_DATABASE'=>'0','FORUM_REDIS_NAMESPACE'=>$namespace,'FORUM_CACHE_ENABLED'=>'true','CACHE_DRIVER'=>'redis','RATE_LIMIT_DRIVER'=>'redis','QUEUE_DRIVER'=>$queue,'QUEUE_REDIS_PREFIX'=>'ce:queue:'.$namespace.':','SCHEDULER_DRIVER'=>'pgsql','BACKUP_KEY_FILE'=>'/run/ce-keys/backup.key','UPDATE_TRUSTED_PUBLIC_KEY_FILE'=>'/opt/ce-release.pub','UPDATE_WEB_UPGRADE_ENABLED'=>'false'];
+    foreach(['CE_RATE_LIMIT_GLOBAL'=>'RATE_LIMIT_GLOBAL','CE_RATE_LIMIT_FORUM_SEARCH'=>'RATE_LIMIT_FORUM_SEARCH'] as $option=>$setting){
+        $value=getenv($option);
+        if($value===false||$value==='')continue;
+        if(!ctype_digit($value)||(int)$value<1||(int)$value>1000000)throw new RuntimeException('Invalid request rate budget');
+        $runtime[$setting]=(string)(int)$value;
+    }
     $key=base64_decode(trim((string)file_get_contents('/run/ce-keys/backup.key')),true);
     if (!is_string($key)||strlen($key)!==SODIUM_CRYPTO_SECRETBOX_KEYBYTES||(fileperms('/run/ce-keys/backup.key')&0077)!==0) throw new RuntimeException('Invalid backup key');
     sodium_memzero($key);

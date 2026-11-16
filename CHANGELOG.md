@@ -1,3 +1,10 @@
+## Forum Edition 0.8.7 — Production Reliability & Qualification
+
+- Run paced, bounded-memory HTTPS load and soak qualification against disposable Compose installations, including real PostgreSQL corpus, concurrent writes, ACL revocation and confirmed-data validation.
+- Exercise worker termination, PostgreSQL/Redis outage and service recovery with measured resource/latency thresholds and atomic JSON evidence; CI runs short qualification on both queue modes. Long and million-post profiles require dedicated infrastructure.
+- Mandatory Redis readiness, fail-closed 503 on rate-limit dependency failure, bounded telemetry locks, bounded worker cycles and stale-health invalidation with retry backoff.
+- No new SQL migration; upstream remains 1.3.0. Full certification requires actual passing integration evidence.
+
 ## Forum Edition 0.8.6 — Forum Observability & Monitoring
 
 - Reuse real HTTP histograms for SSR, search and publication, with bounded labels and p50/p95/p99; worker success rather than mere process activity controls health.

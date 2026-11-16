@@ -9,7 +9,7 @@
             "path": "/admin/index.html",
             "exists": true,
             "size": 734,
-            "sha256": "7aef341b90a53300e1432d750ba33adf24161db5e56020eb0f604931604ef0d0"
+            "sha256": "9ac26fc2297d129d160abc1d1c69ccafe716658e230d2540b01b7ff4ab8808ff"
         },
         "assets/admin-app.js": {
             "path": "/admin/assets/admin-app.js",

@@ -37,6 +37,16 @@ final readonly class OperationsMonitor
                 $checks['database'] = $ledger['ok'] && (new \CajeerEngine\Forum\ForumDatabaseCheck($db))->check()['ok'];
             } catch (\Throwable) { /* Readiness exposes no credentials or SQL. */ }
         }
+        // Redis is mandatory for distributed admission control and Redis-backed jobs.
+        // A cache-only Redis outage may degrade performance, but must not block readiness.
+        $requiredRedis=getenv('RATE_LIMIT_DRIVER')==='redis'||$this->config->string('queue.default')==='redis';
+        $checks['redis_required']=!$requiredRedis;
+        if($requiredRedis&&$checks['installed']&&$checks['maintenance']&&$checks['activity_lock']){
+            $redis=null;
+            try{$redis=\CajeerEngine\Cache\RedisConnection::open();$checks['redis_required']=(bool)$redis->ping();}
+            catch(\Throwable){$checks['redis_required']=false;}
+            finally{if($redis!==null)try{$redis->close();}catch(\Throwable){}}
+        }
         OperationLock::release($lock);
         $free=@disk_free_space($this->root.'/storage');$checks['disk']=$free!==false&&$free>=$this->minFree();
         return ['ok'=>!in_array(false,$checks,true),'status'=>in_array(false,$checks,true)?'not_ready':'ready','checks'=>$checks];

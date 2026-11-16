@@ -57,7 +57,7 @@ http /forum | grep 'data-rendered="true"' >/dev/null
 http /api/v1/forum | php -r '$j=json_decode(stream_get_contents(STDIN),true,512,JSON_THROW_ON_ERROR);exit(is_array($j["data"]["boards"]??null)?0:1);'
 # The disposable host uses a high global quota for the throughput profile; auth quota remains bounded.
 # The candidate itself is unchanged; production defaults are not raised.
-runuser -u cajeerengine -g www-data -- /usr/bin/php8.4 -r 'require $argv[1]."/vendor/autoload.php"; (new \CajeerEngine\Support\EnvironmentFile($argv[1]."/.env"))->setMany(["RATE_LIMIT_GLOBAL"=>"10000","RATE_LIMIT_AUTH"=>"20","RATE_LIMIT_WINDOW_SECONDS"=>"600"]);' /srv/cajeerengine/app
+runuser -u cajeerengine -g www-data -- /usr/bin/php8.4 -r 'require $argv[1]."/vendor/autoload.php"; (new \CajeerEngine\Support\EnvironmentFile($argv[1]."/.env"))->setMany(["RATE_LIMIT_GLOBAL"=>"10000","RATE_LIMIT_FORUM_SEARCH"=>"10000","RATE_LIMIT_AUTH"=>"20","RATE_LIMIT_WINDOW_SECONDS"=>"600"]);' /srv/cajeerengine/app
 systemctl restart cajeerengine-php.service
 for _ in $(seq 1 40); do
   if http /health/ready >/dev/null 2>&1; then break; fi
@@ -72,7 +72,7 @@ http "/api/v1/forum/acp?view=overview" -H "Authorization: Bearer $token" >/dev/n
 python3 "$source/tools/production-acceptance.py" --artifact "$artifact" --version "$old" \
   --ca /etc/cajeerengine-deploy/tls/fullchain.pem --domain deploy.example.invalid \
   --secrets /etc/cajeerengine-deploy/install-secrets.json --email deploy@example.invalid \
-  --report "$work/production-acceptance.json"
+  --soak-seconds 60 --report "$work/production-acceptance.json"
 "${deploy[@]}" deploy "$work/inbox/original.zip" --sha256="$sha" --version="$old"
 # Corrupted input must not gate or change the existing website.
 cp "$work/inbox/original.zip" "$work/inbox/tampered.zip"; cp "$work/inbox/original.zip.sig" "$work/inbox/tampered.zip.sig"

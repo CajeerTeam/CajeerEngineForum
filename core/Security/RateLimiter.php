@@ -31,7 +31,7 @@ LUA;
         }catch(\Throwable){
             // Never split a cluster-wide security budget across local files after a Redis failure.
             $this->redis=null;
-            return ['allowed'=>false,'limit'=>$limit,'remaining'=>0,'reset_at'=>time()+$window,'retry_after'=>$window,'key'=>$key];
+            return ['allowed'=>false,'unavailable'=>true,'limit'=>$limit,'remaining'=>0,'reset_at'=>time()+$window,'retry_after'=>$window,'key'=>$key];
         }
     }
 

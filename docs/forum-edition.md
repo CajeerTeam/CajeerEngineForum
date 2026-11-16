@@ -650,3 +650,7 @@ The operator can recover an authenticated 0.8.4+ recovery bundle to a new instal
 ### 0.8.6 — Forum Observability & Monitoring
 
 Forum SSR/search/publication latency, bounded SQL queue samples, Redis and PostgreSQL diagnostics, backup and recovery metrics, Operations ACP and provisioned monitoring stack. Apply migration 0048. See [Forum monitoring](forum-monitoring.md).
+
+### 0.8.7 — Production Reliability & Qualification
+
+See [production qualification](production-qualification.md) for real Compose load, bounded resource measurement, fault injection and 24-hour qualification profiles. Redis admission failures are fail-closed HTTP 503; the worker supervisor bounds batch execution and does not keep a healthy marker after failure. No schema change.

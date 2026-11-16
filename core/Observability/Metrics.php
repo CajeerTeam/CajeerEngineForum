@@ -58,12 +58,30 @@ final class Metrics
             $path=$dir.'/metrics-'.$shard.'.json'; $lock=fopen($path.'.lock','c+');
             if(!$lock)throw new \RuntimeException('Metrics lock unavailable');
             try {
-                if(!flock($lock,LOCK_EX))throw new \RuntimeException('Metrics lock failed');
+                // A stalled metrics writer must not stall publication or HTTP responses.
+                $deadline=hrtime(true)+250_000_000;
+                while(!flock($lock,LOCK_EX|LOCK_NB)){
+                    if(hrtime(true)>=$deadline)throw new \RuntimeException('Metrics lock busy');
+                    usleep(2000);
+                }
                 $file=new JsonFile($path);$data=$file->readObject();
                 foreach($updates as $key=>$row)$data[$key]=self::combine($data[$key]??null,$row);
-                $file->writeObject($data);
+                $this->writeSample($path,$data);
             }finally{fclose($lock);}
         }catch(\Throwable){error_log('CajeerEngine: metrics write failed');}
+    }
+    /** Telemetry is best effort, not a recovery ledger. Atomic visibility is
+     * required; fsync for every HTTP request is not. Never partially rewrite a shard. */
+    private function writeSample(string $path,array $data): void
+    {
+        $tmp=dirname($path).'/.metrics-'.bin2hex(random_bytes(12));
+        $out=fopen($tmp,'xb');if(!$out)throw new \RuntimeException('Metrics temporary file unavailable');
+        try{
+            $json=json_encode($data,JSON_THROW_ON_ERROR|JSON_UNESCAPED_SLASHES)."\n";
+            if(!chmod($tmp,0660)||fwrite($out,$json)!==strlen($json)||!fflush($out))throw new \RuntimeException('Metrics write failed');
+            fclose($out);$out=null;
+            if(!rename($tmp,$path))throw new \RuntimeException('Metrics publication failed');
+        }finally{if(is_resource($out))fclose($out);if(is_file($tmp))unlink($tmp);}
     }
     private function operation(string $kind,string $name): string
     {

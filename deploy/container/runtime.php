@@ -23,9 +23,6 @@ try {
     require $root.'/vendor/autoload.php';
     \CajeerEngine\Console\OperationsCli::loadEnv($root);
     if (!(new \CajeerEngine\Observability\OperationsMonitor($root))->readiness()['ok']) exit(1);
-    $redis=\CajeerEngine\Cache\RedisConnection::open();
-    if (!$redis->ping()) exit(1);
-    $redis->close();
     // A CLI health check alone would not detect a stopped FPM master.
     $socket=@fsockopen('127.0.0.1',9000,$errno,$error,1);
     if (!$socket) exit(1);

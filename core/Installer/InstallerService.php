@@ -317,7 +317,7 @@ final readonly class InstallerService
 
         // Only trusted operator code may provide runtime overrides; never read them from HTTP options.
         foreach ($this->operatorRuntime as $key => $value) {
-            if (!in_array($key, ['REDIS_HOST','REDIS_PORT','REDIS_PASSWORD','REDIS_DATABASE','FORUM_REDIS_NAMESPACE','FORUM_CACHE_ENABLED','CACHE_DRIVER','RATE_LIMIT_DRIVER','QUEUE_DRIVER','QUEUE_REDIS_PREFIX','SCHEDULER_DRIVER','BACKUP_KEY_FILE','UPDATE_TRUSTED_PUBLIC_KEY_FILE','UPDATE_WEB_UPGRADE_ENABLED','OBSERVABILITY_METRICS_TOKEN'], true) || !is_string($value)) throw new \InvalidArgumentException('Unsupported operator runtime option');
+            if (!in_array($key, ['REDIS_HOST','REDIS_PORT','REDIS_PASSWORD','REDIS_DATABASE','FORUM_REDIS_NAMESPACE','FORUM_CACHE_ENABLED','CACHE_DRIVER','RATE_LIMIT_DRIVER','QUEUE_DRIVER','QUEUE_REDIS_PREFIX','SCHEDULER_DRIVER','BACKUP_KEY_FILE','UPDATE_TRUSTED_PUBLIC_KEY_FILE','UPDATE_WEB_UPGRADE_ENABLED','OBSERVABILITY_METRICS_TOKEN','RATE_LIMIT_GLOBAL','RATE_LIMIT_FORUM_SEARCH'], true) || !is_string($value)) throw new \InvalidArgumentException('Unsupported operator runtime option');
             $env[$key] = $value;
         }
 

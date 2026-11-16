@@ -80,6 +80,8 @@ services:
       CE_ADMIN_EMAIL: ${CE_ADMIN_EMAIL:?set admin email}
       CE_NAMESPACE: ${CE_NAMESPACE:?set unique namespace}
       CE_QUEUE_DRIVER: ${CE_QUEUE_DRIVER:-pgsql}
+      CE_RATE_LIMIT_GLOBAL: ${CE_RATE_LIMIT_GLOBAL:-}
+      CE_RATE_LIMIT_FORUM_SEARCH: ${CE_RATE_LIMIT_FORUM_SEARCH:-}
     secrets: [db_password, redis_password, admin_password, backup_key]
     volumes:
       - release:/srv/forum
@@ -113,6 +115,8 @@ services:
   worker:
     <<: *app-runtime
     command: [/opt/ce-container/loop.sh, worker]
+    environment:
+      CE_LOOP_TIMEOUT_SECONDS: ${CE_LOOP_TIMEOUT_SECONDS:-600}
     stop_signal: SIGTERM
     mem_limit: 512m
     depends_on:
@@ -126,6 +130,8 @@ services:
   scheduler:
     <<: *app-runtime
     command: [/opt/ce-container/loop.sh, scheduler]
+    environment:
+      CE_LOOP_TIMEOUT_SECONDS: ${CE_LOOP_TIMEOUT_SECONDS:-600}
     stop_signal: SIGTERM
     mem_limit: 512m
     depends_on:

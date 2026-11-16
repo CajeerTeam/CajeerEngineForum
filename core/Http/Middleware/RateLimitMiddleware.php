@@ -33,12 +33,12 @@ final readonly class RateLimitMiddleware implements MiddlewareInterface
         if (!$hit['allowed']) {
             $response = new JsonResponse([
                 'error' => [
-                    'code' => 'rate_limit_exceeded',
-                    'message' => 'Превышен лимит запросов.',
+                    'code' => ($hit['unavailable']??false) ? 'rate_limit_unavailable' : 'rate_limit_exceeded',
+                    'message' => ($hit['unavailable']??false) ? 'Сервис временно недоступен.' : 'Превышен лимит запросов.',
                     'retry_after' => $hit['retry_after'],
                     'request_id' => (string) $request->attributes->get('request_id', ''),
                 ],
-            ], 429);
+            ], ($hit['unavailable']??false) ? 503 : 429);
             $this->applyHeaders($response, $hit);
             return $response;
         }
