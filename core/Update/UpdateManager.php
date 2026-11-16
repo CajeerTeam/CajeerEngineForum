@@ -28,6 +28,7 @@ final class UpdateManager
             $verified=$this->verifyPackage($this->resolvePackage($package),$this->option($options,'sha256'),$this->option($options,'signature'));
             if (!$verified['ok']) throw new \RuntimeException($verified['error']);
             $plan['target_version']=$verified['version']; $plan['expected_sha256']=$verified['sha256']; $plan['file_count']=$verified['file_count'];
+            $plan['extension_compatibility']=(new \CajeerEngine\Extension\ExtensionRegistry($this->rootPath,$this->config))->targetCompatibility($verified['version']);
         }
         return $plan;
     }
@@ -73,6 +74,9 @@ final class UpdateManager
             $previous=$this->currentVersion();
             if (version_compare($v['version'],$previous,'<=')) throw new \RuntimeException('Target must be newer; use verified rollback for downgrade');
             if (!is_file($this->rootPath.'/storage/app/installed.lock')) throw new \RuntimeException('Installed CMS required');
+            \CajeerEngine\Forum\Migration\ForumMigrationEngine::assertNoRunning(new \CajeerEngine\Database\DatabaseManager($this->config));
+            $compatibility=(new \CajeerEngine\Extension\ExtensionRegistry($this->rootPath,$this->config))->targetCompatibility($v['version']);
+            if(!$compatibility['ok'])throw new \RuntimeException('Target release incompatible with enabled extensions: '.implode(', ',array_column($compatibility['blocked'],'name')).'; resolve extension dependencies before updating');
             $plan=$this->stage($dir,$v['manifest']);
             $report=['ok'=>true,'id'=>$id,'previous_version'=>$previous,'target_version'=>$v['version'],'sha256'=>$v['sha256'],'copy_plan'=>$plan,'dry_run'=>!empty($options['dry_run'])];
             if ($report['dry_run']) return $report;

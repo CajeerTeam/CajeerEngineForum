@@ -1,3 +1,12 @@
+## Forum Edition 0.8.0 — Administration & Extensibility Stable
+
+- Consolidate ACP policy, delegation, published theme and signed extension readiness in the operator CLI and ACP maintenance screen.
+- Validate the active theme projection against the editor document; prevent conflicting imports with a database-backed start lock.
+- Keep activation time on continuous extension upgrades and repeated enable, preserving eligibility for pending forum events.
+- Check target extension compatibility before update and ecosystem readiness after update; block updates during incomplete imports.
+- Ship compatible 1.0.1 manifests for both example plugins. Installed signed 1.0.0 packages must be upgraded or disabled before the 0.8.0 transition.
+- Expand signed release acceptance to exercise ACP, theme, plugin state, migrations and rollback. No schema migration; certification requires the actual CI matrix.
+
 ## Forum Edition 0.7.7 — Migration Reliability & Ecosystem
 
 - Bounded multi-object relation batches, transaction-local statement and mapping reuse, and source snapshot plan reuse.

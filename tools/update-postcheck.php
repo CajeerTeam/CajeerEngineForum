@@ -17,6 +17,8 @@ try {
     if (($argv[1]??'')==='migrate') $runner->run($db->migrationDriver());
     if (!$runner->verifyApplied($db->migrationDriver())['ok']) throw new RuntimeException('Migration verification failed');
     if (!(new CajeerEngine\Forum\ForumDatabaseCheck($db))->check()['ok']) throw new RuntimeException('Forum schema or roles not ready');
+    (new CajeerEngine\Forum\Service\ForumEcosystemCheck($db,$config))->assertReady();
+    if (!(new CajeerEngine\Forum\Service\ForumSearchMaintenance($db))->check()['ok']) throw new RuntimeException('Forum search index check failed');
     $integrity=(new CajeerEngine\Forum\ForumIntegrityCheck($db))->check();
     if (!$integrity['ok']) throw new RuntimeException('Forum data integrity failed: '.json_encode($integrity['violations'],JSON_THROW_ON_ERROR));
     if ($db->driver()==='sqlite' && $db->connection()->query('PRAGMA foreign_key_check')->fetch()!==false) throw new RuntimeException('Forum database foreign key integrity failed');

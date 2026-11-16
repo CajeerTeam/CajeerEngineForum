@@ -48,7 +48,7 @@ final class ForumMigrationCli
         foreach(['verify-backup','progress-only'] as $flag)if(isset($opts[$flag])&&!in_array($opts[$flag],['0','1'],true))throw new \InvalidArgumentException('Use --'.$flag.'=0 or 1');
         if($limit===false||$steps===false||$seconds===false)throw new \InvalidArgumentException('Invalid batch or step count');
         // Check the ecosystem before creating a recovery set or modifying the target.
-        (new \CajeerEngine\Forum\Service\ForumThemeService($db))->active();
+        (new \CajeerEngine\Forum\Service\ForumThemeService($db))->snapshot();
         \CajeerEngine\Extension\DependencyGraph::order((new \CajeerEngine\Extension\ExtensionRegistry($root,$config))->all());
         if(!$engine->exists()){
             ForumMigrationEngine::assertNoRunning($db);

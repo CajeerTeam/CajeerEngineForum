@@ -13,17 +13,32 @@ final readonly class ForumThemeService
     public function __construct(private DatabaseManager $db,private ?ForumTransaction $tx=null) {}
     public function snapshot(): array
     {
-        $row=$this->db->connection()->query('SELECT revision,payload FROM ce_forum_theme_settings WHERE id=1')->fetch(\PDO::FETCH_ASSOC);
+        $row=$this->db->connection()->query('SELECT revision,payload,active_payload FROM ce_forum_theme_settings WHERE id=1')->fetch(\PDO::FETCH_ASSOC);
         if(!$row)throw new \LogicException('Forum theme settings missing; run migrations');
+        return ['revision'=>(int)$row['revision']]+self::validateDocument(
+            json_decode((string)$row['payload'],true,512,JSON_THROW_ON_ERROR),
+            json_decode((string)$row['active_payload'],true,512,JSON_THROW_ON_ERROR));
+    }
+    /** Validate the entire persisted editor document, including the published projection. */
+    public static function validateDocument(array $document,array $published): array
+    {
         $base=ForumTheme::presets()['default'];
-        return ['revision'=>(int)$row['revision']]+array_replace(['active'=>$base,'draft'=>$base,'library'=>[],'history'=>[]],json_decode((string)$row['payload'],true,512,JSON_THROW_ON_ERROR));
+        if(array_diff(array_keys($document),['active','draft','library','history']))throw new \RuntimeException('Unknown theme document fields');
+        $state=array_replace(['active'=>$base,'draft'=>$base,'library'=>[],'history'=>[]],$document);
+        $state['active']=ForumTheme::validate($state['active']);$state['draft']=ForumTheme::validate($state['draft']);
+        if($state['active']!==ForumTheme::validate($published?:$base))throw new \RuntimeException('Published theme and editor state diverged');
+        if(!is_array($state['library'])||count($state['library'])>12||!is_array($state['history'])||!array_is_list($state['history'])||count($state['history'])>10)throw new \RuntimeException('Invalid theme library or history');
+        foreach($state['library'] as $key=>$design){$design=ForumTheme::validate($design);if($key!==hash('sha256',$design['name']))throw new \RuntimeException('Invalid theme library key');$state['library'][$key]=$design;}
+        foreach($state['history'] as $i=>$entry){if(!is_array($entry)||!is_string($entry['at']??null)||!is_array($entry['design']??null))throw new \RuntimeException('Invalid theme history');$state['history'][$i]['design']=ForumTheme::validate($entry['design']);}
+        return $state;
     }
     public function active(): array
     {
         $raw=$this->db->connection()->query('SELECT active_payload FROM ce_forum_theme_settings WHERE id=1')->fetchColumn();
         if($raw===false)throw new \LogicException('Forum theme settings missing; run migrations');
         $design=json_decode((string)$raw,true,512,JSON_THROW_ON_ERROR);
-        return ForumTheme::validate($design?:ForumTheme::presets()['default']);
+        if(!is_array($design))throw new \RuntimeException('Invalid published theme document');
+        return ForumTheme::validate($design===[]?ForumTheme::presets()['default']:$design);
     }
     public function editor(ForumAccessPolicy $actor): array
     {

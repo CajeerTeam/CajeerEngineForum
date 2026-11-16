@@ -45808,6 +45808,7 @@
                   "action": {
                     "type": "string",
                     "enum": [
+                      "ecosystem_check",
                       "cleanup_spam",
                       "cleanup_drafts",
                       "cleanup_uploads",

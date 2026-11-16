@@ -1,9 +1,9 @@
 {
   "name": "cajeer/forum-topic-templates",
   "type": "plugin",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "engine": "^1.1",
-  "forum": ">=0.7.4 <0.8.0",
+  "forum": ">=0.7.4 <0.9.0",
   "title": "Forum Topic Templates",
   "permissions": ["forum.ui"],
   "providers": ["CajeerExample\\ForumTopicTemplatesProvider"],

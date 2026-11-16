@@ -18,6 +18,8 @@ final class DatabaseManager
     {
     }
 
+    public function config(): ConfigRepository { return $this->config; }
+
     public function disconnect(): void { $this->pdo = null; $this->schemaCache = []; }
 
     public function driver(): string

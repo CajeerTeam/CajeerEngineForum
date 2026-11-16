@@ -65,6 +65,7 @@ final readonly class ForumAdminService
                 'search_check'=>(new ForumSearchMaintenance($this->db))->check(),
                 'performance_check'=>(new ForumPerformanceCheck($this->db))->check(),
                 'redis_check'=>ForumRuntimeCache::diagnostics(),
+                'ecosystem_check'=>(new ForumEcosystemCheck($this->db,$this->db->config()))->check(),
                 default=>throw new ForumException('Неизвестная операция обслуживания.',422),
             };
             // No arbitrary SQL, system commands or operator secrets in audit.

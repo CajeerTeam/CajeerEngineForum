@@ -4,7 +4,7 @@ The importer is an operator-only CLI, not the CMS Portable ZIP importer. It acce
 
 ## Preparation and execution
 
-1. Upgrade the target to 0.7.6, run `php bin/cajeer migrate`, configure backup keys (`php bin/cajeer backup:keygen --key=/secure/backup.key` as documented), and verify a backup/restore drill. Stop all target PHP/queue/scheduler processes on **every** node and enter operator maintenance. Do not run other writers or deployments during import. Use a staging installation first.
+1. Upgrade the target to 0.8.0, run `php bin/cajeer migrate`, configure backup keys (`php bin/cajeer backup:keygen --key=/secure/backup.key` as documented), and verify a backup/restore drill. Stop all target PHP/queue/scheduler processes on **every** node and enter operator maintenance. Do not run other writers or deployments during import. Use a staging installation first.
 2. Freeze phpBB database and `files/` directory, use a stable snapshot label. Set `FORUM_IMPORT_SOURCE_DSN='mysql:host=127.0.0.1;dbname=phpbb_snapshot;charset=utf8mb4'`, `FORUM_IMPORT_SOURCE_USER`, `FORUM_IMPORT_SOURCE_PASSWORD` securely in the process environment. Alternatively `FORUM_IMPORT_SOURCE_DSN='sqlite:/absolute/path/source.sqlite'`. Never store credentials in Git or shell history. Source database and target database must be distinct.
 3. Plan (no target writes):
 
@@ -129,3 +129,8 @@ Use an equivalent route for the other source platforms; do not blindly rewrite a
 ### Larger regression
 
 `php tools/forum-migration-reliability-regression.php --topics=1200` creates a synthetic XenForo snapshot and imports real topics, posts and subscriptions into a disposable target, injects a relation-write failure, resumes from a partial watcher checkpoint, verifies the full-text index, activates a real theme and boots the existing template plugin. It also checks public legacy links and ACL revocation. CI executes it with PDO SQLite. To increase size use `--topics=10000` (or up to 100000); run on a staging host with sufficient disk space. It prints measured batch counts, runtime and peak PHP memory, not a production throughput guarantee. The existing per-file 25 MiB bound and SQL base64 representation still apply; importing 100 GB of attachments requires appropriate database/dump/disk capacity and a real recovery drill.
+
+
+### 0.8.0 ecosystem readiness
+
+Before upgrading the target or opening a migrated installation, run `php bin/cajeer forum:ecosystem:check --deep --json`. Finish an incomplete job or restore its verified recovery set before updating the engine. Import start is serialized on the target database tree lock; still stop application traffic and workers and use a single operator/immutable source snapshot. The lock does not provide distributed online migration. Verify active theme and signed plugin compatibility using the [0.8.0 upgrade guide](forum-edition.md#administration--extensibility-stable-080).

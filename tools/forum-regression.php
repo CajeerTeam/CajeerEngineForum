@@ -105,6 +105,8 @@ try {
     $theme=$call('PUT','/forum/acp/theme',['revision'=>$theme['revision'],'action'=>'restore','index'=>0],$delegated);
     check($theme['active']===$defaultTheme&&!str_contains((string)$themeHtml('/forum/threads/'.$t)->getContent(),'--bg:#081b23'),'restore prior active design');
     check($call('GET','/forum/acp?view=policy_history',null,$delegated)['items'][0]['event']==='forum.acp.theme.restore','theme mutation appears in audit');
+    $call('POST','/forum/acp/maintenance',['action'=>'ecosystem_check'],$delegated,403);
+    $ecosystem=$call('POST','/forum/acp/maintenance',['action'=>'ecosystem_check'],$a);check($ecosystem['ok']&&$ecosystem['checks']['theme']&&$ecosystem['checks']['delegation'],'ACP ecosystem diagnostics checks live state');
     $call('POST','/forum/acp/maintenance',['action'=>'cleanup_spam'],$a);
     $call('PUT',"/forum/acp/delegation/$other",['scopes'=>[]],$a);
     $call('GET','/forum/acp?view=settings',null,$delegated,403);
@@ -230,6 +232,6 @@ try {
     putenv('FORUM_REGISTRATION=false');
     $call('POST','/forum/register',['name'=>'Closed','email'=>'closed@example.test','password'=>'MemberPass12345'],null,403);
     check(str_contains((string)$app->handle(Request::create('https://forum.test/'))->getContent(),'data-registration="false"'),'closed registration UI');
-    check($app->handle(Request::create('https://forum.test/'))->headers->get('X-CajeerEngine-Forum-Version')==='0.7.7','forum version header');
+    check($app->handle(Request::create('https://forum.test/'))->headers->get('X-CajeerEngine-Forum-Version')==='0.8.0','forum version header');
     echo "Forum integration passed\n";
 } finally {foreach(glob($tmp.'/*')?:[] as $f)unlink($f);rmdir($tmp);}

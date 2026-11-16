@@ -121,7 +121,7 @@ final class ExtensionRegistry
             'enabled' => $enable || !empty($existing['enabled']),
             'installed_at' => (string) ($existing['installed_at'] ?? $now),
             'updated_at' => $now,
-            'enabled_at' => $enable ? $now : ($existing['enabled_at'] ?? null),
+            'enabled_at' => !empty($existing['enabled']) ? ($existing['enabled_at'] ?? $now) : ($enable ? $now : ($existing['enabled_at'] ?? null)),
             'signature' => $signature,
         ]);
         $this->assertGraph($state);
@@ -142,6 +142,7 @@ final class ExtensionRegistry
         $manifest = $this->manifestByTarget($name);
         $this->compatibility->assertCompatible($manifest);
         if (empty($this->findInstalled($name)['valid'])) throw new \RuntimeException('Extension code changed or invalid');
+        if (!empty($state['extensions'][$name]['enabled'])) return $this->findInstalled($name) ?? [];
         $state['extensions'][$name]['enabled'] = true;
         $state['extensions'][$name]['enabled_at'] = $this->now();
         $state['extensions'][$name]['updated_at'] = $this->now();
@@ -273,6 +274,22 @@ final class ExtensionRegistry
         }
 
         return ['event' => $event, 'delivered' => count($deliveries), 'deliveries' => $deliveries];
+    }
+
+    /** Read-only deployment preflight. Never rewrite or relax a signed constraint. */
+    public function targetCompatibility(string $target): array
+    {
+        \CajeerEngine\Forum\ForumVersion::validate($target);
+        $items=$this->all();$blocked=[];
+        foreach($items as $item){
+            if(empty($item['installed'])||empty($item['enabled']))continue;
+            $constraint=$item['forum']??null;
+            if(empty($item['valid'])||!empty($item['missing']))$blocked[]=['name'=>$item['name'],'reason'=>'invalid_or_untrusted'];
+            elseif($constraint!==null&&!DependencyGraph::matches($target,$constraint))$blocked[]=['name'=>$item['name'],'reason'=>'forum_version','constraint'=>$constraint];
+        }
+        $graph=true;
+        try{DependencyGraph::order($items);}catch(\Throwable){$graph=false;}
+        return ['ok'=>$blocked===[]&&$graph,'target'=>$target,'blocked'=>$blocked,'dependency_graph'=>$graph];
     }
 
     /** @return array<string, mixed> */

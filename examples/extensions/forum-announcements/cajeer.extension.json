@@ -1,9 +1,9 @@
 {
   "name": "cajeer/forum-announcements",
   "type": "plugin",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "engine": "^1.1",
-  "forum": ">=0.7.4 <0.8.0",
+  "forum": ">=0.7.4 <0.9.0",
   "title": "Forum Announcements",
   "description": "Scheduled public announcements and deduplicated publication activity in the ACP.",
   "permissions": ["forum.events", "forum.ui", "routes.register", "admin.register"],

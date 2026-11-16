@@ -35,6 +35,10 @@ final class ForumMigrationEngine
     {
         $this->resetBatch();$plan=$this->source->plan();$id=$this->source->identity();
         try{$this->db->transaction(function()use($plan,$id,$backup){
+            // The filesystem lease only covers one node. Serialize start decisions in SQL too.
+            if($this->db->driver()==='sqlite')$this->query('UPDATE ce_forum_tree_lock SET id=id WHERE id=1');
+            $lock=$this->row('SELECT id FROM ce_forum_tree_lock WHERE id=1'.($this->db->driver()==='sqlite'?'':' FOR UPDATE'));
+            if($lock===null)throw new \RuntimeException('Forum tree lock missing');
             if($this->exists())throw new \RuntimeException('Import already exists; resume it');
             self::assertNoRunning($this->db);
             $category=self::uuid();
@@ -108,7 +112,7 @@ final class ForumMigrationEngine
                         if($n!==$plan[$covered]['count'])throw new \RuntimeException('Source row count mismatch: '.$covered);
                     }
                     $this->verifyMappings($id);
-                    (new \CajeerEngine\Forum\Service\ForumThemeService($this->db))->active();
+                    (new \CajeerEngine\Forum\Service\ForumThemeService($this->db))->snapshot();
                     if(!(new \CajeerEngine\Forum\Service\ForumSearchMaintenance($this->db))->check()['ok'])throw new \RuntimeException('Forum search index check failed; repair before completing import');
                     if(!(new \CajeerEngine\Forum\ForumIntegrityCheck($this->db))->check()['ok'])throw new \RuntimeException('Forum integrity check failed; inspect target before completing import');
                     $this->query("UPDATE ce_forum_import_jobs SET phase=?,state='complete',updated_at=? WHERE id=?",[$phase+1,time(),$id]);

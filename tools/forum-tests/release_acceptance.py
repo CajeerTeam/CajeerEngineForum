@@ -697,7 +697,7 @@ def verify_community_live(base,f):
     print('PASS post-upgrade cross-module community operations',flush=True)
 
 
-def verify_migration_recovery(site, env, report, work, port, current, state):
+def verify_migration_recovery(site, env, report, work, port, current, state, ecosystem=None):
     # Exercise the actual encrypted recovery set, not a mock backup id.
     source=work/'migration-source.sqlite'
     with sqlite3.connect(source) as db:
@@ -721,12 +721,79 @@ def verify_migration_recovery(site, env, report, work, port, current, state):
     run(site,menv,report,'migration-reopen',['php','bin/cajeer','maintenance:off'])
     with http(site,env,report,'migration-recovered',port,current) as base:
         verify_data(base,state)
+        if ecosystem:verify_ecosystem(base,state,ecosystem,current)
+    before=json.loads(run(site,env,report,'migration-extension-counts-before',['php','bin/cajeer','forum:extensions:check','--json']))['counts']
+    run(site,menv,report,'migration-complete-maintenance',['php','bin/cajeer','maintenance:on'])
+    completed=json.loads(run(site,menv,report,'migration-complete',['php','bin/cajeer','forum:import:run',*opts,'--confirm=import-xenforo','--steps=1000','--batch=100'],timeout=600))
+    require(completed['job']['state']=='complete','Physical import not complete')
+    run(site,menv,report,'migration-complete-reopen',['php','bin/cajeer','maintenance:off'])
+    after=json.loads(run(site,env,report,'migration-extension-counts-after',['php','bin/cajeer','forum:extensions:check','--json']))['counts']
+    require(before==after,'Historical migration emitted ordinary plugin events')
+    run(site,env,report,'migration-ecosystem-check',['php','bin/cajeer','forum:ecosystem:check','--deep','--json'])
+    with http(site,env,report,'migration-complete-http',port,current) as base:
+        if ecosystem:verify_ecosystem(base,state,ecosystem,current)
+        try:
+            urllib.request.urlopen(base+'/forum/legacy/'+completed['job']['id']+'/topics/20',timeout=20)
+            raise RuntimeError('Quarantined legacy URL exposed')
+        except urllib.error.HTTPError as e:
+            require(e.code==404 and 'Location' not in e.headers,'Quarantined migration leaked URL')
 
+
+
+def install_ecosystem_plugins(site, env, report, work, initial):
+    trust=work/'extension-trust'; trust.mkdir()
+    secret=work/'extension.secret'; key=work/'ecosystem-backup.key'
+    run(site,env,report,'ecosystem-key',['php','bin/cajeer','release:keygen','--secret-key='+str(secret),'--public-key='+str(trust/'test.pub')])
+    run(site,env,report,'ecosystem-backup-key',['php','bin/cajeer','backup:keygen','--key='+str(key)])
+    env |= {'EXTENSIONS_TRUST_DIR':str(trust),'BACKUP_KEY_FILE':str(key)}
+    for name in ('forum-announcements','forum-topic-templates'):
+        package=work/name; shutil.copytree(ROOT/'examples/extensions'/name,package)
+        if initial=='0.7.7' and name=='forum-topic-templates':
+            manifest=package/'cajeer.extension.json'; data=json.loads(manifest.read_text());data['version']='1.0.0';data['forum']='>=0.7.4 <0.8.0';manifest.write_text(json.dumps(data))
+        run(site,env,report,'sign-'+name,['php','bin/cajeer','extension:sign',str(package),'--secret-key='+str(secret)])
+        run(site,env,report,'install-'+name,['php','bin/cajeer','extension:package:install',str(package),'--enable'],timeout=600)
+
+
+def seed_ecosystem(base, state):
+    c=Client(base); admin=state[0]; email=unique_email()
+    user=c.call('POST','/users',201,{'email':email,'name':'Release design delegate','password':PASSWORD,'roles':['forum-member']},token=admin)['id']
+    c.call('PUT','/forum/acp/delegation/'+user,200,{'scopes':['forum:acp:settings']},token=admin)
+    token=c.login(email,PASSWORD)[0]['data']['access_token']
+    policy=c.call('GET','/forum/acp?view=settings',token=token)
+    values=dict(policy['values']); values.pop('paused'); values.pop('registration_open');values['name']='Release ecosystem forum'
+    policy=c.call('PUT','/forum/acp/policy',200,{'revision':policy['revision'],'values':values},token=token)
+    theme=c.call('GET','/forum/acp?view=themes',token=token); design=theme['presets']['ocean'];design['name']='Release Ocean';design['logo']='RO';design['scheme']='light'
+    theme=c.call('PUT','/forum/acp/theme',200,{'revision':theme['revision'],'action':'draft','design':design},token=token)
+    theme=c.call('PUT','/forum/acp/theme',200,{'revision':theme['revision'],'action':'activate'},token=token)
+    action='/extensions/actions/cajeer--forum-announcements/'
+    before=c.call('GET',action+'overview',token=admin)['data']['announcement']
+    c.call('POST',action+'save',200,{'revision':int(before['revision']),'title':'Release ecosystem announcement','body':'Persistent extension data','starts_at':0,'ends_at':0},token=admin)
+    return {'token':token,'user':user,'policy':policy,'theme':theme,'design':design}
+
+
+def verify_ecosystem(base, state, saved, current):
+    c=Client(base); admin=state[0]; token=saved['token']
+    caps=c.call('GET','/forum/acp?view=access',token=token)['capabilities'];require(caps['settings'] and not caps['admin'] and not caps['members'],'Delegate privileges changed')
+    c.call('GET','/forum/acp?view=imports',403,token=token)
+    require(c.call('GET','/forum/acp?view=settings',token=token)==saved['policy'],'Community policy not preserved')
+    theme=c.call('GET','/forum/acp?view=themes',token=token);require(theme['active']==saved['design'] and theme['revision']==saved['theme']['revision'],'Published theme not preserved')
+    announcement=c.call('GET','/extensions/actions/cajeer--forum-announcements/overview',token=admin)['data']['announcement']
+    require(announcement['title']=='Release ecosystem announcement' and announcement['body']=='Persistent extension data','Extension state lost')
+    runtime=c.call('GET','/extensions/runtime',token=admin);require(len(runtime['forum']['panels'])>=3 and len(runtime['forum']['listeners'])>=2,'Extension SDK not booted')
+    with urllib.request.urlopen(base+'/forum',timeout=20) as res:
+        html=res.read().decode();require('Release ecosystem announcement' in html and 'Release ecosystem forum' in html and '--bg:#081b23' in html ,'SSR lost theme or plugin panels')
+    board=next(b['id'] for b in c.call('GET','/forum')['boards'] if b.get('node_type','forum')!='container')
+    with urllib.request.urlopen(base+'/forum/boards/'+board,timeout=20) as res:
+        require('forum-extension-topic-templates' in res.read().decode(),'Topic template composer not rendered')
+    if tuple(map(int,current.split('.'))) >= (0,8,0):
+        c.call('POST','/forum/acp/maintenance',403,{'action':'ecosystem_check'},token=token)
+        require(c.call('POST','/forum/acp/maintenance',200,{'action':'ecosystem_check'},token=admin)['ok'],'ACP ecosystem check failed')
+    print('PASS physical ACP delegation, policy, published theme and signed plugin state',flush=True)
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--artifact',type=Path,required=True)
-    parser.add_argument('--previous',type=Path,help='Original 0.7.6 dist (or supported historical baseline); enables real signed upgrade and rollback')
+    parser.add_argument('--previous',type=Path,help='Original 0.7.7 dist (or supported historical baseline); enables real signed upgrade and rollback')
     parser.add_argument('--driver',choices=('sqlite','pgsql'),default='sqlite')
     parser.add_argument('--report',type=Path,required=True)
     args=parser.parse_args(); report=args.report.resolve(); report.mkdir(parents=True,exist_ok=True)
@@ -738,11 +805,16 @@ def main():
         initial=current
         if previous:
             with zipfile.ZipFile(previous) as z: initial=json.loads(z.read('cajeerengine/release.json'))['edition_version']
-            require(initial in ('0.5.5','0.5.6','0.6.0','0.6.1','0.6.2','0.6.3','0.6.4','0.6.5','0.6.6','0.7.0','0.7.1','0.7.2','0.7.3','0.7.4','0.7.5','0.7.6'),'Unsupported authentic baseline')
+            require(initial in ('0.5.5','0.5.6','0.6.0','0.6.1','0.6.2','0.6.3','0.6.4','0.6.5','0.6.6','0.7.0','0.7.1','0.7.2','0.7.3','0.7.4','0.7.5','0.7.6','0.7.7'),'Unsupported authentic baseline')
         site=unpack(previous or artifact,work/'live',initial)
         install(site,env,report,'initial',port,args.driver)
+        ecosystem=None
+        if tuple(map(int,initial.split('.'))) >= (0,7,4):
+            install_ecosystem_plugins(site,env,report,work,initial)
         with http(site,env,report,'initial',port,initial) as base:
             state=seed(base); verify_data(base,state)
+            if tuple(map(int,initial.split('.'))) >= (0,7,4):
+                ecosystem=seed_ecosystem(base,state);verify_ecosystem(base,state,ecosystem,initial)
             fixture=seed_structure(base,state); verify_structure(base,fixture)
             if tuple(map(int,initial.split("."))) >= (0,6,3): verify_search_seo(base,state,fixture)
             media=seed_media(base,fixture)
@@ -774,7 +846,7 @@ def main():
                 verify_sanctions(base,state)
                 verify_antispam(base,state)
         if not previous and tuple(map(int,current.split("."))) >= (0,7,7):
-            verify_migration_recovery(site,env,report,work,port,current,state)
+            verify_migration_recovery(site,env,report,work,port,current,state,ecosystem)
         if previous:
             key=work/'backup.key'; secret=work/'release.secret'; public=work/'release.public'
             run(site,env,report,'backup-key',['php','bin/cajeer','backup:keygen','--key='+str(key)])
@@ -785,9 +857,18 @@ def main():
             run(site,env,report,'sign-target',['php','bin/cajeer','release:sign','--package='+str(package),'--secret-key='+str(secret)])
             run(site,env,report,'dry-run',['php','bin/cajeer','update:apply','--package='+str(package),'--dry-run'])
             require(version(site)==initial,'Dry run changed release')
+            if initial=='0.7.7':
+                blocked=json.loads(run(site,env,report,'incompatible-extension-upgrade',['php','bin/cajeer','update:apply','--package='+str(package),'--json'],expected=1,timeout=600))
+                require(blocked['state']=='rolled_back' and version(site)==initial,'Incompatible plugin did not trigger rollback')
+                replacement=work/'forum-topic-templates-compatible';shutil.copytree(ROOT/'examples/extensions/forum-topic-templates',replacement)
+                run(site,env,report,'sign-compatible-templates',['php','bin/cajeer','extension:sign',str(replacement),'--secret-key='+str(work/'extension.secret')])
+                run(site,env,report,'upgrade-compatible-templates',['php','bin/cajeer','extension:package:upgrade',str(replacement)],timeout=600)
+                with http(site,env,report,'compatible-templates',port,initial) as base:
+                    verify_ecosystem(base,state,ecosystem,initial)
             update=json.loads(run(site,env,report,'upgrade',['php','bin/cajeer','update:apply','--package='+str(package),'--json'],timeout=600))
             require(update['state']=='committed' and version(site)==current,'Update not committed')
             with http(site,env,report,'updated',port,current) as base:
+                if ecosystem:verify_ecosystem(base,state,ecosystem,current)
                 verify_content(base,state,fixture,content)
                 verify_data(base,state); verify_structure(base,fixture); verify_search_seo(base,state,fixture); verify_community(base,community); verify_community_live(base,community); verify_groups(base,state); verify_discussions(base,state); verify_navigation(base,state); verify_identity(site,env,report,base)
                 verify_data_integrity(site,env,report,fixture)
@@ -809,6 +890,7 @@ def main():
             run(site,env,report,'rollback',['php','bin/cajeer','update:rollback','--yes','--json'],timeout=600)
             require(version(site)==initial,'Rollback did not restore release')
             with http(site,env,report,'rollback',port,initial) as base:
+                if ecosystem:verify_ecosystem(base,state,ecosystem,initial)
                 verify_data(base,state); verify_structure(base,fixture); verify_community(base,community); verify_media(base,state,fixture,media,False); verify_content(base,state,fixture,content)
                 if tuple(map(int,initial.split("."))) >= (0,6,3): verify_search_seo(base,state,fixture)
             # Inject actual failing SQL into a separately built, correctly signed target.
@@ -821,6 +903,7 @@ def main():
             failed=json.loads(run(site,env,report,'failed-upgrade',['php','bin/cajeer','update:apply','--package='+str(pkg),'--json'],expected=1,timeout=600))
             require(failed['state']=='rolled_back' and version(site)==initial and not (site/'storage/app/updates/active.json').exists(), 'Automatic rollback failed')
             with http(site,env,report,'failed-rollback',port,initial) as base:
+                if ecosystem:verify_ecosystem(base,state,ecosystem,initial)
                 verify_data(base,state); verify_structure(base,fixture); verify_community(base,community); verify_media(base,state,fixture,media,False); verify_content(base,state,fixture,content)
                 if tuple(map(int,initial.split("."))) >= (0,6,3): verify_search_seo(base,state,fixture)
         print('PASS physical dist acceptance',flush=True)
