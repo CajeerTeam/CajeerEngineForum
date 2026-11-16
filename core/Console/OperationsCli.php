@@ -13,13 +13,13 @@ use CajeerEngine\Update\UpdateManager;
 /** Operational CLI remains available without Composer; never execute through HTTP. */
 final class OperationsCli
 {
-    public const COMMANDS=['backup:create','stable:backup','backup:list','backup:verify','backup:restore','backup:keygen','backup:export','backup:import','backup:drill','release:keygen','release:sign','update:verify-signature','update:apply','update:rollback','update:stage','update:requests','update:run','update:status','update:history','maintenance:on','maintenance:off','maintenance:status','import:execute','import:requests'];
+    public const COMMANDS=['backup:create','backup:automation:run','backup:automation:status','stable:backup','backup:list','backup:verify','backup:restore','backup:keygen','backup:export','backup:import','backup:drill','release:keygen','release:sign','update:verify-signature','update:apply','update:rollback','update:stage','update:requests','update:run','update:status','update:history','maintenance:on','maintenance:off','maintenance:status','import:execute','import:requests'];
     public static function handles(array $argv): bool { return in_array($argv[1]??'',self::COMMANDS,true)||(($argv[1]??'')==='update'&&in_array('--apply',$argv,true)); }
     public static function run(string $root,array $argv): int
     {
         try {
             $c=$argv[1]??''; $o=self::options($argv);
-            if (is_file($root.'/storage/app/extensions/deployment.json') && in_array($c,['backup:create','stable:backup','backup:restore','update:apply','update','update:rollback','update:run','import:execute','maintenance:off'],true)) throw new \RuntimeException('Recover extension deployment first');
+            if (is_file($root.'/storage/app/extensions/deployment.json') && in_array($c,['backup:create','backup:automation:run','stable:backup','backup:restore','update:apply','update','update:rollback','update:run','import:execute','maintenance:off'],true)) throw new \RuntimeException('Recover extension deployment first');
             $required=static fn($name)=>isset($o[$name])&&is_string($o[$name])&&$o[$name]!==''?$o[$name]:throw new \RuntimeException('Provide --'.$name.'=...');
             if ($c==='release:keygen') $result=ReleaseSignature::generate(self::externalKey($root,$required('secret-key')),self::externalKey($root,$required('public-key')));
             elseif ($c==='release:sign') {
@@ -37,6 +37,8 @@ final class OperationsCli
                 $result=match($c) {
                     'import:execute'=>(new \CajeerEngine\ImportExport\ImportExportService($root))->executeRequest($required('id')),
                     'import:requests'=>['ok'=>true,'requests'=>(new \CajeerEngine\ImportExport\ImportExportService($root))->requests()],
+                    'backup:automation:run'=>(new \CajeerEngine\Backup\AutomatedBackup($root,$config,\CajeerEngine\Backup\BackupPolicy::load($root,$required('policy'))))->run(isset($o['force'])),
+                    'backup:automation:status'=>\CajeerEngine\Backup\AutomatedBackup::status($root),
                     'backup:create','stable:backup'=> (new BackupManager($root,$config))->create(),
                     'backup:export'=>(new BackupManager($root,$config))->exportBundle($required('id'),$required('file')),
                     'backup:import'=>(new BackupManager($root,$config))->importBundle($required('file')),

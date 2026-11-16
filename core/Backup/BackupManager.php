@@ -40,14 +40,16 @@ final class BackupManager
         finally { OperationLock::release($lock); }
     }
     /** Caller holds exclusive operation lock. */
-    public function capture(): array
+    public function capture(?string $automation=null): array
     {
+        if ($automation!==null&&!preg_match('/^[a-f0-9]{64}$/D',$automation)) throw new \RuntimeException('Invalid backup automation identity');
         $this->assertStorage();
         $key=$this->secretKey(); sodium_memzero($key);
         $this->privateBase();
         $id=gmdate('Ymd-His').'-'.bin2hex(random_bytes(8));
         $dir=$this->base.'/'.$id; F::dir($dir); chmod($dir,0700);
         $manifest=['format'=>'cajeerengine.backup.v2','id'=>$id,'version'=>$this->version(),'edition_version'=>(new \CajeerEngine\Support\ProjectInfo($this->root))->editionVersion(),'created_at'=>gmdate(DATE_ATOM),'database'=>$this->db->identity(),'database_permissions'=>$this->db->permissions(),'files'=>[],'dirs'=>[],'env'=>null,'env_permissions'=>null];
+        if ($automation!==null) $manifest['automation']=$automation;
         try {
             $this->db->create($dir.'/database.dump');
             $manifest['database_sha256']=F::hash($dir.'/database.dump');
@@ -68,7 +70,7 @@ final class BackupManager
             $key=$this->secretKey(); try { F::write($dir.'/manifest.mac',hash_hmac('sha256',(string)file_get_contents($dir.'/manifest.json'),$key)); } finally { sodium_memzero($key); }
             $this->verify($id);
             \CajeerEngine\Observability\OperationsMonitor::marker($this->root,'backup');
-            return ['ok'=>true,'id'=>$id,'target'=>$dir,'sha256'=>F::hash($dir.'/manifest.json'),'files'=>count($manifest['files']),'database'=>$manifest['database']['driver'],'version'=>$manifest['version']];
+            return ['ok'=>true,'id'=>$id,'target'=>$dir,'sha256'=>F::hash($dir.'/manifest.json'),'files'=>count($manifest['files']),'database'=>$manifest['database']['driver'],'version'=>$manifest['version'],'edition_version'=>$manifest['edition_version'],'created_at'=>$manifest['created_at']];
         } catch (\Throwable $e) { F::json($dir.'/incomplete.json',['error'=>'Backup failed','at'=>gmdate(DATE_ATOM)]); throw $e; }
     }
     public function list(): array
@@ -90,6 +92,7 @@ final class BackupManager
         try { $mac=hash_hmac('sha256',(string)file_get_contents($dir.'/manifest.json'),$key); if (!is_file($dir.'/manifest.mac')||!hash_equals($mac,trim((string)file_get_contents($dir.'/manifest.mac')))) throw new \RuntimeException('Backup manifest authentication failed'); } finally { sodium_memzero($key); }
         $m=F::read($dir.'/manifest.json');
         if (($m['format']??null)!=='cajeerengine.backup.v2'||($m['id']??null)!==$id||!is_array($m['files']??null)||is_file($dir.'/incomplete.json')) throw new \RuntimeException('Incomplete or invalid recovery set');
+        if (isset($m['automation'])&&(!is_string($m['automation'])||!preg_match('/^[a-f0-9]{64}$/D',$m['automation']))) throw new \RuntimeException('Invalid authenticated automation identity');
         if (($m['database']??null)!==$this->db->identity()||!hash_equals((string)($m['database_sha256']??''),F::hash($dir.'/database.dump'))) throw new \RuntimeException('Database backup identity/checksum mismatch');
         $this->db->verify($dir.'/database.dump');
         foreach ($m['files'] as $relative=>$info) {
@@ -102,7 +105,7 @@ final class BackupManager
         $actual=F::files($dir,'files'); $expected=array_map(static fn($p)=>'files/'.$p,array_keys($m['files'])); sort($expected);
         if ($actual!==$expected) throw new \RuntimeException('Unexpected backup files');
         if (($m['env']??null)!==null) { if (!hash_equals((string)$m['env'],F::hash($dir.'/environment.enc'))) throw new \RuntimeException('Encrypted environment checksum mismatch'); $this->decryptEnv($dir); } elseif (file_exists($dir.'/environment.enc')) throw new \RuntimeException('Unexpected encrypted environment');
-        return ['ok'=>true,'id'=>$id,'version'=>$m['version'],'files'=>count($m['files']),'manifest_sha256'=>F::hash($dir.'/manifest.json')];
+        return ['ok'=>true,'id'=>$id,'version'=>$m['version'],'files'=>count($m['files']),'manifest_sha256'=>F::hash($dir.'/manifest.json'),'automation'=>$m['automation']??null];
     }
     /** Publish a verified encrypted copy to a separately mounted/off-host directory. */
     public function exportBundle(string $id,string $target): array
@@ -115,6 +118,17 @@ final class BackupManager
             finally { sodium_memzero($key); }
             return $verified+['bundle'=>$target,'bundle_sha256'=>F::hash($target),'bytes'=>filesize($target)];
         } finally { OperationLock::release($lock); }
+    }
+    /** Caller holds shared/exclusive operation lock. Only the automation spool is writable. */
+    public function exportManaged(string $id,string $identity): array
+    {
+        $dir=F::path($this->root,'storage/app/backups/automation'); F::dir($dir);
+        $target=F::path($dir,$id.'.cebackup');
+        if ($this->verify($id)['automation']!==$identity) throw new \RuntimeException('Recovery set does not belong to this automation');
+        $key=$this->secretKey();
+        try { RecoveryBundle::export($this->directory($id),$target,$key); }
+        finally { sodium_memzero($key); }
+        return ['sha256'=>F::hash($target),'bytes'=>filesize($target)];
     }
     /** Import is non-destructive; nothing becomes visible until authentication and verification pass. */
     public function importBundle(string $source): array

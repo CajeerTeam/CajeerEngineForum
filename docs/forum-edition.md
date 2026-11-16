@@ -638,3 +638,7 @@ See [container deployment](container-deployment.md) for the signed-dist Compose 
 ## Secure Updates & Release Management (0.8.3)
 
 See [secure updates](secure-updates.md) for signed channel/identity checks, read-only preflight and disk estimates, operator history and controlled Compose upgrade/rollback. The historical 0047 schema and Engine 1.3.0 remain unchanged.
+
+## Automated Backup & Retention (0.8.4)
+
+Use [automated backup](automated-backup.md) for scheduled authenticated recovery sets, encrypted file/S3 off-site transfer, durable retry and UTC retention. Systemd and a separate signed-image Compose operator support PostgreSQL queue/local authoritative storage. The Operations screen and metrics expose actual backup history and delivery health. Manual and updater recovery sets never participate in automated rotation. No new schema; external queue/storage recovery and full off-host application boot remain separately gated.

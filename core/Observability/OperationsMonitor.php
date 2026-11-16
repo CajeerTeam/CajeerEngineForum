@@ -55,6 +55,7 @@ final readonly class OperationsMonitor
         $probe('cache',fn()=> $this->cache());
         $probe('search',function()use($db){$this->assertDatabasePresent();$d=(new \CajeerEngine\Search\SearchFactory($this->root,$this->config,$db))->make()->diagnostics();return ['ok'=>(bool)($d['ok']??$d['writable']??true),'documents'=>(int)($d['documents']??0)];});
         $probe('backup',fn()=> $this->backup());
+        if (is_file($this->root.'/storage/logs/observability/backup-automation.json')) $probe('backup_automation',fn()=> \CajeerEngine\Backup\AutomatedBackup::status($this->root));
         if(TraceExporter::enabled())$probe('traces',function()use($db){$store=TaskRunStore::fromConfig($this->root,$this->config,$db);$state=$store->status('observability.export_traces');$pending=count(glob($this->root.'/storage/logs/observability/traces/span-*.json')?:[]);return ['ok'=>$pending<1000&&($state['status']??'never')!=='failed','pending'=>$pending,'status'=>$state['status']??'never'];});
         $probe('update',function(){ $d=(new JsonFile($this->root.'/storage/logs/observability/update.json'))->readObject();return ['ok'=>($d['status']??'never')!=='failure','last_success'=>(int)($d['last_success']??0),'status'=>$d['status']??'never'];});
         $probe('worker',function(){ $p=$this->root.'/storage/logs/observability/worker.json';$d=(new JsonFile($p))->readObject();$last=(int)($d['timestamp']??0);return ['ok'=>$last>0&&time()-$last<=max(60,$this->config->int('observability.worker_max_age',300)),'last_seen'=>$last,'status'=>$d['status']??'never'];});
@@ -101,6 +102,10 @@ final readonly class OperationsMonitor
         $out.="# TYPE cajeer_queue_oldest_ready_age_seconds gauge\ncajeer_queue_oldest_ready_age_seconds ".(int)($r['checks']['queue']['oldest_ready_age_seconds']??0)."\n";
         $out.="# TYPE cajeer_scheduler_last_success_timestamp_seconds gauge\n";foreach($r['checks']['scheduler']['tasks']??[] as $n=>$t)$out.='cajeer_scheduler_last_success_timestamp_seconds{task="'.$n.'"} '.$t['last_success']."\n";
         foreach(['backup'=>'last_success','worker'=>'last_seen','update'=>'last_success'] as $n=>$k)$out.="# TYPE cajeer_{$n}_{$k}_timestamp_seconds gauge\ncajeer_{$n}_{$k}_timestamp_seconds ".(int)($r['checks'][$n][$k]??0)."\n";
+        if(isset($r['checks']['backup_automation'])) {
+            $b=$r['checks']['backup_automation'];
+            foreach (['last_local'=>'local_last_success_timestamp_seconds','last_offsite'=>'offsite_last_success_timestamp_seconds','pending'=>'offsite_pending','checked_at'=>'automation_last_check_timestamp_seconds'] as $field=>$metric) $out.="# TYPE cajeer_backup_$metric gauge\ncajeer_backup_$metric ".(int)($b[$field]??0)."\n";
+        }
         if(isset($r['checks']['traces']['pending']))$out.="# TYPE cajeer_trace_spool_pending gauge\ncajeer_trace_spool_pending ".$r['checks']['traces']['pending']."\n";
         return $out;
     }

@@ -14,7 +14,7 @@ groups:
         annotations:
           summary: "CMS is not ready; check maintenance and database"
       - alert: CajeerEngineDependencyUnavailable
-        expr: cajeer_dependency_up{component=~"database|storage|queue|cache|search|scheduler|worker|backup|traces|update"} == 0
+        expr: cajeer_dependency_up{component=~"database|storage|queue|cache|search|scheduler|worker|backup|backup_automation|traces|update"} == 0
         for: 5m
         labels: {severity: warning}
         annotations:
@@ -49,3 +49,15 @@ groups:
         labels: {severity: warning}
         annotations:
           summary: "Trace spool near capacity; inspect collector"
+      - alert: CajeerEngineOffsiteBackupPending
+        expr: cajeer_backup_offsite_pending > 0
+        for: 15m
+        labels: {severity: warning}
+        annotations:
+          summary: "Encrypted off-site backup delivery is pending"
+      - alert: CajeerEngineBackupAutomationStalled
+        expr: time() - cajeer_backup_automation_last_check_timestamp_seconds > 3600
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: "Scheduled backup has not reported for an hour"

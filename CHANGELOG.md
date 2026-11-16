@@ -1,3 +1,11 @@
+## Forum Edition 0.8.4 — Automated Backup & Retention
+
+- Schedule verified recovery sets with durable checkpoints, bounded activity drain, capacity checks and safe retries; never prune manual/updater backups.
+- Encrypted off-site filesystem and S3 multipart transport with complete readback SHA-256; UTC daily/weekly/monthly retention with two-copy floor and optional remote pruning.
+- Systemd timers and a signed-image Compose backup operator; PostgreSQL queue and local authoritative storage only. Existing external queue/storage recovery guards remain enforced.
+- Sanitized backup health/history in Operations ACP and Prometheus; physical SQLite backup/restore regression and native PostgreSQL/Compose + TLS S3 acceptance in CI.
+- No SQL migration; Engine 1.3.0 unchanged.
+
 ## Forum Edition 0.8.3 — Secure Updates & Release Management
 
 - Enforce signed release channel, exact approved target version and target Engine API compatibility; reject altered historical migrations before backup/apply.

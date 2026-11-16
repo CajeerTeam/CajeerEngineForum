@@ -1,0 +1,47 @@
+# Merge with compose.yaml only for the operator-managed one-shot backup service.
+services:
+  backup:
+    profiles: [backup]
+    image: cajeerengine-forum-backup:${CE_RELEASE_VERSION:?set release version}-${CE_RELEASE_SHA256:?set approved SHA256}
+    pull_policy: never
+    build:
+      context: ../..
+      dockerfile: deploy/container/Dockerfile
+      target: backup
+      args:
+        CE_RELEASE_VERSION: ${CE_RELEASE_VERSION:?set release version}
+        CE_RELEASE_SHA256: ${CE_RELEASE_SHA256:?set approved SHA256}
+    user: '33:33'
+    read_only: true
+    init: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    restart: 'no'
+    stop_grace_period: 150s
+    mem_limit: 1g
+    tmpfs: ['/tmp:uid=33,gid=33,mode=1777,size=512m']
+    entrypoint: [/opt/ce-container/backup.sh]
+    command: []
+    environment:
+      HOME: /tmp
+      AWS_SHARED_CREDENTIALS_FILE: /run/ce-backup/credentials
+      AWS_CONFIG_FILE: /run/ce-backup/config
+      AWS_EC2_METADATA_DISABLED: 'true'
+      AWS_PROFILE: ${CE_BACKUP_AWS_PROFILE:-default}
+    volumes:
+      - release:/srv/forum:ro
+      - storage:/srv/forum/storage
+      - bootstrap_cache:/srv/forum/bootstrap/cache:ro
+      - uploads:/srv/forum/public/uploads:ro
+      - extension_assets:/srv/forum/public/extensions:ro
+      - keys:/run/ce-keys:ro
+      - type: bind
+        source: ${CE_BACKUP_CONFIG_DIR:?set protected backup configuration directory}
+        target: /run/ce-backup
+        read_only: true
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${CE_BACKUP_OFFSITE_DIR:?set external mount or empty directory for S3}
+        target: /offsite
+        bind: {create_host_path: false}
+    networks: [backend, frontend]

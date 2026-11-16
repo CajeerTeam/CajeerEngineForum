@@ -1,0 +1,12 @@
+{
+  "namespace": "community-prod",
+  "interval_seconds": 86400,
+  "lock_wait_seconds": 15,
+  "daily": 14,
+  "weekly": 8,
+  "monthly": 12,
+  "min_free_bytes": 67108864,
+  "require_separate_device": true,
+  "prune_offsite": false,
+  "destination": {"type": "file", "directory": "/mnt/cajeer-offsite"}
+}

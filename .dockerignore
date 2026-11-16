@@ -10,6 +10,7 @@
 !deploy/container/bootstrap.php
 !deploy/container/runtime.php
 !deploy/container/loop.sh
+!deploy/container/backup.sh
 !deploy/container/php-fpm.conf
 !deploy/container/nginx.conf.template
 !deploy/container/gateway.sh

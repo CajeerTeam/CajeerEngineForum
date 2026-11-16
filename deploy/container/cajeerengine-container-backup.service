@@ -1,0 +1,15 @@
+[Unit]
+Description=CajeerEngine Forum Compose scheduled backup
+After=docker.service network-online.target
+Wants=network-online.target
+Requires=docker.service
+RequiresMountsFor=/mnt/cajeer-offsite
+
+[Service]
+Type=oneshot
+# Use the SAME trusted host operator as container/update.py (root in this example).
+User=root
+WorkingDirectory=/opt/cajeerengine-deploy
+ExecStart=/usr/bin/python3 /opt/cajeerengine-deploy/deploy/container/backup.py run --project cajeerforum --env-file /srv/forum-config/site.env --config-dir /srv/forum-backup-config --offsite-dir /mnt/cajeer-offsite
+TimeoutStartSec=12h
+UMask=0077

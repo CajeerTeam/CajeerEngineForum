@@ -1,10 +1,12 @@
 # CajeerEngine Forum Edition
 
-**Forum Edition 0.8.3 — Secure Updates & Release Management**, built on CajeerEngine 1.3.0. Release certification requires all `forum-required` CI jobs to pass.
+**Forum Edition 0.8.4 — Automated Backup & Retention**, built on CajeerEngine 1.3.0. Release certification requires all `forum-required` CI jobs to pass.
 
 Self-hosted forum platform by CajeerTeam. PHP 8.4.1+, CajeerEngine kernel, Symfony Components, REST API, Apache-2.0.
 
 Repository: https://github.com/CajeerTeam/CajeerEngineForum · Upstream: https://github.com/CajeerTeam/CajeerEngine
+
+**Upgrade 0.8.3 → 0.8.4:** [automated backups, retention and encrypted off-site storage](docs/automated-backup.md). No new schema migration.
 
 **Upgrade 0.8.2 → 0.8.3:** [secure updates](docs/secure-updates.md). No new schema migration.
 

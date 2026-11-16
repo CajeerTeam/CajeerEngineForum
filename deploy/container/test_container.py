@@ -26,6 +26,29 @@ class ContainerTests(unittest.TestCase):
         self.assertIn('appendonly yes', (HERE/'redis-start.sh').read_text())
         self.assertIn('maxmemory-policy noeviction', (HERE/'redis-start.sh').read_text())
 
+    def test_backup_operator_and_overlay(self):
+        import yaml
+        from unittest.mock import patch
+        import backup as b
+        import uuid
+        cfg=yaml.safe_load((HERE/'backup.compose.yaml').read_text())['services']['backup']
+        self.assertEqual(cfg['profiles'],['backup']); self.assertTrue(cfg['read_only']); self.assertEqual(cfg['user'],'33:33')
+        self.assertNotIn('ports',cfg); self.assertNotIn('privileged',cfg); self.assertIn('release:/srv/forum:ro',cfg['volumes'])
+        self.assertEqual(cfg['build']['target'],'backup'); self.assertEqual(cfg['entrypoint'],['/opt/ce-container/backup.sh'])
+        with tempfile.TemporaryDirectory() as d:
+            d=pathlib.Path(d).resolve(); config=d/'config'; off=d/'offsite'; config.mkdir();off.mkdir();(config/'policy.json').write_text('{}')
+            site=d/'site.env'; site.write_text('CE_RELEASE_VERSION=0.8.4\nCE_RELEASE_SHA256='+'a'*64+'\nCE_DOMAIN=forum.test\nCE_ADMIN_EMAIL=admin@example.invalid\nCE_NAMESPACE=backup-ci\nCE_SECRETS_DIR=/secure\n')
+            project='backup-test-'+uuid.uuid4().hex[:12]
+            args=['backup.py','run','--project',project,'--env-file',str(site),'--config-dir',str(config),'--offsite-dir',str(off),'--force']
+            with patch('sys.argv',args),patch.object(b.subprocess,'check_output',return_value='unix:///var/run/docker.sock\n'),patch.object(b.subprocess,'run') as run:
+                b.main(); command=run.call_args.args[0]; self.assertEqual(command[-5:],['run','--rm','--no-deps','backup','--force']); self.assertIn(str(HERE/'backup.compose.yaml'),command)
+                self.assertEqual(run.call_args.kwargs['env']['CE_BACKUP_CONFIG_DIR'],str(config)); self.assertEqual(run.call_args.kwargs['env']['CE_BACKUP_OFFSITE_DIR'],str(off))
+                with b.project_lock(project):
+                    with self.assertRaises(BlockingIOError): b.main()
+                site.write_text(site.read_text()+'CE_QUEUE_DRIVER=redis\n')
+                with self.assertRaises(ValueError): b.main()
+            pathlib.Path('/tmp/cajeer-forum-'+project+'.update.lock').unlink()
+
     def test_release_policy(self):
         script='''require "core/Release/ReleaseFilePolicy.php"; use CajeerEngine\\Release\\ReleaseFilePolicy as P;
         foreach ([".dockerignore","deploy/container/Dockerfile","deploy/container/compose.yaml","deploy/container/bootstrap.php","deploy/container/smoke.py","deploy/container/test_container.py"] as $p) if(!P::allows($p,"source")) exit(1);

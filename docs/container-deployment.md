@@ -69,3 +69,5 @@ Worker runs bounded batches every 5 seconds, scheduler every 30 seconds (Postgre
 ## Acceptance
 
 `deploy/container/test_container.py` runs local topology, release-policy, supervisor and actual Nginx/TLS/FastCGI-gate tests. The `container-runtime` CI job builds and verifies the real dist and images, creates an isolated TLS site, exercises login, ACP, publications, Redis HIT and ACL invalidation, PostgreSQL-backed notifications, scheduler health, and container recreation with persistent data. It also runs with the Redis queue option. Full Docker acceptance is required before certifying this profile; local tests without Docker do not establish that result.
+
+For scheduled encrypted backup in 0.8.4+, use the separate `backup.compose.yaml` operator profile and host `backup.py`/systemd timer; see [Automated Backup & Retention](automated-backup.md). The default PostgreSQL queue is covered. Redis queue recovery remains explicitly unsupported. Rebuild the backup image after a controlled upgrade and use the active release's site.env.

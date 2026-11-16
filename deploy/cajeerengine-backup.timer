@@ -1,0 +1,11 @@
+[Unit]
+Description=CajeerEngine Forum backup schedule and delivery retries
+
+[Timer]
+OnCalendar=*-*-* *:0/5:00
+Persistent=true
+RandomizedDelaySec=30
+Unit=cajeerengine-backup.service
+
+[Install]
+WantedBy=timers.target

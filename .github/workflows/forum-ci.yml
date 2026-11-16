@@ -66,6 +66,7 @@ jobs:
       - run: php tools/forum-migration-reliability-regression.php --topics=1200
       - run: php tools/forum-extension-regression.php --database
       - run: php tools/forum-ecosystem-regression.php --database
+      - run: php tools/backup-automation-regression.php
       - run: php tools/extension-regression.php
       - run: php tools/forum-regression.php
       - run: php tools/forum-identity-regression.php
@@ -110,6 +111,8 @@ jobs:
       - run: php tools/update-policy-regression.php
       - run: php tools/github-release-regression.php
       - run: python deploy/container/test_update.py
+      - run: python -m pip install PyYAML==6.0.2
+      - run: python deploy/container/test_container.py
       - run: php tools/build-release.php --dry-run --all --json
       - name: Upload test evidence
         if: always()
@@ -320,7 +323,7 @@ jobs:
       DB_PORT: '5432'
       DB_USERNAME: forum_ci
       DB_PASSWORD: 'ForumCI-Disposable-123!'
-      FORUM_BASELINE_REF: ${{ vars.FORUM_BASELINE_REF || 'v0.8.2' }}
+      FORUM_BASELINE_REF: ${{ vars.FORUM_BASELINE_REF || 'v0.8.3' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -347,37 +350,37 @@ jobs:
           ln -s pg_dump "$RUNNER_TEMP/pg-client/pg_restore"
           ln -s pg_dump "$RUNNER_TEMP/pg-client/psql"
           echo "$RUNNER_TEMP/pg-client" >> "$GITHUB_PATH"
-      - name: Build and verify physical 0.8.3 artifacts
+      - name: Build and verify physical 0.8.4 artifacts
         run: |
           composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader
           mkdir -p storage/tmp/forum-ci/release
           php tools/build-release.php --all --target-dir="$RUNNER_TEMP/forum-current" --json > storage/tmp/forum-ci/release/build.json
-          php bin/cajeer release:verify --dist --strict --artifact="$RUNNER_TEMP/forum-current/cajeerengine-0.8.3-dist.zip"
-          php bin/cajeer release:verify --strict --artifact="$RUNNER_TEMP/forum-current/cajeerengine-0.8.3-source.zip"
+          php bin/cajeer release:verify --dist --strict --artifact="$RUNNER_TEMP/forum-current/cajeerengine-0.8.4-dist.zip"
+          php bin/cajeer release:verify --strict --artifact="$RUNNER_TEMP/forum-current/cajeerengine-0.8.4-source.zip"
       - name: Build authentic previous baseline from repository history
         run: |
           mkdir -p "$RUNNER_TEMP/forum-previous"
           ref="$FORUM_BASELINE_REF"
           # Prefer the immediately preceding release when its actual tag is available.
-          if [ "$ref" = 'v0.8.2' ]; then
-            for tag in v0.8.2 0.8.2; do
+          if [ "$ref" = 'v0.8.3' ]; then
+            for tag in v0.8.3 0.8.3; do
               if git rev-parse --verify "refs/tags/$tag^{commit}" >/dev/null 2>&1; then ref="refs/tags/$tag"; break; fi
             done
           fi
           git archive "$ref" | tar -x -C "$RUNNER_TEMP/forum-previous"
           cd "$RUNNER_TEMP/forum-previous"
-          baseline=$(php -r '$v=json_decode(file_get_contents("release.json"),true,512,JSON_THROW_ON_ERROR)["edition_version"]; if($v!=="0.8.2") exit(1); echo $v;')
+          baseline=$(php -r '$v=json_decode(file_get_contents("release.json"),true,512,JSON_THROW_ON_ERROR)["edition_version"]; if($v!=="0.8.3") exit(1); echo $v;')
           echo "FORUM_BASELINE_VERSION=$baseline" >> "$GITHUB_ENV"
           composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader
           php tools/build-release.php --dist --target-dir="$RUNNER_TEMP/forum-previous-dist" --json
       - name: Clean install, live HTTP, identity and corrupt-ledger rejection
         env:
           FORUM_TEST_RELEASE_DB: forum_test_release_clean
-        run: python tools/forum-tests/release_acceptance.py --driver ${{ matrix.driver }} --artifact "$RUNNER_TEMP/forum-current/cajeerengine-0.8.3-dist.zip" --report storage/tmp/forum-ci/release/clean
+        run: python tools/forum-tests/release_acceptance.py --driver ${{ matrix.driver }} --artifact "$RUNNER_TEMP/forum-current/cajeerengine-0.8.4-dist.zip" --report storage/tmp/forum-ci/release/clean
       - name: Signed upgrade from authentic baseline, recovery and rollback
         env:
           FORUM_TEST_RELEASE_DB: forum_test_release_upgrade
-        run: python tools/forum-tests/release_acceptance.py --driver ${{ matrix.driver }} --artifact "$RUNNER_TEMP/forum-current/cajeerengine-0.8.3-dist.zip" --previous "$RUNNER_TEMP/forum-previous-dist/cajeerengine-${FORUM_BASELINE_VERSION}-dist.zip" --report storage/tmp/forum-ci/release/upgrade
+        run: python tools/forum-tests/release_acceptance.py --driver ${{ matrix.driver }} --artifact "$RUNNER_TEMP/forum-current/cajeerengine-0.8.4-dist.zip" --previous "$RUNNER_TEMP/forum-previous-dist/cajeerengine-${FORUM_BASELINE_VERSION}-dist.zip" --report storage/tmp/forum-ci/release/upgrade
       - name: Upload release acceptance evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -436,7 +439,7 @@ jobs:
           CE_DB_PASSWORD: ForumDeployDisposable123
         run: |
           export CE_CERT_REPORT="$RUNNER_TEMP/forum-host/production-acceptance.json"
-          sudo --preserve-env=CE_DEPLOY_DISPOSABLE,CE_DB_USER,CE_DB_PASSWORD,CE_CERT_REPORT bash /var/lib/ce-forum-ci-source/deploy/host-smoke.sh "$RUNNER_TEMP/forum-host/cajeerengine-0.8.3-dist.zip"
+          sudo --preserve-env=CE_DEPLOY_DISPOSABLE,CE_DB_USER,CE_DB_PASSWORD,CE_CERT_REPORT bash /var/lib/ce-forum-ci-source/deploy/host-smoke.sh "$RUNNER_TEMP/forum-host/cajeerengine-0.8.4-dist.zip"
       - name: Upload production host evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -467,10 +470,10 @@ jobs:
           composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader
           php tools/build-release.php --dist --target-dir="$RUNNER_TEMP/forum-container-dist" --json
           php bin/cajeer release:keygen --secret-key="$RUNNER_TEMP/forum-container.secret" --public-key="$RUNNER_TEMP/forum-container.pub"
-          artifact="$RUNNER_TEMP/forum-container-dist/cajeerengine-0.8.3-dist.zip"
+          artifact="$RUNNER_TEMP/forum-container-dist/cajeerengine-0.8.4-dist.zip"
           php bin/cajeer release:sign --package="$artifact" --secret-key="$RUNNER_TEMP/forum-container.secret"
           sha=$(sha256sum "$artifact" | cut -d' ' -f1)
-          sh deploy/container/prepare.sh "$artifact" "$RUNNER_TEMP/forum-container.pub" "$sha" 0.8.3
+          sh deploy/container/prepare.sh "$artifact" "$RUNNER_TEMP/forum-container.pub" "$sha" 0.8.4
           umask 077
           secret_dir="$RUNNER_TEMP/forum-container-secrets"
           mkdir -p "$secret_dir"
@@ -479,7 +482,7 @@ jobs:
           openssl rand -base64 32 > "$secret_dir/backup-key"
           openssl req -x509 -newkey rsa:2048 -nodes -days 2 -subj /CN=forum.test -addext subjectAltName=DNS:forum.test -keyout "$secret_dir/tls.key" -out "$secret_dir/tls.crt"
           cat > deploy/container/site.env <<EOF
-          CE_RELEASE_VERSION=0.8.3
+          CE_RELEASE_VERSION=0.8.4
           CE_RELEASE_SHA256=$sha
           CE_DOMAIN=forum.test
           CE_ADMIN_EMAIL=container-admin@example.invalid
@@ -515,6 +518,17 @@ jobs:
             dc exec -T app php bin/cajeer backup:create --json > "$RUNNER_TEMP/container-backup.json"
             backup=$(python -c 'import json,sys; print(json.load(open(sys.argv[1]))["id"])' "$RUNNER_TEMP/container-backup.json")
             dc exec -T app php bin/cajeer backup:verify --id="$backup" --json
+            cfg="$RUNNER_TEMP/forum-backup-config"; off="$RUNNER_TEMP/forum-backup-offsite"
+            mkdir -p "$cfg" "$off"
+            printf '%s\n' '{"namespace":"container-ci","interval_seconds":86400,"require_separate_device":false,"prune_offsite":true,"destination":{"type":"file","directory":"/offsite"}}' > "$cfg/policy.json"
+            sudo chown -R 33:33 "$cfg" "$off"
+            sudo chmod 700 "$cfg" "$off"; sudo chmod 600 "$cfg/policy.json"
+            # Run as root for host path validation and Docker access; all backup I/O remains UID 33 inside container.
+            sudo python3 deploy/container/backup.py build --project forum-container-ci --env-file deploy/container/site.env --config-dir "$cfg" --offsite-dir "$off"
+            sudo python3 deploy/container/backup.py run --project forum-container-ci --env-file deploy/container/site.env --config-dir "$cfg" --offsite-dir "$off"
+            dc exec -T app php bin/cajeer backup:automation:status --json > "$RUNNER_TEMP/auto-backup.json"
+            python -c 'import json,sys; r=json.load(open(sys.argv[1])); assert r["ok"] and r["pending"]==0 and r["latest_local_id"]==r["latest_offsite_id"]' "$RUNNER_TEMP/auto-backup.json"
+            sudo find "$off" -type f -name '*.cebackup' | grep -q .
           fi
           dc down
           dc up -d gateway
@@ -531,7 +545,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 55
     env:
-      FORUM_BASELINE_REF: ${{ vars.FORUM_BASELINE_REF || 'v0.8.2' }}
+      FORUM_BASELINE_REF: ${{ vars.FORUM_BASELINE_REF || 'v0.8.3' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -547,19 +561,19 @@ jobs:
           root="$PWD"; old="$RUNNER_TEMP/forum-container-old"
           mkdir -p "$old"
           ref="$FORUM_BASELINE_REF"
-          if [ "$ref" = v0.8.2 ]; then
-            for tag in v0.8.2 0.8.2; do
+          if [ "$ref" = v0.8.3 ]; then
+            for tag in v0.8.3 0.8.3; do
               if git rev-parse --verify "refs/tags/$tag^{commit}" >/dev/null 2>&1; then ref="refs/tags/$tag"; break; fi
             done
           fi
           git archive "$ref" | tar -x -C "$old"
-          php -r 'exit(json_decode(file_get_contents($argv[1]),true,512,JSON_THROW_ON_ERROR)["edition_version"]==="0.8.2"?0:1);' "$old/release.json"
+          php -r 'exit(json_decode(file_get_contents($argv[1]),true,512,JSON_THROW_ON_ERROR)["edition_version"]==="0.8.3"?0:1);' "$old/release.json"
           composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader
           php tools/build-release.php --dist --target-dir="$RUNNER_TEMP/container-new-dist" --json
           (cd "$old"; composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader; php tools/build-release.php --dist --target-dir="$RUNNER_TEMP/container-old-dist" --json)
           php bin/cajeer release:keygen --secret-key="$RUNNER_TEMP/container-upgrade.secret" --public-key="$RUNNER_TEMP/container-upgrade.pub"
           for v in old new; do
-            if [ "$v" = old ]; then version=0.8.2; tree="$old"; else version=0.8.3; tree="$root"; fi
+            if [ "$v" = old ]; then version=0.8.3; tree="$old"; else version=0.8.4; tree="$root"; fi
             artifact="$RUNNER_TEMP/container-$v-dist/cajeerengine-$version-dist.zip"
             php bin/cajeer release:sign --package="$artifact" --secret-key="$RUNNER_TEMP/container-upgrade.secret"
             sha=$(sha256sum "$artifact" | cut -d' ' -f1)
@@ -594,14 +608,14 @@ jobs:
           op() { python deploy/container/update.py "$@" --project forum-container-upgrade --old-env "$oldenv" --new-env "$newenv" --state-dir "$RUNNER_TEMP/container-upgrade-state" --ca "$secret_dir/tls.crt"; }
           smoke() { python deploy/container/smoke.py --domain forum.test --port 18443 --ca "$secret_dir/tls.crt" --email container-admin@example.invalid --password-file "$secret_dir/admin-password" --state "$RUNNER_TEMP/container-upgrade-smoke.json" "$@"; }
           dc up -d gateway
-          smoke --version 0.8.2
+          smoke --version 0.8.3
           op apply --dry-run
-          smoke --version 0.8.2 --verify-only
-          op apply
           smoke --version 0.8.3 --verify-only
+          op apply
+          smoke --version 0.8.4 --verify-only
           op status
           op rollback --yes
-          smoke --version 0.8.2 --verify-only
+          smoke --version 0.8.3 --verify-only
           op status
       - name: Stop disposable project
         if: always()
@@ -610,10 +624,41 @@ jobs:
             docker compose --project-name forum-container-upgrade --env-file "$RUNNER_TEMP/container-old.env" -f deploy/container/compose.yaml logs --tail=50 init app worker scheduler gateway || true
             docker compose --project-name forum-container-upgrade --env-file "$RUNNER_TEMP/container-old.env" -f deploy/container/compose.yaml down -v --remove-orphans
           fi
+  backup-s3:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: pdo_sqlite, sodium, mbstring
+          coverage: none
+      - name: Encrypted multipart backup and exact object rotation over TLS
+        run: |
+          set -euo pipefail
+          aws --version
+          work="$RUNNER_TEMP/forum-backup-s3"
+          mkdir -p "$work/certs"
+          openssl req -x509 -newkey rsa:2048 -nodes -days 2 -subj /CN=localhost -addext subjectAltName=DNS:localhost,IP:127.0.0.1 -keyout "$work/certs/private.key" -out "$work/certs/public.crt"
+          export AWS_ACCESS_KEY_ID=forum-backup-ci
+          export AWS_SECRET_ACCESS_KEY=$(openssl rand -hex 24)
+          export AWS_REQUEST_CHECKSUM_CALCULATION=when_required AWS_RESPONSE_CHECKSUM_VALIDATION=when_required
+          export AWS_DEFAULT_REGION=us-east-1 AWS_EC2_METADATA_DISABLED=true AWS_CA_BUNDLE="$work/certs/public.crt"
+          export AWS_CONFIG_FILE="$work/aws-config"
+          printf '[default]\nregion = us-east-1\ns3 =\n    addressing_style = path\n    multipart_threshold = 8MB\n    multipart_chunksize = 8MB\n' > "$AWS_CONFIG_FILE"
+          docker run -d --user 0:0 --name forum-backup-s3 -p 127.0.0.1:19000:9000 -e MINIO_ROOT_USER="$AWS_ACCESS_KEY_ID" -e MINIO_ROOT_PASSWORD="$AWS_SECRET_ACCESS_KEY" -v "$work/certs:/certs:ro" minio/minio:RELEASE.2025-04-22T22-12-26Z server /data --certs-dir /certs
+          export CE_BACKUP_TEST_ENDPOINT=https://127.0.0.1:19000 CE_BACKUP_TEST_BUCKET=forum-backup-ci
+          for i in $(seq 1 30); do if curl --cacert "$AWS_CA_BUNDLE" -fsS "$CE_BACKUP_TEST_ENDPOINT/minio/health/live" >/dev/null; then break; fi; sleep 2; done
+          aws --endpoint-url "$CE_BACKUP_TEST_ENDPOINT" s3 mb "s3://$CE_BACKUP_TEST_BUCKET"
+          php tools/backup-automation-regression.php --s3
+      - name: Remove disposable S3 service
+        if: always()
+        run: docker rm -f forum-backup-s3 || true
   forum-required:
     runs-on: ubuntu-24.04
     if: always()
-    needs: [test, postgres, mysql-search, browser, release, production-host, container-runtime, container-upgrade]
+    needs: [test, postgres, mysql-search, browser, release, production-host, container-runtime, container-upgrade, backup-s3]
     steps:
       - name: Require every test matrix to pass
         env:
@@ -625,6 +670,7 @@ jobs:
           HOST: ${{ needs.production-host.result }}
           CONTAINERS: ${{ needs.container-runtime.result }}
           CONTAINER_UPGRADE: ${{ needs.container-upgrade.result }}
+          BACKUP_S3: ${{ needs.backup-s3.result }}
         run: |
           test "$SQLITE" = success
           test "$POSTGRES" = success
@@ -634,3 +680,4 @@ jobs:
           test "$HOST" = success
           test "$CONTAINERS" = success
           test "$CONTAINER_UPGRADE" = success
+          test "$BACKUP_S3" = success

@@ -32,6 +32,15 @@ WORKDIR /srv/forum
 USER 33:33
 CMD ["php-fpm", "-F"]
 
+# Separate operator image: AWS CLI multipart transport is never needed in PHP-FPM.
+FROM app AS backup
+USER 0:0
+RUN apt-get update && apt-get install -y --no-install-recommends awscli \
+    && rm -rf /var/lib/apt/lists/*
+COPY deploy/container/backup.sh /opt/ce-container/backup.sh
+RUN chmod 0755 /opt/ce-container/backup.sh
+USER 33:33
+
 FROM nginx:1.28-alpine AS gateway
 RUN apk add --no-cache openssl
 COPY deploy/container/nginx.conf.template /opt/forum/nginx.conf.template

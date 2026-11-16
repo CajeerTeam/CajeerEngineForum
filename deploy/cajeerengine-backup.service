@@ -1,0 +1,23 @@
+[Unit]
+Description=CajeerEngine Forum scheduled encrypted backup
+After=network-online.target
+Wants=network-online.target
+RequiresMountsFor=/mnt/cajeer-offsite
+
+[Service]
+Type=oneshot
+User=cajeerengine
+Group=www-data
+WorkingDirectory=/srv/cajeerengine/app
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/srv/cajeerengine/app/storage /mnt/cajeer-offsite
+ExecCondition=/usr/bin/test -f /var/lib/cajeerengine-deploy/workers-enabled
+ExecStart=/usr/bin/php8.4 bin/cajeer backup:automation:run --policy=/etc/cajeerengine-deploy/backup-policy.json
+TimeoutStartSec=12h
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=6
