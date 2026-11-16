@@ -1,3 +1,11 @@
+## Forum Edition 0.9.0 — Production Operations Stable
+
+- Added `deploy/container/operations.py`: a **read-only** admission check on the real, running Compose project. Verifies all required container health states, exact running app/gateway image tags, successful installer, authenticated release-volume checksums, database readiness and worker/scheduler watchdogs. Requires TLS validation (system trust or supplied CA), checks public readiness, edition version, rendered forum and ACP, and confirms protected routes remain hidden. Optional `--require-backup` enforces a recent, verified off-site backup and zero pending deliveries. Produces atomic private JSON evidence; exits nonzero on failed checks.
+- Compose update/rollback now requires the same operational admission check *after* gateway activation and *before* writing a committed/rolled-back journal state. On failure traffic is stopped and recovery remains operator-controlled; an HTTP 200 alone cannot commit an unhealthy release.
+- Fixed documented site.env support for `CE_LOOP_TIMEOUT_SECONDS`, `CE_RATE_LIMIT_GLOBAL` and `CE_RATE_LIMIT_FORUM_SEARCH`. Enforces the installer limits and rejects configuration drift across an update. Redis queue stays supported for fresh deployments but cannot be upgraded with the snapshot-based operator.
+- Corrected background worker/scheduler loop health age to track the configured 30–3600-second batch timeout instead of a fixed 420 seconds; a failed batch still immediately invalidates its health marker.
+- Added read-only `deploy/production.py verify` for signed host artifact integrity, systemd units, internal and public TLS/Forum health and optional verified off-site backup; wired the live host smoke to the gate. Added real local TLS and failed-dependency operator tests, plus physical Compose CI operational gates; update CI baseline is the authentic 0.8.7 release. No schema migration; upstream CajeerEngine remains 1.3.0.
+
 ## Forum Edition 0.8.7 — Production Reliability & Qualification
 
 - Run paced, bounded-memory HTTPS load and soak qualification against disposable Compose installations, including real PostgreSQL corpus, concurrent writes, ACL revocation and confirmed-data validation.

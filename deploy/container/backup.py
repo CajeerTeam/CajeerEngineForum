@@ -23,7 +23,9 @@ def main():
     for path in (a.config_dir, a.offsite_dir):
         if not path.is_absolute() or path.resolve() != path or not path.is_dir(): p.error('Use existing canonical absolute directories')
     if not (a.config_dir/'policy.json').is_file(): p.error('Missing protected policy.json')
-    read_site(a.env_file)  # same PostgreSQL-queue, stable-release and literal configuration policy as update.py
+    site = read_site(a.env_file)  # validated literal site configuration
+    if site['CE_QUEUE_DRIVER'] != 'pgsql':
+        raise ValueError('Automated recovery sets require a PostgreSQL queue; Redis queue capture is unsupported')
     env = {k:v for k,v in os.environ.items() if not k.startswith(('CE_', 'COMPOSE_'))}
     host = env.get('DOCKER_HOST')
     if not host or env.get('DOCKER_CONTEXT'):

@@ -568,11 +568,62 @@ def deploy(args,c):
         raise
 
 
+
+def verify_host(site, ca=None, require_backup=False):
+    """Real read-only host admission; do not mutate units, gate or journal."""
+    if GATE.exists() or not FPM_ALLOWED.is_file() or not WORKERS_ALLOWED.is_file():
+        raise RuntimeError('Deployment is gated or workers are not admitted')
+    if not JOURNAL.is_file() or APP.is_symlink() or not APP.is_dir():
+        raise RuntimeError('No managed running installation')
+    journal=json.loads(JOURNAL.read_text())
+    if journal.get('edition')!='forum' or journal.get('state')!='ready' or journal.get('site')!=site:
+        raise RuntimeError('Deployment not committed or site identity changed')
+    version=journal.get('version'); version_tuple(version)
+    digest=journal.get('sha256')
+    verify_installed(version,digest)
+    if current_version()!=version:
+        raise RuntimeError('Installed release version differs from host journal')
+    for service in (FPM,WORKER,TIMER,'nginx'):
+        run('systemctl','is-active','--quiet',service,timeout=10)
+    health(version)
+    domain=site['domain']
+    curl=['curl','--noproxy','*','--silent','--show-error','--max-time','10',
+          '--resolve',domain+':443:127.0.0.1']
+    if ca is not None:
+        if not ca.is_absolute() or ca.is_symlink() or not ca.is_file():
+            raise ValueError('Provide an existing absolute CA file')
+        curl+=['--cacert',str(ca)]
+    origin='https://'+domain
+    def response(path):
+        # Do not use --insecure, implicit proxies or redirects; reject a
+        # mismatched real certificate or a gateway serving another forum.
+        code=run(*curl,'--output','/dev/null','--write-out','%{http_code}',origin+path,
+                 capture=True,timeout=15)
+        if not re.fullmatch(r'[0-9]{3}',code): raise RuntimeError('Invalid HTTPS status')
+        return int(code)
+    for path in ('/health/ready','/api/v1/health','/forum','/admin/'):
+        if response(path)!=200: raise RuntimeError('Public HTTPS gate failed: '+path)
+    for path in ('/.env','/install/','/upgrade/'):
+        if response(path)!=404: raise RuntimeError('Private path unexpectedly accessible: '+path)
+    health_data=json.loads(run(*curl,'--fail',origin+'/api/v1/health',capture=True,timeout=15))
+    upstream=json.loads(app_run(TOOL/'verify.php','--identity',capture=True)).get('upstream_version')
+    if not validate_health_payload(health_data,version,upstream):
+        raise RuntimeError('Public HTTPS application identity/readiness failed')
+    if require_backup:
+        backup=json.loads(app_run('bin/cajeer','backup:automation:status','--json',capture=True))
+        if backup.get('ok') is not True or int(backup.get('last_offsite',0))<=0 or int(backup.get('pending',1))!=0:
+            raise RuntimeError('Verified off-site backup is missing, stale or pending')
+    return {'ok':True,'edition':'forum','edition_version':version,'sha256':digest,
+            'checks':{'signed_artifact':True,'systemd':True,'application':True,
+                      'public_tls':True,'private_routes':True,
+                      'offsite_backup':True if require_backup else 'not_requested'}}
+
+
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     sub=parser.add_subparsers(dest='command',required=True)
     d=sub.add_parser('deploy'); d.add_argument('artifact',type=Path); d.add_argument('--sha256',required=True); d.add_argument('--version',required=True); d.add_argument('--dry-run',action='store_true',help='Verify candidate and host without closing traffic or installing')
-    sub.add_parser('status'); r=sub.add_parser('resume'); r.add_argument('--version',required=True); r.add_argument('--sha256',required=True)
+    sub.add_parser('status'); v=sub.add_parser('verify'); v.add_argument('--ca',type=Path); v.add_argument('--require-backup',action='store_true'); r=sub.add_parser('resume'); r.add_argument('--version',required=True); r.add_argument('--sha256',required=True)
     args=parser.parse_args()
     if os.geteuid()!=0: raise ValueError('Run as root')
     root_controlled_parents(TOOL/'production.py')
@@ -588,6 +639,8 @@ def main():
                 except subprocess.SubprocessError: service_state[service]='inactive_or_unavailable'
             print(json.dumps({'maintenance':GATE.exists(),'edition':'forum','deployment':json.loads(JOURNAL.read_text()) if JOURNAL.exists() else None,'services':service_state},indent=2)); return
         c=config()
+        if args.command=='verify':
+            print(json.dumps(verify_host(c,args.ca,args.require_backup),indent=2)); return
         pwd.getpwnam(USER); grp.getgrnam(GROUP)
         if args.command=='resume':
             version_tuple(args.version)

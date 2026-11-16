@@ -117,6 +117,7 @@ jobs:
       - run: php tools/update-policy-regression.php
       - run: php tools/github-release-regression.php
       - run: python deploy/container/test_update.py
+      - run: python deploy/container/test_operations.py
       - run: python -m pip install PyYAML==6.0.2
       - run: python deploy/container/test_container.py
       - run: php tools/build-release.php --dry-run --all --json
@@ -329,7 +330,7 @@ jobs:
       DB_PORT: '5432'
       DB_USERNAME: forum_ci
       DB_PASSWORD: 'ForumCI-Disposable-123!'
-      FORUM_BASELINE_REF: ${{ vars.FORUM_BASELINE_REF || 'v0.8.6' }}
+      FORUM_BASELINE_REF: ${{ vars.FORUM_BASELINE_REF || 'v0.8.7' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -358,37 +359,37 @@ jobs:
           ln -s pg_dump "$RUNNER_TEMP/pg-client/psql"
           ln -s pg_dump "$RUNNER_TEMP/pg-client/createdb"
           echo "$RUNNER_TEMP/pg-client" >> "$GITHUB_PATH"
-      - name: Build and verify physical 0.8.7 artifacts
+      - name: Build and verify physical 0.9.0 artifacts
         run: |
           composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader
           mkdir -p storage/tmp/forum-ci/release
           php tools/build-release.php --all --target-dir="$RUNNER_TEMP/forum-current" --json > storage/tmp/forum-ci/release/build.json
-          php bin/cajeer release:verify --dist --strict --artifact="$RUNNER_TEMP/forum-current/cajeerengine-0.8.7-dist.zip"
-          php bin/cajeer release:verify --strict --artifact="$RUNNER_TEMP/forum-current/cajeerengine-0.8.7-source.zip"
+          php bin/cajeer release:verify --dist --strict --artifact="$RUNNER_TEMP/forum-current/cajeerengine-0.9.0-dist.zip"
+          php bin/cajeer release:verify --strict --artifact="$RUNNER_TEMP/forum-current/cajeerengine-0.9.0-source.zip"
       - name: Build authentic previous baseline from repository history
         run: |
           mkdir -p "$RUNNER_TEMP/forum-previous"
           ref="$FORUM_BASELINE_REF"
           # Prefer the immediately preceding release when its actual tag is available.
-          if [ "$ref" = 'v0.8.6' ]; then
-            for tag in v0.8.6 0.8.6; do
+          if [ "$ref" = 'v0.8.7' ]; then
+            for tag in v0.8.7 0.8.7; do
               if git rev-parse --verify "refs/tags/$tag^{commit}" >/dev/null 2>&1; then ref="refs/tags/$tag"; break; fi
             done
           fi
           git archive "$ref" | tar -x -C "$RUNNER_TEMP/forum-previous"
           cd "$RUNNER_TEMP/forum-previous"
-          baseline=$(php -r '$v=json_decode(file_get_contents("release.json"),true,512,JSON_THROW_ON_ERROR)["edition_version"]; if($v!=="0.8.6") exit(1); echo $v;')
+          baseline=$(php -r '$v=json_decode(file_get_contents("release.json"),true,512,JSON_THROW_ON_ERROR)["edition_version"]; if($v!=="0.8.7") exit(1); echo $v;')
           echo "FORUM_BASELINE_VERSION=$baseline" >> "$GITHUB_ENV"
           composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader
           php tools/build-release.php --dist --target-dir="$RUNNER_TEMP/forum-previous-dist" --json
       - name: Clean install, live HTTP, identity and corrupt-ledger rejection
         env:
           FORUM_TEST_RELEASE_DB: forum_test_release_clean
-        run: python tools/forum-tests/release_acceptance.py --driver ${{ matrix.driver }} --artifact "$RUNNER_TEMP/forum-current/cajeerengine-0.8.7-dist.zip" --report storage/tmp/forum-ci/release/clean
+        run: python tools/forum-tests/release_acceptance.py --driver ${{ matrix.driver }} --artifact "$RUNNER_TEMP/forum-current/cajeerengine-0.9.0-dist.zip" --report storage/tmp/forum-ci/release/clean
       - name: Signed upgrade from authentic baseline, recovery and rollback
         env:
           FORUM_TEST_RELEASE_DB: forum_test_release_upgrade
-        run: python tools/forum-tests/release_acceptance.py --driver ${{ matrix.driver }} --artifact "$RUNNER_TEMP/forum-current/cajeerengine-0.8.7-dist.zip" --previous "$RUNNER_TEMP/forum-previous-dist/cajeerengine-${FORUM_BASELINE_VERSION}-dist.zip" --report storage/tmp/forum-ci/release/upgrade
+        run: python tools/forum-tests/release_acceptance.py --driver ${{ matrix.driver }} --artifact "$RUNNER_TEMP/forum-current/cajeerengine-0.9.0-dist.zip" --previous "$RUNNER_TEMP/forum-previous-dist/cajeerengine-${FORUM_BASELINE_VERSION}-dist.zip" --report storage/tmp/forum-ci/release/upgrade
       - name: Cold recovery from authentic baseline after loss of source host and database
         env:
           FORUM_TEST_RELEASE_DB: forum_test_release_dr
@@ -452,7 +453,7 @@ jobs:
           CE_DB_PASSWORD: ForumDeployDisposable123
         run: |
           export CE_CERT_REPORT="$RUNNER_TEMP/forum-host/production-acceptance.json"
-          sudo --preserve-env=CE_DEPLOY_DISPOSABLE,CE_DB_USER,CE_DB_PASSWORD,CE_CERT_REPORT bash /var/lib/ce-forum-ci-source/deploy/host-smoke.sh "$RUNNER_TEMP/forum-host/cajeerengine-0.8.7-dist.zip"
+          sudo --preserve-env=CE_DEPLOY_DISPOSABLE,CE_DB_USER,CE_DB_PASSWORD,CE_CERT_REPORT bash /var/lib/ce-forum-ci-source/deploy/host-smoke.sh "$RUNNER_TEMP/forum-host/cajeerengine-0.9.0-dist.zip"
       - name: Upload production host evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -483,10 +484,10 @@ jobs:
           composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader
           php tools/build-release.php --dist --target-dir="$RUNNER_TEMP/forum-container-dist" --json
           php bin/cajeer release:keygen --secret-key="$RUNNER_TEMP/forum-container.secret" --public-key="$RUNNER_TEMP/forum-container.pub"
-          artifact="$RUNNER_TEMP/forum-container-dist/cajeerengine-0.8.7-dist.zip"
+          artifact="$RUNNER_TEMP/forum-container-dist/cajeerengine-0.9.0-dist.zip"
           php bin/cajeer release:sign --package="$artifact" --secret-key="$RUNNER_TEMP/forum-container.secret"
           sha=$(sha256sum "$artifact" | cut -d' ' -f1)
-          sh deploy/container/prepare.sh "$artifact" "$RUNNER_TEMP/forum-container.pub" "$sha" 0.8.7
+          sh deploy/container/prepare.sh "$artifact" "$RUNNER_TEMP/forum-container.pub" "$sha" 0.9.0
           umask 077
           secret_dir="$RUNNER_TEMP/forum-container-secrets"
           mkdir -p "$secret_dir"
@@ -495,7 +496,7 @@ jobs:
           openssl rand -base64 32 > "$secret_dir/backup-key"
           openssl req -x509 -newkey rsa:2048 -nodes -days 2 -subj /CN=forum.test -addext subjectAltName=DNS:forum.test -keyout "$secret_dir/tls.key" -out "$secret_dir/tls.crt"
           cat > deploy/container/site.env <<EOF
-          CE_RELEASE_VERSION=0.8.7
+          CE_RELEASE_VERSION=0.9.0
           CE_RELEASE_SHA256=$sha
           CE_DOMAIN=forum.test
           CE_ADMIN_EMAIL=container-admin@example.invalid
@@ -519,7 +520,10 @@ jobs:
           secret_dir="$RUNNER_TEMP/forum-container-secrets"
           smoke() { python deploy/container/smoke.py --domain forum.test --port 18443 --ca "$secret_dir/tls.crt" --email container-admin@example.invalid --password-file "$secret_dir/admin-password" --state "$RUNNER_TEMP/container-state.json" "$@"; }
           smoke
-          python deploy/container/qualify.py --project forum-container-ci --env deploy/container/site.env --domain forum.test --port 18443 --ca "$secret_dir/tls.crt" --email container-admin@example.invalid --password-file "$secret_dir/admin-password" --state "$RUNNER_TEMP/container-state.json" --version 0.8.7 --disposable destroy-test-services --seconds 60 --clients 8 --rate 10 --min-rps 5 --seed-posts 10000 --faults --report "$RUNNER_TEMP/forum-qualification.json"
+          python deploy/container/qualify.py --project forum-container-ci --env deploy/container/site.env --domain forum.test --port 18443 --ca "$secret_dir/tls.crt" --email container-admin@example.invalid --password-file "$secret_dir/admin-password" --state "$RUNNER_TEMP/container-state.json" --version 0.9.0 --disposable destroy-test-services --seconds 60 --clients 8 --rate 10 --min-rps 5 --seed-posts 10000 --faults --report "$RUNNER_TEMP/forum-qualification.json"
+          dc up -d --wait --wait-timeout 180 gateway
+          sudo python3 deploy/container/operations.py --project forum-container-ci --env-file deploy/container/site.env --ca "$secret_dir/tls.crt" --report "$RUNNER_TEMP/forum-operations.json"
+          sudo chown "$(id -u):$(id -g)" "$RUNNER_TEMP/forum-operations.json"
           dc exec -T app php bin/cajeer forum:runtime:check --json
           dc exec -T app php bin/cajeer forum:ecosystem:check --deep --json
           dc exec -T app php bin/cajeer queue:diagnostics --json
@@ -543,6 +547,10 @@ jobs:
             sudo python3 deploy/container/backup.py build --project forum-container-ci --env-file deploy/container/site.env --config-dir "$cfg" --offsite-dir "$off"
             sudo python3 deploy/container/backup.py run --project forum-container-ci --env-file deploy/container/site.env --config-dir "$cfg" --offsite-dir "$off"
             dc exec -T app php bin/cajeer backup:automation:status --json > "$RUNNER_TEMP/auto-backup.json"
+            # Verify the live installation and its authenticated off-site recovery cycle.
+            dc up -d --wait --wait-timeout 180 gateway
+            sudo python3 deploy/container/operations.py --project forum-container-ci --env-file deploy/container/site.env --ca "$secret_dir/tls.crt" --require-backup --report "$RUNNER_TEMP/forum-operations-backup.json"
+            sudo chown "$(id -u):$(id -g)" "$RUNNER_TEMP/forum-operations-backup.json"
             python -c 'import json,sys; r=json.load(open(sys.argv[1])); assert r["ok"] and r["pending"]==0 and r["latest_local_id"]==r["latest_offsite_id"]' "$RUNNER_TEMP/auto-backup.json"
             sudo find "$off" -type f -name '*.cebackup' | grep -q .
           fi
@@ -553,7 +561,9 @@ jobs:
         if: always()
         with:
           name: forum-qualification-${{ matrix.queue }}
-          path: ${{ runner.temp }}/forum-qualification.json
+          path: |
+            ${{ runner.temp }}/forum-qualification.json
+            ${{ runner.temp }}/forum-operations*.json
           if-no-files-found: error
       - name: Stop disposable container project
         if: always()
@@ -567,7 +577,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 55
     env:
-      FORUM_BASELINE_REF: ${{ vars.FORUM_BASELINE_REF || 'v0.8.6' }}
+      FORUM_BASELINE_REF: ${{ vars.FORUM_BASELINE_REF || 'v0.8.7' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -583,19 +593,19 @@ jobs:
           root="$PWD"; old="$RUNNER_TEMP/forum-container-old"
           mkdir -p "$old"
           ref="$FORUM_BASELINE_REF"
-          if [ "$ref" = v0.8.6 ]; then
-            for tag in v0.8.6 0.8.6; do
+          if [ "$ref" = v0.8.7 ]; then
+            for tag in v0.8.7 0.8.7; do
               if git rev-parse --verify "refs/tags/$tag^{commit}" >/dev/null 2>&1; then ref="refs/tags/$tag"; break; fi
             done
           fi
           git archive "$ref" | tar -x -C "$old"
-          php -r 'exit(json_decode(file_get_contents($argv[1]),true,512,JSON_THROW_ON_ERROR)["edition_version"]==="0.8.6"?0:1);' "$old/release.json"
+          php -r 'exit(json_decode(file_get_contents($argv[1]),true,512,JSON_THROW_ON_ERROR)["edition_version"]==="0.8.7"?0:1);' "$old/release.json"
           composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader
           php tools/build-release.php --dist --target-dir="$RUNNER_TEMP/container-new-dist" --json
           (cd "$old"; composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader; php tools/build-release.php --dist --target-dir="$RUNNER_TEMP/container-old-dist" --json)
           php bin/cajeer release:keygen --secret-key="$RUNNER_TEMP/container-upgrade.secret" --public-key="$RUNNER_TEMP/container-upgrade.pub"
           for v in old new; do
-            if [ "$v" = old ]; then version=0.8.6; tree="$old"; else version=0.8.7; tree="$root"; fi
+            if [ "$v" = old ]; then version=0.8.7; tree="$old"; else version=0.9.0; tree="$root"; fi
             artifact="$RUNNER_TEMP/container-$v-dist/cajeerengine-$version-dist.zip"
             php bin/cajeer release:sign --package="$artifact" --secret-key="$RUNNER_TEMP/container-upgrade.secret"
             sha=$(sha256sum "$artifact" | cut -d' ' -f1)
@@ -630,14 +640,14 @@ jobs:
           op() { python deploy/container/update.py "$@" --project forum-container-upgrade --old-env "$oldenv" --new-env "$newenv" --state-dir "$RUNNER_TEMP/container-upgrade-state" --ca "$secret_dir/tls.crt"; }
           smoke() { python deploy/container/smoke.py --domain forum.test --port 18443 --ca "$secret_dir/tls.crt" --email container-admin@example.invalid --password-file "$secret_dir/admin-password" --state "$RUNNER_TEMP/container-upgrade-smoke.json" "$@"; }
           dc up -d gateway
-          smoke --version 0.8.6
+          smoke --version 0.8.7
           op apply --dry-run
-          smoke --version 0.8.6 --verify-only
-          op apply
           smoke --version 0.8.7 --verify-only
+          op apply
+          smoke --version 0.9.0 --verify-only
           op status
           op rollback --yes
-          smoke --version 0.8.6 --verify-only
+          smoke --version 0.8.7 --verify-only
           op status
       - name: Stop disposable project
         if: always()

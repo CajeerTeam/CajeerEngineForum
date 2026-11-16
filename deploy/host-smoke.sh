@@ -50,6 +50,7 @@ deploy=(python3 "$work/tool/deploy/production.py")
 "${deploy[@]}" deploy "$work/inbox/original.zip" --sha256="$sha" --version="$old" --dry-run
 [[ ! -e /srv/cajeerengine/app && ! -e /var/lib/cajeerengine-deploy/maintenance ]]
 "${deploy[@]}" deploy "$work/inbox/original.zip" --sha256="$sha" --version="$old"
+"${deploy[@]}" verify --ca /etc/cajeerengine-deploy/tls/fullchain.pem
 http() { curl --noproxy '*' --silent --show-error --fail --resolve deploy.example.invalid:443:127.0.0.1 --cacert /etc/cajeerengine-deploy/tls/fullchain.pem "https://deploy.example.invalid$1" "${@:2}"; }
 http /health/ready | grep -q 'ready'
 http /admin/ | grep -q admin-app.js
@@ -97,6 +98,7 @@ printf 'CREATE TABLE ce_deploy_probe(id INTEGER PRIMARY KEY); INSERT INTO ce_dep
 good="$work/good/cajeerengine-$new-dist.zip"
 php "$source/bin/cajeer" release:sign --package="$good" --secret-key="$work/sign.key" >/dev/null
 "${deploy[@]}" deploy "$good" --sha256="$(sha256sum "$good" | cut -d' ' -f1)" --version="$new"
+"${deploy[@]}" verify --ca /etc/cajeerengine-deploy/tls/fullchain.pem
 [[ $(cat /srv/cajeerengine/app/VERSION) == "$upstream" ]]
 http /api/v1/health | php -r '$j=json_decode(stream_get_contents(STDIN),true,512,JSON_THROW_ON_ERROR);exit(($j["edition_version"]===$argv[1] && $j["version"]===$argv[2])?0:1);' "$new" "$upstream"
 http /api/v1/admin/dashboard -H "Authorization: Bearer $token" >/dev/null

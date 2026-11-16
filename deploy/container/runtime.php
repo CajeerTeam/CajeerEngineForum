@@ -17,7 +17,12 @@ try {
         echo "Release volume verified\n"; exit(0);
     }
     if ($mode==='loop-health') {
-        $time=@filemtime('/tmp/ce-loop-health'); exit($time!==false && time()-$time<420 ? 0:1);
+        // A successful batch remains healthy while the next bounded batch runs.
+        // The old fixed 420-second age falsely marked valid 600-second jobs stale.
+        $max=(string)(getenv('CE_LOOP_TIMEOUT_SECONDS')?:'600');
+        if(!ctype_digit($max)||(int)$max<30||(int)$max>3600)exit(1);
+        $time=@filemtime('/tmp/ce-loop-health');
+        exit($time!==false && time()-$time<((int)$max+65) ? 0:1);
     }
     if ($mode!=='ready') throw new RuntimeException('Unknown mode');
     require $root.'/vendor/autoload.php';

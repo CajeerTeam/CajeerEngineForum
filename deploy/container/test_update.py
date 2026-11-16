@@ -63,9 +63,24 @@ class UpdateTests(unittest.TestCase):
         d=u.Deployment(self.args); d.verify=Mock(); d.dc=Mock(); d.stop=Mock(); d.operator=Mock(side_effect=RuntimeError('injected failure')); d.activate=Mock()
         with self.assertRaises(RuntimeError): d.apply()
         self.assertEqual(d.state(),'drained'); d.activate.assert_not_called()
+    def test_unhealthy_activation_never_commits(self):
+        d=u.Deployment(self.args)
+        d.record('activating')
+        d.operator=Mock()
+        d.dc=Mock(return_value='init-id\n')
+        d.http_check=Mock()
+        d.operational_gate=Mock(side_effect=RuntimeError('real operational gate failed'))
+        with patch.object(u.subprocess,'run',return_value=SimpleNamespace(stdout='0')), \
+             patch.object(u.subprocess,'check_output',return_value='0\n'):
+            with self.assertRaisesRegex(RuntimeError,'operational gate failed'):
+                d.activate(self.new,'0.8.3','committed')
+        self.assertEqual(d.state(),'activating')
+        d.operational_gate.assert_called_once_with(self.new)
+
     def test_gateway_started_last(self):
         d=u.Deployment(self.args); events=[]; d.record('activating')
         d.operator=lambda mode:events.append(('operator',mode)); d.http_check=lambda site,expected:events.append(('http',expected))
+        d.operational_gate=lambda site:events.append(('operations',site))
         def dc(site,*args,**kw):
             events.append(args)
             if args[:2]==('ps','-aq'): return 'init-id\n'
@@ -75,6 +90,6 @@ class UpdateTests(unittest.TestCase):
         gateway=next(i for i,x in enumerate(events) if x[0]=='up' and x[-1]=='gateway')
         self.assertLess(next(i for i,x in enumerate(events) if x[:3]==('exec','-T','worker')),gateway)
         self.assertLess(next(i for i,x in enumerate(events) if x[:3]==('exec','-T','scheduler')),gateway)
-        self.assertEqual(events[-1],('http','0.8.3')); self.assertEqual(d.state(),'committed')
+        self.assertEqual(events[-2],('http','0.8.3')); self.assertEqual(events[-1],('operations',self.new)); self.assertEqual(d.state(),'committed')
 
 if __name__=='__main__': unittest.main(verbosity=2)

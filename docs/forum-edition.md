@@ -654,3 +654,8 @@ Forum SSR/search/publication latency, bounded SQL queue samples, Redis and Postg
 ### 0.8.7 — Production Reliability & Qualification
 
 See [production qualification](production-qualification.md) for real Compose load, bounded resource measurement, fault injection and 24-hour qualification profiles. Redis admission failures are fail-closed HTTP 503; the worker supervisor bounds batch execution and does not keep a healthy marker after failure. No schema change.
+
+
+### 0.9.0 — Production Operations Stable
+
+Production operators can now run the read-only `deploy/container/operations.py` against the actual Compose project, with live release checksum verification, PostgreSQL/Redis and worker readiness, TLS/SSR/ACP admission checks and optional authenticated off-site backup status. Signed update/rollback waits for the same comprehensive operational gate before committing the host journal. Literal budget/timeout configuration now validates consistently, and slow background batches no longer fail an unrelated fixed 420-second health threshold. See [Production Operations](production-operations.md). No schema migration; upstream remains CajeerEngine 1.3.0.

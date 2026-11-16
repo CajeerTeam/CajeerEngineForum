@@ -20,7 +20,8 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
 SERVICES = ('gateway', 'worker', 'scheduler', 'app')
 KEYS = {'CE_RELEASE_VERSION','CE_RELEASE_SHA256','CE_DOMAIN','CE_ADMIN_EMAIL','CE_NAMESPACE',
-        'CE_SECRETS_DIR','CE_HTTPS_PORT','CE_BIND_ADDRESS','CE_QUEUE_DRIVER'}
+        'CE_SECRETS_DIR','CE_HTTPS_PORT','CE_BIND_ADDRESS','CE_QUEUE_DRIVER',
+        'CE_LOOP_TIMEOUT_SECONDS','CE_RATE_LIMIT_GLOBAL','CE_RATE_LIMIT_FORUM_SEARCH'}
 
 
 def read_site(path):
@@ -35,13 +36,19 @@ def read_site(path):
         values[key] = value
     if not {'CE_RELEASE_VERSION','CE_RELEASE_SHA256','CE_DOMAIN','CE_ADMIN_EMAIL','CE_NAMESPACE','CE_SECRETS_DIR'} <= values.keys():
         raise ValueError('Incomplete site.env')
-    values.setdefault('CE_QUEUE_DRIVER','pgsql'); values.setdefault('CE_HTTPS_PORT','443'); values.setdefault('CE_BIND_ADDRESS','0.0.0.0')
+    values.setdefault('CE_QUEUE_DRIVER','pgsql'); values.setdefault('CE_HTTPS_PORT','443'); values.setdefault('CE_BIND_ADDRESS','0.0.0.0'); values.setdefault('CE_LOOP_TIMEOUT_SECONDS','600')
     if not re.fullmatch(r'(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)', values['CE_RELEASE_VERSION']):
         raise ValueError('Stable release version required')
     if not re.fullmatch(r'[a-f0-9]{64}',values['CE_RELEASE_SHA256']):
         raise ValueError('Approved SHA256 required')
-    if values['CE_QUEUE_DRIVER'] != 'pgsql':
-        raise ValueError('Automatic update/rollback requires PostgreSQL queue; Redis queue recovery is not supported')
+    if values['CE_QUEUE_DRIVER'] not in ('pgsql', 'redis'):
+        raise ValueError('Unsupported queue driver')
+    for name, minimum, maximum in [('CE_LOOP_TIMEOUT_SECONDS',30,3600),
+                                    ('CE_RATE_LIMIT_GLOBAL',1,1000000),
+                                    ('CE_RATE_LIMIT_FORUM_SEARCH',1,1000000)]:
+        if name in values and (not re.fullmatch(r'[1-9][0-9]{0,6}', values[name])
+                               or not minimum <= int(values[name]) <= maximum):
+            raise ValueError('Invalid operator configuration: '+name)
     if not Path(values['CE_SECRETS_DIR']).is_absolute():
         raise ValueError('Absolute secret directory required')
     if not re.fullmatch(r'[1-9][0-9]{0,4}',values['CE_HTTPS_PORT']) or not 1 <= int(values['CE_HTTPS_PORT']) <= 65535:
@@ -59,8 +66,9 @@ def version(v):
     return tuple(map(int,v.split('.')))
 
 
-def durable_json(path, data):
+def durable_json(path, data, mode=0o600):
     fd, tmp = tempfile.mkstemp(dir=path.parent, prefix='.state-')
+    os.fchmod(fd, mode)
     try:
         with os.fdopen(fd,'w') as out:
             json.dump(data,out,indent=2,sort_keys=True); out.write('\n'); out.flush(); os.fsync(out.fileno())
@@ -94,6 +102,8 @@ class Deployment:
             raise ValueError('Only release identity may change during an update')
         if version(self.new['CE_RELEASE_VERSION'])<=version(self.old['CE_RELEASE_VERSION']):
             raise ValueError('Target release must be newer')
+        if self.old['CE_QUEUE_DRIVER'] != 'pgsql':
+            raise ValueError('Automatic update/rollback requires PostgreSQL queue; Redis queue recovery is not supported')
         self.target=self.new['CE_RELEASE_VERSION']; self.sha=self.new['CE_RELEASE_SHA256']; self.previous=self.old['CE_RELEASE_VERSION']
         self.identity={'project':args.project,'old':self.old,'new':self.new}
         self.path=args.state_dir/'update.json'
@@ -169,7 +179,22 @@ class Deployment:
         else: raise RuntimeError('Background services not ready')
         self.dc(site,'up','-d','--no-deps','--force-recreate','gateway')
         self.http_check(site,expected)
+        # A successful HTTPS response alone cannot prove that workers, image
+        # digests, and the persisted release volume agree. Validate the running
+        # installation before committing the durable operator journal.
+        self.operational_gate(site)
         self.record(final_state)
+
+    def operational_gate(self, site):
+        from operations import Operations
+        check = Operations(self.args.project, site, self.args.ca)
+        for _ in range(45):
+            result = check.run()
+            if result['ok']:
+                return
+            time.sleep(2)
+        failed = ','.join(name for name, item in result['checks'].items() if not item['ok'])
+        raise RuntimeError('Post-activation operational gates failed: '+failed)
 
     def http_check(self,site,expected):
         cfg=self.old if site==self.args.old_env else self.new

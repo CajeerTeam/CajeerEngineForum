@@ -240,6 +240,35 @@ class Safety(unittest.TestCase):
                 result=subprocess.run(cmd,text=True,capture_output=True)
                 self.assertNotEqual(result.returncode,0); self.assertIn('signature or SHA256 mismatch',result.stderr)
 
+    def test_read_only_host_operations_gate(self):
+        with tempfile.TemporaryDirectory() as folder:
+            base=Path(folder);(base/'app').mkdir()
+            for path in ('fpm','worker'):(base/path).touch()
+            journal=base/'journal';journal.write_text(json.dumps({'edition':'forum',
+                'state':'ready','site':SITE,'version':'0.9.0','sha256':'a'*64}))
+            identity=json.dumps({'edition':'forum','edition_version':'0.9.0','upstream_version':'1.3.0'})
+            response={'status':'ok','edition_version':'0.9.0','version':'1.3.0','checks':{'database':True}}
+            commands=[]
+            def fake_run(*args, **kwargs):
+                commands.append(args)
+                if args[0]=='curl' and '--write-out' in args:
+                    return '404' if args[-1].endswith(('/.env','/install/','/upgrade/')) else '200'
+                if args[0]=='curl':return json.dumps(response)
+                return ''
+            def fake_app(*args, **kwargs):
+                if '--identity' in args:return identity
+                return json.dumps({'ok':True,'last_offsite':1234,'pending':0})
+            with patch.object(p,'GATE',base/'gate'),patch.object(p,'FPM_ALLOWED',base/'fpm'),patch.object(p,'WORKERS_ALLOWED',base/'worker'),patch.object(p,'APP',base/'app'),patch.object(p,'JOURNAL',journal),patch.object(p,'run',side_effect=fake_run),patch.object(p,'app_run',side_effect=fake_app),patch.object(p,'verify_installed') as verify,patch.object(p,'current_version',return_value='0.9.0'),patch.object(p,'health'):
+                result=p.verify_host(SITE,require_backup=True)
+                self.assertTrue(result['ok'])
+                verify.assert_called_once_with('0.9.0','a'*64)
+                self.assertEqual(sum(c[0]=='curl' for c in commands),8)
+                (base/'gate').touch()
+                with self.assertRaisesRegex(RuntimeError,'gated'):p.verify_host(SITE)
+                (base/'gate').unlink()
+                journal.write_text(json.dumps({'edition':'forum','state':'deploying','site':SITE,'version':'0.9.0','sha256':'a'*64}))
+                with self.assertRaisesRegex(RuntimeError,'not committed'):p.verify_host(SITE)
+
     def test_forum_readiness_semantics(self):
         payload={'version':'1.3.0','edition_version':'0.8.1','status':'ok','checks':{'database':True}}
         self.assertTrue(p.validate_health_payload(payload,'0.8.1','1.3.0'))
