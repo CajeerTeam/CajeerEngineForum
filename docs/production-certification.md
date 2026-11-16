@@ -1,60 +1,57 @@
-# Production certification — CajeerEngineForum 0.8.3 (Engine 1.3.0)
+# Release Certification Pipeline — Forum Edition 0.9.1 (Engine 1.3.0)
 
-## Scope and admission
+This is a **release admission mechanism**, not third-party certification of a production installation. No schema/API changes. Real end-to-end deployment and sustained workload certification remain separate responsibilities. It replaces the outdated 0.8.3 publication instructions. The changed-files ZIP is not an installable or signed distribution.
 
-The target profile for certification is a **single-node Linux/systemd installation**, Nginx TLS, PHP 8.4 FPM, PostgreSQL 17+, local media, PostgreSQL queue/scheduler and file cache. SQLite dist smoke and Redis queue integration are additional release gates, not a statement that SQLite, Redis clusters, MySQL/MariaDB, S3, multi-node, arbitrary plugins or PHP 8.5 are certified deployment profiles. Local `stable:status`, `stable:lock`, `health/ready` and a version string are diagnostics, not production approval. A release is eligible only after the complete release workflow passes; operator approval of the actual environment is still required.
+## Mandatory GitHub Actions path
 
-## Release run
+1. Protect `.github/workflows/forum-ci.yml`, `composer.lock`, signing configuration and release tags with review/branch protection. Set **`forum-required`** as a required status check. The `Forum Edition CI` workflow runs all existing SQLite/PostgreSQL/MySQL, browser, release, host, Compose, backup and monitoring suites.
+2. `release-candidate` installs **locked production dependencies**, runs `composer audit --locked --no-dev --format=json --abandoned=fail` with a nonzero failure exit, builds source/dist once and performs archive inventory verification. It signs both exact ZIPs with Ed25519 and verifies the signatures against a public key. All results are uploaded together as `forum-signed-candidate`.
+3. The release acceptance matrix (`sqlite`, `pg17`, `pg18`) and physical Nginx/systemd/PostgreSQL host **download that same candidate dist** rather than rebuilding it. The host produces `production-acceptance.json` with `artifact_sha256` matching the candidate ZIP.
+4. After all test matrices complete, `certification` uses GitHub Actions `actions:read` to fetch **each actual job**, including expanded matrix variants, from the **same run attempt**. `collect-ci-jobs.py` refuses missing, duplicate, skipped, failed, or unfinished jobs, unexpected names and mismatched logical `needs`. It records the checkout commit, run/attempt, repository, event and tested job outcomes in `ci-jobs.json`.
+5. `certification-evidence.py seal` requires all job results, a clean full Composer audit, successful host admission, source/dist signature verification, sidecar manifests, ZIP checksums and artifact index. It produces `certification.json` bound to exact SHA-256 of each input, the Git commit, GitHub run ID/attempt and CI matrix. `verify` re-evaluates everything, including signatures. `forum-required` **fails** if certification fails.
+6. The `forum-certified-release` CI artifact contains the matching signed archives and all evidence; no private signing key, credentials or response bodies are included. Reports are evidence from a protected workflow, not independent cryptographic attestations of the CI system.
 
-1. Commit a **real** `composer.lock` resolved from the project constraints; review dependency changes. Source archives without that lock cannot produce a reproducible dist. Composer 2, PHP 8.4 with the required extensions, Node 22, a disposable Linux/systemd host and PostgreSQL 17 are required. Do not bypass a failing dependency audit or fabricate a report.
-2. Run GitHub Actions `Forum Edition CI` for the reviewed candidate/tag `v0.8.3`. The required Forum CI jobs run the forum regression matrix, PostgreSQL/Redis integrations, browser checks, physical release acceptance and the dedicated production-host test. The separate release qualification and publication procedure also requires the full inherited regression suite and a clean locked Composer runtime audit; run the release scripts below on the approved commit. The real host smoke installs the exact dist with TLS, FPM, PostgreSQL and systemd; checks authentication, content and load; exercises a signed newer fixture with a failing and a successful migration; verifies that the service namespace cannot write code. A failure prevents signing/publication.
-3. The host smoke runs `tools/production-acceptance.py` against loopback Nginx with the test certificate's CA and hostname verification. It cannot target an arbitrary remote host; it is destructive and must only run on a disposable server (`CE_DEPLOY_DISPOSABLE=yes`). The synthetic test account and pages are not production data.
-4. `tools/certification-evidence.py seal DIR` creates `certification.json` only if `production-acceptance.json` and `dependency-audit.json` satisfy policy. Generate the seal in the protected release qualification environment **after all preceding steps passed**. `verify DIR` checks the exact source/dist SHA-256, report SHA-256 and Git commit. The signing operator or protected signing job must verify it before accessing the signing key. The publishing script verifies it again and uploads the evidence alongside the signed packages. These JSON reports are not independent cryptographic attestations; trust the protected CI run, commit/tag, signing environment and signed release archives, not a report produced by an untrusted party.
+### Key provisioning and publication
 
-### Acceptance criteria
+A normal branch/PR run uses a disposable CI-only signing key and is **not publishable**. For a tag `v0.9.1` to be eligible, provision:
 
-| Gate | Required result |
-| --- | --- |
-| Functional HTTP | Inherited CMS draft checks plus Forum ACP, real category/board/topic/reply, guest SSR and FTS, hidden ACL denial and restoration, actual worker notification delivery. |
-| HTTP security | Static admin CSP/frame protection/nosniff/HSTS; private file and install/upgrade denial; anonymous and invalid tokens denied; malformed JSON/media rejected; secure HttpOnly SameSite cookie and CSRF; viewer write denied and disabled user token revoked. |
-| Concurrency / load | 400 requests, 8 concurrent clients, four routes (public forum SSR, forum FTS, readiness-backed API health, authenticated Forum ACP), 100 requests per route; all status and semantic assertions pass. |
-| Latency / throughput | Overall and each route p95 ≤ 1000 ms; ≥ 10 requests/s overall; zero errors/timeouts/429s in the load phase. |
-| Abuse | 32 concurrent malformed auth requests: at most 20 allowed within the window, remaining 429 with Retry-After. Native PHP stress must admit exactly 37 of 512 attempts from 8 processes. |
-| Dependencies | Composer locked production audit: no advisories or abandoned packages, zero exit code. |
-| Deployment / recovery | Existing host smoke, dist cold recovery, update/rollback, PostgreSQL backup/DR and other integration regressions must pass. |
+- GitHub Actions **secret** `FORUM_RELEASE_SIGNING_KEY_B64`: the *single-line base64 text* from a pre-generated Ed25519 private key file (`php bin/cajeer release:keygen --secret-key=/secure/release.secret --public-key=/secure/release.pub`). Limit access to reviewed release workflows. Never print or upload the private key.
+- GitHub Actions **repository variable** `FORUM_RELEASE_TRUSTED_PUBLIC_KEY_B64`: the public key's single-line base64 text from `/secure/release.pub`, approved independently of the candidate. Restrict who may edit this variable and approve its fingerprint out of band.
+- Publisher environment `RELEASE_TRUSTED_PUBLIC_KEY_FILE=/secure/release.pub`: an **operator-provisioned** local copy. Do not take the trust anchor from the download (`ci-release.pub` is only an identity hint and must match the external key).
 
-Load profile is a bounded CI baseline, **not a capacity guarantee**. Each request opens a TLS connection; latency includes the request and semantic checks. The isolated host changes the global rate limit to 10,000 and auth to 20 per window (600 s configured for the test); production defaults remain 120/20 per 60 s. Test settings are not shipped in the release artifact. Rate-limit behavior is checked separately. No HTTP response bodies, tokens, passwords or cookies are written to reports. Run your own long-duration, mixed read/write, peak-load and recovery tests on a realistic staging copy; select thresholds based on the target hardware, data volume, extensions and service-level objectives. Do not run destructive acceptance against a live site.
+The tagged run requires these values and rejects missing/mismatched keys. After `forum-required` succeeds, download **`forum-certified-release` from that same completed tag run**, verify asset hashes through trusted CI transport, check the reviewed local tag, then publish:
 
-### Manual reproduction on a disposable host
-
-From the reviewed checkout, with a clean Git tree and committed lock:
-
-```bash
-composer audit --locked --no-dev --format=json --abandoned=fail > /tmp/dependency-audit.json
-bash tools/release-pipeline.sh /tmp/ce-release
-cp /tmp/dependency-audit.json /tmp/ce-release/dependency-audit.json
-bash tools/release-smoke.sh /tmp/ce-release/cajeerengine-0.8.3-dist.zip sqlite
-# Configure CE_DB_USER and CE_DB_PASSWORD for a disposable PostgreSQL 17 server.
-export CE_DEPLOY_DISPOSABLE=yes CE_CERT_REPORT=/tmp/ce-release/production-acceptance.json
-sudo --preserve-env=CE_DB_USER,CE_DB_PASSWORD,CE_DEPLOY_DISPOSABLE,CE_CERT_REPORT \
-  bash deploy/host-smoke.sh /tmp/ce-release/cajeerengine-0.8.3-dist.zip
+```sh
+export RELEASE_TRUSTED_PUBLIC_KEY_FILE=/secure/release.pub
+bash tools/github-publish-release.sh /secure/forum-certified-release v0.9.1 CajeerTeam/CajeerEngineForum
 ```
 
-Run all remaining release workflow tests as well; the commands above alone are not complete certification. The host script uses fixed disposable paths, role/database and ports; never invoke it on a real installation. For a failing run, inspect stdout/stderr and the host report inside `/var/lib/ce-deploy-smoke` if using `CE_DEPLOY_KEEP=yes`; never copy private environment or keys to artifacts. A passed release run emits the three reports. The publication environment should require review and protect tags, credentials and workflow modifications.
+`gh` must have permission to read GitHub Actions run/jobs and create releases. The publisher re-fetches the successful **completed** run/attempt and checks `certification`, `forum-required` and the exact complete matrix against the sealed report. It cryptographically verifies both ZIPs against the externally trusted key and refuses branch/PR evidence, altered bytes, re-signed packages, an incorrect tag/commit or an existing release (including drafts). After uploading a draft, it checks each remote asset's name, size and GitHub digest (when available) before publication. A failed upload leaves a draft for manual inspection; it is never overwritten automatically.
 
-## Operator go/no-go
+For an offline **candidate build only** (not a replacement for CI certification):
 
-- Verify the signed dist, trusted signing key and checksum; review the GitHub Actions run and report matching the artifact.
-- Validate server prerequisites, TLS chain and expiration, DNS, database/storage capacity, firewall, non-root service identity and filesystem permissions. Confirm no debug output, secrets or installer are exposed.
-- Execute encrypted off-host recovery drill on a copy with the actual database and media, record acceptable RTO/RPO, and verify restore of content and login. Keep key and backup outside the host.
-- Test your real extensions, integrations, SMTP/webhooks, caches and queue workers with expected load and failure scenarios. Check monitoring/alerts and backup retention.
-- Confirm update from the currently deployed version on staging, rollback and maintenance access. The CI's newer fixture demonstrates update machinery; it is not a substitute for a migration from your own actual old installation.
-- Record responsible operator and approval. Any missing/failing requirement is NO-GO; keep maintenance enabled until recovery and verification succeed.
+```sh
+export RELEASE_SIGNING_KEY_FILE=/secure/release.secret
+export RELEASE_TRUSTED_PUBLIC_KEY_FILE=/secure/release.pub
+bash tools/release-pipeline.sh /secure/forum-candidate
+php tools/verify-signed-release.php /secure/forum-candidate /secure/release.pub
+```
 
-Forum 0.8.1 added the required `production-host` job to `forum-required`; Forum 0.8.2 additionally requires `container-runtime` (PostgreSQL and Redis queue modes). These jobs build a physical dist and exercise disposable systemd and Docker hosts. Their actual successful evidence, not a version string or dry-run, is required. Build/publish scripts use `edition_version` and the CajeerEngineForum repository. Publication remains a separate operator/CI action.
+The offline builder runs the real Composer audit and signs archives, but cannot produce `ci-jobs.json` or `certification.json` without a completed trusted CI run and real host report. Do **not** fabricate or transplant these files. `certification-evidence.py seal` is restricted to its own GitHub run identity. The publisher checks the remote run again before publishing.
 
-Forum 0.8.3 adds required `container-upgrade`: build authentic 0.8.2 and 0.8.3 signed dist/images, install the old version, verify dry-run leaves it serving, apply through the operator controller, verify persistent HTTP data, and explicitly roll back to the old release. The separate release acceptance job exercises failure injection and recovery.
+## Admission requirements
 
-### 0.8.5 cold recovery acceptance
+| Gate | Required outcome |
+| --- | --- |
+| Source and dist | Correct Forum 0.9.1/Engine 1.3.0 internal manifests; strict inventory, locked dependencies, sidecars and SHA-256; detached Ed25519 signatures verified |
+| Supply chain | Locked production Composer audit with **zero advisories**, **zero abandoned packages** and no suppressed findings |
+| Actual CI | Exact 17 matrix/required jobs (including candidate, excluding certification/final gate), all succeeded in same attempt; final `forum-required` also passed |
+| Disposable Linux host | Real TLS, FPM, PostgreSQL 17, SSR/API/ACP, auth/ACL, concurrency, migration/update/rollback, exact dist digest |
+| Integration | Existing database, browser, Compose PostgreSQL/Redis, recovery/S3 and monitoring suites successfully completed |
+| Final admission | Trusted publication key, signed files bound to commit and GitHub run/attempt, completed GitHub workflow success, successful `certification` and `forum-required` |
 
-The release matrix includes a separate source-loss scenario: create content, ACP delegation, theme, signed plugins and media on the baseline dist; export a recovery bundle; remove the source installation (and its disposable PostgreSQL database); recover to a fresh destination; check maintenance, login, ACL, content, search, attachments and new writes over HTTP. Run on native SQLite and PostgreSQL 17/18. The local filesystem regression independently exercises real SQLite dump restoration, authentication failures, off-site retrieval and non-overwrite safety. A passing data-only test is not equivalent to the full native application acceptance.
+The host HTTP acceptance tests 400 TLS requests, four distinct routes, zero semantic/HTTP errors, p95 no higher than 1000 ms and at least 10 requests/s. This is a **bounded CI baseline**, not a 1-million-post/24-hour capacity claim. Do not run destructive acceptance against live production data. Separate recovery drills, SLOs and production operational approval remain required; see [production qualification](production-qualification.md) and [production operations](production-operations.md).
+
+## Maintenance and failure behavior
+
+On any security advisory, missing proof, skipped CI matrix, failed host acceptance, unsigned/malformed candidate, changed SHA-256 or untrusted signing key: **NO-GO**. Fix the cause in a reviewed commit and run the full workflow again. Use the latest successful run attempt and certified artifact only. Do not use `--clobber`, bypass branch protection, edit evidence JSON or silently regenerate signatures after certification: the exact-byte seal will reject it. Rotate keys via a separately approved process and re-run CI; never put private keys in artifacts.

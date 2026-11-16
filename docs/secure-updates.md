@@ -1,6 +1,6 @@
-# Forum 0.8.3 — secure release operations
+# Secure release operations — current Forum Edition 0.9.1
 
-Forum Edition and Engine versions are independent: this release is **0.8.3 / 1.3.0**. A changed-files ZIP is not a deployable signed dist. Build the full dist from reviewed source and locked Composer dependencies, sign it with the offline publisher key and independently approve its SHA-256. Never trust a key provided by the candidate ZIP. GitHub discovery is advisory, not authorization to execute code; draft, incomplete and ambiguous releases are not offered. The stable channel rejects prerelease packages, including a correctly signed prerelease. Explicit `UPDATE_CHANNEL=rc`, `beta` or `dev` is required for those channels (dev accepts all). The signed release metadata must agree with the version/channel and Engine API.
+Forum Edition and Engine versions are independent: the current Forum Edition is **0.9.1 / Engine 1.3.0** (signed update controls originated in 0.8.3). A changed-files ZIP is not a deployable signed dist. See [release certification](production-certification.md) and use a verified signed dist from the matching approved CI run. Build the full dist from reviewed source and locked Composer dependencies, sign it with the offline publisher key and independently approve its SHA-256. Never trust a key provided by the candidate ZIP. GitHub discovery is advisory, not authorization to execute code; draft, incomplete and ambiguous releases are not offered. The stable channel rejects prerelease packages, including a correctly signed prerelease. Explicit `UPDATE_CHANNEL=rc`, `beta` or `dev` is required for those channels (dev accepts all). The signed release metadata must agree with the version/channel and Engine API.
 
 ## Existing Linux / manual installation
 
@@ -8,8 +8,8 @@ Stop ingress and drain application processes, workers and scheduler before apply
 
 ```sh
 php bin/cajeer update:check --json
-php bin/cajeer update:apply --package=/srv/releases/cajeerengine-0.8.3-dist.zip --version=0.8.3 --sha256=APPROVED_SHA256 --dry-run --json
-php bin/cajeer update:apply --package=/srv/releases/cajeerengine-0.8.3-dist.zip --version=0.8.3 --sha256=APPROVED_SHA256 --json
+php bin/cajeer update:apply --package=/srv/releases/cajeerengine-0.9.1-dist.zip --version=0.9.1 --sha256=APPROVED_SHA256 --dry-run --json
+php bin/cajeer update:apply --package=/srv/releases/cajeerengine-0.9.1-dist.zip --version=0.9.1 --sha256=APPROVED_SHA256 --json
 php bin/cajeer update:status --json
 php bin/cajeer update:history --limit=20 --json
 ```

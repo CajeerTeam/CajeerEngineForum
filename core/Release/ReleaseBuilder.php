@@ -244,6 +244,7 @@ final readonly class ReleaseBuilder
         if ($mode === 'dist') $required = array_merge($required, ['vendor/autoload.php', 'vendor/composer/installed.json', 'composer.lock']);
         else $required = array_merge($required, ['deploy/production.py', 'deploy/install.php', 'deploy/verify.php', 'deploy/host-smoke.sh', 'deploy/test_production.py', 'deploy/site.example.json', 'docs/production-deployment.md']);
         if ($mode === 'source' && version_compare((new \CajeerEngine\Forum\ForumVersion($this->rootPath))->upstream(), '1.3.0', '>=')) $required = array_merge($required, ['tools/production-acceptance.py','tools/certification-evidence.py','tools/certification-regression.py','tools/rate-limit-concurrency.php','docs/production-certification.md']);
+        if ($mode==='source' && version_compare($this->version(), '0.9.1', '>=')) $required = array_merge($required, ['tools/verify-signed-release.php','tools/collect-ci-jobs.py','tools/verify-certified-run.py','tools/github-publish-release.sh']);
         if ($mode==='source') $required=array_merge($required,['deploy/container/update.py','deploy/container/update-operator.php','deploy/container/update-operator.sh','deploy/container/test_update.py','docs/secure-updates.md']);
         $checks = [];
         foreach ($required as $file) $checks[$file] = is_file($this->rootPath . '/' . $file) && !is_link($this->rootPath . '/' . $file);

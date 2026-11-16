@@ -1,5 +1,14 @@
 ## Forum Edition 0.9.0 — Production Operations Stable
 
+## Forum Edition 0.9.1 — Release Certification Pipeline
+
+- Added a single canonical source/dist candidate in mandatory CI; locked Composer audit (no advisories or abandoned packages), physical archive integrity verification and detached Ed25519 signatures. Tagged release candidates require an externally configured publisher signing key and separately provisioned trusted public key; branch/PR test candidates use a disposable CI key and cannot be published.
+- Release acceptance and native Linux/systemd production-host now consume the **same signed dist ZIP bytes** instead of rebuilding independent test packages. Production acceptance is bound to the approved dist SHA-256.
+- Added fail-closed GitHub Actions run-attempt matrix collection with exact logical/matrix job cardinalities, real conclusions, commit and run identifiers; `certification-evidence.py` seals those results with host acceptance, audit and source/dist signatures/checksums. `forum-required` requires successful certification.
+- Release publisher now requires an independent trusted Ed25519 public key, verifies the actual detached signatures and inventories, confirms the local release tag points to the certified commit and rechecks the complete successful remote GitHub Actions run before creating a non-overwriting draft. Reports and signed artifacts ship together.
+- Documented branch-protection, key provisioning and manual reproduction. No database migrations or application API changes; Engine remains 1.3.0. The release is not a substitute for 24-hour or external production certification.
+
+
 - Added `deploy/container/operations.py`: a **read-only** admission check on the real, running Compose project. Verifies all required container health states, exact running app/gateway image tags, successful installer, authenticated release-volume checksums, database readiness and worker/scheduler watchdogs. Requires TLS validation (system trust or supplied CA), checks public readiness, edition version, rendered forum and ACP, and confirms protected routes remain hidden. Optional `--require-backup` enforces a recent, verified off-site backup and zero pending deliveries. Produces atomic private JSON evidence; exits nonzero on failed checks.
 - Compose update/rollback now requires the same operational admission check *after* gateway activation and *before* writing a committed/rolled-back journal state. On failure traffic is stopped and recovery remains operator-controlled; an HTTP 200 alone cannot commit an unhealthy release.
 - Fixed documented site.env support for `CE_LOOP_TIMEOUT_SECONDS`, `CE_RATE_LIMIT_GLOBAL` and `CE_RATE_LIMIT_FORUM_SEARCH`. Enforces the installer limits and rejects configuration drift across an update. Redis queue stays supported for fresh deployments but cannot be upgraded with the snapshot-based operator.

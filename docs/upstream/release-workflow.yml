@@ -1,3 +1,5 @@
+# Archived upstream Engine example; NOT a runnable or authoritative Forum Edition 0.9.1 release workflow.
+# Use .github/workflows/forum-ci.yml and docs/production-certification.md instead.
 name: Release verification and publication
 on:
   workflow_dispatch:

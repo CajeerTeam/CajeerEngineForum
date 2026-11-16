@@ -1,4 +1,6 @@
-# Forum 0.8.3 — container deployment
+# Forum Edition 0.9.1 — container deployment
+
+See [release certification](production-certification.md) for CI-proven signed source/dist publication and the independent trust-key requirement.
 
 A single-host production profile: Docker Engine and Compose v2.24+ on Linux, TLS Nginx, PHP 8.4 FPM, PostgreSQL 17, authenticated Redis 7.4, a one-shot installer, workers and a scheduler. Use a clean, dedicated Compose project. The Linux/systemd profile remains supported separately. The changed-files ZIP is not a dist or a Docker image.
 
@@ -9,9 +11,9 @@ Build the full dist from reviewed source with the locked production Composer dep
 ```sh
 composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader
 php tools/build-release.php --dist --target-dir=/tmp/forum-dist --json
-php bin/cajeer release:sign --package=/tmp/forum-dist/cajeerengine-0.8.3-dist.zip --secret-key=/secure/release.secret
+php bin/cajeer release:sign --package=/tmp/forum-dist/cajeerengine-0.9.1-dist.zip --secret-key=/secure/release.secret
 # On the Docker host, from the matching source checkout:
-sh deploy/container/prepare.sh /tmp/forum-dist/cajeerengine-0.8.3-dist.zip /secure/release.pub APPROVED_SHA256 0.8.3
+sh deploy/container/prepare.sh /tmp/forum-dist/cajeerengine-0.9.1-dist.zip /secure/release.pub APPROVED_SHA256 0.9.1
 ```
 
 `prepare.sh` verifies the artifact before staging it; the Docker build repeats signature, SHA-256, dist inventory, Forum Edition and version checks. Only the verified dist is copied into the final PHP image; the signing private key is never needed. The source tree's `.dockerignore` restricts build context to verification code, runtime scripts and the three approved artifact files. Base image tags are version-series tags; record the resolved image digests in the deployment inventory, and pin approved digests for repeatable production builds. Build and scan on a trusted host; this is not an independently signed OCI image publishing service.

@@ -1,10 +1,12 @@
 # CajeerEngine Forum Edition
 
-**Forum Edition 0.9.0 — Production Operations Stable**, built on CajeerEngine 1.3.0. Release certification requires all `forum-required` CI jobs to pass.
+**Forum Edition 0.9.1 — Release Certification Pipeline**, built on CajeerEngine 1.3.0. Publication requires a passing `forum-required` gate and verified signed CI certification tied to the exact commit and release artifacts.
 
 Self-hosted forum platform by CajeerTeam. PHP 8.4.1+, CajeerEngine kernel, Symfony Components, REST API, Apache-2.0.
 
 Repository: https://github.com/CajeerTeam/CajeerEngineForum · Upstream: https://github.com/CajeerTeam/CajeerEngine
+
+**Upgrade 0.9.0 → 0.9.1:** [mandatory release certification pipeline and signing](docs/production-certification.md). No schema migration.
 
 **Upgrade 0.8.7 → 0.9.0:** [production operations: live admission checks, deployment reconciliation and backup assurance](docs/production-operations.md). No schema migration.
 
@@ -52,11 +54,11 @@ php tools/forum-regression.php
 node --check public/forum-assets/forum.js
 ```
 
-CI: `.github/workflows/forum-ci.yml`. Полный интеграционный тест требует Composer vendor, PDO SQLite и mbstring. Исходники поставляются без vendor и секретов; это не сертифицированный production dist. Унаследованные утилиты релиза сохраняют формат ядра, но подписанные пакеты обычной CMS не могут применяться к Forum Edition. Для обновлений используйте только выпуски своего репозитория с `edition: forum` в manifest. Номер `VERSION` — версия ядра 1.3.0; независимая версия форума (`edition_version` в `release.json`) используется сборщиком релизов и updater. Для перехода с 0.1.0 примените изменённые файлы вручную; старый updater ещё сравнивает номера ядра.
+CI: `.github/workflows/forum-ci.yml`; version 0.9.1 adds `release-candidate`, `certification`, and signed publication admission. For signing-key requirements and full verification see [production certification](docs/production-certification.md). Полный интеграционный тест требует Composer vendor, PDO SQLite и mbstring. Исходники поставляются без vendor и секретов; это не сертифицированный production dist. Унаследованные утилиты релиза сохраняют формат ядра, но подписанные пакеты обычной CMS не могут применяться к Forum Edition. Для обновлений используйте только выпуски своего репозитория с `edition: forum` в manifest. Номер `VERSION` — версия ядра 1.3.0; независимая версия форума (`edition_version` в `release.json`) используется сборщиком релизов и updater. Для перехода с 0.1.0 примените изменённые файлы вручную; старый updater ещё сравнивает номера ядра.
 
 ## Roadmap
 
-Следующие этапы: права на отдельные разделы, вложенные подразделы, полноценные уведомления/непрочитанные темы, личные сообщения, WYSIWYG и безопасные вложения, опросы/Q&A, мягкое удаление и история правок, защита от спама и подтверждение email, поиск с полнотекстовым индексом, SEO-серверный рендеринг, локализация, production-тесты и подписанные релизы.
+Следующие этапы до Forum 1.0: security hardening, производительность PostgreSQL, 24-часовая нагрузочная сертификация, fault/recovery, повторяемое off-site восстановление, операционная проверка мониторинга и полная матрица обновления. Release pipeline 0.9.1 подтверждает CI, но не заменяет длительное испытание на реальном оборудовании.
 
 Архитектура и исходные компоненты CajeerEngine сохранены. См. LICENSE, NOTICE и THIRD_PARTY_NOTICES.md. История upstream: [CHANGELOG](CHANGELOG.md), исходный release workflow хранится в `docs/upstream/` для справки.
 

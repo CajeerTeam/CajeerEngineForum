@@ -1,6 +1,6 @@
 # Production Reliability & Qualification (Forum Edition 0.8.7)
 
-**Disposable environments only.** Qualification is destructive: it seeds synthetic records, publishes replies, temporarily hides a category and kills/stops services. Never run against an existing community. The signed release, Compose project, TLS CA, admin credentials and smoke state must belong to the same isolated installation. Use a dedicated host/project and no real SMTP/webhook credentials. Stop any backup/update jobs during the experiment. Do not interpret a synthetic or SQL-only test as certification of a production host.
+**Disposable environments only.** Qualification is destructive: it seeds synthetic records, publishes replies, temporarily hides a category and kills/stops services. Never run against an existing community. Use a current certified 0.9.1 dist, not the historical 0.8.7 example ZIP; see [release certification](production-certification.md). The signed release, Compose project, TLS CA, admin credentials and smoke state must belong to the same isolated installation. Use a dedicated host/project and no real SMTP/webhook credentials. Stop any backup/update jobs during the experiment. Do not interpret a synthetic or SQL-only test as certification of a production host.
 
 ## Short mandatory profile
 
@@ -11,7 +11,7 @@ python3 deploy/container/qualify.py \
   --project forum-container-ci --env deploy/container/site.env \
   --domain forum.test --port 18443 --ca /secure/tls.crt \
   --email container-admin@example.invalid --password-file /secure/admin-password \
-  --state /secure/container-state.json --version 0.8.7 \
+  --state /secure/container-state.json --version 0.9.1 \
   --disposable destroy-test-services --clients 8 --seconds 60 --rate 10 \
   --min-rps 5 --max-p95-ms 1000 --max-error-rate 0.001 \
   --seed-posts 10000 --faults --report /secure/qualification.json

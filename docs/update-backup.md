@@ -23,7 +23,7 @@ php bin/cajeer release:keygen --secret-key=/secure/release.secret --public-key=/
 php bin/cajeer release:sign --package=/release/cajeerengine-1.1.4-dist.zip --secret-key=/secure/release.secret
 ```
 
-Publish the ZIP, `.sha256`, `.sig`, and manifest. The signature covers the exact ZIP SHA256 using a domain-separated message. The manifest inside the archive is authenticated by that signature. Install the public key out of band, verify its fingerprint (`key_id`), and protect it against web writes. Sign only after release verification; `RELEASE_SIGNING_KEY_FILE` optionally enables signing in `tools/release-pipeline.sh`. No trusted publisher key or secret is shipped in the project. Key rotation requires distributing a new trusted public key through a separate trusted channel.
+Publish the ZIP, `.sha256`, `.sig`, and manifest. The signature covers the exact ZIP SHA256 using a domain-separated message. The manifest inside the archive is authenticated by that signature. Install the public key out of band, verify its fingerprint (`key_id`), and protect it against web writes. Sign only after release verification; `RELEASE_SIGNING_KEY_FILE` and the independently provisioned `RELEASE_TRUSTED_PUBLIC_KEY_FILE` are mandatory for `tools/release-pipeline.sh` since Forum 0.9.1; the result remains an uncertified candidate until the protected CI and host gates pass. No trusted publisher key or secret is shipped in the project. Key rotation requires distributing a new trusted public key through a separate trusted channel.
 
 On the installation host, as the operational user:
 
