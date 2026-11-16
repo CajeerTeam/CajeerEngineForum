@@ -109,6 +109,10 @@ final class ReleaseArtifactVerifier
             $required=array_merge($required,['core/Backup/AutomatedBackup.php','core/Backup/BackupPolicy.php','core/Backup/OffsiteBackup.php','docs/automated-backup.md']);
             if ($mode==='source') $required=array_merge($required,['tools/backup-automation-regression.php','deploy/backup-policy.example.json','deploy/cajeerengine-backup.service','deploy/cajeerengine-backup.timer','deploy/container/backup.compose.yaml','deploy/container/backup.sh','deploy/container/backup.py','deploy/container/cajeerengine-container-backup.service','deploy/container/cajeerengine-container-backup.timer']);
         }
+        if (($manifest['edition']??null)==='forum' && version_compare($version,'0.8.5','>=')) {
+            $required=array_merge($required,['core/Backup/ColdRecovery.php','tools/recovery-probe.php','docs/disaster-recovery.md']);
+            if ($mode==='source') $required=array_merge($required,['tools/cold-recovery-regression.php','tools/forum-tests/cold_recovery_acceptance.py']);
+        }
         foreach ($required as $file) if (!in_array($file, $files, true)) throw new \RuntimeException('Required ZIP entry missing: ' . $file);
         foreach (['pgsql', 'mysql', 'sqlite'] as $driver) {
             if (!array_filter($files, static fn ($file) => str_starts_with($file, 'migrations/' . $driver . '/') && str_ends_with($file, '.sql'))) throw new \RuntimeException('Missing migrations: ' . $driver);

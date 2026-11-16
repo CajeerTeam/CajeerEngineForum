@@ -13,7 +13,7 @@ use CajeerEngine\Update\UpdateManager;
 /** Operational CLI remains available without Composer; never execute through HTTP. */
 final class OperationsCli
 {
-    public const COMMANDS=['backup:create','backup:automation:run','backup:automation:status','stable:backup','backup:list','backup:verify','backup:restore','backup:keygen','backup:export','backup:import','backup:drill','release:keygen','release:sign','update:verify-signature','update:apply','update:rollback','update:stage','update:requests','update:run','update:status','update:history','maintenance:on','maintenance:off','maintenance:status','import:execute','import:requests'];
+    public const COMMANDS=['backup:create','backup:automation:run','backup:automation:status','stable:backup','backup:list','backup:verify','backup:restore','backup:keygen','backup:export','backup:import','backup:drill','backup:recover','backup:fetch','release:keygen','release:sign','update:verify-signature','update:apply','update:rollback','update:stage','update:requests','update:run','update:status','update:history','maintenance:on','maintenance:off','maintenance:status','import:execute','import:requests'];
     public static function handles(array $argv): bool { return in_array($argv[1]??'',self::COMMANDS,true)||(($argv[1]??'')==='update'&&in_array('--apply',$argv,true)); }
     public static function run(string $root,array $argv): int
     {
@@ -21,7 +21,13 @@ final class OperationsCli
             $c=$argv[1]??''; $o=self::options($argv);
             if (is_file($root.'/storage/app/extensions/deployment.json') && in_array($c,['backup:create','backup:automation:run','stable:backup','backup:restore','update:apply','update','update:rollback','update:run','import:execute','maintenance:off'],true)) throw new \RuntimeException('Recover extension deployment first');
             $required=static fn($name)=>isset($o[$name])&&is_string($o[$name])&&$o[$name]!==''?$o[$name]:throw new \RuntimeException('Provide --'.$name.'=...');
-            if ($c==='release:keygen') $result=ReleaseSignature::generate(self::externalKey($root,$required('secret-key')),self::externalKey($root,$required('public-key')));
+            if ($c==='backup:recover') {
+                if (!isset($o['yes'])) throw new \RuntimeException('Recovery creates a new installation and database; pass --yes');
+                $result=(new \CajeerEngine\Backup\ColdRecovery($root))->run($required('file'),$required('key'),$required('target'),$required('profile'),self::seconds($o,'rto-seconds'),self::seconds($o,'rpo-seconds'));
+            } elseif ($c==='backup:fetch') {
+                $policy=\CajeerEngine\Backup\BackupPolicy::load($root,$required('policy'));
+                $result=(new \CajeerEngine\Backup\OffsiteBackup($root,$policy,true))->fetch($required('id'),$required('sha256'),$required('file'));
+            } elseif ($c==='release:keygen') $result=ReleaseSignature::generate(self::externalKey($root,$required('secret-key')),self::externalKey($root,$required('public-key')));
             elseif ($c==='release:sign') {
                 $package=realpath($required('package'))?:throw new \RuntimeException('Package not found');
                 $zip=new \PharData($package); $manifest=json_decode($zip['cajeerengine/release-manifest.json']->getContent(),true,512,JSON_THROW_ON_ERROR);
@@ -60,7 +66,7 @@ final class OperationsCli
                 };
             }
             echo json_encode($result,JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR)."\n";
-            return ($result['ok']??false)?0:1;
+            return ($result['ok']??false)?(($result['rto_met']??true)?0:2):1;
         } catch (\Throwable $e) { fwrite(STDERR,'[FAIL] '.$e->getMessage()."\n"); return 1; }
     }
     private static function seconds(array $options,string $name): int

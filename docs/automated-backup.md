@@ -101,3 +101,5 @@ Import verifies transport authentication, manifest MAC and the database/files; r
 ## Certification
 
 Run `php tools/backup-automation-regression.php` (physical SQLite recovery, retries and retention); CI also runs the same engine with native PDO and a real PostgreSQL Compose install, plus TLS S3 multipart upload/readback/delete against a disposable MinIO service. Full production-host and Compose upgrade gates remain required. Local SQLite and filesystem tests do not certify a real PostgreSQL, Docker or remote S3 deployment.
+
+For loss of the entire server, Forum Edition 0.8.5 adds authenticated `backup:fetch` and `backup:recover` into a fresh installation; see [new-host disaster recovery](disaster-recovery.md). Keep the original backup key and trusted recovery dist separately from the backup destination.

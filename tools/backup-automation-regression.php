@@ -37,6 +37,9 @@ PY,$db,$source.'/migrations/sqlite']);
         $records=F::read($catalog)['records'];$old=$records[$first['latest_local_id']];check($old['state']==='retired'&&!is_dir($manager->directory($first['latest_local_id'])),'S3 exact object retirement and local cleanup');
         $dest=new OffsiteBackup($root,$p);reject(fn()=>$dest->verify($first['latest_local_id'],$old['sha256'],$old['bytes']),'S3 retired object not readable');
         $r=$records[$third['latest_local_id']];$dest->verify($third['latest_local_id'],$r['sha256'],$r['bytes']);check(true,'S3 latest object protected and readable');
+        $download=$work.'/download.cebackup'; $fetched=(new OffsiteBackup($root,$p,true))->fetch($third['latest_local_id'],$r['sha256'],$download);
+        check($fetched['bytes']===$r['bytes']&&F::hash($download)===$r['sha256'],'S3 recovery download verifies encrypted object bytes');
+        reject(fn()=>(new OffsiteBackup($root,$p,true))->fetch($third['latest_local_id'],$r['sha256'],$download),'S3 recovery cannot overwrite local input');
         RecoveryBundle::cleanup($work); exit(0);
     }
     $p=BackupPolicy::parse($policyData);$run=static fn(bool $force=false)=>(new AutomatedBackup($root,$config,$p))->run($force);

@@ -67,6 +67,7 @@ jobs:
       - run: php tools/forum-extension-regression.php --database
       - run: php tools/forum-ecosystem-regression.php --database
       - run: php tools/backup-automation-regression.php
+      - run: php tools/cold-recovery-regression.php
       - run: php tools/extension-regression.php
       - run: php tools/forum-regression.php
       - run: php tools/forum-identity-regression.php
@@ -323,7 +324,7 @@ jobs:
       DB_PORT: '5432'
       DB_USERNAME: forum_ci
       DB_PASSWORD: 'ForumCI-Disposable-123!'
-      FORUM_BASELINE_REF: ${{ vars.FORUM_BASELINE_REF || 'v0.8.3' }}
+      FORUM_BASELINE_REF: ${{ vars.FORUM_BASELINE_REF || 'v0.8.4' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -339,7 +340,8 @@ jobs:
       - name: Prepare disposable PostgreSQL and matching backup clients
         if: matrix.driver == 'pgsql'
         run: |
-          php -r '$p=new PDO("pgsql:host=127.0.0.1;port=5432;dbname=postgres",getenv("DB_USERNAME"),getenv("DB_PASSWORD")); foreach (["forum_test_release_clean","forum_test_release_upgrade"] as $db) $p->exec("CREATE DATABASE ".$db);'
+          php -r '$p=new PDO("pgsql:host=127.0.0.1;port=5432;dbname=postgres",getenv("DB_USERNAME"),getenv("DB_PASSWORD")); foreach (["forum_test_release_clean","forum_test_release_upgrade","forum_test_release_dr"] as $db) $p->exec("CREATE DATABASE ".$db);'
+          php -r '$p=new PDO("pgsql:host=127.0.0.1;port=5432;dbname=postgres",getenv("DB_USERNAME"),getenv("DB_PASSWORD")); $p->exec("CREATE ROLE forum_dr_target LOGIN CREATEDB NOSUPERUSER NOCREATEROLE PASSWORD ".$p->quote("ForumDR-Disposable-123!"));'
           mkdir -p "$RUNNER_TEMP/pg-client"
           cat > "$RUNNER_TEMP/pg-client/pg_dump" <<'SH'
           #!/usr/bin/env bash
@@ -349,38 +351,44 @@ jobs:
           chmod +x "$RUNNER_TEMP/pg-client/pg_dump"
           ln -s pg_dump "$RUNNER_TEMP/pg-client/pg_restore"
           ln -s pg_dump "$RUNNER_TEMP/pg-client/psql"
+          ln -s pg_dump "$RUNNER_TEMP/pg-client/createdb"
           echo "$RUNNER_TEMP/pg-client" >> "$GITHUB_PATH"
-      - name: Build and verify physical 0.8.4 artifacts
+      - name: Build and verify physical 0.8.5 artifacts
         run: |
           composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader
           mkdir -p storage/tmp/forum-ci/release
           php tools/build-release.php --all --target-dir="$RUNNER_TEMP/forum-current" --json > storage/tmp/forum-ci/release/build.json
-          php bin/cajeer release:verify --dist --strict --artifact="$RUNNER_TEMP/forum-current/cajeerengine-0.8.4-dist.zip"
-          php bin/cajeer release:verify --strict --artifact="$RUNNER_TEMP/forum-current/cajeerengine-0.8.4-source.zip"
+          php bin/cajeer release:verify --dist --strict --artifact="$RUNNER_TEMP/forum-current/cajeerengine-0.8.5-dist.zip"
+          php bin/cajeer release:verify --strict --artifact="$RUNNER_TEMP/forum-current/cajeerengine-0.8.5-source.zip"
       - name: Build authentic previous baseline from repository history
         run: |
           mkdir -p "$RUNNER_TEMP/forum-previous"
           ref="$FORUM_BASELINE_REF"
           # Prefer the immediately preceding release when its actual tag is available.
-          if [ "$ref" = 'v0.8.3' ]; then
-            for tag in v0.8.3 0.8.3; do
+          if [ "$ref" = 'v0.8.4' ]; then
+            for tag in v0.8.4 0.8.4; do
               if git rev-parse --verify "refs/tags/$tag^{commit}" >/dev/null 2>&1; then ref="refs/tags/$tag"; break; fi
             done
           fi
           git archive "$ref" | tar -x -C "$RUNNER_TEMP/forum-previous"
           cd "$RUNNER_TEMP/forum-previous"
-          baseline=$(php -r '$v=json_decode(file_get_contents("release.json"),true,512,JSON_THROW_ON_ERROR)["edition_version"]; if($v!=="0.8.3") exit(1); echo $v;')
+          baseline=$(php -r '$v=json_decode(file_get_contents("release.json"),true,512,JSON_THROW_ON_ERROR)["edition_version"]; if($v!=="0.8.4") exit(1); echo $v;')
           echo "FORUM_BASELINE_VERSION=$baseline" >> "$GITHUB_ENV"
           composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader
           php tools/build-release.php --dist --target-dir="$RUNNER_TEMP/forum-previous-dist" --json
       - name: Clean install, live HTTP, identity and corrupt-ledger rejection
         env:
           FORUM_TEST_RELEASE_DB: forum_test_release_clean
-        run: python tools/forum-tests/release_acceptance.py --driver ${{ matrix.driver }} --artifact "$RUNNER_TEMP/forum-current/cajeerengine-0.8.4-dist.zip" --report storage/tmp/forum-ci/release/clean
+        run: python tools/forum-tests/release_acceptance.py --driver ${{ matrix.driver }} --artifact "$RUNNER_TEMP/forum-current/cajeerengine-0.8.5-dist.zip" --report storage/tmp/forum-ci/release/clean
       - name: Signed upgrade from authentic baseline, recovery and rollback
         env:
           FORUM_TEST_RELEASE_DB: forum_test_release_upgrade
-        run: python tools/forum-tests/release_acceptance.py --driver ${{ matrix.driver }} --artifact "$RUNNER_TEMP/forum-current/cajeerengine-0.8.4-dist.zip" --previous "$RUNNER_TEMP/forum-previous-dist/cajeerengine-${FORUM_BASELINE_VERSION}-dist.zip" --report storage/tmp/forum-ci/release/upgrade
+        run: python tools/forum-tests/release_acceptance.py --driver ${{ matrix.driver }} --artifact "$RUNNER_TEMP/forum-current/cajeerengine-0.8.5-dist.zip" --previous "$RUNNER_TEMP/forum-previous-dist/cajeerengine-${FORUM_BASELINE_VERSION}-dist.zip" --report storage/tmp/forum-ci/release/upgrade
+      - name: Cold recovery from authentic baseline after loss of source host and database
+        env:
+          FORUM_TEST_RELEASE_DB: forum_test_release_dr
+          FORUM_DR_PASSWORD: ForumDR-Disposable-123!
+        run: python tools/forum-tests/cold_recovery_acceptance.py --driver ${{ matrix.driver }} --artifact "$RUNNER_TEMP/forum-previous-dist/cajeerengine-${FORUM_BASELINE_VERSION}-dist.zip" --report storage/tmp/forum-ci/release/cold-recovery
       - name: Upload release acceptance evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -439,7 +447,7 @@ jobs:
           CE_DB_PASSWORD: ForumDeployDisposable123
         run: |
           export CE_CERT_REPORT="$RUNNER_TEMP/forum-host/production-acceptance.json"
-          sudo --preserve-env=CE_DEPLOY_DISPOSABLE,CE_DB_USER,CE_DB_PASSWORD,CE_CERT_REPORT bash /var/lib/ce-forum-ci-source/deploy/host-smoke.sh "$RUNNER_TEMP/forum-host/cajeerengine-0.8.4-dist.zip"
+          sudo --preserve-env=CE_DEPLOY_DISPOSABLE,CE_DB_USER,CE_DB_PASSWORD,CE_CERT_REPORT bash /var/lib/ce-forum-ci-source/deploy/host-smoke.sh "$RUNNER_TEMP/forum-host/cajeerengine-0.8.5-dist.zip"
       - name: Upload production host evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -470,10 +478,10 @@ jobs:
           composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader
           php tools/build-release.php --dist --target-dir="$RUNNER_TEMP/forum-container-dist" --json
           php bin/cajeer release:keygen --secret-key="$RUNNER_TEMP/forum-container.secret" --public-key="$RUNNER_TEMP/forum-container.pub"
-          artifact="$RUNNER_TEMP/forum-container-dist/cajeerengine-0.8.4-dist.zip"
+          artifact="$RUNNER_TEMP/forum-container-dist/cajeerengine-0.8.5-dist.zip"
           php bin/cajeer release:sign --package="$artifact" --secret-key="$RUNNER_TEMP/forum-container.secret"
           sha=$(sha256sum "$artifact" | cut -d' ' -f1)
-          sh deploy/container/prepare.sh "$artifact" "$RUNNER_TEMP/forum-container.pub" "$sha" 0.8.4
+          sh deploy/container/prepare.sh "$artifact" "$RUNNER_TEMP/forum-container.pub" "$sha" 0.8.5
           umask 077
           secret_dir="$RUNNER_TEMP/forum-container-secrets"
           mkdir -p "$secret_dir"
@@ -482,7 +490,7 @@ jobs:
           openssl rand -base64 32 > "$secret_dir/backup-key"
           openssl req -x509 -newkey rsa:2048 -nodes -days 2 -subj /CN=forum.test -addext subjectAltName=DNS:forum.test -keyout "$secret_dir/tls.key" -out "$secret_dir/tls.crt"
           cat > deploy/container/site.env <<EOF
-          CE_RELEASE_VERSION=0.8.4
+          CE_RELEASE_VERSION=0.8.5
           CE_RELEASE_SHA256=$sha
           CE_DOMAIN=forum.test
           CE_ADMIN_EMAIL=container-admin@example.invalid
@@ -545,7 +553,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 55
     env:
-      FORUM_BASELINE_REF: ${{ vars.FORUM_BASELINE_REF || 'v0.8.3' }}
+      FORUM_BASELINE_REF: ${{ vars.FORUM_BASELINE_REF || 'v0.8.4' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -561,19 +569,19 @@ jobs:
           root="$PWD"; old="$RUNNER_TEMP/forum-container-old"
           mkdir -p "$old"
           ref="$FORUM_BASELINE_REF"
-          if [ "$ref" = v0.8.3 ]; then
-            for tag in v0.8.3 0.8.3; do
+          if [ "$ref" = v0.8.4 ]; then
+            for tag in v0.8.4 0.8.4; do
               if git rev-parse --verify "refs/tags/$tag^{commit}" >/dev/null 2>&1; then ref="refs/tags/$tag"; break; fi
             done
           fi
           git archive "$ref" | tar -x -C "$old"
-          php -r 'exit(json_decode(file_get_contents($argv[1]),true,512,JSON_THROW_ON_ERROR)["edition_version"]==="0.8.3"?0:1);' "$old/release.json"
+          php -r 'exit(json_decode(file_get_contents($argv[1]),true,512,JSON_THROW_ON_ERROR)["edition_version"]==="0.8.4"?0:1);' "$old/release.json"
           composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader
           php tools/build-release.php --dist --target-dir="$RUNNER_TEMP/container-new-dist" --json
           (cd "$old"; composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader; php tools/build-release.php --dist --target-dir="$RUNNER_TEMP/container-old-dist" --json)
           php bin/cajeer release:keygen --secret-key="$RUNNER_TEMP/container-upgrade.secret" --public-key="$RUNNER_TEMP/container-upgrade.pub"
           for v in old new; do
-            if [ "$v" = old ]; then version=0.8.3; tree="$old"; else version=0.8.4; tree="$root"; fi
+            if [ "$v" = old ]; then version=0.8.4; tree="$old"; else version=0.8.5; tree="$root"; fi
             artifact="$RUNNER_TEMP/container-$v-dist/cajeerengine-$version-dist.zip"
             php bin/cajeer release:sign --package="$artifact" --secret-key="$RUNNER_TEMP/container-upgrade.secret"
             sha=$(sha256sum "$artifact" | cut -d' ' -f1)
@@ -608,14 +616,14 @@ jobs:
           op() { python deploy/container/update.py "$@" --project forum-container-upgrade --old-env "$oldenv" --new-env "$newenv" --state-dir "$RUNNER_TEMP/container-upgrade-state" --ca "$secret_dir/tls.crt"; }
           smoke() { python deploy/container/smoke.py --domain forum.test --port 18443 --ca "$secret_dir/tls.crt" --email container-admin@example.invalid --password-file "$secret_dir/admin-password" --state "$RUNNER_TEMP/container-upgrade-smoke.json" "$@"; }
           dc up -d gateway
-          smoke --version 0.8.3
+          smoke --version 0.8.4
           op apply --dry-run
-          smoke --version 0.8.3 --verify-only
-          op apply
           smoke --version 0.8.4 --verify-only
+          op apply
+          smoke --version 0.8.5 --verify-only
           op status
           op rollback --yes
-          smoke --version 0.8.3 --verify-only
+          smoke --version 0.8.4 --verify-only
           op status
       - name: Stop disposable project
         if: always()

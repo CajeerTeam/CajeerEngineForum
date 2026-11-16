@@ -1,3 +1,10 @@
+## Forum Edition 0.8.5 — Disaster Recovery & Restore
+
+- Restore authenticated encrypted off-site bundles into a fresh SQLite path or newly allocated PostgreSQL 17+ database, without connecting to or replacing the source database.
+- Durable private recovery workspace, digest-bound retry, maintenance-locked atomic publication, application boot/SSR/API/ACL/search probes and measured RPO/RTO receipt.
+- Read-only content-addressed off-site retrieval for filesystem and S3. Physical SQLite loss/recovery regression and native SQLite/PostgreSQL new-host acceptance.
+- No SQL migration; Engine 1.3.0 unchanged. External queues/storage and PITR remain separate operator procedures.
+
 ## Forum Edition 0.8.4 — Automated Backup & Retention
 
 - Schedule verified recovery sets with durable checkpoints, bounded activity drain, capacity checks and safe retries; never prune manual/updater backups.

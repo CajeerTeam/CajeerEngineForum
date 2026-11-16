@@ -86,14 +86,14 @@ final class BackupManager
     {
         return $this->verifyDirectory($id,$this->directory($id));
     }
-    private function verifyDirectory(string $id,string $dir): array
+    private function verifyDirectory(string $id,string $dir,bool $portable=false): array
     {
         F::hash($dir.'/manifest.json'); F::hash($dir.'/manifest.mac'); $key=$this->secretKey();
         try { $mac=hash_hmac('sha256',(string)file_get_contents($dir.'/manifest.json'),$key); if (!is_file($dir.'/manifest.mac')||!hash_equals($mac,trim((string)file_get_contents($dir.'/manifest.mac')))) throw new \RuntimeException('Backup manifest authentication failed'); } finally { sodium_memzero($key); }
         $m=F::read($dir.'/manifest.json');
         if (($m['format']??null)!=='cajeerengine.backup.v2'||($m['id']??null)!==$id||!is_array($m['files']??null)||is_file($dir.'/incomplete.json')) throw new \RuntimeException('Incomplete or invalid recovery set');
         if (isset($m['automation'])&&(!is_string($m['automation'])||!preg_match('/^[a-f0-9]{64}$/D',$m['automation']))) throw new \RuntimeException('Invalid authenticated automation identity');
-        if (($m['database']??null)!==$this->db->identity()||!hash_equals((string)($m['database_sha256']??''),F::hash($dir.'/database.dump'))) throw new \RuntimeException('Database backup identity/checksum mismatch');
+        if ((!$portable && ($m['database']??null)!==$this->db->identity())||($portable && ($m['database']['driver']??null)!==$this->db->identity()['driver'])||!hash_equals((string)($m['database_sha256']??''),F::hash($dir.'/database.dump'))) throw new \RuntimeException('Database backup identity/checksum mismatch');
         $this->db->verify($dir.'/database.dump');
         foreach ($m['files'] as $relative=>$info) {
             if (!$this->dataAllowed($relative)&&!$this->codeAllowed($relative)) throw new \RuntimeException('Forbidden backup path');
@@ -106,6 +106,15 @@ final class BackupManager
         if ($actual!==$expected) throw new \RuntimeException('Unexpected backup files');
         if (($m['env']??null)!==null) { if (!hash_equals((string)$m['env'],F::hash($dir.'/environment.enc'))) throw new \RuntimeException('Encrypted environment checksum mismatch'); $this->decryptEnv($dir); } elseif (file_exists($dir.'/environment.enc')) throw new \RuntimeException('Unexpected encrypted environment');
         return ['ok'=>true,'id'=>$id,'version'=>$m['version'],'files'=>count($m['files']),'manifest_sha256'=>F::hash($dir.'/manifest.json'),'automation'=>$m['automation']??null];
+    }
+    /** Offline recovery only: authenticate the snapshot independently of its old host/name. */
+    public function portableSnapshot(string $directory): array
+    {
+        $m=F::read($directory.'/manifest.json'); $id=(string)($m['id']??'');
+        $this->directory($id);
+        $this->verifyDirectory($id,$directory,true);
+        if (($m['env']??null)===null) throw new \RuntimeException('Recovery requires the original environment');
+        return ['manifest'=>$m,'environment'=>$this->decryptEnv($directory)];
     }
     /** Publish a verified encrypted copy to a separately mounted/off-host directory. */
     public function exportBundle(string $id,string $target): array

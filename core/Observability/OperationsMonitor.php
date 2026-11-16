@@ -55,6 +55,10 @@ final readonly class OperationsMonitor
         $probe('cache',fn()=> $this->cache());
         $probe('search',function()use($db){$this->assertDatabasePresent();$d=(new \CajeerEngine\Search\SearchFactory($this->root,$this->config,$db))->make()->diagnostics();return ['ok'=>(bool)($d['ok']??$d['writable']??true),'documents'=>(int)($d['documents']??0)];});
         $probe('backup',fn()=> $this->backup());
+        if (is_file($this->root.'/storage/app/recovery-receipt.json')) $probe('cold_recovery',function(){
+            $r=\CajeerEngine\Update\OperationFiles::read($this->root.'/storage/app/recovery-receipt.json');
+            return ['ok'=>($r['application_boot_tested']??false)===true&&($r['rto_met']??false)===true&&($r['rpo_met']??false)===true,'application_boot_tested'=>($r['application_boot_tested']??false)===true,'edition_version'=>(string)($r['edition_version']??''),'verified_at'=>(string)($r['verified_at']??''),'restore_seconds'=>(int)($r['restore_seconds']??0),'snapshot_age_seconds'=>(int)($r['snapshot_age_seconds']??0),'rto_met'=>($r['rto_met']??false)===true,'rpo_met'=>($r['rpo_met']??false)===true];
+        });
         if (is_file($this->root.'/storage/logs/observability/backup-automation.json')) $probe('backup_automation',fn()=> \CajeerEngine\Backup\AutomatedBackup::status($this->root));
         if(TraceExporter::enabled())$probe('traces',function()use($db){$store=TaskRunStore::fromConfig($this->root,$this->config,$db);$state=$store->status('observability.export_traces');$pending=count(glob($this->root.'/storage/logs/observability/traces/span-*.json')?:[]);return ['ok'=>$pending<1000&&($state['status']??'never')!=='failed','pending'=>$pending,'status'=>$state['status']??'never'];});
         $probe('update',function(){ $d=(new JsonFile($this->root.'/storage/logs/observability/update.json'))->readObject();return ['ok'=>($d['status']??'never')!=='failure','last_success'=>(int)($d['last_success']??0),'status'=>$d['status']??'never'];});

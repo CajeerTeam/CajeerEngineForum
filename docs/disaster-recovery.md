@@ -42,3 +42,58 @@ If restoration fails, keep maintenance enabled and retry the same backup ID afte
 ## Release validation
 
 `php tools/disaster-recovery-regression.php` exercises real SQLite data, a multi-frame media file, empty files, encrypted environment, incorrect key, modified/truncated/appended bundles, no-overwrite, idempotent import, isolated drill and complete loss of the local installation. `--pgsql` runs on the explicitly disposable `cajeer_backup_test` database. The release workflow also runs `tools/disaster-recovery-dist-smoke.sh` against a Composer-equipped dist: it installs, publishes content via HTTP, exports a backup, destroys the entire installation, imports/restores, checks media and restarts the application to verify public content and admin login. These tests are release gates, not claims about an untested deployment. Run the full cold recovery on each production profile and measure service outage before accepting its RTO/RPO.
+
+## Forum Edition 0.8.5: recover after losing the host
+
+Use a trusted, independently obtained **0.8.5 or later dist with vendor dependencies** as the recovery tool, not PHP files from an unverified backup. Recovery is an operator-only Linux CLI operation. Run it as the intended application account (PHP-FPM/worker UID), under a private directory owned by that account. Provision PHP 8.4, the supported PDO driver, sodium, flock, and PostgreSQL 17+ client tools when applicable. Keep the recovery host isolated from public traffic, old infrastructure and outbound mail/webhooks. Trusted installed PHP extensions can execute code during application boot; the recovery process is not a plugin sandbox.
+
+### Retrieve and authenticate a copy
+
+Keep the original 32-byte base64 backup key in a separate secure location; mode 0600. Do not generate a replacement key. Obtain the backup ID and SHA-256 from the verified off-site catalog/object name, and use the original namespace and destination policy. `backup:fetch` does not create, delete or rotate remote objects. It streams the object into a temporary file, verifies SHA-256, then publishes without overwriting an existing file. For S3, configure AWS CLI v2 read credentials and trusted TLS as in [automated backup](automated-backup.md).
+
+```bash
+php /opt/recovery-tool/bin/cajeer backup:fetch \
+  --policy=/secure/backup-policy.json --id=BACKUP_ID \
+  --sha256=EXPECTED_SHA256 --file=/secure/recovery.cebackup --json
+```
+
+Use an existing private writable directory for the output. A matching digest is not a substitute for the bundle's encryption authentication and manifest MAC; those are verified during recovery.
+
+### Destination profile and recovery
+
+Create a new private parent directory, for example `/srv/recovered`, owned by the intended application account. Do not pre-create the `forum` child. Create `/secure/recovery-profile.json` (0600) with an explicit destination origin and, for PostgreSQL, destination credentials:
+
+```json
+{
+  "APP_URL": "https://forum.example.com",
+  "DB_HOST": "127.0.0.1",
+  "DB_PORT": "5432",
+  "DB_USERNAME": "forum_recovery",
+  "DB_PASSWORD": "REPLACE_WITH_DESTINATION_SECRET",
+  "DB_SSLMODE": "disable",
+  "EXTENSIONS_TRUST_DIR": "/secure/extension-trust",
+  "UPDATE_TRUSTED_PUBLIC_KEY_FILE": "/secure/release.pub"
+}
+```
+
+Provision the non-superuser destination role with CREATEDB (temporary for recovery) and sufficient space. Remote PostgreSQL requires `verify-full`, a matching DNS certificate and trusted libpq CA. For SQLite omit all DB fields; a new `storage/database/cajeer.sqlite` is created. Provision original extension publisher keys if the source used an external trust directory. No source DB credentials or paths are used for restore. PostgreSQL always creates a new random `ce_dr_...` database; it never uses `pg_restore --create` or drops a pre-existing database. The database must be accessible to the recovered application after publication.
+
+```bash
+php /opt/recovery-tool/bin/cajeer backup:recover \
+  --file=/secure/recovery.cebackup --key=/secure/backup.key \
+  --target=/srv/recovered/forum --profile=/secure/recovery-profile.json \
+  --rto-seconds=3600 --rpo-seconds=86400 --yes --json
+```
+
+The tool authenticates the bundle, verifies each file and database dump, preserves the snapshot's original Forum Edition and encryption secrets, relocates DB/runtime configuration, restores the database, and boots the recovered application in a private unpublished directory. It verifies migration ledger, forum integrity, FTS, theme, extensions, SSR, public API, guest ACP denial and maintenance. No HTTP listener or worker is started. A successful result atomically publishes the directory **still in maintenance**. It writes `storage/app/recovery-receipt.json` with probe results, snapshot age and elapsed recovery time. The RPO limit rejects an old snapshot before DB creation; an RTO miss yields exit code 2 with a published but closed installation. These measurements do not include DNS/TLS provisioning, external backup download or subsequent production traffic activation.
+
+### Resume, validate and activate
+
+Repeat the exact command after interruption (same bundle, key, profile and budgets). The sibling `.forum.recovery` directory contains the durable journal and private diagnostic logs. It is not served over HTTP. Failed attempts can leave newly allocated PostgreSQL databases; names are recorded in the journal/receipt. Verify ownership and identity before manually removing them. Existing unrelated installations are never replaced. A completed operation returns the same receipt; changing inputs requires a new destination/workspace.
+
+1. Inspect the receipt, protected logs and recovered configuration. Confirm the source backup's version; recovery is **not an upgrade**. Use a signed update only after recovery if a newer version is required.
+2. Configure a new Nginx/PHP-FPM host for the recovered document root `public/`, grant only necessary directory traversal permissions to the gateway, install the intended worker/scheduler units but keep them stopped. Maintain an external traffic gate. Restore independent TLS keys and infrastructure credentials separately.
+3. Validate `migrate:status`, `install:check`, `forum:ecosystem:check --deep`, and `forum:search:check`. In a private network, run `maintenance:off` and verify login, ACL, attachments, ACP, theme, plugins, search and a write/read round trip. Re-enable maintenance if any check fails.
+4. Review queued historical jobs and external side effects before enabling workers. The tool disables external cache, SMTP settings, S3 replicas, webhook dispatch and telemetry endpoints in the recovered configuration. Reconfigure necessary services deliberately; verify fresh backup automation and off-site namespace ownership. Only then enable workers, scheduler and public traffic.
+
+The new-host path supports SQLite and PostgreSQL with local authoritative storage and file/database queues. MySQL retains existing same-installation restore; Redis queue and external authoritative S3 recovery, PostgreSQL WAL/PITR, Docker volume adoption and automatic DNS/TLS provisioning are not implemented by this command. A container snapshot can be recovered to a standalone host under these constraints, but cannot simply be placed in an existing Compose project's volumes. Preserve the original trust material, backup key and deployment configuration outside the lost host. Test the full procedure periodically on an isolated destination.

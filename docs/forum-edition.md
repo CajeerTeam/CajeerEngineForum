@@ -642,3 +642,7 @@ See [secure updates](secure-updates.md) for signed channel/identity checks, read
 ## Automated Backup & Retention (0.8.4)
 
 Use [automated backup](automated-backup.md) for scheduled authenticated recovery sets, encrypted file/S3 off-site transfer, durable retry and UTC retention. Systemd and a separate signed-image Compose operator support PostgreSQL queue/local authoritative storage. The Operations screen and metrics expose actual backup history and delivery health. Manual and updater recovery sets never participate in automated rotation. No new schema; external queue/storage recovery and full off-host application boot remain separately gated.
+
+### 0.8.5 — Disaster Recovery & Restore
+
+The operator can recover an authenticated 0.8.4+ recovery bundle to a new installation and new PostgreSQL database or SQLite file. See [disaster recovery](disaster-recovery.md). The recovered site remains in maintenance until deployment and acceptance are complete.

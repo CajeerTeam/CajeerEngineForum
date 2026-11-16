@@ -9,14 +9,14 @@ final class OffsiteBackup
 {
     private array $dest;
     private ?string $directory=null;
-    public function __construct(private readonly string $root,private readonly BackupPolicy $policy)
+    public function __construct(private readonly string $root,private readonly BackupPolicy $policy,bool $readOnly=false)
     {
         $this->dest=$policy->data['destination'];
         if ($this->dest['type']==='file') {
             $p=$this->dest['directory'];$real=realpath($p);$base=realpath($root);
             if ($real!==$p||$base===false||$real===$base||str_starts_with($real,$base.'/')||!is_dir($real)||(fileperms($real)&0077)!==0) throw new \RuntimeException('Off-site directory must exist outside the installation, be canonical and private (0700)');
             if ($policy->data['require_separate_device']&&stat($real)['dev']===stat($root.'/storage')['dev']) throw new \RuntimeException('Off-site mount is not on a separate device');
-            $this->directory=$real.'/'.$policy->data['namespace']; F::dir($this->directory); if ((fileperms($this->directory)&0077)!==0) throw new \RuntimeException('Off-site namespace must be private');
+            $this->directory=$real.'/'.$policy->data['namespace']; if ($readOnly) { if (!is_dir($this->directory)||is_link($this->directory)) throw new \RuntimeException('Off-site namespace is missing'); } else F::dir($this->directory); if ((fileperms($this->directory)&0077)!==0) throw new \RuntimeException('Off-site namespace must be private');
         }
     }
     private function name(string $id,string $sha): string
@@ -57,6 +57,29 @@ final class OffsiteBackup
             [$actual,$size]=$this->aws(['s3','cp',$target,'-','--only-show-errors','--no-progress'],$bytes);
             if ($size!==$bytes||!hash_equals($sha,$actual)) throw new \RuntimeException('S3 readback checksum mismatch');
         }
+    }
+    /** Fetch an exact content-addressed bundle onto a new host; never overwrite an existing file. */
+    public function fetch(string $id,string $sha,string $destination): array
+    {
+        $source=$this->location($id,$sha); $parent=dirname($destination);
+        if (!str_starts_with($destination,'/')||realpath($parent)!==$parent||!preg_match('/^[A-Za-z0-9_.-]+$/D',basename($destination))||!is_dir($parent)||(fileperms($parent)&0077)!==0||fileowner($parent)!==posix_geteuid()||file_exists($destination)||is_link($destination)) throw new \RuntimeException('Use a new file in a private canonical destination directory');
+        if ($destination===$this->root||str_starts_with($destination,$this->root.'/')) throw new \RuntimeException('Recovery bundle must remain outside application root');
+        $tmp=$parent.'/.fetch-'.bin2hex(random_bytes(16));
+        try {
+            if ($this->directory!==null) F::copy($source,$tmp);
+            else {
+                // AWS writes only into the operator-owned private directory. Verify bytes before publishing.
+                $this->aws(['s3','cp',$source,$tmp,'--only-show-errors','--no-progress']);
+                if (!is_file($tmp)||is_link($tmp)||!chmod($tmp,0600)) throw new \RuntimeException('Cannot protect downloaded bundle');
+                $h=fopen($tmp,'r+b'); if ($h===false) throw new \RuntimeException('Cannot sync downloaded bundle');
+                try { if (!fsync($h)) throw new \RuntimeException('Cannot sync downloaded bundle'); } finally { fclose($h); }
+            }
+            if (!hash_equals($sha,F::hash($tmp))) throw new \RuntimeException('Off-site recovery checksum mismatch');
+            $bytes=filesize($tmp);
+            if (!link($tmp,$destination)) throw new \RuntimeException('Cannot publish downloaded bundle without overwrite');
+            F::syncDir($parent);
+            return ['ok'=>true,'id'=>$id,'bundle_sha256'=>$sha,'bytes'=>$bytes,'file'=>$destination];
+        } finally { F::remove($tmp); }
     }
     public function delete(string $id,string $sha): void
     {

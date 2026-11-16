@@ -104,6 +104,28 @@ final class DatabaseBackup
             self::run(['pg_restore','--exit-on-error','--clean','--if-exists','--create','--no-password','--dbname=postgres',$file],$this->pgEnv());
         } else $this->mysql(['mysql','--binary-mode'],null,$file);
     }
+    /** Restore only to a newly allocated destination. Never clean/drop an existing database. */
+    public function restoreFresh(string $file): void
+    {
+        $this->verify($file);
+        if ($this->driver==='sqlite') {
+            $path=$this->sqlitePath();
+            foreach (['','-wal','-shm','-journal'] as $suffix) if (file_exists($path.$suffix)||is_link($path.$suffix)) throw new \RuntimeException('Fresh SQLite destination already exists');
+            F::copy($file,$path,0600);
+            $this->verify($path);
+            return;
+        }
+        if ($this->driver!=='pgsql'||!preg_match('/^ce_dr_[a-f0-9]{24}$/D',$this->name())) throw new \RuntimeException('Fresh restore requires a generated PostgreSQL database');
+        // Do not allow backup credential overrides to redirect a new-host restore.
+        $env=['PGHOST'=>(string)$this->connection['host'],'PGPORT'=>(string)$this->connection['port'],'PGUSER'=>(string)$this->connection['username'],'PGPASSWORD'=>(string)$this->connection['password'],'PGSSLMODE'=>(string)$this->connection['sslmode'],'PGCONNECT_TIMEOUT'=>'10','PATH'=>getenv('PATH')?:'/usr/bin:/bin','HOME'=>getenv('HOME')?:'/nonexistent'];
+        $probe=tempnam(sys_get_temp_dir(),'ce-dr-role-'); if ($probe===false) throw new \RuntimeException('Cannot create database probe');
+        try {
+            self::run(['psql','--no-password','--no-psqlrc','--tuples-only','--no-align','--dbname=postgres',"--command=SELECT CASE WHEN rolcreatedb AND NOT rolsuper AND current_setting('server_version_num')::int >= 170000 THEN 'ok' ELSE 'denied' END FROM pg_roles WHERE rolname=current_user"],$env,$probe,null,false);
+            if (trim((string)file_get_contents($probe))!=='ok') throw new \RuntimeException('Fresh recovery requires PostgreSQL 17+ and non-superuser CREATEDB role');
+        } finally { F::remove($probe); }
+        self::run(['createdb','--no-password','--maintenance-db=postgres','--template=template0',$this->name()],$env,null,null,false);
+        self::run(['pg_restore','--exit-on-error','--single-transaction','--no-owner','--no-privileges','--no-tablespaces','--no-password','--dbname='.$this->name(),$file],$env,null,null,false);
+    }
     /** Restore the dump without touching the configured database. No application code is executed. */
     public function drill(string $file,string $workspace): array
     {
@@ -211,13 +233,13 @@ PYTHON;
         try { array_splice($args,1,0,['--defaults-file='.$file]); self::run($args,[],$out,$in); }
         finally { F::remove($file); }
     }
-    public static function run(array $args, array $environment=[], ?string $output=null, ?string $input=null): void
+    public static function run(array $args, array $environment=[], ?string $output=null, ?string $input=null,bool $inherit=true): void
     {
         if (!function_exists('proc_open')) throw new \RuntimeException('proc_open required');
         if (self::$processLock!==null) $args=array_merge(['flock','--exclusive','--nonblock',self::$processLock],$args);
         $err=tmpfile(); if ($err===false) throw new \RuntimeException('Cannot create process log');
         $stdout=$output!==null?['file',$output,'wb']:['file','/dev/null','w'];
-        $proc=proc_open($args,[0=>['file',$input??'/dev/null','rb'],1=>$stdout,2=>$err],$pipes,null,array_merge(getenv(),$environment),['bypass_shell'=>true]);
+        $proc=proc_open($args,[0=>['file',$input??'/dev/null','rb'],1=>$stdout,2=>$err],$pipes,null,($inherit?array_merge(getenv(),$environment):$environment),['bypass_shell'=>true]);
         if (!is_resource($proc)) { fclose($err); throw new \RuntimeException('Cannot start database/validation command'); }
         $exit=proc_close($proc); rewind($err); $detail=trim((string)stream_get_contents($err,4096)); fclose($err);
         if ($exit!==0) throw new \RuntimeException(basename((string)$args[0]).' failed (exit '.$exit.'): '.$detail);
