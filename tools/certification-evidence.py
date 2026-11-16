@@ -55,7 +55,7 @@ def verify(directory, version, commit):
 
 def main():
     p=argparse.ArgumentParser(description=__doc__); p.add_argument('action',choices=('seal','verify')); p.add_argument('directory',type=Path)
-    args=p.parse_args(); version=(ROOT/'VERSION').read_text().strip()
+    args=p.parse_args(); version=read(ROOT/'release.json')['edition_version']
     commit=subprocess.check_output(['git','-C',str(ROOT),'rev-parse','HEAD'],text=True).strip()
     check(re.fullmatch('[0-9a-f]{40}',commit) is not None,'Invalid checkout commit')
     (seal if args.action=='seal' else verify)(args.directory,version,commit)

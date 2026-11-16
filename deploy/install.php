@@ -49,7 +49,27 @@ function deploymentInstallDiagnostic(string $phase, Throwable $e): string
     return 'Installation failed: phase='.$phase.' type='.$e::class.' at='.basename($e->getFile()).':'.$e->getLine().$detail.PHP_EOL;
 }
 
-function deploymentInstall(): int
+function deploymentDatabasePreflight(array $options, string &$phase): void
+{
+    // Require a dedicated empty database. Never seed an existing production database.
+    $phase='database-connect';
+    $pdo=new PDO('pgsql:host='.$options['db_host'].';port='.$options['db_port'].';dbname='.$options['db_name'].';connect_timeout=5;sslmode='.$options['db_sslmode'],$options['db_user'],$options['db_password'],[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION]);
+    $phase='database-empty';
+    if ((int)$pdo->query("SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname NOT IN ('pg_catalog','information_schema') AND n.nspname NOT LIKE 'pg_%' AND c.relkind IN ('r','p','v','m','f','S')")->fetchColumn()!==0) throw new DeploymentInstallFailure('Database not empty');
+    $phase='database-version';
+    $serverVersion=(int)$pdo->query('SHOW server_version_num')->fetchColumn();
+    if ($serverVersion<170000) throw new DeploymentInstallFailure('PostgreSQL 17+ required');
+    $phase='database-client-version';
+    deploymentCheckClients($options['db_host'],$options['db_port'],intdiv($serverVersion,10000));
+    $phase='database-role';
+    if ($pdo->query("SELECT CASE WHEN r.rolcreatedb AND d.datdba=r.oid AND NOT r.rolsuper THEN 1 ELSE 0 END FROM pg_roles r JOIN pg_database d ON d.datname=current_database() WHERE r.rolname=current_user")->fetchColumn()!=1) throw new DeploymentInstallFailure('Dedicated non-superuser database owner with CREATEDB required');
+    $pdo=null;
+    $phase='database-maintenance';
+    $maintenance=new PDO('pgsql:host='.$options['db_host'].';port='.$options['db_port'].';dbname=postgres;connect_timeout=5;sslmode='.$options['db_sslmode'],$options['db_user'],$options['db_password'],[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION]);
+    $maintenance->query('SELECT 1'); $maintenance=null;
+}
+
+function deploymentInstall(bool $preflight=false): int
 {
     $phase='options';
     try {
@@ -61,28 +81,25 @@ function deploymentInstall(): int
         if (!is_array($options) || ($options['db']??null)!=='pgsql' || !preg_match('/^[A-Za-z0-9_-]{24,128}$/D',(string)($options['db_password']??''))) throw new DeploymentInstallFailure('Invalid deployment options');
         foreach (['db_host','db_name','db_user'] as $field) if (!preg_match('/^[A-Za-z0-9_.-]+$/D',(string)($options[$field]??''))) throw new DeploymentInstallFailure('Invalid database option');
         if (!is_int($options['db_port']??null) || $options['db_port']<1 || $options['db_port']>65535 || !in_array($options['db_sslmode']??null,['require','verify-ca','verify-full','disable'],true)) throw new DeploymentInstallFailure('Invalid database port or TLS mode');
+        if ($options['db_sslmode']==='disable' && $options['db_host']!=='127.0.0.1') throw new DeploymentInstallFailure('Unencrypted remote DB prohibited');
+        if (in_array($options['db_name'],['postgres','template0','template1'],true)) throw new DeploymentInstallFailure('Dedicated database required');
+        $admin=$options['admin_password']??null;
+        if (!is_string($admin) || !mb_check_encoding($admin,'UTF-8') || mb_strlen($admin)<12 || !preg_match('/[a-zа-яё]/iu',$admin) || !preg_match('/[A-ZА-ЯЁ]/u',$admin) || !preg_match('/\d/u',$admin)) throw new DeploymentInstallFailure('Admin password does not satisfy the default password policy');
+        if (!filter_var($options['admin_email']??null,FILTER_VALIDATE_EMAIL)) throw new DeploymentInstallFailure('Invalid administrator email');
+        if ($preflight) {
+            deploymentDatabasePreflight($options,$phase);
+            echo "Database preflight passed\n";
+            return 0;
+        }
         $phase='autoload';
         require $root.'/vendor/autoload.php';
+        $phase='forum-identity';
+        (new \CajeerEngine\Forum\ForumVersion($root))->current();
         $phase='fresh-install';
         if (is_file($root.'/.env') || is_file($root.'/storage/app/installed.lock')) throw new DeploymentInstallFailure('Installation already exists');
-        // Require a dedicated empty database. Never seed an existing production database.
-        $phase='database-connect';
-        $pdo=new PDO('pgsql:host='.$options['db_host'].';port='.$options['db_port'].';dbname='.$options['db_name'].';connect_timeout=5;sslmode='.$options['db_sslmode'],$options['db_user'],$options['db_password'],[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION]);
-        $phase='database-empty';
-        if ((int)$pdo->query("SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname NOT IN ('pg_catalog','information_schema') AND n.nspname NOT LIKE 'pg_%' AND c.relkind IN ('r','p','v','m','f','S')")->fetchColumn()!==0) throw new DeploymentInstallFailure('Database not empty');
-        $phase='database-version';
-        $serverVersion=(int)$pdo->query('SHOW server_version_num')->fetchColumn();
-        if ($serverVersion<170000) throw new DeploymentInstallFailure('PostgreSQL 17+ required');
-        $phase='database-client-version';
-        deploymentCheckClients($options['db_host'],$options['db_port'],intdiv($serverVersion,10000));
-        $phase='database-role';
-        if ($pdo->query("SELECT CASE WHEN r.rolcreatedb AND d.datdba=r.oid AND NOT r.rolsuper THEN 1 ELSE 0 END FROM pg_roles r JOIN pg_database d ON d.datname=current_database() WHERE r.rolname=current_user")->fetchColumn()!=1) throw new DeploymentInstallFailure('Dedicated non-superuser database owner with CREATEDB required');
-        $pdo=null;
-        $phase='database-maintenance';
-        $maintenance=new PDO('pgsql:host='.$options['db_host'].';port='.$options['db_port'].';dbname=postgres;connect_timeout=5;sslmode='.$options['db_sslmode'],$options['db_user'],$options['db_password'],[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION]);
-        $maintenance->query('SELECT 1'); $maintenance=null;
+        deploymentDatabasePreflight($options,$phase);
         $phase='application-install';
-        $result=(new InstallerService($root))->install($options+['production'=>true,'cache_driver'=>'file','queue_driver'=>'pgsql','search_driver'=>'pgsql','source'=>'production-deploy']);
+        $result=(new InstallerService($root))->install($options+['production'=>true,'app_name'=>'CajeerEngine Forum','category_name'=>'Обсуждения','board_name'=>'Общий форум','registration'=>false,'cache_driver'=>'file','queue_driver'=>'pgsql','search_driver'=>'pgsql','source'=>'production-deploy']);
         if (!($result['ok']??false) || !($result['final']['ok']??false) || !is_file($root.'/storage/app/installed.lock')) throw new DeploymentInstallFailure('Installation checks failed');
         $phase='runtime-configuration';
         (new EnvironmentFile($root.'/.env'))->setMany([
@@ -102,4 +119,4 @@ function deploymentInstall(): int
     }
 }
 
-if (PHP_SAPI==='cli' && realpath($_SERVER['SCRIPT_FILENAME']??'')===__FILE__) exit(deploymentInstall());
+if (PHP_SAPI==='cli' && realpath($_SERVER['SCRIPT_FILENAME']??'')===__FILE__) exit(deploymentInstall(($argv[1]??'')==='--preflight'));

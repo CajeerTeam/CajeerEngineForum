@@ -30,7 +30,7 @@ node admin/scripts/publish-admin-assets.mjs --check
 php bin/cajeer admin:assets --check
 php bin/cajeer release:verify --dist --strict
 php tools/build-release.php --all --target-dir="$out" --json > "$out/build-report.json"
-version=$(cat VERSION)
+version=$(php -r '$r=json_decode(file_get_contents("release.json"),true,512,JSON_THROW_ON_ERROR); if (($r["edition"]??null)!=="forum" || ($r["upstream_version"]??null)!==trim(file_get_contents("VERSION"))) exit(1); echo $r["edition_version"];')
 for mode in source dist; do
   php bin/cajeer release:verify --"$mode" --strict --artifact="$out/cajeerengine-$version-$mode.zip" --json
   if [[ -n ${RELEASE_SIGNING_KEY_FILE:-} ]]; then

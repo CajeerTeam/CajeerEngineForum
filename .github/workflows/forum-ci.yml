@@ -317,7 +317,7 @@ jobs:
       DB_PORT: '5432'
       DB_USERNAME: forum_ci
       DB_PASSWORD: 'ForumCI-Disposable-123!'
-      FORUM_BASELINE_REF: ${{ vars.FORUM_BASELINE_REF || 'v0.7.7' }}
+      FORUM_BASELINE_REF: ${{ vars.FORUM_BASELINE_REF || 'v0.8.0' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -344,37 +344,37 @@ jobs:
           ln -s pg_dump "$RUNNER_TEMP/pg-client/pg_restore"
           ln -s pg_dump "$RUNNER_TEMP/pg-client/psql"
           echo "$RUNNER_TEMP/pg-client" >> "$GITHUB_PATH"
-      - name: Build and verify physical 0.8.0 artifacts
+      - name: Build and verify physical 0.8.1 artifacts
         run: |
           composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader
           mkdir -p storage/tmp/forum-ci/release
           php tools/build-release.php --all --target-dir="$RUNNER_TEMP/forum-current" --json > storage/tmp/forum-ci/release/build.json
-          php bin/cajeer release:verify --dist --strict --artifact="$RUNNER_TEMP/forum-current/cajeerengine-0.8.0-dist.zip"
-          php bin/cajeer release:verify --strict --artifact="$RUNNER_TEMP/forum-current/cajeerengine-0.8.0-source.zip"
+          php bin/cajeer release:verify --dist --strict --artifact="$RUNNER_TEMP/forum-current/cajeerengine-0.8.1-dist.zip"
+          php bin/cajeer release:verify --strict --artifact="$RUNNER_TEMP/forum-current/cajeerengine-0.8.1-source.zip"
       - name: Build authentic previous baseline from repository history
         run: |
           mkdir -p "$RUNNER_TEMP/forum-previous"
           ref="$FORUM_BASELINE_REF"
           # Prefer the immediately preceding release when its actual tag is available.
-          if [ "$ref" = 'v0.7.7' ]; then
-            for tag in v0.7.7 0.7.7; do
+          if [ "$ref" = 'v0.8.0' ]; then
+            for tag in v0.8.0 0.8.0; do
               if git rev-parse --verify "refs/tags/$tag^{commit}" >/dev/null 2>&1; then ref="refs/tags/$tag"; break; fi
             done
           fi
           git archive "$ref" | tar -x -C "$RUNNER_TEMP/forum-previous"
           cd "$RUNNER_TEMP/forum-previous"
-          baseline=$(php -r '$v=json_decode(file_get_contents("release.json"),true,512,JSON_THROW_ON_ERROR)["edition_version"]; if($v!=="0.7.7") exit(1); echo $v;')
+          baseline=$(php -r '$v=json_decode(file_get_contents("release.json"),true,512,JSON_THROW_ON_ERROR)["edition_version"]; if($v!=="0.8.0") exit(1); echo $v;')
           echo "FORUM_BASELINE_VERSION=$baseline" >> "$GITHUB_ENV"
           composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader
           php tools/build-release.php --dist --target-dir="$RUNNER_TEMP/forum-previous-dist" --json
       - name: Clean install, live HTTP, identity and corrupt-ledger rejection
         env:
           FORUM_TEST_RELEASE_DB: forum_test_release_clean
-        run: python tools/forum-tests/release_acceptance.py --driver ${{ matrix.driver }} --artifact "$RUNNER_TEMP/forum-current/cajeerengine-0.8.0-dist.zip" --report storage/tmp/forum-ci/release/clean
+        run: python tools/forum-tests/release_acceptance.py --driver ${{ matrix.driver }} --artifact "$RUNNER_TEMP/forum-current/cajeerengine-0.8.1-dist.zip" --report storage/tmp/forum-ci/release/clean
       - name: Signed upgrade from authentic baseline, recovery and rollback
         env:
           FORUM_TEST_RELEASE_DB: forum_test_release_upgrade
-        run: python tools/forum-tests/release_acceptance.py --driver ${{ matrix.driver }} --artifact "$RUNNER_TEMP/forum-current/cajeerengine-0.8.0-dist.zip" --previous "$RUNNER_TEMP/forum-previous-dist/cajeerengine-${FORUM_BASELINE_VERSION}-dist.zip" --report storage/tmp/forum-ci/release/upgrade
+        run: python tools/forum-tests/release_acceptance.py --driver ${{ matrix.driver }} --artifact "$RUNNER_TEMP/forum-current/cajeerengine-0.8.1-dist.zip" --previous "$RUNNER_TEMP/forum-previous-dist/cajeerengine-${FORUM_BASELINE_VERSION}-dist.zip" --report storage/tmp/forum-ci/release/upgrade
       - name: Upload release acceptance evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -383,10 +383,69 @@ jobs:
           path: storage/tmp/forum-ci/release/
           if-no-files-found: warn
           retention-days: 7
+  production-host:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: forum_deploy_ci
+          POSTGRES_PASSWORD: ForumDeployDisposable123
+          POSTGRES_DB: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U forum_deploy_ci -d postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: mbstring, pdo_pgsql, sodium, zip, dom, xml, xmlwriter, curl, openssl, gd
+          tools: composer:v2
+      - name: Install dedicated host runtime and native PostgreSQL 17 clients
+        run: |
+          sudo apt-get update
+          if ! apt-cache show postgresql-client-17 >/dev/null 2>&1; then
+            sudo install -d -m 0755 /usr/share/keyrings
+            curl --fail --silent --show-error --location https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo tee /usr/share/keyrings/ce-pgdg.asc >/dev/null
+            echo 'deb [signed-by=/usr/share/keyrings/ce-pgdg.asc] https://apt.postgresql.org/pub/repos/apt noble-pgdg main' | sudo tee /etc/apt/sources.list.d/ce-forum-pgdg.list >/dev/null
+            sudo apt-get update
+          fi
+          sudo apt-get install -y nginx php8.4-fpm php8.4-pgsql php8.4-mbstring php8.4-xml php8.4-curl php8.4-gd php8.4-zip postgresql-client-17
+          sudo systemctl stop php8.4-fpm || true
+          sudo /usr/bin/php8.4 -v
+          sudo /usr/sbin/php-fpm8.4 -v
+      - name: Build physical signed-deployment candidate and run safety tests
+        run: |
+          composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader
+          php tools/build-release.php --dist --target-dir="$RUNNER_TEMP/forum-host" --json
+          python3 deploy/test_production.py
+          sudo install -d -o root -g root -m 0755 /var/lib/ce-forum-ci-source
+          sudo cp -a "$GITHUB_WORKSPACE/." /var/lib/ce-forum-ci-source/
+          sudo chown -R root:root /var/lib/ce-forum-ci-source
+          sudo chmod -R go-w /var/lib/ce-forum-ci-source
+      - name: Physical forum install, TLS, worker, signed upgrade and rollback
+        env:
+          CE_DEPLOY_DISPOSABLE: 'yes'
+          CE_DB_USER: forum_deploy_ci
+          CE_DB_PASSWORD: ForumDeployDisposable123
+        run: |
+          export CE_CERT_REPORT="$RUNNER_TEMP/forum-host/production-acceptance.json"
+          sudo --preserve-env=CE_DEPLOY_DISPOSABLE,CE_DB_USER,CE_DB_PASSWORD,CE_CERT_REPORT bash /var/lib/ce-forum-ci-source/deploy/host-smoke.sh "$RUNNER_TEMP/forum-host/cajeerengine-0.8.1-dist.zip"
+      - name: Upload production host evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: forum-production-host-evidence
+          path: ${{ runner.temp }}/forum-host/production-acceptance.json
+          if-no-files-found: warn
+          retention-days: 7
   forum-required:
     runs-on: ubuntu-24.04
     if: always()
-    needs: [test, postgres, mysql-search, browser, release]
+    needs: [test, postgres, mysql-search, browser, release, production-host]
     steps:
       - name: Require every test matrix to pass
         env:
@@ -395,9 +454,11 @@ jobs:
           MYSQL: ${{ needs.mysql-search.result }}
           BROWSER: ${{ needs.browser.result }}
           RELEASE: ${{ needs.release.result }}
+          HOST: ${{ needs.production-host.result }}
         run: |
           test "$SQLITE" = success
           test "$POSTGRES" = success
           test "$MYSQL" = success
           test "$BROWSER" = success
           test "$RELEASE" = success
+          test "$HOST" = success

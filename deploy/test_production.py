@@ -202,13 +202,79 @@ class Safety(unittest.TestCase):
             self.assertEqual((stage/'public/index.php').stat().st_uid,pwd.getpwnam('nobody').pw_uid)
             self.assertEqual(stat.S_IMODE((stage/'bin/cajeer').stat().st_mode),0o750)
 
+    @unittest.skipUnless(shutil.which('php'),'PHP CLI unavailable')
+    def test_forum_identity(self):
+        verify=Path(__file__).with_name('verify.php').resolve()
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp); (root/'VERSION').write_text('1.3.0\n')
+            release={'edition':'forum','edition_version':'0.8.1','upstream_version':'1.3.0','version':'1.3.0'}
+            (root/'release.json').write_text(json.dumps(release))
+            def read(): return subprocess.run(['php',str(verify),'--identity'],cwd=root,text=True,capture_output=True)
+            result=read(); self.assertEqual(result.returncode,0,result.stderr)
+            self.assertEqual(json.loads(result.stdout),{'edition':'forum','edition_version':'0.8.1','upstream_version':'1.3.0'})
+            for changes in ({'edition':'cms'},{'upstream_version':'0.8.1'},{'version':'0.8.1'},{'edition_version':'not-a-version'}):
+                (root/'release.json').write_text(json.dumps(release|changes)); self.assertNotEqual(read().returncode,0)
+        with patch.object(p,'app_run',return_value=result.stdout): self.assertEqual(p.current_version(),'0.8.1')
+        self.assertLess(p.version_tuple('0.8.0'),p.version_tuple('0.8.1'))
+        for value in ('1.03.0','0.8.1-rc1','0.8'):
+            with self.assertRaises(ValueError): p.version_tuple(value)
+
+    @unittest.skipUnless(shutil.which('php'),'PHP CLI unavailable')
+    def test_signed_foreign_artifact_rejected(self):
+        import hashlib
+        root=Path(__file__).resolve().parent.parent
+        with tempfile.TemporaryDirectory() as tmp:
+            d=Path(tmp); secret=d/'sign.key'; public=d/'sign.pub'; package=d/'candidate.zip'
+            code=r'require $argv[1]."/core/Update/OperationFiles.php"; require $argv[1]."/core/Update/ReleaseSignature.php"; \CajeerEngine\Update\ReleaseSignature::generate($argv[2],$argv[3]);'
+            subprocess.run(['php','-r',code,str(root),str(secret),str(public)],check=True)
+            sign=r'require $argv[1]."/core/Update/OperationFiles.php"; require $argv[1]."/core/Update/ReleaseSignature.php"; \CajeerEngine\Update\ReleaseSignature::sign($argv[2],$argv[3]);'
+            for edition,mode in [('cms','dist'),('forum','source')]:
+                with zipfile.ZipFile(package,'w') as z:
+                    z.writestr('cajeerengine/release-manifest.json',json.dumps({'edition':edition,'mode':mode,'version':'0.8.1','upstream_version':'1.3.0'}))
+                subprocess.run(['php','-r',sign,str(root),str(package),str(secret)],check=True)
+                digest=hashlib.sha256(package.read_bytes()).hexdigest()
+                cmd=['php',str(root/'deploy/verify.php'),str(package),str(public),digest,'0.8.1']
+                result=subprocess.run(cmd,text=True,capture_output=True)
+                self.assertNotEqual(result.returncode,0); self.assertIn('Forum Edition dist required',result.stderr)
+                with package.open('ab') as stream: stream.write(b'tamper')
+                result=subprocess.run(cmd,text=True,capture_output=True)
+                self.assertNotEqual(result.returncode,0); self.assertIn('signature or SHA256 mismatch',result.stderr)
+
+    def test_forum_readiness_semantics(self):
+        payload={'version':'1.3.0','edition_version':'0.8.1','status':'ok','checks':{'database':True}}
+        self.assertTrue(p.validate_health_payload(payload,'0.8.1','1.3.0'))
+        for changes in ({'edition_version':'0.8.0'},{'version':'0.8.1'},{'checks':{'database':False}},{'status':'degraded'},{'checks':{}}):
+            self.assertFalse(p.validate_health_payload(payload|changes,'0.8.1','1.3.0'))
+        good={'/api/v1/forum':json.dumps({'data':{'boards':[],'categories':[]}}),'/forum':'<div data-rendered="true"><style id="forum-theme"></style><script src="/forum-assets/forum.js"></script></div>','/admin/':'<script src="admin-app.js"></script>'}
+        with patch.object(p,'local_probe',side_effect=good.__getitem__): p.forum_probe()
+        for path,value in (('/api/v1/forum','{"data":[]}'),('/forum','generic CMS'),('/admin/','not ACP')):
+            responses=good|{path:value}
+            with patch.object(p,'local_probe',side_effect=responses.__getitem__),self.assertRaises(RuntimeError): p.forum_probe()
+
+    def test_preflight_never_gates_or_publishes(self):
+        from types import SimpleNamespace
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d); (root/'install-secrets.json').write_text(json.dumps({'db_password':'x'*32,'admin_password':'StrongPass123!'}))
+            args=SimpleNamespace(artifact=root/'signed.zip',sha256='a'*64,version='0.8.1',dry_run=True,previous_sha256=None)
+            def command(*a,**kw):
+                if '--preflight' in a: raise RuntimeError('database unavailable')
+            with patch.object(p,'ETC',root),patch.object(p,'APP',root/'app'),patch.object(p,'JOURNAL',root/'journal'),patch.object(p,'GATE',root/'gate'),patch.object(p,'FPM_BIN',str(root/'fpm')),patch.object(p,'artifact',return_value=args.artifact),patch.object(p,'validate_host_material'),patch.object(p,'root_file',side_effect=lambda path,*a:path),patch.object(p.shutil,'which',return_value='/usr/bin/tool'),patch.object(p,'run',side_effect=command),patch.object(p,'gate_on') as gate:
+                (root/'fpm').touch()
+                with self.assertRaisesRegex(RuntimeError,'database unavailable'): p.deploy(args,SITE)
+                gate.assert_not_called(); self.assertFalse(p.APP.exists())
+                with patch.object(p,'run') as run,patch('builtins.print') as output:
+                    p.deploy(args,SITE)
+                    self.assertTrue(any('--preflight' in call.args for call in run.call_args_list))
+                    self.assertEqual(json.loads(output.call_args.args[0])['edition_version'],'0.8.1')
+                gate.assert_not_called(); self.assertFalse(p.APP.exists())
+
     def test_activation_failure_keeps_gate(self):
         with tempfile.TemporaryDirectory() as d, patch.object(p,'GATE',Path(d)/'maintenance'), patch.object(p,'STATE',Path(d)), patch.object(p,'JOURNAL',Path(d)/'journal'), patch.object(p,'WORKERS_ALLOWED',Path(d)/'workers'), patch.object(p,'FPM_ALLOWED',Path(d)/'fpm'):
             p.gate_on()
             with patch.object(p,'verify_installed'),patch.object(p,'current_version',return_value='1.2.5'),patch.object(p,'app_run'),patch.object(p,'run'),patch.object(p,'health',side_effect=RuntimeError('not ready')):
                 with self.assertRaises(RuntimeError): p.activate('1.2.5','a'*64,SITE)
             self.assertTrue(p.GATE.exists()); self.assertFalse(p.JOURNAL.exists())
-            with patch.object(p,'verify_installed'),patch.object(p,'current_version',return_value='1.2.5'),patch.object(p,'app_run',return_value=json.dumps({'timestamp':int(time.time())+1})),patch.object(p,'run'),patch.object(p,'health'):
+            with patch.object(p,'verify_installed'),patch.object(p,'current_version',return_value='1.2.5'),patch.object(p,'app_run',return_value=json.dumps({'timestamp':int(time.time())+1,'status':'success'})),patch.object(p,'run'),patch.object(p,'health'):
                 p.activate('1.2.5','a'*64,SITE)
             self.assertFalse(p.GATE.exists()); self.assertEqual(json.loads(p.JOURNAL.read_text())['sha256'],'a'*64)
 
@@ -218,7 +284,7 @@ class Safety(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             d=Path(d); d.chmod(0o755); etc=d/'etc'; etc.mkdir(); (etc/'tls').mkdir(); app=d/'app'; app.mkdir(); state=d/'state'; state.mkdir()
             public=app/'public'; public.mkdir(); (public/'admin/assets').mkdir(parents=True); (public/'uploads').mkdir(); (public/'install').mkdir()
-            (public/'admin/index.html').write_text('admin'); (public/'admin/assets/admin-app.js').write_text('asset'); (public/'uploads/secret.php').write_text('secret'); (public/'install/index.php').write_text('install'); (public/'index.php').write_text('index'); (public/'.env').write_text('secret')
+            (public/'forum-assets').mkdir(); (public/'forum-assets/forum.js').write_text('forum asset'); (public/'admin/index.html').write_text('admin'); (public/'admin/assets/admin-app.js').write_text('asset'); (public/'uploads/secret.php').write_text('secret'); (public/'install/index.php').write_text('install'); (public/'index.php').write_text('index'); (public/'.env').write_text('secret')
             subprocess.run(['openssl','req','-x509','-nodes','-newkey','rsa:2048','-days','2','-subj','/CN=deploy.example.invalid','-addext','subjectAltName=DNS:deploy.example.invalid','-keyout',str(etc/'tls/privkey.pem'),'-out',str(etc/'tls/fullchain.pem')],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
             def port():
                 with socket.socket() as s: s.bind(('127.0.0.1',0)); return s.getsockname()[1]
@@ -247,9 +313,23 @@ class Safety(unittest.TestCase):
                         except urllib.error.HTTPError as e: return e.code,e.read()
                     self.assertEqual(request('/admin/assets/admin-app.js'),(200,b'asset'))
                     self.assertEqual(request('/admin/deep')[0],200)
+                    self.assertEqual(request('/forum-assets/forum.js'),(200,b'forum asset'))
+                    self.assertEqual(request('/forum-assets/missing.js')[0],404)
                     for path in ('/uploads/secret.php','/install/index.php','/.env','/upgrade/','/admin/assets/missing.js'):
                         self.assertEqual(request(path)[0],404,path)
                     p.gate_on(); self.assertEqual(request('/admin/assets/admin-app.js')[0],503)
+                    self.assertEqual(request('/forum-assets/forum.js')[0],503)
+                    self.assertEqual(request('/forum')[0],503)
+                    def local_request(path, method='GET'):
+                        req=urllib.request.Request('http://127.0.0.1:'+str(local)+path,method=method)
+                        try:
+                            with urllib.request.urlopen(req,timeout=3) as r: return r.status,r.read()
+                        except urllib.error.HTTPError as e: return e.code,e.read()
+                    self.assertEqual(local_request('/admin/'),(200,b'admin'))
+                    self.assertEqual(local_request('/admin/','POST')[0],403)
+                    self.assertEqual(local_request('/api/v1/forum','POST')[0],403)
+                    self.assertEqual(local_request('/api/v1/auth/login')[0],404)
+                    self.assertEqual(local_request('/.env')[0],404)
                     p.GATE.unlink(); self.assertEqual(request('/admin/assets/admin-app.js')[0],200)
                 finally:
                     process.terminate(); process.wait(timeout=10)

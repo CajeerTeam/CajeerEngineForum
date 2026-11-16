@@ -116,19 +116,25 @@ def gate_on():
     atomic(GATE,'maintenance\n')
     WORKERS_ALLOWED.unlink(missing_ok=True)
     FPM_ALLOWED.unlink(missing_ok=True)
+    fd=os.open(GATE.parent,os.O_DIRECTORY)
+    try: os.fsync(fd)
+    finally: os.close(fd)
 
 
 def record(state, **fields):
-    atomic(JOURNAL,json.dumps({'state':state,'at':time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime()),**fields},indent=2)+'\n',0o600)
+    atomic(JOURNAL,json.dumps({'edition':'forum','state':state,'at':time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime()),**fields},indent=2)+'\n',0o600)
 
 
 def current_version():
     # Read through the runtime identity, never open potentially app-controlled files as root.
-    return app_run('-r','echo trim(file_get_contents("VERSION"));',capture=True).strip()
+    identity=json.loads(app_run(TOOL/'verify.php','--identity',capture=True))
+    version_tuple(identity['edition_version'])
+    if identity.get('edition')!='forum': raise ValueError('Not a Forum Edition installation')
+    return identity['edition_version']
 
 
 def version_tuple(v):
-    if not re.fullmatch(r'\d+\.\d+\.\d+',v): raise ValueError('Expected stable semantic version')
+    if not re.fullmatch(r'(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)',v): raise ValueError('Expected stable semantic version')
     return tuple(map(int,v.split('.')))
 
 
@@ -171,7 +177,7 @@ php_admin_value[post_max_size] = 65M
 php_admin_value[memory_limit] = 256M
 '''
     units={FPM:f'''[Unit]
-Description=CajeerEngine dedicated PHP-FPM
+Description=CajeerEngine Forum dedicated PHP-FPM
 After=network.target
 [Service]
 {common}RuntimeDirectory=cajeerengine
@@ -186,7 +192,7 @@ KillSignal=SIGQUIT
 [Install]
 WantedBy=multi-user.target
 ''',WORKER:f'''[Unit]
-Description=CajeerEngine queue worker
+Description=CajeerEngine Forum queue worker
 After=network-online.target
 [Service]
 {common}ExecCondition=/usr/bin/test -f {WORKERS_ALLOWED}
@@ -198,7 +204,7 @@ KillSignal=SIGTERM
 [Install]
 WantedBy=multi-user.target
 ''',SCHEDULER:f'''[Unit]
-Description=CajeerEngine scheduler
+Description=CajeerEngine Forum scheduler
 After=network-online.target
 [Service]
 {common}Type=oneshot
@@ -206,7 +212,7 @@ ExecCondition=/usr/bin/test -f {WORKERS_ALLOWED}
 ExecStart={PHP} {APP}/bin/cajeer scheduler:run
 TimeoutStartSec=180
 ''',TIMER:f'''[Unit]
-Description=CajeerEngine scheduler timer
+Description=CajeerEngine Forum scheduler timer
 [Timer]
 OnCalendar=*-*-* *:*:00
 Persistent=true
@@ -215,7 +221,7 @@ Unit={SCHEDULER}
 WantedBy=timers.target
 '''}
     # Public vhost uses only index.php; install/upgrade are deliberately inaccessible.
-    # Local readiness listener is separate, available only on loopback and only for GET health.
+    # Local acceptance listener is separate, loopback-only, with an explicit read-only allowlist.
     fastcgi=f'''fastcgi_param QUERY_STRING $query_string;
         fastcgi_param REQUEST_METHOD $request_method;
         fastcgi_param CONTENT_TYPE $content_type;
@@ -268,11 +274,17 @@ server {{
     location /admin/ {{ try_files $uri $uri/ /admin/index.html; index index.html; {admin_security} }}
     location /uploads/ {{ try_files $uri =404; {static_security} }}
     location /extensions/ {{ try_files $uri =404; {static_security} }}
+    location /forum-assets/ {{ try_files $uri =404; {static_security} }}
     location / {{ try_files $uri /index.php?$query_string; }}
 }}
 server {{
     listen 127.0.0.1:18085;
     server_name localhost;
+    root {APP}/public;
+    disable_symlinks on from=$document_root;
+    location = /forum {{ limit_except GET {{ deny all; }} {fastcgi} }}
+    location = /api/v1/forum {{ limit_except GET {{ deny all; }} {fastcgi} }}
+    location = /admin/ {{ limit_except GET {{ deny all; }} try_files /admin/index.html =404; {admin_security} }}
     location = /health/ready {{ limit_except GET {{ deny all; }} {fastcgi} }}
     location = /api/v1/health {{ limit_except GET {{ deny all; }} {fastcgi} }}
     location / {{ return 404; }}
@@ -281,17 +293,28 @@ server {{
     return fpm,units,nginx
 
 
-def configure(c):
+def validate_host_material(c):
     # Only dedicated host config files; reject unsafe trust material before modifying services.
     secure_dir(ETC/'tls',0o700)
     root_file(ETC/'release.pub'); root_file(ETC/'tls/fullchain.pem'); root_file(ETC/'tls/privkey.pem',True)
-    run('openssl','x509','-in',ETC/'tls/fullchain.pem','-noout','-checkend','86400')
+    run('openssl','x509','-in',ETC/'tls/fullchain.pem','-noout','-checkend','86400',capture=True)
     if 'does match certificate' not in run('openssl','x509','-in',ETC/'tls/fullchain.pem','-noout','-checkhost',c['domain'],capture=True):
         raise ValueError('TLS certificate hostname mismatch')
     key=(ETC/'backup.key').lstat()
     if not stat.S_ISREG(key.st_mode) or key.st_uid!=pwd.getpwnam(USER).pw_uid or stat.S_IMODE(key.st_mode)!=0o600:
         raise ValueError('backup.key must be cajeerengine-owned 0600')
     run('runuser','-u',USER,'-g',GROUP,'--',PHP,'-r','if (strlen((string)base64_decode(trim(file_get_contents($argv[1])),true))!==32) exit(1);',ETC/'backup.key')
+    # Validate the local certificate's date and purpose. Public CA trust is
+    # provisioned externally; the local leaf is an explicit trust anchor here.
+    run('openssl','verify','-partial_chain','-CAfile',ETC/'tls/fullchain.pem','-verify_hostname',c['domain'],'-purpose','sslserver',ETC/'tls/fullchain.pem',capture=True)
+    # Reject a mismatched private key before closing public traffic.
+    certificate=run('openssl','x509','-in',ETC/'tls/fullchain.pem','-pubkey','-noout',capture=True)
+    private=run('openssl','pkey','-in',ETC/'tls/privkey.pem','-pubout',capture=True,input='')
+    if certificate.strip()!=private.strip(): raise ValueError('TLS certificate/private key mismatch')
+
+
+def configure(c):
+    validate_host_material(c)
     fpm,units,nginx=service_config(c)
     files={ETC/'fpm.conf':fpm,Path('/etc/nginx/conf.d/cajeerengine.conf'):nginx}
     files.update({Path('/etc/systemd/system')/k:v for k,v in units.items()})
@@ -329,6 +352,7 @@ def root_controlled_parents(path):
 
 def artifact(zip_path, sha, version):
     root_controlled_parents(zip_path)
+    root_file(ETC/'release.pub')
     version_tuple(version)
     root_file(zip_path); root_file(Path(str(zip_path)+'.sig'))
     if zip_path.stat().st_size>2*1024**3 or Path(str(zip_path)+'.sig').stat().st_size>8192: raise ValueError('Oversized artifact or signature')
@@ -339,9 +363,14 @@ def artifact(zip_path, sha, version):
     with tempfile.TemporaryDirectory(dir=inbox) as tmp:
         z=Path(tmp)/'candidate.zip'
         shutil.copyfile(zip_path,z); shutil.copyfile(str(zip_path)+'.sig',str(z)+'.sig')
-        run(PHP,TOOL/'verify.php',z,ETC/'release.pub',sha,version)
+        run(PHP,TOOL/'verify.php',z,ETC/'release.pub',sha,version,capture=True)
         os.chmod(z,0o644); os.chmod(str(z)+'.sig',0o644)
+        for file in (z,Path(str(z)+'.sig')):
+            with file.open('rb') as f: os.fsync(f.fileno())
         os.replace(z,target); os.replace(str(z)+'.sig',str(target)+'.sig')
+        fd=os.open(inbox,os.O_DIRECTORY)
+        try: os.fsync(fd)
+        finally: os.close(fd)
     return target
 
 
@@ -368,14 +397,40 @@ def extract(package, stage):
 def stop(): run('systemctl','stop',*SERVICES)
 
 
+def validate_health_payload(payload, version, upstream):
+    return (isinstance(payload,dict) and payload.get('status')=='ok' and payload.get('edition_version')==version
+            and payload.get('version')==upstream and isinstance(payload.get('checks'),dict)
+            and bool(payload['checks']) and all(value is True for value in payload['checks'].values()))
+
+
+def local_probe(path):
+    return run('curl','--noproxy','*','--fail','--silent','--show-error','--max-time','5',
+               'http://127.0.0.1:18085'+path,capture=True,timeout=8)
+
+
+def forum_probe():
+    payload=json.loads(local_probe('/api/v1/forum'))
+    data=payload.get('data') if isinstance(payload,dict) else None
+    if not isinstance(data,dict) or not all(isinstance(data.get(k),list) for k in ('categories','boards')):
+        raise RuntimeError('Forum API response invalid')
+    html=local_probe('/forum')
+    if '/forum-assets/forum.js' not in html or 'data-rendered="true"' not in html or 'id="forum-theme"' not in html:
+        raise RuntimeError('Forum SSR response invalid')
+    if 'admin-app.js' not in local_probe('/admin/'):
+        raise RuntimeError('Forum ACP shell response invalid')
+
+
 def health(version):
+    identity=json.loads(app_run(TOOL/'verify.php','--identity',capture=True))
+    if identity.get('edition_version')!=version: raise RuntimeError('Installed Forum Edition differs')
     for _ in range(40):
         try:
             r=json.loads(run('curl','--noproxy','*','--fail','--silent','--show-error','--max-time','3','http://127.0.0.1:18085/health/ready',capture=True,timeout=5))
             if r.get('status')=='ready':
                 h=json.loads(run('curl','--noproxy','*','--fail','--silent','--show-error','--max-time','3','http://127.0.0.1:18085/api/v1/health',capture=True,timeout=5))
-                if h.get('version')==version and h.get('status')=='ok': return
-        except (ValueError,subprocess.SubprocessError): pass
+                if validate_health_payload(h,version,identity['upstream_version']):
+                    forum_probe(); return
+        except (ValueError,RuntimeError,subprocess.SubprocessError): pass
         time.sleep(1)
     # Collect safe service/socket metadata before the failure handler stops FPM.
     # Never dump request bodies, environment values or application logs.
@@ -412,14 +467,18 @@ def activate(version, sha256, site):
     started=int(time.time())
     app_run('-r','if (is_file("storage/logs/observability/worker.json")) unlink("storage/logs/observability/worker.json");')
     run('systemctl','start',WORKER)
-    for _ in range(30):
+    for _ in range(150):
         marker=app_run('-r','echo is_file("storage/logs/observability/worker.json") ? file_get_contents("storage/logs/observability/worker.json") : "{}";',capture=True)
         try:
-            if json.loads(marker).get('timestamp',0)>=started: break
+            if (state:=json.loads(marker)).get('timestamp',0)>=started and state.get('status')=='success': break
         except ValueError: pass
         time.sleep(1)
-    else: raise RuntimeError('Queue worker did not report a heartbeat')
+    else: raise RuntimeError('Queue worker did not complete a successful pass')
+    # Verify a real scheduler execution while traffic is still gated. At this
+    # stage external side effects may have occurred: failure requires recovery.
+    run('systemctl','start',SCHEDULER)
     run('systemctl','start',TIMER)
+    health(version)
     for service in (FPM,WORKER,TIMER): run('systemctl','is-active','--quiet',service)
     run('systemctl','enable',FPM,WORKER,TIMER)
     record('ready',version=version,sha256=sha256,site=site)
@@ -435,6 +494,7 @@ def deploy(args,c):
     if not Path(FPM_BIN).is_file(): raise ValueError('PHP-FPM 8.4 missing')
     run(PHP,'-r',PHP_PREFLIGHT)
     package=artifact(args.artifact,args.sha256,args.version)
+    validate_host_material(c)
     journal=json.loads(JOURNAL.read_text()) if JOURNAL.exists() else {}
     retry_empty=not APP.exists() and not APP.is_symlink() and (not journal or (journal.get('previous') is None and journal.get('version')==args.version and journal.get('sha256')==args.sha256 and journal.get('site')==c))
     if (GATE.exists() or journal and journal.get('state')!='ready') and not retry_empty:
@@ -449,12 +509,31 @@ def deploy(args,c):
         # Verify identity, not merely version: reject changed bytes under an existing tag.
         if json.loads(JOURNAL.read_text()).get('sha256')!=args.sha256: raise ValueError('Same-version artifact identity differs')
         verify_installed(args.version,args.sha256)
-        health(args.version); print('Already deployed'); return
-    if existing: verify_installed(previous,old.get('sha256'))
-    secret=None
+        health(args.version)
+        for service in (FPM,WORKER,TIMER): run('systemctl','is-active','--quiet',service)
+        if getattr(args,'dry_run',False):
+            print(json.dumps({'ok':True,'mode':'already_deployed','edition_version':args.version,'sha256':args.sha256}))
+        else: print('Already deployed')
+        return
+    if existing:
+        verify_installed(previous,old.get('sha256'))
+        # Check target compatibility in the currently trusted application before
+        # closing traffic. Never execute candidate PHP to perform this check.
+        app_run('bin/cajeer','forum:ecosystem:check','--target='+args.version,'--json',capture=True)
+    options=None
     if not existing:
         secret=json.loads(root_file(ETC/'install-secrets.json',True).read_text())
-        if set(secret)!={'db_password','admin_password'} or not re.fullmatch(r'[A-Za-z0-9_-]{24,128}',secret['db_password']): raise ValueError('Invalid install secrets')
+        if not isinstance(secret,dict) or set(secret)!={'db_password','admin_password'} or not isinstance(secret['db_password'],str) or not isinstance(secret['admin_password'],str) or not re.fullmatch(r'[A-Za-z0-9_-]{24,128}',secret['db_password']): raise ValueError('Invalid install secrets')
+        options={k:v for k,v in c.items() if k!='domain'}
+        options.update(secret); options.update(db='pgsql',domain=c['domain'],app_url='https://'+c['domain'])
+        # Same real read-only PG preflight as the installer, but before any
+        # application publication, gate or service change. Rechecked at install.
+        run('runuser','-u',USER,'-g',GROUP,'--',PHP,TOOL/'install.php','--preflight',
+            input=json.dumps(options),timeout=60,capture=True)
+    if getattr(args,'dry_run',False):
+        print(json.dumps({'ok':True,'mode':'upgrade' if existing else 'install',
+                          'edition_version':args.version,'previous':previous,'sha256':args.sha256}))
+        return
     gate_on(); record('deploying',version=args.version,previous=previous,sha256=args.sha256,previous_sha256=args.previous_sha256,site=c)
     committed=False
     try:
@@ -470,8 +549,6 @@ def deploy(args,c):
                 stage=Path(tmp)/'app'; stage.mkdir()
                 extract(package,stage)
                 os.rename(stage,APP)
-            options={k:v for k,v in c.items() if k!='domain'}
-            options.update(secret); options.update(db='pgsql',domain=c['domain'],app_url='https://'+c['domain'])
             app_run(TOOL/'install.php',input=json.dumps(options))
         activate(args.version,args.sha256,c)
         print('Deployment ready:',args.version)
@@ -494,10 +571,12 @@ def deploy(args,c):
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     sub=parser.add_subparsers(dest='command',required=True)
-    d=sub.add_parser('deploy'); d.add_argument('artifact',type=Path); d.add_argument('--sha256',required=True); d.add_argument('--version',required=True)
+    d=sub.add_parser('deploy'); d.add_argument('artifact',type=Path); d.add_argument('--sha256',required=True); d.add_argument('--version',required=True); d.add_argument('--dry-run',action='store_true',help='Verify candidate and host without closing traffic or installing')
     sub.add_parser('status'); r=sub.add_parser('resume'); r.add_argument('--version',required=True); r.add_argument('--sha256',required=True)
     args=parser.parse_args()
     if os.geteuid()!=0: raise ValueError('Run as root')
+    root_controlled_parents(TOOL/'production.py')
+    for name in ('production.py','verify.php','install.php'): root_file(TOOL/name)
     os.umask(0o022)
     for p in (ETC,STATE,BASE): secure_dir(p)
     with (STATE/'deploy.lock').open('a') as lock:
@@ -507,7 +586,7 @@ def main():
             for service in (FPM,WORKER,TIMER):
                 try: service_state[service]=run('systemctl','is-active',service,capture=True).strip()
                 except subprocess.SubprocessError: service_state[service]='inactive_or_unavailable'
-            print(json.dumps({'maintenance':GATE.exists(),'deployment':json.loads(JOURNAL.read_text()) if JOURNAL.exists() else None,'services':service_state},indent=2)); return
+            print(json.dumps({'maintenance':GATE.exists(),'edition':'forum','deployment':json.loads(JOURNAL.read_text()) if JOURNAL.exists() else None,'services':service_state},indent=2)); return
         c=config()
         pwd.getpwnam(USER); grp.getgrnam(GROUP)
         if args.command=='resume':

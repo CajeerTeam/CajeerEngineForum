@@ -9,7 +9,7 @@ import subprocess
 import tempfile
 
 ROOT = Path(__file__).resolve().parent.parent
-VERSION = (ROOT / 'VERSION').read_text().strip()
+VERSION = json.loads((ROOT / 'release.json').read_text())['edition_version']
 SCRIPT = ROOT / 'tools/github-publish-release.sh'
 spec=importlib.util.spec_from_file_location('cert_reg',ROOT/'tools/certification-regression.py')
 cert_reg=importlib.util.module_from_spec(spec);spec.loader.exec_module(cert_reg)
@@ -54,7 +54,7 @@ with tempfile.TemporaryDirectory(prefix='ce-gh-publish-') as temp:
         (release / (name + '.sig')).write_text('fixture signature')
         (release / f'cajeerengine-{VERSION}-{mode}.manifest.json').write_text('{}')
     (release / f'cajeerengine-{VERSION}-artifacts.json').write_text('{}')
-    def run(mode, tag='v'+VERSION, repo='cajeerteam/CajeerEngine', success=False):
+    def run(mode, tag='v'+VERSION, repo='cajeerteam/CajeerEngineForum', success=False):
         state = base / (mode+'.json')
         env = dict(os.environ, PATH=f'{base}:{os.environ["PATH"]}', MOCK_MODE=mode, MOCK_STATE=str(state))
         result = subprocess.run(['bash',str(SCRIPT),str(release),tag,repo],env=env,capture_output=True,text=True)

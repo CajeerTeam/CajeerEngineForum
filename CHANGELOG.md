@@ -1,3 +1,10 @@
+## Forum Edition 0.8.1 — Forum Production Deployment
+
+- Deploy only verified stable Forum Edition dist; distinguish edition version from upstream VERSION throughout deployment, recovery, build and publish tooling.
+- Gate public traffic until real loopback FPM health, Forum API, SSR and ACP shell are verified; check target ecosystem before updates and keep durable gate markers.
+- Production host acceptance covers forum publication, ACL/FTS, notification worker and ACP load, alongside inherited security tests. Require dedicated host CI in forum-required.
+- No schema migration. Host certification requires a successful physical CI run.
+
 ## Forum Edition 0.8.0 — Administration & Extensibility Stable
 
 - Consolidate ACP policy, delegation, published theme and signed extension readiness in the operator CLI and ACP maintenance screen.

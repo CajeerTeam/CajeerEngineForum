@@ -6,8 +6,8 @@ root=$(cd "$(dirname "$0")/.." && pwd)
 dir=$(cd "$1" && pwd)
 tag=$2
 repo=$3
-version=$(cat "$root/VERSION")
-[[ "$tag" == "v$version" && "${repo,,}" == cajeerteam/cajeerengine ]] || { echo 'Tag or repository mismatch' >&2; exit 1; }
+version=$(php -r '$r=json_decode(file_get_contents($argv[1]."/release.json"),true,512,JSON_THROW_ON_ERROR); if (($r["edition"]??null)!=="forum" || ($r["upstream_version"]??null)!==trim(file_get_contents($argv[1]."/VERSION"))) exit(1); echo $r["edition_version"];' "$root")
+[[ "$tag" == "v$version" && "${repo,,}" == cajeerteam/cajeerengineforum ]] || { echo 'Tag or repository mismatch' >&2; exit 1; }
 python3 "$root/tools/certification-evidence.py" verify "$dir"
 files=("$dir/certification.json" "$dir/production-acceptance.json" "$dir/dependency-audit.json")
 for mode in source dist; do
@@ -32,7 +32,7 @@ if gh release view "$tag" --repo "$repo" >/dev/null 2>&1; then
 fi
 flags=()
 if [[ "$version" == *-* ]]; then flags+=(--prerelease); fi
-gh release create "$tag" --repo "$repo" --verify-tag --draft --title "CajeerEngine $version" --generate-notes "${flags[@]}" "${files[@]}"
+gh release create "$tag" --repo "$repo" --verify-tag --draft --title "CajeerEngine Forum $version" --generate-notes "${flags[@]}" "${files[@]}"
 # A failed upload leaves a draft, not a partially published release.
 # Verify names and byte counts for all assets before publication.
 python3 - "$repo" "$tag" "${files[@]}" <<'PY'

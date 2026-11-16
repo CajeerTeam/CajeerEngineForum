@@ -41,15 +41,20 @@ chmod 0600 /etc/cajeerengine-deploy/tls/privkey.pem
 php "$source/bin/cajeer" release:keygen --secret-key="$work/sign.key" --public-key=/etc/cajeerengine-deploy/release.pub >/dev/null
 php "$source/bin/cajeer" backup:keygen --key=/etc/cajeerengine-deploy/backup.key >/dev/null
 chown cajeerengine:www-data /etc/cajeerengine-deploy/backup.key
-old=$(cat "$source/VERSION")
+old=$(cd "$source" && php deploy/verify.php --identity | php -r 'echo json_decode(stream_get_contents(STDIN),true,512,JSON_THROW_ON_ERROR)["edition_version"];')
+upstream=$(cat "$source/VERSION")
 cp "$artifact" "$work/inbox/original.zip"; chmod 0644 "$work/inbox/original.zip"
 php "$source/bin/cajeer" release:sign --package="$work/inbox/original.zip" --secret-key="$work/sign.key" >/dev/null
 sha=$(sha256sum "$work/inbox/original.zip" | cut -d' ' -f1)
 deploy=(python3 "$work/tool/deploy/production.py")
+"${deploy[@]}" deploy "$work/inbox/original.zip" --sha256="$sha" --version="$old" --dry-run
+[[ ! -e /srv/cajeerengine/app && ! -e /var/lib/cajeerengine-deploy/maintenance ]]
 "${deploy[@]}" deploy "$work/inbox/original.zip" --sha256="$sha" --version="$old"
 http() { curl --noproxy '*' --silent --show-error --fail --resolve deploy.example.invalid:443:127.0.0.1 --cacert /etc/cajeerengine-deploy/tls/fullchain.pem "https://deploy.example.invalid$1" "${@:2}"; }
 http /health/ready | grep -q 'ready'
 http /admin/ | grep -q admin-app.js
+http /forum | grep 'data-rendered="true"' >/dev/null
+http /api/v1/forum | php -r '$j=json_decode(stream_get_contents(STDIN),true,512,JSON_THROW_ON_ERROR);exit(is_array($j["data"]["boards"]??null)?0:1);'
 # The disposable host uses a high global quota for the throughput profile; auth quota remains bounded.
 # The candidate itself is unchanged; production defaults are not raised.
 runuser -u cajeerengine -g www-data -- /usr/bin/php8.4 -r 'require $argv[1]."/vendor/autoload.php"; (new \CajeerEngine\Support\EnvironmentFile($argv[1]."/.env"))->setMany(["RATE_LIMIT_GLOBAL"=>"10000","RATE_LIMIT_AUTH"=>"20","RATE_LIMIT_WINDOW_SECONDS"=>"600"]);' /srv/cajeerengine/app
@@ -63,6 +68,7 @@ login=$(http /api/v1/auth/login -H 'Content-Type: application/json' -d '{"email"
 token=$(php -r '$j=json_decode(stream_get_contents(STDIN),true,512,JSON_THROW_ON_ERROR); echo $j["data"]["access_token"]??"";' <<<"$login")
 [[ -n $token ]]
 http /api/v1/admin/dashboard -H "Authorization: Bearer $token" >/dev/null
+http "/api/v1/forum/acp?view=overview" -H "Authorization: Bearer $token" >/dev/null
 python3 "$source/tools/production-acceptance.py" --artifact "$artifact" --version "$old" \
   --ca /etc/cajeerengine-deploy/tls/fullchain.pem --domain deploy.example.invalid \
   --secrets /etc/cajeerengine-deploy/install-secrets.json --email deploy@example.invalid \
@@ -77,23 +83,24 @@ http /health/ready | grep -q ready
 mkdir "$work/fixture"; unzip -q "$artifact" -d "$work/fixture"
 fixture="$work/fixture/cajeerengine"
 new=$(php -r '$v=explode(".",$argv[1]); echo $v[0].".".$v[1].".".((int)$v[2]+1);' "$old")
-printf '%s\n' "$new" > "$fixture/VERSION"
-php -r 'foreach (["release.json","public/admin/assets/admin-manifest.json"] as $p) {$f=$argv[1]."/".$p;$j=json_decode(file_get_contents($f),true,512,JSON_THROW_ON_ERROR);$j["version"]=$argv[2];file_put_contents($f,json_encode($j,JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES)."\n");}' "$fixture" "$new"
+php -r '$f=$argv[1]."/release.json";$j=json_decode(file_get_contents($f),true,512,JSON_THROW_ON_ERROR);$j["edition_version"]=$argv[2];file_put_contents($f,json_encode($j,JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES)."\n");' "$fixture" "$new"
 printf 'CREATE TABLE ce_deploy_probe(id INTEGER PRIMARY KEY); INVALID SQL;\n' > "$fixture/migrations/pgsql/9999_deploy_probe.sql"
 (cd "$fixture"; php tools/build-release.php --dist --target-dir="$work/broken" --json >/dev/null)
 broken="$work/broken/cajeerengine-$new-dist.zip"
 php "$source/bin/cajeer" release:sign --package="$broken" --secret-key="$work/sign.key" >/dev/null
 if "${deploy[@]}" deploy "$broken" --sha256="$(sha256sum "$broken" | cut -d' ' -f1)" --version="$new"; then echo 'Broken migration accepted'; exit 1; fi
-[[ $(cat /srv/cajeerengine/app/VERSION) == "$old" ]]
+[[ $(cat /srv/cajeerengine/app/VERSION) == "$upstream" ]]
+[[ $(cd /srv/cajeerengine/app && php "$work/tool/deploy/verify.php" --identity | php -r 'echo json_decode(stream_get_contents(STDIN),true)["edition_version"];') == "$old" ]]
 http /health/ready | grep -q ready
 printf 'CREATE TABLE ce_deploy_probe(id INTEGER PRIMARY KEY); INSERT INTO ce_deploy_probe VALUES (1);\n' > "$fixture/migrations/pgsql/9999_deploy_probe.sql"
 (cd "$fixture"; php tools/build-release.php --dist --target-dir="$work/good" --json >/dev/null)
 good="$work/good/cajeerengine-$new-dist.zip"
 php "$source/bin/cajeer" release:sign --package="$good" --secret-key="$work/sign.key" >/dev/null
 "${deploy[@]}" deploy "$good" --sha256="$(sha256sum "$good" | cut -d' ' -f1)" --version="$new"
-[[ $(cat /srv/cajeerengine/app/VERSION) == "$new" ]]
-http /api/v1/health | grep -q "\"version\":\"$new\""
+[[ $(cat /srv/cajeerengine/app/VERSION) == "$upstream" ]]
+http /api/v1/health | php -r '$j=json_decode(stream_get_contents(STDIN),true,512,JSON_THROW_ON_ERROR);exit(($j["edition_version"]===$argv[1] && $j["version"]===$argv[2])?0:1);' "$new" "$upstream"
 http /api/v1/admin/dashboard -H "Authorization: Bearer $token" >/dev/null
+http "/api/v1/forum/acp?view=overview" -H "Authorization: Bearer $token" >/dev/null
 PGPASSWORD=DeploySmokeDbPassword_92X psql -h 127.0.0.1 -U ce_deploy_smoke -d ce_deploy_smoke -Atc 'SELECT count(*) FROM ce_deploy_probe' | grep -qx 1
 # Runtime sandbox must prevent writes to shipped code from the service namespace.
 mainpid=$(systemctl show -p MainPID --value cajeerengine-php.service)
@@ -103,4 +110,4 @@ nsenter -t "$mainpid" -m -- runuser -u cajeerengine -g www-data -- test ! -w /sr
 if [[ -n ${CE_CERT_REPORT:-} ]]; then
   install -m 0644 "$work/production-acceptance.json" "$CE_CERT_REPORT"
 fi
-echo 'Production host smoke passed: TLS, real FPM, PostgreSQL, worker, update and rollback'
+echo 'Forum production host smoke passed: TLS, real FPM, PostgreSQL, worker, update and rollback'

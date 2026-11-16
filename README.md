@@ -1,10 +1,12 @@
 # CajeerEngine Forum Edition
 
-**Forum Edition 0.8.0 — Administration & Extensibility Stable**, built on CajeerEngine 1.3.0. Release certification requires all `forum-required` CI jobs to pass.
+**Forum Edition 0.8.1 — Forum Production Deployment**, built on CajeerEngine 1.3.0. Release certification requires all `forum-required` CI jobs to pass.
 
 Self-hosted forum platform by CajeerTeam. PHP 8.4.1+, CajeerEngine kernel, Symfony Components, REST API, Apache-2.0.
 
 Repository: https://github.com/CajeerTeam/CajeerEngineForum · Upstream: https://github.com/CajeerTeam/CajeerEngine
+
+**Upgrade 0.8.0 → 0.8.1:** [signed production deployment](docs/production-deployment.md). No new schema migration.
 
 **Upgrade 0.7.7 → 0.8.0:** [prepare installed signed plugins, verify ecosystem readiness and recover safely](docs/forum-edition.md#administration--extensibility-stable-080). No new schema migration.
 

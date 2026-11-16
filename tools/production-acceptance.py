@@ -20,7 +20,8 @@ MAX_P95_MS = 1000
 MIN_RPS = 10
 ROUTES = ('page', 'search', 'health', 'editorial')
 SECURITY = ('admin_headers', 'private_paths', 'anonymous', 'malformed', 'cookie_csrf',
-            'viewer_rbac', 'revocation', 'media_validation', 'draft_privacy', 'rate_limit')
+            'viewer_rbac', 'revocation', 'media_validation', 'draft_privacy', 'rate_limit',
+            'forum_acp', 'forum_publication', 'forum_acl', 'forum_worker')
 
 
 def require(condition, message):
@@ -187,10 +188,44 @@ def run(client, version, email, password, report):
     call('/api/v1/content/pages/'+entry+'/unpublish',method='POST',headers=auth)
     call(path,404); require(not found(call(search)[1]),'unpublished search leaked')
     call('/api/v1/content/pages/'+entry+'/publish',method='POST',headers=auth); passed('draft_privacy')
+    # Real Forum Edition workload (not only inherited CMS endpoints).
+    _,b=call('/api/v1/forum/acp?view=overview',headers=auth)
+    require(isinstance(data(b),dict),'forum ACP unavailable'); passed('forum_acp')
+    _,b=call('/api/v1/forum/categories',201,method='POST',headers=auth,data={'name':'Production acceptance','description':''})
+    category=data(b)['id']
+    _,b=call('/api/v1/forum/categories/'+category+'/boards',201,method='POST',headers=auth,data={'name':'Production board','description':''})
+    board=data(b)['id']
+    _,b=call('/api/v1/forum/boards/'+board+'/threads',201,method='POST',headers=auth,data={'title':'ProductionForumMarker','body':'Production forum original content'})
+    thread=data(b)['id']; forum_path='/forum/threads/'+thread; api_path='/api/v1'+forum_path
+    call(api_path+'/watch',method='PUT',headers=auth,data={'enabled':True})
+    member_email='acceptance-member@example.invalid'
+    call('/api/v1/users',201,method='POST',headers=auth,data={'name':'Forum acceptance member','email':member_email,'password':password,'roles':['viewer','forum-member']})
+    _,b=login(member_email,password); member={'Authorization':'Bearer '+data(b)['access_token']}
+    _,b=call(api_path+'/posts',201,method='POST',headers=member,data={'body':'Production forum reply content'})
+    reply=data(b)['id']
+    h,b=call(forum_path); require(b'Production forum original content' in b and b'Production forum reply content' in b and h.get('x-cajeerengine-forum-version')==version,'forum SSR publication')
+    forum_search='/api/v1/forum/search?q=ProductionForumMarker'
+    def forum_found(b): return any(item.get('id')==thread for item in data(b))
+    require(forum_found(call(forum_search)[1]),'forum FTS missing'); passed('forum_publication')
+    # The actual systemd worker, not the queue HTTP endpoint, must deliver the reply.
+    deadline=time.monotonic()+45
+    while time.monotonic()<deadline:
+        _,b=call('/api/v1/forum/notifications',headers=auth)
+        if any(item.get('post_id')==reply for item in data(b)['items']): break
+        time.sleep(1)
+    else: raise RuntimeError('Forum notification worker did not deliver reply')
+    passed('forum_worker')
+    policy='/api/v1/forum/categories/'+category+'/permissions'
+    original=data(call(policy,headers=auth)[1])
+    call(policy,method='PUT',headers=auth,data={'visibility':'hidden','rules':[],'revision':original['revision']})
+    call(forum_path,404); require(not forum_found(call(forum_search)[1]),'hidden forum search leak')
+    original=data(call(policy,headers=auth)[1])
+    call(policy,method='PUT',headers=auth,data={'visibility':'public','rules':[],'revision':original['revision']})
+    require(forum_found(call(forum_search)[1]),'restored forum search missing'); passed('forum_acl')
     # The workload uses a deliberately raised global limit, not the default anti-abuse capacity.
-    routes={'page':(path,{},lambda b:title.encode() in b), 'search':(search,{},found),
-            'health':('/api/v1/health',{},lambda b:json.loads(b).get('version')==version),
-            'editorial':('/api/v1/content/pages',auth,lambda b: isinstance(data(b),list) and any(x.get('id')==entry for x in data(b)))}
+    routes={'page':(forum_path,{},lambda b:b'Production forum original content' in b), 'search':(forum_search,{},forum_found),
+            'health':('/api/v1/health',{},lambda b:json.loads(b).get('edition_version')==version),
+            'editorial':('/api/v1/forum/acp?view=overview',auth,lambda b:isinstance(data(b),dict))}
     report['load']=load(client,routes)
     require(load_pass(report['load']),'load budget failed'); print('PASS mixed load',flush=True)
     # Verify rate limiting even for malformed auth input and concurrent requests.
