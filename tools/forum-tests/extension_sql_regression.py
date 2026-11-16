@@ -16,7 +16,7 @@ retry=sql("UPDATE ce_forum_extension_events SET state='pending'")
 with tempfile.TemporaryDirectory() as tmp:
     path=Path(tmp)/'forum.sqlite';a=sqlite3.connect(path);b=sqlite3.connect(path)
     for c in (a,b):c.execute('PRAGMA foreign_keys=ON');c.execute('PRAGMA busy_timeout=5000')
-    files=sorted((ROOT/'migrations/sqlite').glob('*.sql'));assert files[-1].name=='0046_forum_extension_events.sql'
+    files=[f for f in sorted((ROOT/'migrations/sqlite').glob('*.sql')) if f.name[:4]<='0046'];assert files[-1].name=='0046_forum_extension_events.sql'
     for f in files[:-1]:a.executescript(f.read_text())
     a.executescript(files[-1].read_text());now=int(time.time());eid='a'*32
     params=(eid,'forum.thread.create',json.dumps({'thread_id':'topic'}),now,now,json.dumps(['first','second']),'{}')

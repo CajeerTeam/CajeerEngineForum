@@ -1,5 +1,11 @@
 ## 0.7.4 — Forum Extension Platform
 
+## Forum Edition 0.7.5 — Forum Migration Engine & phpBB
+
+- Operator-only read-only phpBB 3.3 snapshot plan and resumable transactional import with verified recovery backup, source ID mapping and explicit skip reports.
+- Import users (disabled, replacement credentials), non-privileged groups, hidden readonly tree, approved topics/posts, validated attachments, closed polls and compatible votes/subscriptions.
+- Validate target integrity, preserve existing data, suppress historical mail/plugin events. Migration 0047. See [operator guide](docs/forum-migration.md).
+
 - Transactional forum event outbox with per-subscriber progress, leased workers, retry/dead-letter recovery and Redis wakeups.
 - Forum SDK and safe SSR panel slots; explicit Forum Edition compatibility and permissions.
 - Installable announcements plugin with scheduling, ACP editor and deduplicated publication metrics.

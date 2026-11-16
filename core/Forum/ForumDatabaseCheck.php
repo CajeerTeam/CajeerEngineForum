@@ -15,6 +15,8 @@ final readonly class ForumDatabaseCheck
     public function check(): array
     {
         $required = [
+            'ce_forum_import_jobs'=>['id','source_version','category_id','backup_id','plan_json','phase','cursor_id','subcursor_id','state'],
+            'ce_forum_import_map'=>['job_id','kind','source_id','target_id','outcome','reason'],
             'ce_forum_extension_events'=>['id','event_name','payload','state','targets','progress','attempts','due_at','lease_until','lease_token'],
             'ce_forum_theme_settings'=>['id','revision','payload','active_payload'],
             'ce_forum_community_settings'=>['id','revision','payload'],

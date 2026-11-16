@@ -38,7 +38,7 @@ The inherited `/install` and `/upgrade` front controllers are routed through `pu
 
 ## Releases
 
-`VERSION` and `release.json.version` identify the upstream engine (1.3.0); `release.json.edition_version` is 0.7.4. `ForumVersion` validates both identities. Source/dist artifact names, manifest version, release tags and updater comparisons use the edition version. The signed manifest also records `upstream_version`, checked against VERSION, release metadata and the prebuilt admin manifest. The engine API/SDK compatibility version stays unchanged. Health/admin/system diagnostics expose `edition_version`; HTTP responses include `X-CajeerEngine-Forum-Version`.
+`VERSION` and `release.json.version` identify the upstream engine (1.3.0); `release.json.edition_version` is 0.7.5. `ForumVersion` validates both identities. Source/dist artifact names, manifest version, release tags and updater comparisons use the edition version. The signed manifest also records `upstream_version`, checked against VERSION, release metadata and the prebuilt admin manifest. The engine API/SDK compatibility version stays unchanged. Health/admin/system diagnostics expose `edition_version`; HTTP responses include `X-CajeerEngine-Forum-Version`.
 
 The 0.1.0 updater compared upstream engine versions. Apply the 0.1.1 changed-file archive manually to a backed-up test installation before using the new updater. Do not submit the patch ZIP to `update:apply`: it is not a signed full dist. With 0.1.1 installed, later signed releases can advance edition_version without changing upstream. Legacy forum manifests without upstream_version and ordinary CMS packages are refused by the updater. The upstream signed publication workflow is archived, not active; no production signature or deployment certification is claimed.
 
@@ -609,3 +609,7 @@ Run `python tools/forum-tests/theme_sql_regression.py`, `python tools/forum-test
 ## Forum extensions (0.7.4)
 
 Forum plugins use the signed extension lifecycle and the Forum SDK described in [Extension Platform](extensions-platform.md#forum-extension-platform-074). Apply migration 0046 before enabling plugins. Install the optional working announcements and topic-template examples from `examples/extensions/` using the operator CLI; configure announcements in the existing Extensions administration screen. Workers deliver metadata-only forum events from the durable SQL outbox. `forum:extensions:check --json` reports event states and dead letters; `forum:extensions:retry EVENT_ID --json` retries failed subscribers without replaying completed ones.
+
+## Forum migration (0.7.5)
+
+See [Forum Migration Engine & phpBB operator guide](forum-migration.md) for read-only planning, backups, resumable batches, source ID mappings, ACL quarantine and cutover.

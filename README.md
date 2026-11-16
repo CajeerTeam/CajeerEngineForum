@@ -1,6 +1,6 @@
 # CajeerEngine Forum Edition
 
-**Forum Edition 0.7.4 — Forum Extension Platform**, built on CajeerEngine 1.3.0. Release certification requires all `forum-required` CI jobs to pass.
+**Forum Edition 0.7.5 — Forum Migration Engine & phpBB**, built on CajeerEngine 1.3.0. Release certification requires all `forum-required` CI jobs to pass.
 
 Self-hosted forum platform by CajeerTeam. PHP 8.4.1+, CajeerEngine kernel, Symfony Components, REST API, Apache-2.0.
 
@@ -47,3 +47,5 @@ CI: `.github/workflows/forum-ci.yml`. Полный интеграционный 
 Следующие этапы: права на отдельные разделы, вложенные подразделы, полноценные уведомления/непрочитанные темы, личные сообщения, WYSIWYG и безопасные вложения, опросы/Q&A, мягкое удаление и история правок, защита от спама и подтверждение email, поиск с полнотекстовым индексом, SEO-серверный рендеринг, локализация, production-тесты и подписанные релизы.
 
 Архитектура и исходные компоненты CajeerEngine сохранены. См. LICENSE, NOTICE и THIRD_PARTY_NOTICES.md. История upstream: [CHANGELOG](CHANGELOG.md), исходный release workflow хранится в `docs/upstream/` для справки.
+
+Forum migration: [phpBB 3.3 operator guide](docs/forum-migration.md).
