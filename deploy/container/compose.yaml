@@ -1,0 +1,192 @@
+# Run with --env-file deploy/container/site.env (see docs/container-deployment.md).
+# Only gateway publishes a port. The database and Redis use an isolated network.
+x-app-image: &app-image
+  image: cajeerengine-forum:${CE_RELEASE_VERSION:?set release version}-${CE_RELEASE_SHA256:?set approved SHA256}
+  pull_policy: never
+x-app-runtime: &app-runtime
+  <<: *app-image
+  user: '33:33'
+  read_only: true
+  init: true
+  restart: unless-stopped
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  tmpfs:
+    - /tmp:uid=33,gid=33,mode=1777,size=512m
+  volumes:
+    - release:/srv/forum:ro
+    - storage:/srv/forum/storage
+    - bootstrap_cache:/srv/forum/bootstrap/cache
+    - uploads:/srv/forum/public/uploads
+    - extension_assets:/srv/forum/public/extensions
+    - keys:/run/ce-keys:ro
+  networks: [backend, frontend]
+  stop_grace_period: 150s
+services:
+  postgres:
+    image: postgres:17-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ce_cluster_admin
+      POSTGRES_DB: postgres
+      POSTGRES_INITDB_ARGS: '--auth-host=scram-sha-256 --auth-local=trust'
+    entrypoint: [/bin/sh, /opt/forum/postgres-start.sh]
+    secrets: [postgres_password, db_password]
+    volumes:
+      - postgres:/var/lib/postgresql/data
+      - ./postgres-start.sh:/opt/forum/postgres-start.sh:ro
+      - ./postgres-init.sh:/docker-entrypoint-initdb.d/10-forum.sh:ro
+    networks: [backend]
+    healthcheck:
+      test: [CMD-SHELL, 'PGPASSWORD="$$(cat /tmp/ce-db-password)" psql -h 127.0.0.1 -U cajeerengine -d cajeerengine -tAc "SELECT 1" | grep -qx 1']
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 15s
+    tmpfs: [/tmp]
+    shm_size: 128m
+    mem_limit: 2g
+    stop_grace_period: 60s
+  redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    entrypoint: [/bin/sh, /opt/forum/redis-start.sh]
+    secrets: [redis_password]
+    volumes:
+      - redis:/data
+      - ./redis-start.sh:/opt/forum/redis-start.sh:ro
+    networks: [backend]
+    healthcheck:
+      test: [CMD-SHELL, 'REDISCLI_AUTH="$$(cat /run/secrets/redis_password)" redis-cli --no-auth-warning ping | grep -qx PONG']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    tmpfs: [/tmp]
+    mem_limit: 768m
+    stop_grace_period: 30s
+  init:
+    <<: *app-image
+    user: '0:0'
+    entrypoint: [/opt/ce-container/init.sh]
+    restart: 'no'
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETUID, SETGID]
+    security_opt: [no-new-privileges:true]
+    tmpfs: ['/tmp:mode=1777,size=128m']
+    environment:
+      CE_DOMAIN: ${CE_DOMAIN:?set domain}
+      CE_HTTPS_PORT: ${CE_HTTPS_PORT:-443}
+      CE_ADMIN_EMAIL: ${CE_ADMIN_EMAIL:?set admin email}
+      CE_NAMESPACE: ${CE_NAMESPACE:?set unique namespace}
+      CE_QUEUE_DRIVER: ${CE_QUEUE_DRIVER:-pgsql}
+    secrets: [db_password, redis_password, admin_password, backup_key]
+    volumes:
+      - release:/srv/forum
+      - storage:/srv/forum/storage
+      - bootstrap_cache:/srv/forum/bootstrap/cache
+      - uploads:/srv/forum/public/uploads
+      - extension_assets:/srv/forum/public/extensions
+      - keys:/run/ce-keys
+    networks: [backend]
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+  app:
+    <<: *app-runtime
+    mem_limit: 4g
+    build:
+      context: ../..
+      dockerfile: deploy/container/Dockerfile
+      target: app
+      args:
+        CE_RELEASE_VERSION: ${CE_RELEASE_VERSION:?set release version}
+        CE_RELEASE_SHA256: ${CE_RELEASE_SHA256:?set approved SHA256}
+    depends_on:
+      init: {condition: service_completed_successfully}
+    healthcheck:
+      test: [CMD, php, /opt/ce-container/runtime.php, ready]
+      interval: 10s
+      timeout: 8s
+      retries: 12
+      start_period: 15s
+  worker:
+    <<: *app-runtime
+    command: [/opt/ce-container/loop.sh, worker]
+    stop_signal: SIGTERM
+    mem_limit: 512m
+    depends_on:
+      app: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, php, /opt/ce-container/runtime.php, loop-health]
+      interval: 15s
+      timeout: 3s
+      retries: 6
+      start_period: 30s
+  scheduler:
+    <<: *app-runtime
+    command: [/opt/ce-container/loop.sh, scheduler]
+    stop_signal: SIGTERM
+    mem_limit: 512m
+    depends_on:
+      app: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, php, /opt/ce-container/runtime.php, loop-health]
+      interval: 15s
+      timeout: 3s
+      retries: 6
+      start_period: 30s
+  gateway:
+    image: cajeerengine-forum-gateway:${CE_RELEASE_VERSION:?set release version}
+    pull_policy: never
+    build:
+      context: ../..
+      dockerfile: deploy/container/Dockerfile
+      target: gateway
+    read_only: true
+    restart: unless-stopped
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, SETUID, SETGID]
+    security_opt: [no-new-privileges:true]
+    tmpfs: ['/tmp:mode=1777,size=64m']
+    environment:
+      CE_DOMAIN: ${CE_DOMAIN:?set domain}
+      CE_HTTPS_PORT: ${CE_HTTPS_PORT:-443}
+    ports:
+      - '${CE_BIND_ADDRESS:-0.0.0.0}:${CE_HTTPS_PORT:-443}:8443'
+    secrets: [tls_certificate, tls_key]
+    volumes:
+      - release:/srv/forum:ro
+      - uploads:/srv/forum/public/uploads:ro
+      - extension_assets:/srv/forum/public/extensions:ro
+    networks: [frontend]
+    depends_on:
+      app: {condition: service_healthy}
+      worker: {condition: service_healthy}
+      scheduler: {condition: service_healthy}
+    healthcheck:
+      test: [CMD-SHELL, 'wget -q --no-check-certificate --header="Host: $${CE_DOMAIN}" -O /dev/null https://127.0.0.1:8443/health/ready']
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    stop_grace_period: 30s
+networks:
+  backend: {internal: true}
+  frontend: {}
+volumes:
+  postgres: {}
+  redis: {}
+  release: {}
+  storage: {}
+  bootstrap_cache: {}
+  uploads: {}
+  extension_assets: {}
+  keys: {}
+secrets:
+  postgres_password: {file: '${CE_SECRETS_DIR:?set absolute secret directory}/postgres-password'}
+  db_password: {file: '${CE_SECRETS_DIR:?set absolute secret directory}/db-password'}
+  redis_password: {file: '${CE_SECRETS_DIR:?set absolute secret directory}/redis-password'}
+  admin_password: {file: '${CE_SECRETS_DIR:?set absolute secret directory}/admin-password'}
+  backup_key: {file: '${CE_SECRETS_DIR:?set absolute secret directory}/backup-key'}
+  tls_certificate: {file: '${CE_SECRETS_DIR:?set absolute secret directory}/tls.crt'}
+  tls_key: {file: '${CE_SECRETS_DIR:?set absolute secret directory}/tls.key'}

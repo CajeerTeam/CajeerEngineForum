@@ -1,3 +1,8 @@
+## Forum Edition 0.8.2 — Containerized Deployment & Runtime
+
+- Verified signed-dist PHP-FPM image and TLS gateway; persistent PostgreSQL, Redis, application and runtime volumes.
+- One-shot non-root installer, fail-closed identity and configuration checks, supervised workers and scheduler with health checks. PostgreSQL queue by default; optional Redis queue has explicit recovery limitations.
+
 ## Forum Edition 0.8.1 — Forum Production Deployment
 
 - Deploy only verified stable Forum Edition dist; distinguish edition version from upstream VERSION throughout deployment, recovery, build and publish tooling.

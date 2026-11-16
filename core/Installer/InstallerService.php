@@ -18,7 +18,7 @@ use CajeerEngine\Forum\ForumVersion;
 
 final readonly class InstallerService
 {
-    public function __construct(private string $rootPath)
+    public function __construct(private string $rootPath, private array $operatorRuntime = [])
     {
     }
 
@@ -314,6 +314,12 @@ final readonly class InstallerService
             'ADMIN_NAME' => $adminName,
             'ADMIN_PASSWORD' => '',
         ];
+
+        // Only trusted operator code may provide runtime overrides; never read them from HTTP options.
+        foreach ($this->operatorRuntime as $key => $value) {
+            if (!in_array($key, ['REDIS_HOST','REDIS_PORT','REDIS_PASSWORD','REDIS_DATABASE','FORUM_REDIS_NAMESPACE','FORUM_CACHE_ENABLED','CACHE_DRIVER','RATE_LIMIT_DRIVER','QUEUE_DRIVER','QUEUE_REDIS_PREFIX','SCHEDULER_DRIVER','BACKUP_KEY_FILE','UPDATE_TRUSTED_PUBLIC_KEY_FILE','UPDATE_WEB_UPGRADE_ENABLED','OBSERVABILITY_METRICS_TOKEN'], true) || !is_string($value)) throw new \InvalidArgumentException('Unsupported operator runtime option');
+            $env[$key] = $value;
+        }
 
         return [
             'preset' => $preset,

@@ -1,0 +1,92 @@
+user nginx;
+worker_processes auto;
+pid /tmp/nginx.pid;
+error_log /dev/stderr warn;
+events { worker_connections 1024; }
+http {
+    include /etc/nginx/mime.types;
+    default_type application/octet-stream;
+    log_format forum '$remote_addr $request_method $uri $status $request_time';
+    access_log /dev/stdout forum;
+    server_tokens off;
+    client_body_temp_path /tmp/client_body;
+    fastcgi_temp_path /tmp/fastcgi;
+    client_max_body_size 32m;
+    resolver 127.0.0.11 valid=10s ipv6=off;
+    server {
+        listen 8443 ssl default_server;
+        server_name ${CE_DOMAIN};
+        ssl_certificate /run/secrets/tls_certificate;
+        ssl_certificate_key /run/secrets/tls_key;
+        ssl_protocols TLSv1.2 TLSv1.3;
+        if ($host != "${CE_DOMAIN}") { return 421; }
+        root /srv/forum/public;
+        absolute_redirect off;
+        disable_symlinks on from=$document_root;
+        add_header X-Frame-Options SAMEORIGIN always;
+        add_header Referrer-Policy strict-origin-when-cross-origin always;
+        add_header Strict-Transport-Security "max-age=31536000" always;
+        add_header X-Content-Type-Options nosniff always;
+        # A tiny fixed FastCGI gate checks private state without exposing it to
+        # Nginx. This applies to static assets as well as application requests.
+        auth_request /__forum_gate;
+        error_page 403 500 502 504 =503 /__forum_unavailable;
+        location = /__forum_unavailable { internal; auth_request off; return 503; }
+        location = /__forum_gate {
+            internal;
+            auth_request off;
+            set $gate_backend app:9000;
+            fastcgi_pass $gate_backend;
+            fastcgi_pass_request_body off;
+            fastcgi_pass_request_headers off;
+            fastcgi_param SCRIPT_FILENAME /opt/ce-container/gate.php;
+            fastcgi_param SCRIPT_NAME /gate.php;
+            fastcgi_param REQUEST_METHOD GET;
+            fastcgi_param REQUEST_URI /__forum_gate;
+            fastcgi_param SERVER_PROTOCOL HTTP/1.1;
+            fastcgi_param CONTENT_LENGTH "";
+            fastcgi_param REDIRECT_STATUS 200;
+            fastcgi_read_timeout 5s;
+        }
+        location ~* ^/(?:install|upgrade)(?:/|$) { return 404; }
+        location ~ /\. { return 404; }
+        # Only explicitly public, non-executable resources are served directly.
+        location = /admin { return 308 /admin/; }
+        location = /admin/ {
+            try_files /admin/index.html =404;
+            add_header X-Content-Type-Options nosniff always;
+            add_header X-Frame-Options SAMEORIGIN always;
+            add_header Referrer-Policy strict-origin-when-cross-origin always;
+            add_header Strict-Transport-Security "max-age=31536000" always;
+            add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'self'; form-action 'self'" always;
+            add_header Cache-Control no-cache always;
+        }
+        location ~ ^/(?:admin/assets|forum-assets)/[A-Za-z0-9_.-]+\.(?:js|css)$ { try_files $uri =404; }
+        location ~ ^/uploads/[A-Za-z0-9_./-]+\.(?:png|jpg|jpeg|gif|webp)$ { try_files $uri =404; }
+        location ~ ^/extensions/[A-Za-z0-9_./-]+\.(?:png|jpg|jpeg|gif|webp|css|js|woff2|svg)$ { try_files $uri =404; }
+        location ~* ^/(?!forum/legacy/).*\.(?:php[0-9]*|phtml|phar)(?:/|$) { return 404; }
+        location / {
+            set $forum_backend app:9000;
+            fastcgi_pass $forum_backend;
+            fastcgi_param SCRIPT_FILENAME /srv/forum/public/index.php;
+            fastcgi_param SCRIPT_NAME /index.php;
+            fastcgi_param DOCUMENT_ROOT /srv/forum/public;
+            fastcgi_param QUERY_STRING $query_string;
+            fastcgi_param REQUEST_METHOD $request_method;
+            fastcgi_param CONTENT_TYPE $content_type;
+            fastcgi_param CONTENT_LENGTH $content_length;
+            fastcgi_param REQUEST_URI $request_uri;
+            fastcgi_param DOCUMENT_URI $document_uri;
+            fastcgi_param SERVER_PROTOCOL $server_protocol;
+            fastcgi_param REQUEST_SCHEME https;
+            fastcgi_param HTTPS on;
+            fastcgi_param SERVER_NAME $host;
+            fastcgi_param SERVER_PORT ${CE_HTTPS_PORT};
+            fastcgi_param REMOTE_ADDR $remote_addr;
+            fastcgi_param HTTP_HOST $http_host;
+            fastcgi_param HTTP_AUTHORIZATION $http_authorization;
+            fastcgi_param REDIRECT_STATUS 200;
+            fastcgi_read_timeout 125s;
+        }
+    }
+}

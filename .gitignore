@@ -40,3 +40,7 @@
 /deploy/__pycache__/
 
 /tools/__pycache__/
+
+/deploy/container/artifacts/
+/deploy/container/site.env
+/deploy/container/__pycache__/

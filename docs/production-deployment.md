@@ -1,4 +1,4 @@
-# Forum Production Deployment — 0.8.1 (upstream 1.3.0)
+# Forum Production Deployment — 0.8.2 (upstream 1.3.0)
 
 See [Production certification](production-certification.md) for the release and operator go/no-go gates.
 
@@ -42,19 +42,19 @@ The DB password must be 24–128 ASCII base64url characters (`A-Z a-z 0-9 _ -`),
 
 ## Deploy and verify
 
-Use the **edition version** from `release.json` (`0.8.1`), not `VERSION` (`1.3.0`). The controller refuses CMS packages, source ZIPs and non-stable releases. The signed manifest binds both identities. The API health response retains `version=1.3.0` and reports `edition_version=0.8.1`.
+Use the **edition version** from `release.json` (`0.8.2`), not `VERSION` (`1.3.0`). The controller refuses CMS packages, source ZIPs and non-stable releases. The signed manifest binds both identities. The API health response retains `version=1.3.0` and reports `edition_version=0.8.2`.
 
 First run the non-mutating application preflight (the root-owned artifact cache may be populated):
 
 ```sh
-sudo python3 /opt/cajeerengine-deploy/deploy/production.py deploy /opt/releases/cajeerengine-0.8.1-dist.zip --version=0.8.1 --sha256=APPROVED_64_HEX_SHA256 --dry-run
+sudo python3 /opt/cajeerengine-deploy/deploy/production.py deploy /opt/releases/cajeerengine-0.8.2-dist.zip --version=0.8.2 --sha256=APPROVED_64_HEX_SHA256 --dry-run
 ```
 
 It validates the exact signed dist, host tooling, TLS hostname/date/key pairing, backup-key permissions and, for a fresh installation, read-only PostgreSQL checks: empty dedicated DB, server/client versions, owner/CREATEDB and maintenance database connectivity. On an existing managed installation it verifies the installed artifact and target ecosystem compatibility. It does not publish application files, create a maintenance gate, change the schema or start services. The database check is repeated before the real installer writes.
 
 
 ```sh
-sudo python3 /opt/cajeerengine-deploy/deploy/production.py deploy /opt/releases/cajeerengine-0.8.1-dist.zip --version=0.8.1 --sha256=APPROVED_64_HEX_SHA256
+sudo python3 /opt/cajeerengine-deploy/deploy/production.py deploy /opt/releases/cajeerengine-0.8.2-dist.zip --version=0.8.2 --sha256=APPROVED_64_HEX_SHA256
 sudo python3 /opt/cajeerengine-deploy/deploy/production.py status
 ```
 
@@ -67,7 +67,7 @@ Repeat the same command with identical signed artifact and SHA: it verifies inst
 `status` reports the root journal, gate and service states. On interrupted/failed recovery the persistent gate remains closed; investigate `journalctl -u cajeerengine-php -u cajeerengine-worker -u cajeerengine-scheduler`, the application update journal, and `docs/update-backup.md` / `docs/disaster-recovery.md`. For an interrupted update use the documented recovery launcher or `update:rollback --yes` as the runtime user while all runtime services are stopped. If the first attempt failed before the application directory was published, retry the identical artifact after fixing host configuration. For a failed initial install after publication there is no prior DB: preserve diagnostics, repair or restore the dedicated DB and files explicitly; do not blindly rerun against a partially migrated DB. Never remove the maintenance gate by hand. Once the exact signed release has been recovered and Forum Edition is installed, resume:
 
 ```sh
-sudo python3 /opt/cajeerengine-deploy/deploy/production.py resume --version=0.8.1 --sha256=APPROVED_64_HEX_SHA256
+sudo python3 /opt/cajeerengine-deploy/deploy/production.py resume --version=0.8.2 --sha256=APPROVED_64_HEX_SHA256
 ```
 
 Resume only accepts recorded artifact identities, re-verifies every immutable file, checks recovery markers and readiness and starts the units. The source controller retains the approved artifacts and root journal in `/var/lib/cajeerengine-deploy`; back these up with host configuration, trust key and separate backup encryption key. The application backup remains in `storage/app/backups/production`; export encrypted copies off-host using the 1.2.4 disaster recovery commands. Configure independent monitoring, retention and periodic restore drills. No zero-downtime/HA, external DB failover, automatic certificate issuance or OS package locking is claimed.
@@ -76,6 +76,6 @@ Resume only accepts recorded artifact identities, re-verifies every immutable fi
 
 `python3 deploy/test_production.py` exercises path traversal, symlinks, duplicates, safe config, activation gating, real Nginx TLS and static/secret route protection. `deploy/host-smoke.sh` is a destructive disposable-host test with real systemd, Nginx, PHP-FPM, PostgreSQL and a signed dist; it tests installation, login, repeated deploy, tampered ZIP rejection, failed migration recovery, successful newer migration and runtime code read-only mounting. The `production-host` job runs this test on a disposable systemd runner and is required by `forum-required`. This repository change does not itself certify the host: the job must actually pass. Never run it on a live host.
 
-## Forum 0.8.1 operational scope
+## Forum 0.8.2 operational scope
 
 The initial profile uses PostgreSQL queue/scheduler, file cache and local media; Redis/container orchestration are not installed by this controller. Packages, DB role/database, DNS, certificates and secrets must be provisioned first. The production installer creates the administrator and initial forum category/board, closes public registration by default, and uses the existing migration ledger (0047). An existing manually installed site is not silently adopted; use its existing signed updater or plan an explicit backed-up migration to this host layout. Complete the actual production-host CI and staging acceptance before public deployment. The new loopback listener exposes only read-only health/forum/ACP-shell probes, never auth or administrative API mutations.

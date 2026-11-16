@@ -317,7 +317,7 @@ jobs:
       DB_PORT: '5432'
       DB_USERNAME: forum_ci
       DB_PASSWORD: 'ForumCI-Disposable-123!'
-      FORUM_BASELINE_REF: ${{ vars.FORUM_BASELINE_REF || 'v0.8.0' }}
+      FORUM_BASELINE_REF: ${{ vars.FORUM_BASELINE_REF || 'v0.8.1' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -344,37 +344,37 @@ jobs:
           ln -s pg_dump "$RUNNER_TEMP/pg-client/pg_restore"
           ln -s pg_dump "$RUNNER_TEMP/pg-client/psql"
           echo "$RUNNER_TEMP/pg-client" >> "$GITHUB_PATH"
-      - name: Build and verify physical 0.8.1 artifacts
+      - name: Build and verify physical 0.8.2 artifacts
         run: |
           composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader
           mkdir -p storage/tmp/forum-ci/release
           php tools/build-release.php --all --target-dir="$RUNNER_TEMP/forum-current" --json > storage/tmp/forum-ci/release/build.json
-          php bin/cajeer release:verify --dist --strict --artifact="$RUNNER_TEMP/forum-current/cajeerengine-0.8.1-dist.zip"
-          php bin/cajeer release:verify --strict --artifact="$RUNNER_TEMP/forum-current/cajeerengine-0.8.1-source.zip"
+          php bin/cajeer release:verify --dist --strict --artifact="$RUNNER_TEMP/forum-current/cajeerengine-0.8.2-dist.zip"
+          php bin/cajeer release:verify --strict --artifact="$RUNNER_TEMP/forum-current/cajeerengine-0.8.2-source.zip"
       - name: Build authentic previous baseline from repository history
         run: |
           mkdir -p "$RUNNER_TEMP/forum-previous"
           ref="$FORUM_BASELINE_REF"
           # Prefer the immediately preceding release when its actual tag is available.
-          if [ "$ref" = 'v0.8.0' ]; then
-            for tag in v0.8.0 0.8.0; do
+          if [ "$ref" = 'v0.8.1' ]; then
+            for tag in v0.8.1 0.8.1; do
               if git rev-parse --verify "refs/tags/$tag^{commit}" >/dev/null 2>&1; then ref="refs/tags/$tag"; break; fi
             done
           fi
           git archive "$ref" | tar -x -C "$RUNNER_TEMP/forum-previous"
           cd "$RUNNER_TEMP/forum-previous"
-          baseline=$(php -r '$v=json_decode(file_get_contents("release.json"),true,512,JSON_THROW_ON_ERROR)["edition_version"]; if($v!=="0.8.0") exit(1); echo $v;')
+          baseline=$(php -r '$v=json_decode(file_get_contents("release.json"),true,512,JSON_THROW_ON_ERROR)["edition_version"]; if($v!=="0.8.1") exit(1); echo $v;')
           echo "FORUM_BASELINE_VERSION=$baseline" >> "$GITHUB_ENV"
           composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader
           php tools/build-release.php --dist --target-dir="$RUNNER_TEMP/forum-previous-dist" --json
       - name: Clean install, live HTTP, identity and corrupt-ledger rejection
         env:
           FORUM_TEST_RELEASE_DB: forum_test_release_clean
-        run: python tools/forum-tests/release_acceptance.py --driver ${{ matrix.driver }} --artifact "$RUNNER_TEMP/forum-current/cajeerengine-0.8.1-dist.zip" --report storage/tmp/forum-ci/release/clean
+        run: python tools/forum-tests/release_acceptance.py --driver ${{ matrix.driver }} --artifact "$RUNNER_TEMP/forum-current/cajeerengine-0.8.2-dist.zip" --report storage/tmp/forum-ci/release/clean
       - name: Signed upgrade from authentic baseline, recovery and rollback
         env:
           FORUM_TEST_RELEASE_DB: forum_test_release_upgrade
-        run: python tools/forum-tests/release_acceptance.py --driver ${{ matrix.driver }} --artifact "$RUNNER_TEMP/forum-current/cajeerengine-0.8.1-dist.zip" --previous "$RUNNER_TEMP/forum-previous-dist/cajeerengine-${FORUM_BASELINE_VERSION}-dist.zip" --report storage/tmp/forum-ci/release/upgrade
+        run: python tools/forum-tests/release_acceptance.py --driver ${{ matrix.driver }} --artifact "$RUNNER_TEMP/forum-current/cajeerengine-0.8.2-dist.zip" --previous "$RUNNER_TEMP/forum-previous-dist/cajeerengine-${FORUM_BASELINE_VERSION}-dist.zip" --report storage/tmp/forum-ci/release/upgrade
       - name: Upload release acceptance evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -433,7 +433,7 @@ jobs:
           CE_DB_PASSWORD: ForumDeployDisposable123
         run: |
           export CE_CERT_REPORT="$RUNNER_TEMP/forum-host/production-acceptance.json"
-          sudo --preserve-env=CE_DEPLOY_DISPOSABLE,CE_DB_USER,CE_DB_PASSWORD,CE_CERT_REPORT bash /var/lib/ce-forum-ci-source/deploy/host-smoke.sh "$RUNNER_TEMP/forum-host/cajeerengine-0.8.1-dist.zip"
+          sudo --preserve-env=CE_DEPLOY_DISPOSABLE,CE_DB_USER,CE_DB_PASSWORD,CE_CERT_REPORT bash /var/lib/ce-forum-ci-source/deploy/host-smoke.sh "$RUNNER_TEMP/forum-host/cajeerengine-0.8.2-dist.zip"
       - name: Upload production host evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -442,10 +442,92 @@ jobs:
           path: ${{ runner.temp }}/forum-host/production-acceptance.json
           if-no-files-found: warn
           retention-days: 7
+  container-runtime:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        queue: [pgsql, redis]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: mbstring, sodium, zip, dom, xml, curl, openssl, gd
+          tools: composer:v2
+      - name: Build signed dist and container profile
+        env:
+          CE_QUEUE: ${{ matrix.queue }}
+        run: |
+          set -euo pipefail
+          composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader
+          php tools/build-release.php --dist --target-dir="$RUNNER_TEMP/forum-container-dist" --json
+          php bin/cajeer release:keygen --secret-key="$RUNNER_TEMP/forum-container.secret" --public-key="$RUNNER_TEMP/forum-container.pub"
+          artifact="$RUNNER_TEMP/forum-container-dist/cajeerengine-0.8.2-dist.zip"
+          php bin/cajeer release:sign --package="$artifact" --secret-key="$RUNNER_TEMP/forum-container.secret"
+          sha=$(sha256sum "$artifact" | cut -d' ' -f1)
+          sh deploy/container/prepare.sh "$artifact" "$RUNNER_TEMP/forum-container.pub" "$sha" 0.8.2
+          umask 077
+          secret_dir="$RUNNER_TEMP/forum-container-secrets"
+          mkdir -p "$secret_dir"
+          for name in postgres-password db-password redis-password; do openssl rand -hex 32 > "$secret_dir/$name"; done
+          printf 'Aa9%s\n' "$(openssl rand -hex 24)" > "$secret_dir/admin-password"
+          openssl rand -base64 32 > "$secret_dir/backup-key"
+          openssl req -x509 -newkey rsa:2048 -nodes -days 2 -subj /CN=forum.test -addext subjectAltName=DNS:forum.test -keyout "$secret_dir/tls.key" -out "$secret_dir/tls.crt"
+          cat > deploy/container/site.env <<EOF
+          CE_RELEASE_VERSION=0.8.2
+          CE_RELEASE_SHA256=$sha
+          CE_DOMAIN=forum.test
+          CE_ADMIN_EMAIL=container-admin@example.invalid
+          CE_NAMESPACE=container-ci-$CE_QUEUE
+          CE_SECRETS_DIR=$secret_dir
+          CE_HTTPS_PORT=18443
+          CE_BIND_ADDRESS=127.0.0.1
+          CE_QUEUE_DRIVER=$CE_QUEUE
+          EOF
+          docker compose --project-name forum-container-ci --env-file deploy/container/site.env -f deploy/container/compose.yaml config --quiet
+          docker compose --project-name forum-container-ci --env-file deploy/container/site.env -f deploy/container/compose.yaml build app gateway
+      - name: Real install, HTTP, worker and persistent recreation
+        env:
+          CE_QUEUE: ${{ matrix.queue }}
+        run: |
+          set -euo pipefail
+          dc() { docker compose --project-name forum-container-ci --env-file deploy/container/site.env -f deploy/container/compose.yaml "$@"; }
+          dc up -d gateway
+          secret_dir="$RUNNER_TEMP/forum-container-secrets"
+          smoke() { python deploy/container/smoke.py --domain forum.test --port 18443 --ca "$secret_dir/tls.crt" --email container-admin@example.invalid --password-file "$secret_dir/admin-password" --state "$RUNNER_TEMP/container-state.json" "$@"; }
+          smoke
+          dc exec -T app php bin/cajeer forum:runtime:check --json
+          dc exec -T app php bin/cajeer forum:ecosystem:check --deep --json
+          dc exec -T app php bin/cajeer queue:diagnostics --json
+          dc exec -T scheduler php /opt/ce-container/runtime.php loop-health
+          dc exec -T app sh -c 'test ! -w /srv/forum/core && test -w /srv/forum/storage/app && test "$(id -u)" = 33'
+          dc exec -T app php bin/cajeer maintenance:on --json
+          code=$(curl --noproxy '*' --resolve forum.test:18443:127.0.0.1 --cacert "$secret_dir/tls.crt" -s -o /dev/null -w '%{http_code}' https://forum.test:18443/forum-assets/forum.js)
+          test "$code" = 503
+          dc exec -T app php bin/cajeer maintenance:off --json
+          if [ "$CE_QUEUE" = pgsql ]; then
+            dc stop gateway worker scheduler
+            dc exec -T app php bin/cajeer backup:create --json > "$RUNNER_TEMP/container-backup.json"
+            backup=$(python -c 'import json,sys; print(json.load(open(sys.argv[1]))["id"])' "$RUNNER_TEMP/container-backup.json")
+            dc exec -T app php bin/cajeer backup:verify --id="$backup" --json
+          fi
+          dc down
+          dc up -d gateway
+          smoke --verify-only
+      - name: Stop disposable container project
+        if: always()
+        run: |
+          if [ -f deploy/container/site.env ]; then
+            docker compose --project-name forum-container-ci --env-file deploy/container/site.env -f deploy/container/compose.yaml ps -a
+            docker compose --project-name forum-container-ci --env-file deploy/container/site.env -f deploy/container/compose.yaml logs --tail=50 init app worker scheduler gateway || true
+            docker compose --project-name forum-container-ci --env-file deploy/container/site.env -f deploy/container/compose.yaml down -v --remove-orphans
+          fi
   forum-required:
     runs-on: ubuntu-24.04
     if: always()
-    needs: [test, postgres, mysql-search, browser, release, production-host]
+    needs: [test, postgres, mysql-search, browser, release, production-host, container-runtime]
     steps:
       - name: Require every test matrix to pass
         env:
@@ -455,6 +537,7 @@ jobs:
           BROWSER: ${{ needs.browser.result }}
           RELEASE: ${{ needs.release.result }}
           HOST: ${{ needs.production-host.result }}
+          CONTAINERS: ${{ needs.container-runtime.result }}
         run: |
           test "$SQLITE" = success
           test "$POSTGRES" = success
@@ -462,3 +545,4 @@ jobs:
           test "$BROWSER" = success
           test "$RELEASE" = success
           test "$HOST" = success
+          test "$CONTAINERS" = success
