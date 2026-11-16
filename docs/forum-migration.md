@@ -65,7 +65,7 @@ php bin/cajeer forum:import:run --platform=xenforo --source-version=2.3.0 --snap
 
 Use `--platform=mybb --source-version=1.8.39 --confirm=import-mybb` or `--platform=smf --source-version=2.1.6 --confirm=import-smf` for the corresponding source (omit `--confirm` for plan). Override `--prefix` as necessary. Keep the exact same platform/version/prefix/DSN/snapshot label/file root between resumptions. Changing any creates a distinct job; do not use a new label to restart an incomplete import. Restore its backup if the source snapshot has changed. New jobs compare the normalized node tree digest and source counts/high-water marks on resume and completion. This is not a full-content cryptographic snapshot guarantee.
 
-New sources transfer native users and ordinary group memberships (including numeric user ID 1), nested categories/boards, visible topics/posts, closed/locked/pinned metadata, post revisions, local post attachments, closed polls and compatible registered votes, topic and board subscriptions. Posts are imported as literal text; source BBCode, media embed tags and internal links are not fully rewritten. Source-specific system roles are not granted. All new users remain disabled and all imported boards hidden/readonly/noindex until reviewed. Email collisions are skipped. Source private messages, sessions, credentials, reactions, reputation, avatars, sanctions, custom fields, automatic ACL translation and public redirects are not imported; source counts are reported for the applicable major unsupported tables. Guest votes are skipped. No historical notification or extension events are emitted.
+New sources transfer native users and ordinary group memberships (including numeric user ID 1), nested categories/boards, visible topics/posts, closed/locked/pinned metadata, post revisions, local post attachments, closed polls and compatible registered votes, topic and board subscriptions. Posts are imported as literal text; source BBCode, media embed tags and internal links are not fully rewritten. Source-specific system roles are not granted. All new users remain disabled and all imported boards hidden/readonly/noindex until reviewed. Email collisions are skipped. Source private messages, sessions, credentials, reactions, reputation, avatars, sanctions, custom fields, automatic ACL translation are not imported; source counts are reported for the applicable major unsupported tables. Guest votes are skipped. No historical notification or extension events are emitted.
 
 Attachment handling:
 
@@ -82,3 +82,50 @@ Global administrators can open `/admin/#/forum` → **Миграции** to prep
 ### Tests and compatibility
 
 `php tools/forum-multi-migration-regression.php` runs the production PHP importer and all three new source adapters on disposable SQLite snapshots/target, including an injected transactional failure, reopening source on resume, source ID collisions, group membership, file bytes, poll/watch transfer, hidden nodes, empty/deleted content, FTS and old XenForo file-hash layout. Fixtures in `tools/forum-tests/multi_forum_fixture.sql` use only the relevant native columns. They are synthetic, not licensed customer database exports. Run the full CI matrix and a real source migration/restore drill before production cutover. MyBB source column layouts are documented in the upstream [1.8.39 installer schema](https://github.com/mybb/mybb/blob/mybb_1839/install/resources/mysql_db_tables.php). XenForo local file paths follow the [2.2 attachment layout](https://xenforo.com/community/threads/attachments-system-locating-a-specific-file.225032/) and the [2.3 file-key distinction](https://xenforo.com/community/resources/attachment-integrity-check-cli.10689/).
+
+
+## 0.7.7 — bounded import and recovery
+
+Use `--seconds=60 --steps=1000 --progress-only=1` on `forum:import:run` to stop between committed batches after a soft time budget. The first backup, source planning and final integrity checks are not bounded by this timer. The default full report remains compatible; progress-only avoids re-scanning the entire ledger and relation tables until completion. `forum:import:status` still returns the full report. Use the same immutable snapshot parameters each time.
+
+Only one unfinished migration is permitted. `maintenance:off` refuses to reopen an installed forum until the job completes or its pre-import backup is restored. Keep all nodes/workers drained, including remote nodes sharing the DB. Resume reads the durable checkpoint and never retries an uncertain SQL commit automatically. A failed source attachment read aborts the batch; fix storage access before resuming. Missing or unsupported source files are still explicitly skipped. `--verify-backup=1` verifies the complete authenticated recovery set before a run; otherwise its manifest must exist and the set must not have an incomplete marker. Verify before resuming after storage failures. Do not delete the recovery set until cutover is accepted.
+
+```bash
+php bin/cajeer backup:verify --id=BACKUP_ID --json
+php bin/cajeer forum:import:status --job=JOB_ID --json
+# On unrecoverable failure, restore the verified pre-import set under maintenance:
+php bin/cajeer backup:restore --id=BACKUP_ID --yes
+```
+
+Restore is whole-installation recovery, not a partial undo. It restores the prior code and database together and may restore an older edition; use a fresh backup for each independent job. On multi-node installations coordinate maintenance and cache namespace across every replica. After a full restore, change `FORUM_REDIS_NAMESPACE` before allowing traffic to prevent reuse of keys from a discarded database state.
+
+Finalization validates that each imported primary mapping still resolves, verifies the search indexes and active theme, and runs the forum integrity check. Before starting or resuming, the CLI validates the active forum design and enabled extension dependency graph, signatures and compatibility using the existing extension registry. It does not execute providers or emit historical publication events. After import, test installed plugins and the active theme on staging; `extension:runtime:boot --json` and the existing signed package workflow remain the operator's tools.
+
+### Old links
+
+The job-scoped HTTP resolver is intentionally explicit to avoid collisions when several source forums reuse numeric IDs. For a completed job with reviewed public ACLs:
+
+- `/forum/legacy/JOB_ID/topics/15432` → current topic
+- `/forum/legacy/JOB_ID/posts/89210` → current topic page and post anchor
+- `/forum/legacy/JOB_ID/forums/15` → current board
+- `/forum/legacy/JOB_ID/url/viewtopic.php?t=15432` (phpBB)
+- `/forum/legacy/JOB_ID/url/showthread.php?tid=15432` (MyBB)
+- `/forum/legacy/JOB_ID/url/index.php?topic=15432.0` (SMF)
+- `/forum/legacy/JOB_ID/url/threads/example.15432/` (XenForo)
+
+For the old host, configure an **internal rewrite** to `/forum/legacy/JOB_ID/url/<old-path>` preserving the query string; replace JOB_ID with the actual 64-character job ID. For example, on a dedicated phpBB legacy host, with the same PHP front controller and public root:
+
+```nginx
+location = /viewtopic.php {
+    rewrite ^ /forum/legacy/JOB_ID/url/viewtopic.php last;
+}
+location = /viewforum.php {
+    rewrite ^ /forum/legacy/JOB_ID/url/viewforum.php last;
+}
+```
+
+Use an equivalent route for the other source platforms; do not blindly rewrite a shared site's `index.php`. The application selects the parser by the stored source platform, resolves the ID in that job and returns 301 only for currently guest-readable, live content. A private/hidden, deleted, skipped, unknown or incomplete mapping returns 404 with no Location. No query-provided host or arbitrary redirect destination is accepted. The response is `private, no-store` and `noindex` to avoid reusing stale ACL decisions. Old page offsets are not mapped unless a post ID is present; canonical topic URLs remain unchanged. The original domain must be routed to the new installation or reverse-proxied by the operator.
+
+### Larger regression
+
+`php tools/forum-migration-reliability-regression.php --topics=1200` creates a synthetic XenForo snapshot and imports real topics, posts and subscriptions into a disposable target, injects a relation-write failure, resumes from a partial watcher checkpoint, verifies the full-text index, activates a real theme and boots the existing template plugin. It also checks public legacy links and ACL revocation. CI executes it with PDO SQLite. To increase size use `--topics=10000` (or up to 100000); run on a staging host with sufficient disk space. It prints measured batch counts, runtime and peak PHP memory, not a production throughput guarantee. The existing per-file 25 MiB bound and SQL base64 representation still apply; importing 100 GB of attachments requires appropriate database/dump/disk capacity and a real recovery drill.

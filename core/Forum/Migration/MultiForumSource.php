@@ -37,7 +37,7 @@ final class MultiForumSource implements ForumSource
     public function platform(): string{return $this->type;}
     public function version(): string{return $this->sourceVersion;}
     public function identity(): string{return hash('sha256',$this->type."\0".$this->sourceVersion."\0".$this->prefix."\0".$this->snapshot);}
-    public function unsupported(): array{return ['source ACL translation','password hashes','private messages','bans and sanctions','anonymous poll votes','reactions and reputation','avatars and custom profile fields','remote media','legacy URL redirects','source-specific BBCode rendering', 'source-specific poll visibility (imported closed)'];}
+    public function unsupported(): array{return ['source ACL translation','password hashes','private messages','bans and sanctions','anonymous poll votes','reactions and reputation','avatars and custom profile fields','remote media','source-specific BBCode rendering', 'source-specific poll visibility (imported closed)'];}
     private function t(string $table):string{return $this->prefix.$table;}
     private function q(string $sql,array $params=[]):\PDOStatement{$s=$this->pdo->prepare($sql);$s->execute($params);return $s;}
     private function all(string $sql,array $params=[]):array{return $this->q($sql,$params)->fetchAll(PDO::FETCH_ASSOC);}
@@ -112,8 +112,11 @@ final class MultiForumSource implements ForumSource
         $stack=array_map(fn($r)=>[$r,1],array_reverse($children[0]??[]));$seen=[];while($stack){[$r,$depth]=array_pop($stack);if($depth>16)throw new \RuntimeException('Source tree exceeds target depth of 16');$id=(int)$r['forum_id'];if(isset($seen[$id]))throw new \RuntimeException('Cyclic source node tree');$seen[$id]=true;$r['left_id']=count($this->tree)+1;$this->tree[]=$r;foreach(array_reverse($children[$id]??[]) as $child)$stack[]=[$child,$depth+1];}
         if(count($seen)!==count($rows))throw new \RuntimeException('Source tree contains orphan or cyclic nodes; repair the snapshot before importing');
     }
+    private ?array $planned=null;
     public function plan():array
     {
+        if(!$this->pdo->inTransaction())throw new \RuntimeException('Source snapshot transaction ended');
+        if($this->planned!==null)return $this->planned;
         $counts=['source_platform'=>$this->type,'source_tree_sha256'=>hash('sha256',json_encode($this->tree,JSON_THROW_ON_ERROR))];foreach(self::PHASES as $phase){
             if($phase==='forums'){$n=count($this->tree);$counts[$phase]=['count'=>$n,'high'=>$n];continue;}
             $key=self::KEYS[$phase];$row=$this->q('SELECT COUNT(*) AS n,COALESCE(MAX('.$key.'),0) AS high FROM ('.$this->queries[$phase].') src')->fetch(PDO::FETCH_ASSOC);
@@ -127,7 +130,7 @@ final class MultiForumSource implements ForumSource
         foreach(['watches','board_watches','votes'] as $kind)$this->watchers($kind,0,0,1);
         // A poll is keyed by topic, not by the source's unrelated poll ID.
         if((int)$this->q('SELECT COUNT(*) FROM (SELECT topic_id FROM ('.$this->queries['polls'].') p GROUP BY topic_id HAVING COUNT(*)>1) duplicate_polls')->fetchColumn()>0)throw new \RuntimeException('Multiple source polls for one topic');
-        return $counts;
+        return $this->planned=$counts;
     }
     public function batch(string $phase,int $cursor,int $high,int $limit):array
     {

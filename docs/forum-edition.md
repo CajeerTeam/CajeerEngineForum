@@ -38,7 +38,7 @@ The inherited `/install` and `/upgrade` front controllers are routed through `pu
 
 ## Releases
 
-`VERSION` and `release.json.version` identify the upstream engine (1.3.0); `release.json.edition_version` is 0.7.6. `ForumVersion` validates both identities. Source/dist artifact names, manifest version, release tags and updater comparisons use the edition version. The signed manifest also records `upstream_version`, checked against VERSION, release metadata and the prebuilt admin manifest. The engine API/SDK compatibility version stays unchanged. Health/admin/system diagnostics expose `edition_version`; HTTP responses include `X-CajeerEngine-Forum-Version`.
+`VERSION` and `release.json.version` identify the upstream engine (1.3.0); `release.json.edition_version` is 0.7.7. `ForumVersion` validates both identities. Source/dist artifact names, manifest version, release tags and updater comparisons use the edition version. The signed manifest also records `upstream_version`, checked against VERSION, release metadata and the prebuilt admin manifest. The engine API/SDK compatibility version stays unchanged. Health/admin/system diagnostics expose `edition_version`; HTTP responses include `X-CajeerEngine-Forum-Version`.
 
 The 0.1.0 updater compared upstream engine versions. Apply the 0.1.1 changed-file archive manually to a backed-up test installation before using the new updater. Do not submit the patch ZIP to `update:apply`: it is not a signed full dist. With 0.1.1 installed, later signed releases can advance edition_version without changing upstream. Legacy forum manifests without upstream_version and ordinary CMS packages are refused by the updater. The upstream signed publication workflow is archived, not active; no production signature or deployment certification is claimed.
 
@@ -614,6 +614,6 @@ Forum plugins use the signed extension lifecycle and the Forum SDK described in 
 
 See [Forum Migration Engine & phpBB operator guide](forum-migration.md) for read-only planning, backups, resumable batches, source ID mappings, ACL quarantine and cutover.
 
-## Multi-forum migration (0.7.6)
+## Multi-forum migration (0.7.7)
 
 The operator importer now accepts native XenForo 2.2/2.3, MyBB 1.8 and SMF 2.1 snapshots as well as phpBB 3.3. See [the migration guide](forum-migration.md) for supported schema fields, attachment layouts, preflight and cutover. Global administrators can inspect the job ledger and generate operator commands in Forum ACP → Миграции; source credentials and execution remain operator-only.

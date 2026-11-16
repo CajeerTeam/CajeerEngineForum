@@ -1,3 +1,10 @@
+## Forum Edition 0.7.7 — Migration Reliability & Ecosystem
+
+- Bounded multi-object relation batches, transaction-local statement and mapping reuse, and source snapshot plan reuse.
+- Prevent overlapping imports and premature maintenance exit; validate backup presence and optional full verification, add bounded CLI runtime.
+- Check import mappings, search index and active theme before completing; verify enabled extension dependency graph before import.
+- ACL-safe historical topic, post and board redirects scoped to a completed job. No schema migration.
+
 ## Forum Edition 0.7.6 — XenForo & Multi-Forum Migration
 
 - Native read-only adapters for XenForo 2.2/2.3, MyBB 1.8 and SMF 2.1; shared transactional importer, source-specific IDs and checkpoint verification.

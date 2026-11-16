@@ -31,6 +31,15 @@ final readonly class ForumController
         if($this->platform?->hasForumPanels())return $load();
         return $this->cached($request,'page',$load,$settings);
     }
+    public function legacy(Request $request,array $parameters=[]): Response
+    {
+        $headers=['Cache-Control'=>'private, no-store','X-Robots-Tag'=>'noindex, nofollow','Vary'=>'Cookie, Authorization, X-API-Token'];
+        try{
+            $job=(string)($parameters['job']??'');
+            $path=isset($parameters['path'])?$this->discussions->legacyUrl($job,(string)$parameters['path'],$request->query->all()):$this->discussions->legacyLocation($job,(string)($parameters['kind']??''),(string)($parameters['id']??''));
+            return new Response('',301,$headers+['Location'=>$path]);
+        }catch(ForumException){return new Response('Страница не найдена.',404,$headers+['Content-Type'=>'text/plain; charset=UTF-8']);}
+    }
     public function sitemap(Request $request, array $parameters=[]): Response
     {
         return (new ForumPageRenderer($this->discussions,$this->root))->sitemap($request);

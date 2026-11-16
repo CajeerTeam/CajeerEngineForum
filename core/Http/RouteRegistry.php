@@ -306,6 +306,8 @@ final class RouteRegistry
             ['GET', '/api/v1/forum/members/{id}/images/{kind}', 'api.v1.forum.profileImage', 'forum', 'profileImage', null],
             ['GET', '/forum/sitemap.xml', 'forum.sitemap', 'forum', 'sitemap', null],
             ['GET', '/forum/rss.xml', 'forum.rss', 'forum', 'rss', null],
+            ['GET', '/forum/legacy/{job}/url/{path}', 'forum.legacy.url', 'forum', 'legacy', null],
+            ['GET', '/forum/legacy/{job}/{kind}/{id}', 'forum.legacy', 'forum', 'legacy', null],
             ['GET', '/forum/{path}', 'forum.page', 'forum', 'page', null],
             ['GET', '/', 'public.home', 'forum', 'page', null],
             ['GET', '/{path}', 'public.page.path', 'public', 'renderByPath', null],

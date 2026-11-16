@@ -34,7 +34,7 @@ final class ForumRuntimeCache
             $generation=$this->db->connection()->query("SELECT name, generation FROM ce_forum_cache_generation_effective WHERE scope='public' ORDER BY name")->fetchAll(\PDO::FETCH_ASSOC);
             if(count($generation)!==21)return $load();
             $settings=$view==='page'?[getenv('APP_NAME'),($seo??new ForumSeoSettings($this->root,$this->db,true))->cacheIdentity(),getenv('FORUM_REGISTRATION')]:[getenv('FORUM_REGISTRATION')];
-            $key=hash('sha256',json_encode(['v076',$generation,$view,$path,$variant,(string)($q['page']??1),$settings],JSON_THROW_ON_ERROR));
+            $key=hash('sha256',json_encode(['v077',$generation,$view,$path,$variant,(string)($q['page']??1),$settings],JSON_THROW_ON_ERROR));
             $store=new RedisCacheStore($redis,$prefix.'cache:');$lock=$prefix.'lock:'.$key;$token=bin2hex(random_bytes(16));$owner=false;
             try{
                 $cached=$store->get($key);

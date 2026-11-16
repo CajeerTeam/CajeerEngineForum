@@ -9,6 +9,7 @@ import re
 from pathlib import Path
 import shutil
 import socket
+import sqlite3
 import subprocess
 import tempfile
 import time
@@ -696,10 +697,36 @@ def verify_community_live(base,f):
     print('PASS post-upgrade cross-module community operations',flush=True)
 
 
+def verify_migration_recovery(site, env, report, work, port, current, state):
+    # Exercise the actual encrypted recovery set, not a mock backup id.
+    source=work/'migration-source.sqlite'
+    with sqlite3.connect(source) as db:
+        db.executescript((HERE/'multi_forum_fixture.sql').read_text())
+    files=work/'migration-files'; (files/'1').mkdir(parents=True)
+    (files/'1'/('1001-'+'b'*32+'.data')).write_bytes(b'hello world!')
+    key=work/'migration-backup.key'
+    run(site,env,report,'migration-backup-key',['php','bin/cajeer','backup:keygen','--key='+str(key)])
+    menv=env | {'BACKUP_KEY_FILE':str(key),'FORUM_IMPORT_SOURCE_DSN':'sqlite:'+str(source)}
+    opts=['--platform=xenforo','--source-version=2.3.0','--snapshot=acceptance-recovery','--files='+str(files),'--json']
+    run(site,menv,report,'migration-maintenance',['php','bin/cajeer','maintenance:on'])
+    plan=json.loads(run(site,menv,report,'migration-plan',['php','bin/cajeer','forum:import:plan',*opts]))
+    require(plan['ok'],'Migration plan failed')
+    partial=json.loads(run(site,menv,report,'migration-partial',['php','bin/cajeer','forum:import:run',*opts,'--confirm=import-xenforo','--steps=1','--batch=1']))
+    job=partial['job']; require(job['state']!='complete','Expected incomplete migration')
+    run(site,menv,report,'migration-fence',['php','bin/cajeer','maintenance:off'],expected=1)
+    run(site,menv,report,'migration-backup-verify',['php','bin/cajeer','backup:verify','--id='+job['backup_id']])
+    run(site,menv,report,'migration-resume',['php','bin/cajeer','forum:import:run',*opts,'--confirm=import-xenforo','--steps=1','--batch=1','--verify-backup=1','--progress-only=1'])
+    run(site,menv,report,'migration-restore',['php','bin/cajeer','backup:restore','--id='+job['backup_id'],'--yes'],timeout=600)
+    run(site,menv,report,'migration-restored-job-absent',['php','bin/cajeer','forum:import:status','--job='+job['id'],'--json'],expected=1)
+    run(site,menv,report,'migration-reopen',['php','bin/cajeer','maintenance:off'])
+    with http(site,env,report,'migration-recovered',port,current) as base:
+        verify_data(base,state)
+
+
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--artifact',type=Path,required=True)
-    parser.add_argument('--previous',type=Path,help='Original 0.7.5 dist (or supported historical baseline); enables real signed upgrade and rollback')
+    parser.add_argument('--previous',type=Path,help='Original 0.7.6 dist (or supported historical baseline); enables real signed upgrade and rollback')
     parser.add_argument('--driver',choices=('sqlite','pgsql'),default='sqlite')
     parser.add_argument('--report',type=Path,required=True)
     args=parser.parse_args(); report=args.report.resolve(); report.mkdir(parents=True,exist_ok=True)
@@ -711,7 +738,7 @@ def main():
         initial=current
         if previous:
             with zipfile.ZipFile(previous) as z: initial=json.loads(z.read('cajeerengine/release.json'))['edition_version']
-            require(initial in ('0.5.5','0.5.6','0.6.0','0.6.1','0.6.2','0.6.3','0.6.4','0.6.5','0.6.6','0.7.0','0.7.1','0.7.2','0.7.3','0.7.4','0.7.5'),'Unsupported authentic baseline')
+            require(initial in ('0.5.5','0.5.6','0.6.0','0.6.1','0.6.2','0.6.3','0.6.4','0.6.5','0.6.6','0.7.0','0.7.1','0.7.2','0.7.3','0.7.4','0.7.5','0.7.6'),'Unsupported authentic baseline')
         site=unpack(previous or artifact,work/'live',initial)
         install(site,env,report,'initial',port,args.driver)
         with http(site,env,report,'initial',port,initial) as base:
@@ -746,6 +773,8 @@ def main():
                 verify_moderation(base,state,fixture)
                 verify_sanctions(base,state)
                 verify_antispam(base,state)
+        if not previous and tuple(map(int,current.split("."))) >= (0,7,7):
+            verify_migration_recovery(site,env,report,work,port,current,state)
         if previous:
             key=work/'backup.key'; secret=work/'release.secret'; public=work/'release.public'
             run(site,env,report,'backup-key',['php','bin/cajeer','backup:keygen','--key='+str(key)])

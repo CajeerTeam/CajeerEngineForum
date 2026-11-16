@@ -16,6 +16,58 @@ final readonly class DiscussionService
 
     public function seoSettings(string $root): \CajeerEngine\Forum\ForumSeoSettings { return new \CajeerEngine\Forum\ForumSeoSettings($root,$this->db,true); }
 
+    public function legacyUrl(string $job,string $path,array $query): string
+    {
+        if(!preg_match('/\A[a-f0-9]{64}\z/D',$job))throw new ForumException('Страница не найдена.',404);
+        return $this->db->readSnapshot(function()use($job,$path,$query){
+            $s=$this->db->connection()->prepare("SELECT plan_json FROM ce_forum_import_jobs WHERE id=? AND state='complete'");$s->execute([$job]);$raw=$s->fetchColumn();$s->closeCursor();
+            if(!is_string($raw))throw new ForumException('Страница не найдена.',404);
+            $plan=json_decode($raw,true,512,JSON_THROW_ON_ERROR);
+            [$kind,$id]=\CajeerEngine\Forum\Migration\LegacyForumUrl::resolve($plan['source_platform']??'phpbb',$path,$query);
+            return $this->legacyLocation($job,$kind,$id);
+        });
+    }
+    /** Resolve historical IDs only for completed imports and currently public content.
+     * Never trust the source ACL or the caller's administrator privileges. */
+    public function legacyLocation(string $job,string $kind,string $sourceId): string
+    {
+        if(!preg_match('/\A[a-f0-9]{64}\z/D',$job)||!in_array($kind,['topics','posts','forums'],true)||!preg_match('/\A[1-9][0-9]{0,18}\z/D',$sourceId)||(string)(int)$sourceId!==$sourceId)throw new ForumException('Страница не найдена.',404);
+        return $this->db->readSnapshot(function()use($job,$kind,$sourceId){
+            $pdo=$this->db->connection();
+            $q=$pdo->prepare("SELECT m.target_id FROM ce_forum_import_map m JOIN ce_forum_import_jobs j ON j.id=m.job_id WHERE m.job_id=? AND m.kind=? AND m.source_id=? AND m.outcome='imported' AND j.state='complete'");
+            $q->execute([$job,$kind,$sourceId]);$id=$q->fetchColumn();$q->closeCursor();
+            if(!is_string($id)||!preg_match('/\A[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}\z/D',$id))throw new ForumException('Страница не найдена.',404);
+            $guest=$this->access(new ForumAccessPolicy('',[]));
+            if($kind==='forums'){
+                NodePermissionService::assert($guest,$id,'thread:read');
+                if(!$this->boards->view($id))throw new ForumException('Страница не найдена.',404);
+                return '/forum/boards/'.$id;
+            }
+            $post=null;
+            if($kind==='posts'){
+                $q=$pdo->prepare('SELECT thread_id,ordinal FROM ce_forum_live_posts WHERE id=?');$q->execute([$id]);$post=$q->fetch(\PDO::FETCH_ASSOC);$q->closeCursor();
+                if(!$post)throw new ForumException('Страница не найдена.',404);
+                $threadId=$post['thread_id'];
+            }else $threadId=$id;
+            $thread=$this->threads->find($threadId);
+            if(!$thread){
+                // Merged topics retain source-board ACL as well as destination ACL.
+                $redirect=(new \CajeerEngine\Forum\Repository\DiscussionManagementRepository($this->db))->findRedirect($threadId);
+                if(!$redirect)throw new ForumException('Страница не найдена.',404);
+                NodePermissionService::assert($guest,$redirect['source_board_id'],'thread:read');
+                $threadId=$redirect['target_id'];$thread=$this->threads->find($threadId);
+            }
+            if(!$thread)throw new ForumException('Страница не найдена.',404);
+            NodePermissionService::assert($guest,$thread['board_id'],'thread:read');
+            if(!$this->posts->firstId($threadId))throw new ForumException('Страница не найдена.',404);
+            $url='/forum/threads/'.$threadId;
+            if($post!==null){
+                $url.='?page='.$this->threads->pageForPost($threadId,$id).'#post-'.$id;
+            }
+            return $url;
+        });
+    }
+
     private function access(?ForumAccessPolicy $actor): array { return $this->tx->permissions()->access($actor??new ForumAccessPolicy('',[])); }
     private function decorated(array $board,array $access): array { $board['permissions']=$access['boards'][$board['id']]; return $board; }
     public function admin(): ForumAdminService { return new ForumAdminService($this->db,$this->tx); }

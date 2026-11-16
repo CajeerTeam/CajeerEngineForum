@@ -13,23 +13,53 @@ use PDO;
 final class ForumMigrationEngine
 {
     public function __construct(private DatabaseManager $db, private ForumSource $source, private ?string $files=null) {}
-    private function query(string $sql,array $params=[]): \PDOStatement {$s=$this->db->connection()->prepare($sql);$s->execute($params);return $s;}
-    private function row(string $sql,array $params=[]): ?array {$r=$this->query($sql,$params)->fetch(PDO::FETCH_ASSOC);return $r===false?null:$r;}
+    private array $mappingCache=[];
+    private array $statements=[];
+    private function query(string $sql,array $params=[]): \PDOStatement
+    {
+        $s=$this->statements[$sql]??=$this->db->connection()->prepare($sql);
+        $s->closeCursor();$s->execute($params);return $s;
+    }
+    /** Only cache statements and mappings within a single batch/connection. */
+    private function resetBatch(): void {$this->statements=[];$this->mappingCache=[];}
+    public static function assertNoRunning(DatabaseManager $db): void
+    {
+        if($db->tableExists('ce_forum_import_jobs') && $db->connection()->query("SELECT id FROM ce_forum_import_jobs WHERE state<>'complete' LIMIT 1")->fetchColumn()!==false)
+            throw new \RuntimeException('An incomplete forum import exists; resume it or restore its verified backup');
+    }
+    private function row(string $sql,array $params=[]): ?array {$s=$this->query($sql,$params);$r=$s->fetch(PDO::FETCH_ASSOC);$s->closeCursor();return $r===false?null:$r;}
     private static function uuid(): string {$b=random_bytes(16);$b[6]=chr((ord($b[6])&15)|64);$b[8]=chr((ord($b[8])&63)|128);return vsprintf('%s%s-%s-%s-%s-%s%s%s',str_split(bin2hex($b),4));}
     public function plan(): array {return ['ok'=>true,'job'=>$this->source->identity(),'platform'=>$this->source->platform(),'version'=>$this->source->version(),'counts'=>$this->source->plan(),'policy'=>'hidden_readonly_until_manual_acl_review','unsupported'=>$this->source->unsupported()];}
     public function exists(): bool {return $this->row('SELECT id FROM ce_forum_import_jobs WHERE id=?',[$this->source->identity()])!==null;}
     public function start(string $backup): array
     {
-        $plan=$this->source->plan();$id=$this->source->identity();
-        $this->db->transaction(function()use($plan,$id,$backup){
+        $this->resetBatch();$plan=$this->source->plan();$id=$this->source->identity();
+        try{$this->db->transaction(function()use($plan,$id,$backup){
             if($this->exists())throw new \RuntimeException('Import already exists; resume it');
+            self::assertNoRunning($this->db);
             $category=self::uuid();
             $this->query("INSERT INTO ce_forum_categories(id,name,description,position,visibility) VALUES(?,?,?,0,'hidden')",[$category,$this->source->platform().' import '.substr($id,0,8),'Imported archive: review permissions before opening.']);
             $this->query('INSERT INTO ce_forum_import_jobs(id,source_version,category_id,backup_id,plan_json,created_at,updated_at) VALUES(?,?,?,?,?,?,?)',[$id,$this->source->version(),$category,$backup,json_encode($plan,JSON_THROW_ON_ERROR),time(),time()]);
             (new AuditLogRepository($this->db))->record('forum.import.start',null,['job'=>$id,'backup'=>$backup,'category'=>$category]);
-        });return $this->status();
+        });}finally{$this->resetBatch();}return $this->status();
     }
     public function status(): array {return self::report($this->db,$this->source->identity());}
+    public function progress(): array
+    {
+        $job=$this->row('SELECT * FROM ce_forum_import_jobs WHERE id=?',[$this->source->identity()])??throw new \RuntimeException('Import job not found');
+        $this->resetBatch();$job['plan']=json_decode($job['plan_json'],true,512,JSON_THROW_ON_ERROR);unset($job['plan_json']);
+        return ['ok'=>true,'job'=>$job];
+    }
+    /** Validate the ledger while the imported tree is still quarantined. */
+    private function verifyMappings(string $job): void
+    {
+        foreach(['groups'=>['ce_forum_groups','role_id'],'users'=>['ce_users','id'],'forums'=>['ce_forum_boards','id'],'topics'=>['ce_forum_threads','id'],'posts'=>['ce_forum_posts','id'],'attachments'=>['ce_forum_attachments','id'],'polls'=>['ce_forum_polls','thread_id']] as $kind=>[$table,$column]){
+            // PostgreSQL uses UUID PKs; cast the small ledger key, not the indexed target column.
+            $key=$this->db->driver()==='pgsql'?'CAST(m.target_id AS UUID)':'m.target_id';
+            $n=(int)$this->query("SELECT COUNT(*) FROM ce_forum_import_map m LEFT JOIN $table t ON t.$column=$key WHERE m.job_id=? AND m.kind=? AND m.outcome='imported' AND t.$column IS NULL",[$job,$kind])->fetchColumn();
+            if($n!==0)throw new \RuntimeException('Imported target missing: '.$kind);
+        }
+    }
     public static function report(DatabaseManager $db,string $id): array
     {
         if(!preg_match('/\A[a-f0-9]{64}\z/D',$id))throw new \InvalidArgumentException('Invalid import job ID');
@@ -38,7 +68,7 @@ final class ForumMigrationEngine
         $job['plan']=json_decode($job['plan_json'],true,512,JSON_THROW_ON_ERROR);unset($job['plan_json']);$job['platform']=$job['plan']['source_platform']??'phpbb';
         $results=$s->fetchAll(PDO::FETCH_ASSOC);$relations=[];
         foreach(['watches'=>['ce_forum_watches','thread_id','topics'],'board_watches'=>['ce_forum_board_watches','board_id','forums'],'votes'=>['ce_forum_poll_votes','thread_id','polls']] as $name=>[$table,$column,$kind]){
-            $q=$db->connection()->prepare("SELECT COUNT(*) FROM $table t JOIN ce_forum_import_map m ON m.target_id=".($db->driver()==='pgsql'?"CAST(t.$column AS VARCHAR(36))":"t.$column")." WHERE m.job_id=? AND m.kind=? AND m.outcome='imported'");$q->execute([$id,$kind]);$relations[$name]=(int)$q->fetchColumn();
+            $q=$db->connection()->prepare("SELECT COUNT(*) FROM $table t JOIN ce_forum_import_map m ON t.$column=".($db->driver()==='pgsql'?"CAST(m.target_id AS UUID)":"m.target_id")." WHERE m.job_id=? AND m.kind=? AND m.outcome='imported'");$q->execute([$id,$kind]);$relations[$name]=(int)$q->fetchColumn();
         }
         return ['ok'=>true,'job'=>$job,'results'=>$results,'relation_rows'=>$relations];
     }
@@ -47,15 +77,21 @@ final class ForumMigrationEngine
         $s=$db->connection()->prepare('SELECT kind,source_id,target_id,outcome,reason FROM ce_forum_import_map WHERE job_id=? AND kind=? AND source_id=?');$s->execute([$job,$kind,$id]);$r=$s->fetch(PDO::FETCH_ASSOC);return ['ok'=>$r!==false,'mapping'=>$r===false?null:$r];
     }
     private function mapped(string $kind,int $id): ?string
-    {return $this->row("SELECT target_id FROM ce_forum_import_map WHERE job_id=? AND kind=? AND source_id=? AND outcome='imported'",[$this->source->identity(),$kind,$id])['target_id']??null;}
+    {
+        if(count($this->mappingCache)>=4096)$this->mappingCache=[];
+        $key=$kind.':'.$id;
+        if(!array_key_exists($key,$this->mappingCache))$this->mappingCache[$key]=$this->row("SELECT target_id FROM ce_forum_import_map WHERE job_id=? AND kind=? AND source_id=? AND outcome='imported'",[$this->source->identity(),$kind,$id])['target_id']??null;
+        return $this->mappingCache[$key];
+    }
     private function mark(string $kind,int $id,?string $target,string $reason=''): void
-    {$this->query('INSERT INTO ce_forum_import_map(job_id,kind,source_id,target_id,outcome,reason) VALUES(?,?,?,?,?,?)',[$this->source->identity(),$kind,$id,$target,$target===null?'skipped':'imported',$reason]);}
+    {$this->query('INSERT INTO ce_forum_import_map(job_id,kind,source_id,target_id,outcome,reason) VALUES(?,?,?,?,?,?)',[$this->source->identity(),$kind,$id,$target,$target===null?'skipped':'imported',$reason]);$this->mappingCache[$kind.':'.$id]=$target;}
     /** Run a single bounded batch. Stop safely between invocations; no offset scanning. */
     public function step(int $limit=100): array
     {
         if($limit<1||$limit>500)throw new \InvalidArgumentException('Batch must be 1..500');
         $id=$this->source->identity();
-        $this->db->transaction(function()use($id,$limit){
+        $this->resetBatch();
+        try{$this->db->transaction(function()use($id,$limit){
             if($this->db->driver()==='sqlite')$this->query('UPDATE ce_forum_import_jobs SET updated_at=updated_at WHERE id=?',[$id]);
             $job=$this->row('SELECT * FROM ce_forum_import_jobs WHERE id=?'.($this->db->driver()==='sqlite'?'':' FOR UPDATE'),[$id]);
             if(!$job)throw new \RuntimeException('Start the import first');if($job['state']==='complete')return;
@@ -63,7 +99,7 @@ final class ForumMigrationEngine
             $phase=(int)$job['phase'];$kind=ForumSource::PHASES[$phase];$cursor=(int)$job['cursor_id'];$sub=(int)$job['subcursor_id'];
             $category=$this->row('SELECT visibility FROM ce_forum_categories WHERE id=?',[$job['category_id']]);
             if(!$category||$category['visibility']!=='hidden'||$this->row('SELECT id FROM ce_forum_boards WHERE category_id=? AND (visibility<>? OR state<>?) LIMIT 1',[$job['category_id'],'hidden','readonly']))throw new \RuntimeException('Imported tree must remain hidden and readonly until completion');
-            $batch=$this->source->batch($kind,$cursor,$plan[$kind]['high'],$kind==='attachments'?1:(in_array($kind,['watches','board_watches','votes'],true)?1:($kind==='posts'?min($limit,20):$limit)));
+            $batch=$this->source->batch($kind,$cursor,$plan[$kind]['high'],$kind==='attachments'?1:($kind==='posts'?min($limit,20):$limit));
             if($batch===[]){
                 if($phase+1===count(ForumSource::PHASES)){
                     if($this->source->plan()!==$plan)throw new \RuntimeException('Source snapshot changed; restore backup and restart with an immutable snapshot');
@@ -71,18 +107,24 @@ final class ForumMigrationEngine
                         $n=(int)$this->query('SELECT COUNT(*) FROM ce_forum_import_map WHERE job_id=? AND kind=?',[$id,$covered])->fetchColumn();
                         if($n!==$plan[$covered]['count'])throw new \RuntimeException('Source row count mismatch: '.$covered);
                     }
+                    $this->verifyMappings($id);
+                    (new \CajeerEngine\Forum\Service\ForumThemeService($this->db))->active();
+                    if(!(new \CajeerEngine\Forum\Service\ForumSearchMaintenance($this->db))->check()['ok'])throw new \RuntimeException('Forum search index check failed; repair before completing import');
                     if(!(new \CajeerEngine\Forum\ForumIntegrityCheck($this->db))->check()['ok'])throw new \RuntimeException('Forum integrity check failed; inspect target before completing import');
                     $this->query("UPDATE ce_forum_import_jobs SET phase=?,state='complete',updated_at=? WHERE id=?",[$phase+1,time(),$id]);
                     (new AuditLogRepository($this->db))->record('forum.import.complete',null,['job'=>$id]);return;
                 }
                 $phase++;$cursor=0;$sub=0;
-            }else foreach($batch as $r){
+            }else {
+              // Bound total relation work, not just the number of topics in a batch.
+              $remaining=$limit;
+              foreach($batch as $r){
                 $key=match($kind){'groups'=>'group_id','users'=>'user_id','forums'=>'left_id','topics','polls','votes','watches','finalize'=>'topic_id','board_watches'=>'forum_id','posts'=>'post_id','attachments'=>'attach_id'};
                 $next=(int)$r[$key];
                 if(in_array($kind,['watches','board_watches','votes'],true)){
                     $target=$this->mapped(match($kind){'watches'=>'topics','board_watches'=>'forums','votes'=>'polls'},$next);
                     if($target!==null){
-                        $watchers=$this->source->watchers($kind,$next,$sub,$limit);
+                        $watchers=$this->source->watchers($kind,$next,$sub,$remaining);
                         $optionMap=[];$maxChoices=0;
                         if($kind==='votes'){
                             foreach($this->source->options($next) as $i=>$o)$optionMap[(int)$o['poll_option_id']]=$i+1;
@@ -97,7 +139,10 @@ final class ForumMigrationEngine
                             }elseif($kind==='board_watches')$this->query("INSERT INTO ce_forum_board_watches(board_id,user_id,mode) VALUES(?,?,'internal')",[$target,$user]);
                             else $this->query("INSERT INTO ce_forum_watches(thread_id,user_id,mode) VALUES(?,?,'internal')",[$target,$user]);
                         }
-                        if(count($watchers)===$limit)break;
+                        $remaining-=count($watchers);
+                        if($remaining===0)break; // retain previous object cursor and last processed user
+                        $remaining--; // charge even an empty object
+
                     }
                     $this->mark($kind,$next,$target,$target===null?'parent_not_imported':'');$sub=0;
                 }elseif($kind==='finalize'){
@@ -108,9 +153,12 @@ final class ForumMigrationEngine
                     }
                 }else $this->import($kind,$r,$job['category_id']);
                 $cursor=$next;
+                if(in_array($kind,['watches','board_watches','votes'],true)&&$remaining<=0)break;
+              }
             }
             $this->query('UPDATE ce_forum_import_jobs SET phase=?,cursor_id=?,subcursor_id=?,updated_at=? WHERE id=?',[$phase,$cursor,$sub,time(),$id]);
-        });return ['ok'=>true,'job'=>$this->row('SELECT id,state,phase,cursor_id,subcursor_id FROM ce_forum_import_jobs WHERE id=?',[$id])];
+        });}finally{$this->resetBatch();}
+        $result=['ok'=>true,'job'=>$this->row('SELECT id,state,phase,cursor_id,subcursor_id FROM ce_forum_import_jobs WHERE id=?',[$id])];$this->resetBatch();return $result;
     }
     private function import(string $kind,array $r,string $category): void
     {
@@ -171,7 +219,7 @@ final class ForumMigrationEngine
                 $size=filesize($path);if($size===false||$size!==(int)$r['filesize']||$size<1||$size>26214400){$target=null;$reason='invalid_file_size';break;}
                 $usage=$this->row('SELECT COUNT(*) AS n,COALESCE(SUM(size_bytes),0) AS bytes FROM ce_forum_attachments WHERE post_id=?',[$post]);
                 if((int)$usage['n']>=10||(int)$usage['bytes']+$size>52428800){$target=null;$reason='post_attachment_limit';break;}
-                $data=file_get_contents($path,false,null,0,26214401);if($data===false||strlen($data)!==$size){$target=null;$reason='file_read_failed';break;}
+                $data=file_get_contents($path,false,null,0,26214401);if($data===false||strlen($data)!==$size)throw new \RuntimeException('Source attachment read failed; retry with the unchanged snapshot');
                 try{$m=AttachmentService::validate((string)$r['real_filename'],$data);}catch(ForumException){$target=null;$reason='unsupported_or_invalid_file';break;}
                 $this->query('INSERT INTO ce_forum_attachments(id,owner_id,post_id,filename,mime,size_bytes,sha256,file_data,created_at,expires_at) VALUES(?,?,?,?,?,?,?,?,?,0)',[$id,$owner,$post,$m['filename'],$m['mime'],$m['size_bytes'],$m['sha256'],base64_encode($data),max(0,(int)$r['filetime'])]);
                 if(in_array($m['mime'],['image/jpeg','image/png','image/webp'],true))$this->query("INSERT INTO ce_forum_media_state(attachment_id,state,due_at) VALUES(?,'pending',0)",[$id]);break;

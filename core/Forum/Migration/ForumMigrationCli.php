@@ -17,7 +17,7 @@ final class ForumMigrationCli
         if(PHP_SAPI!=='cli')throw new \RuntimeException('Operator CLI required');
         $command=$argv[1]??'';$opts=[];
         foreach(array_slice($argv,2) as $arg){if($arg==='--json')continue;if(!preg_match('/\A--([a-z-]+)=(.*)\z/sD',$arg,$m)||isset($opts[$m[1]]))throw new \InvalidArgumentException('Use --name=value options');$opts[$m[1]]=$m[2];}
-        $allowed=match($command){'forum:import:status'=>['job'],'forum:import:map'=>['job','kind','id'],'forum:import:plan'=>['snapshot','prefix','files','platform','source-version'],'forum:import:run'=>['snapshot','prefix','files','batch','steps','confirm','platform','source-version'],default=>[]};
+        $allowed=match($command){'forum:import:status'=>['job'],'forum:import:map'=>['job','kind','id'],'forum:import:plan'=>['snapshot','prefix','files','platform','source-version'],'forum:import:run'=>['snapshot','prefix','files','batch','steps','seconds','verify-backup','progress-only','confirm','platform','source-version'],default=>[]};
         if(array_diff(array_keys($opts),$allowed))throw new \InvalidArgumentException('Unknown import option');
         $db=new DatabaseManager($config);
         if($command==='forum:import:status')return ForumMigrationEngine::report($db,$opts['job']??'');
@@ -44,15 +44,30 @@ final class ForumMigrationCli
         if(($opts['confirm']??'')!==('import-'.$platform))throw new \InvalidArgumentException('Use --confirm=import-'.$platform.' after reviewing the plan');
         $limit=filter_var($opts['batch']??'100',FILTER_VALIDATE_INT,['options'=>['min_range'=>1,'max_range'=>500]]);
         $steps=filter_var($opts['steps']??'1',FILTER_VALIDATE_INT,['options'=>['min_range'=>1,'max_range'=>1000]]);
-        if($limit===false||$steps===false)throw new \InvalidArgumentException('Invalid batch or step count');
+        $seconds=filter_var($opts['seconds']??'0',FILTER_VALIDATE_INT,['options'=>['min_range'=>0,'max_range'=>86400]]);
+        foreach(['verify-backup','progress-only'] as $flag)if(isset($opts[$flag])&&!in_array($opts[$flag],['0','1'],true))throw new \InvalidArgumentException('Use --'.$flag.'=0 or 1');
+        if($limit===false||$steps===false||$seconds===false)throw new \InvalidArgumentException('Invalid batch or step count');
+        // Check the ecosystem before creating a recovery set or modifying the target.
+        (new \CajeerEngine\Forum\Service\ForumThemeService($db))->active();
+        \CajeerEngine\Extension\DependencyGraph::order((new \CajeerEngine\Extension\ExtensionRegistry($root,$config))->all());
         if(!$engine->exists()){
+            ForumMigrationEngine::assertNoRunning($db);
             $engine->plan(); // Validate source schema before taking the backup.
             $backup=(new BackupManager($root,$config))->capture();
             $engine->start($backup['id']);
         }
-        $report=$engine->status();
+        $report=$engine->progress();
+        if($report['job']['state']!=='complete'){
+            $backupId=$report['job']['backup_id'];
+            if(!preg_match('/\A[0-9]{8}-[0-9]{6}-[a-f0-9]{16}\z/D',$backupId)||!is_file($root.'/storage/app/backups/production/'.$backupId.'/manifest.json')||is_file($root.'/storage/app/backups/production/'.$backupId.'/incomplete.json'))throw new \RuntimeException('Recovery set missing or incomplete; restore it before resuming');
+        }
+        if($report['job']['state']!=='complete'&&($opts['verify-backup']??'0')==='1')(new BackupManager($root,$config))->verify($report['job']['backup_id']);
         if($report['job']['state']!=='complete' && $source->plan()!==$report['job']['plan'])throw new \RuntimeException('Source snapshot changed; restore backup before restarting');
-        for($i=0;$i<$steps&&$report['job']['state']!=='complete';$i++)$report=$engine->step($limit);
-        return $engine->status();
+        $started=hrtime(true);$completed=0;
+        for($i=0;$i<$steps&&$report['job']['state']!=='complete';$i++){
+            $report=$engine->step($limit);$completed++;
+            if($seconds>0&&(hrtime(true)-$started)/1e9>=$seconds)break;
+        }
+        return ($report['job']['state']==='complete'||($opts['progress-only']??'0')==='0'?$engine->status():$engine->progress())+['batches'=>$completed,'elapsed_seconds'=>round((hrtime(true)-$started)/1e9,3)];
     }
 }

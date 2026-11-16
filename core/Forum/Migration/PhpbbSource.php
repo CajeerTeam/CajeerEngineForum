@@ -32,8 +32,11 @@ final class PhpbbSource implements ForumSource
     public function unsupported(): array {return ['source ACL translation','password hashes','private messages','banlist','anonymous poll votes','remote media','profile fields'];}
     private function table(string $name): string {return $this->prefix.$name;}
     private function query(string $sql,array $params=[]): \PDOStatement {$s=$this->pdo->prepare($sql);$s->execute($params);return $s;}
+    private ?array $planned=null;
     public function plan(): array
     {
+        if(!$this->pdo->inTransaction())throw new \RuntimeException('Source snapshot transaction ended');
+        if($this->planned!==null)return $this->planned;
         $counts=[];
         foreach(self::TABLES as $phase=>[$table,$key]){
             $filter=in_array($phase,['polls','votes'],true)?" WHERE poll_title<>''":'';
@@ -48,7 +51,7 @@ final class PhpbbSource implements ForumSource
         foreach(self::PHASES as $phase)$this->batch($phase,0,$counts[$phase]['high'],1);
         $this->memberships(0);$this->options(0);$this->ballot(0,0);
         foreach(['watches','board_watches','votes'] as $kind)$this->watchers($kind,0,0,1);
-        return $counts;
+        return $this->planned=$counts;
     }
     public function batch(string $phase,int $cursor,int $high,int $limit): array
     {
