@@ -20,6 +20,19 @@ final class BackupManager
         $this->db=new DatabaseBackup($root,$config);
         $this->base=F::path($root,'storage/app/backups/production');
     }
+    /** Validate recovery prerequisites and estimate the bytes captured by this exact backup policy. */
+    public function preflight(): int
+    {
+        $this->assertStorage(); $key=$this->secretKey(); sodium_memzero($key);
+        $this->db->assertRecoveryReady();
+        $bytes=$this->db->estimatedBytes();
+        foreach (array_unique(array_merge($this->dataFiles(),$this->codeFiles())) as $relative) {
+            $size=filesize(F::path($this->root,$relative));
+            if ($size===false) throw new \RuntimeException('Cannot estimate recovery file');
+            $bytes+=$size+4096; // directory entries, manifest and filesystem allocation
+        }
+        return $bytes;
+    }
     public function create(): array
     {
         $lock=OperationLock::acquire($this->root,true);

@@ -18,17 +18,18 @@ final class UpdateManager
     {
         $current=$this->currentVersion();
         $check=(new UpdateResolver($this->config->get('updates',[]),$this->rootPath))->check($current);
-        return $check+['ok'=>true,'current_version'=>$current,'latest_version'=>$check['latest']['version']??null,'maintenance'=>$this->maintenanceState(),'production_apply_enabled'=>$this->trustConfigured(),'safe_update_command'=>'php bin/cajeer update:apply --package=/path/release-dist.zip'];
+        return $check+['ok'=>true,'current_version'=>$current,'latest_version'=>$check['latest']['version']??null,'maintenance'=>$this->maintenanceState(),'production_apply_enabled'=>$this->trustConfigured(),'safe_update_command'=>'php bin/cajeer update:apply --package=/path/release-dist.zip --version=APPROVED_VERSION --sha256=APPROVED_SHA256 --dry-run'];
     }
     public function plan(array $options=[]): array
     {
-        $package=$this->option($options,'package'); $check=$this->check();
+        $package=$this->option($options,'package'); $check=$package===null?$this->check():[];
         $plan=['ok'=>true,'current_version'=>$this->currentVersion(),'target_version'=>$this->option($options,'version')??($check['latest']['version']??null),'package'=>$package,'mode'=>'dist','backup_before_update'=>true,'code_snapshot_before_update'=>true,'maintenance_mode_during_apply'=>true,'migrations_after_apply'=>true,'post_update_doctor'=>true,'production_apply_enabled'=>$this->trustConfigured(),'update_available'=>$check['update_available']??false,'checked_at'=>gmdate(DATE_ATOM)];
         if ($package!==null && PHP_SAPI==='cli') {
             $verified=$this->verifyPackage($this->resolvePackage($package),$this->option($options,'sha256'),$this->option($options,'signature'));
             if (!$verified['ok']) throw new \RuntimeException($verified['error']);
+            UpdatePreflight::identity($verified['manifest'],$this->currentVersion(),$this->channel(),$this->option($options,'version'));
             $plan['target_version']=$verified['version']; $plan['expected_sha256']=$verified['sha256']; $plan['file_count']=$verified['file_count'];
-            $plan['extension_compatibility']=(new \CajeerEngine\Extension\ExtensionRegistry($this->rootPath,$this->config))->targetCompatibility($verified['version']);
+            $plan['extension_compatibility']=(new \CajeerEngine\Extension\ExtensionRegistry($this->rootPath,$this->config))->targetCompatibility($verified['version'],$verified['manifest']['engine_api_version']);
         }
         return $plan;
     }
@@ -51,6 +52,9 @@ final class UpdateManager
             $version=$m['version']??''; $mode=$m['mode']??'';
             if (!is_string($version)||!preg_match('/^\d+\.\d+\.\d+(?:-[a-zA-Z0-9.-]+)?$/D',$version)||!in_array($mode,['source','dist'],true)) throw new \RuntimeException('Invalid release identity');
             $m=(new ReleaseArtifactVerifier())->verify($packagePath,$mode,$version);
+            $release=json_decode($zip['cajeerengine/release.json']->getContent(),true,512,JSON_THROW_ON_ERROR);
+            if (($release['channel']??null)!==UpdatePreflight::channelOf($version)) throw new \RuntimeException('Signed release channel differs from version');
+            if (!is_string($m['engine_api_version']??null)||!preg_match('/^\d+\.\d+(?:\.\d+)?$/D',$m['engine_api_version'])||($release['engine_api_version']??null)!==$m['engine_api_version']) throw new \RuntimeException('Invalid target Engine API identity');
             foreach ($m['removed_files']??[] as $file) if (!is_string($file)||!$this->managed($file)||in_array($file,$m['files'],true)) throw new \RuntimeException('Invalid removed file');
             if (version_compare(PHP_VERSION,'8.4.1','<')||version_compare(PHP_VERSION,'9.0','>=')) throw new \RuntimeException('Unsupported PHP runtime');
             return ['ok'=>true,'package'=>$packagePath,'version'=>$version,'mode'=>$mode,'manifest'=>$m,'file_count'=>count($m['files'])]+$sig;
@@ -62,29 +66,35 @@ final class UpdateManager
         foreach (['no_backup','no_maintenance','no_migrations','no_doctor'] as $flag) if (!empty($options[$flag])) throw new \RuntimeException('Safety steps cannot be disabled: '.$flag);
         $package=$this->option($options,'package')??throw new \RuntimeException('Provide --package');
         $package=$this->resolvePackage($package); $signature=$this->option($options,'signature')??$package.'.sig';
-        $lock=OperationLock::acquire($this->rootPath,true);
+        $lock=OperationLock::acquire($this->rootPath,true); $dir=null; $journalled=false;
         try {
             if (OperationLock::active($this->rootPath)||is_file($this->rootPath.'/storage/app/backup-restore.json')||is_file($this->rootPath.'/storage/app/extensions/deployment.json')) throw new \RuntimeException('Interrupted operation: recover first');
+            if (!is_file($this->rootPath.'/storage/app/installed.lock')) throw new \RuntimeException('Installed forum required');
+            // Authenticate before allocating a persistent transaction directory. Reverify the copied bytes below.
+            $initial=$this->verifyPackage($package,$this->option($options,'sha256'),$signature);
+            if (!$initial['ok']) throw new \RuntimeException($initial['error']);
+            UpdatePreflight::identity($initial['manifest'],$this->currentVersion(),$this->channel(),$this->option($options,'version'));
+            $this->discardAbandonedStages();
+            $backup=new BackupManager($this->rootPath,$this->config);
+            $space=UpdatePreflight::space($this->rootPath,$package,$initial['manifest'],$backup->preflight());
             $id=gmdate('Ymd-His').'-'.bin2hex(random_bytes(8)); $dir=$this->transactionDir($id); OperationFiles::dir($dir); chmod($dir,0700);
             // Copy first, then authenticate the exact bytes that will be staged.
             OperationFiles::copy($package,$dir.'/package.zip'); OperationFiles::copy($signature,$dir.'/package.zip.sig');
             $v=$this->verifyPackage($dir.'/package.zip',$this->option($options,'sha256'));
             if (!$v['ok']) throw new \RuntimeException($v['error']);
-            if ($v['mode']!=='dist') throw new \RuntimeException('Only production dist artifacts can be applied');
+            UpdatePreflight::identity($v['manifest'],$this->currentVersion(),$this->channel(),$this->option($options,'version'));
+            if (!hash_equals($initial['sha256'],$v['sha256'])) throw new \RuntimeException('Artifact changed during staging');
+            UpdatePreflight::migrations($this->rootPath,$v['manifest']['checksums']);
             $previous=$this->currentVersion();
-            if (version_compare($v['version'],$previous,'<=')) throw new \RuntimeException('Target must be newer; use verified rollback for downgrade');
-            if (!is_file($this->rootPath.'/storage/app/installed.lock')) throw new \RuntimeException('Installed CMS required');
             \CajeerEngine\Forum\Migration\ForumMigrationEngine::assertNoRunning(new \CajeerEngine\Database\DatabaseManager($this->config));
-            $compatibility=(new \CajeerEngine\Extension\ExtensionRegistry($this->rootPath,$this->config))->targetCompatibility($v['version']);
+            $compatibility=(new \CajeerEngine\Extension\ExtensionRegistry($this->rootPath,$this->config))->targetCompatibility($v['version'],$v['manifest']['engine_api_version']);
             if(!$compatibility['ok'])throw new \RuntimeException('Target release incompatible with enabled extensions: '.implode(', ',array_column($compatibility['blocked'],'name')).'; resolve extension dependencies before updating');
+            $this->postCheck(false,true);
             $plan=$this->stage($dir,$v['manifest']);
-            $report=['ok'=>true,'id'=>$id,'previous_version'=>$previous,'target_version'=>$v['version'],'sha256'=>$v['sha256'],'copy_plan'=>$plan,'dry_run'=>!empty($options['dry_run'])];
+            $report=['ok'=>true,'id'=>$id,'previous_version'=>$previous,'target_version'=>$v['version'],'sha256'=>$v['sha256'],'copy_plan'=>$plan,'preflight'=>['space'=>$space,'extensions'=>$compatibility,'migration_history'=>'verified','recovery'=>'ready'],'dry_run'=>!empty($options['dry_run'])];
             if ($report['dry_run']) return $report;
-            $backup=new BackupManager($this->rootPath,$this->config);
-            (new DatabaseBackup($this->rootPath,$this->config))->assertRecoveryReady();
-            $this->postCheck(false);
             $journal=['id'=>$id,'state'=>'prepared','previous_version'=>$previous,'target_version'=>$v['version'],'sha256'=>$v['sha256'],'maintenance_was_enabled'=>$this->maintenanceState()['enabled'],'maintenance_before'=>is_file($this->rootPath.'/storage/app/maintenance.json')?OperationFiles::read($this->rootPath.'/storage/app/maintenance.json'):null,'backup'=>null,'child_lock'=>'child-'.bin2hex(random_bytes(8)).'.lock','at'=>gmdate(DATE_ATOM)];
-            $this->journal($journal);
+            $journalled=true; $this->journal($journal);
             DatabaseBackup::useProcessLock($dir.'/'.$journal['child_lock']);
             try {
                 $this->setMaintenance('Updating to '.$v['version']);
@@ -126,7 +136,7 @@ final class UpdateManager
                     throw new \RuntimeException('Recovery required; run update:rollback under maintenance: '.$recovery->getMessage());
                 }
             }
-        } finally { DatabaseBackup::useProcessLock(null); OperationLock::release($lock); }
+        } finally { try { if (!$journalled&&$dir!==null) $this->discardStage($dir); } finally { DatabaseBackup::useProcessLock(null); OperationLock::release($lock); } }
     }
     public function rollback(?string $backup=null, bool $confirmed=false, ?string $expectedTransaction=null): array
     {
@@ -179,8 +189,24 @@ final class UpdateManager
     {
         $last=PHP_SAPI==='cli'?$this->path('last-update.json'):$this->requestDir().'/last-report.json';
         $report=is_file($last)?OperationFiles::read($last):null;
-        return ['ok'=>true,'current_version'=>$this->currentVersion(),'maintenance'=>$this->maintenanceState(),'last_report'=>$report===null?null:array_intersect_key($report,array_flip(['ok','id','state','previous_version','target_version','version'])),'installed'=>is_file($this->rootPath.'/storage/app/installed.lock'),'production_apply_enabled'=>$this->trustConfigured()];
+        $activePath=PHP_SAPI==='cli'?$this->path('active.json'):$this->requestDir().'/progress.json';
+        $active=OperationLock::active($this->rootPath)&&is_file($activePath)?$this->publicJournal(OperationFiles::read($activePath)):null;
+        return ['ok'=>true,'current_version'=>$this->currentVersion(),'maintenance'=>$this->maintenanceState(),'active'=>$active,'last_report'=>$report===null?null:array_intersect_key($report,array_flip(['ok','id','state','previous_version','target_version','version'])),'installed'=>is_file($this->rootPath.'/storage/app/installed.lock'),'production_apply_enabled'=>$this->trustConfigured()];
     }
+    public function history(int $limit=20): array
+    {
+        $this->cliOnly(); if ($limit<1||$limit>100) throw new \RuntimeException('History limit must be 1..100');
+        $base=$this->path('transactions'); $items=[];
+        if (is_dir($base)) foreach(new \DirectoryIterator($base) as $entry) {
+            if ($entry->isDot()||$entry->isLink()||!$entry->isDir()||!preg_match('/^\d{8}-\d{6}-[a-f0-9]{16}$/D',$entry->getFilename())) continue;
+            $file=$entry->getPathname().'/journal.json'; if (!is_file($file)) continue;
+            $j=OperationFiles::read($file); if (($j['id']??null)!==$entry->getFilename()) throw new \RuntimeException('Invalid update history journal');
+            $items[$j['id']]=$this->publicJournal($j)+['backup'=>$j['backup']??null];
+            krsort($items); if (count($items)>$limit) array_pop($items);
+        }
+        return ['ok'=>true,'items'=>array_values($items)];
+    }
+    private function publicJournal(array $j): array { return array_intersect_key($j,array_flip(['id','state','previous_version','target_version','sha256','updated_at'])); }
     public function staged(): array
     {
         $dir=$this->requestDir(); $file=$dir.'/staged.json';
@@ -189,16 +215,17 @@ final class UpdateManager
     /** CLI places and verifies a signed artifact before a browser can request it. */
     public function publish(string $package, ?string $signature=null): array
     {
-        $this->cliOnly(); $package=$this->resolvePackage($package); $lock=OperationLock::acquire($this->rootPath,true);
+        $this->cliOnly(); $package=$this->resolvePackage($package); $lock=OperationLock::acquire($this->rootPath,true); $dir=null; $published=false;
         try {
             if (OperationLock::active($this->rootPath)||is_file($this->rootPath.'/storage/app/backup-restore.json')) throw new \RuntimeException('Recovery pending');
             $id=bin2hex(random_bytes(16)); $dir=$this->path('inbox/'.$id); OperationFiles::dir($dir); chmod($dir,0700);
             OperationFiles::copy($package,$dir.'/package.zip'); OperationFiles::copy($signature??$package.'.sig',$dir.'/package.zip.sig');
             $v=$this->verifyPackage($dir.'/package.zip');
-            if (!$v['ok']||$v['mode']!=='dist'||version_compare($v['version'],$this->currentVersion(),'<=') ) throw new \RuntimeException($v['error']??'Expected newer dist');
+            if (!$v['ok']) throw new \RuntimeException($v['error']);
+            UpdatePreflight::identity($v['manifest'],$this->currentVersion(),$this->channel(),null);
             $data=['ok'=>true,'id'=>$id,'version'=>$v['version'],'sha256'=>$v['sha256'],'file_count'=>$v['file_count']];
-            OperationFiles::json($this->requestDir().'/staged.json',$data,0644); return $data;
-        } finally { OperationLock::release($lock); }
+            OperationFiles::json($this->requestDir().'/staged.json',$data,0644); $published=true; return $data;
+        } finally { try { if (!$published&&$dir!==null) $this->discardStage($dir); } finally { OperationLock::release($lock); } }
     }
     public function request(string $action, array $payload, string $actor): array
     {
@@ -238,6 +265,25 @@ final class UpdateManager
         $r['state']=$result['ok']?'completed':'failed'; OperationFiles::json($path,$r,0640); return $result;
         } finally { OperationLock::release($guard); }
     }
+    private function channel(): string { return $this->config->string('updates.core.channel','stable'); }
+    private function discardAbandonedStages(): void
+    {
+        $base=$this->path('transactions'); if (!is_dir($base)) return;
+        foreach (new \DirectoryIterator($base) as $entry) {
+            if ($entry->isDot()||$entry->isLink()||!$entry->isDir()||!preg_match('/^\d{8}-\d{6}-[a-f0-9]{16}$/D',$entry->getFilename())) continue;
+            $dir=$entry->getPathname();
+            if (!is_file($dir.'/journal.json')) $this->discardStage($dir);
+        }
+    }
+    private function discardStage(string $dir): void
+    {
+        if (!is_dir($dir)||is_link($dir)) return;
+        foreach (new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($dir,\FilesystemIterator::SKIP_DOTS),\RecursiveIteratorIterator::CHILD_FIRST) as $entry) {
+            if ($entry->isLink()||!$entry->isDir()) { if (!unlink($entry->getPathname())) throw new \RuntimeException('Cannot remove temporary stage'); }
+            elseif (!rmdir($entry->getPathname())) throw new \RuntimeException('Cannot remove temporary stage directory');
+        }
+        if (!rmdir($dir)) throw new \RuntimeException('Cannot remove temporary transaction');
+    }
     private function stage(string $dir,array $manifest): array
     {
         $files=[]; $zip=$dir.'/package.zip';
@@ -267,11 +313,11 @@ final class UpdateManager
     {
         foreach (['storage/cache','bootstrap/cache'] as $dir) foreach (OperationFiles::files($this->rootPath,$dir) as $file) if (basename($file)!=='.gitkeep') OperationFiles::remove(OperationFiles::path($this->rootPath,$file));
     }
-    private function postCheck(bool $migrate): void
+    private function postCheck(bool $migrate,bool $readOnly=false): void
     {
         $tool=$this->rootPath.'/tools/update-postcheck.php';
         if (!is_file($tool)) throw new \RuntimeException('Release lacks updater health check');
-        DatabaseBackup::run([PHP_BINARY,$tool,$migrate?'migrate':'verify']);
+        DatabaseBackup::run([PHP_BINARY,$tool,$migrate?'migrate':($readOnly?'preflight':'verify')]);
     }
     private function recoveryLauncher(string $dir,string $backup): void
     {
@@ -280,8 +326,8 @@ final class UpdateManager
         OperationFiles::copy($source,$dir.'/recover.php');
         OperationFiles::json($dir.'/recovery.json',['root'=>$this->rootPath,'backup'=>$backup]);
     }
-    private function journal(array $j): void { $j['updated_at']=gmdate(DATE_ATOM); OperationFiles::json($this->transactionDir($j['id']).'/journal.json',$j); OperationFiles::json($this->path('active.json'),$j); }
-    private function finish(array $j,array $report): void { $this->report($report); if (!$j['maintenance_was_enabled']) OperationFiles::remove($this->rootPath.'/storage/app/maintenance.json'); elseif (is_array($j['maintenance_before']??null)) OperationFiles::json($this->rootPath.'/storage/app/maintenance.json',$j['maintenance_before'],0644); OperationFiles::remove($this->path('active.json')); }
+    private function journal(array $j): void { $j['updated_at']=gmdate(DATE_ATOM); OperationFiles::json($this->transactionDir($j['id']).'/journal.json',$j); OperationFiles::json($this->path('active.json'),$j); OperationFiles::json($this->requestDir().'/progress.json',$this->publicJournal($j),0644); }
+    private function finish(array $j,array $report): void { $this->report($report); if (!$j['maintenance_was_enabled']) OperationFiles::remove($this->rootPath.'/storage/app/maintenance.json'); elseif (is_array($j['maintenance_before']??null)) OperationFiles::json($this->rootPath.'/storage/app/maintenance.json',$j['maintenance_before'],0644); OperationFiles::remove($this->path('active.json')); OperationFiles::remove($this->requestDir().'/progress.json'); }
     private function report(array $report): void { OperationFiles::json($this->path('last-update.json'),$report,0600); OperationFiles::json($this->requestDir().'/last-report.json',array_intersect_key($report,array_flip(['ok','id','state','previous_version','target_version','version'])),0644); }
     private function setMaintenance(string $message): void { OperationFiles::json($this->rootPath.'/storage/app/maintenance.json',['enabled'=>true,'message'=>$message,'since'=>gmdate(DATE_ATOM)],0644); }
     private function transactionDir(string $id): string { if (!preg_match('/^\d{8}-\d{6}-[a-f0-9]{16}$/D',$id)) throw new \RuntimeException('Invalid transaction ID'); return $this->path('transactions/'.$id); }

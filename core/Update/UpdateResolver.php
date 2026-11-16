@@ -40,7 +40,8 @@ final readonly class UpdateResolver
             $releaseChannel = (string) ($release['channel'] ?? 'stable');
             if ($releaseChannel !== $channel && $channel !== 'dev') { continue; }
             $version = (string) ($release['version'] ?? '');
-            if ($version === '') { continue; }
+            try { if (UpdatePreflight::channelOf($version)!==$releaseChannel) continue; } catch (\Throwable) { continue; }
+            if (!is_array($release['artifacts']['dist']??null)) continue;
             if ($latest === null || version_compare($version, (string) $latest['version'], '>')) {
                 $latest = $release;
             }
@@ -140,7 +141,7 @@ final readonly class UpdateResolver
         if ($this->rootPath === null) { return; }
         $path = $this->rootPath . '/storage/app/updates/last-check.json';
         if (!is_dir(dirname($path))) { mkdir(dirname($path), 0775, true); }
-        file_put_contents($path, json_encode($result, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR) . PHP_EOL, LOCK_EX);
+        OperationFiles::json($path,$result,0640);
     }
 
     /** @return array<string, mixed>|null */

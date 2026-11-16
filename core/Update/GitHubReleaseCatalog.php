@@ -23,18 +23,18 @@ final class GitHubReleaseCatalog
             $published = $release['published_at'] ?? null;
             if (!is_string($published) || $published === '' || strtotime($published) === false) continue;
             if (!is_array($release['assets'] ?? null)) continue;
-            $assets = [];
+            $assets = []; $duplicates=[];
             foreach ($release['assets'] as $asset) {
                 if (!is_array($asset) || ($asset['state'] ?? null) !== 'uploaded' || !is_string($asset['name'] ?? null) || !is_int($asset['size'] ?? null) || $asset['size'] <= 0) continue;
                 $name = $asset['name'];
                 // Construct canonical links ourselves; never forward arbitrary API-provided URLs.
-                if (isset($assets[$name])) continue;
+                if (isset($assets[$name])) { $duplicates[$name]=true; continue; }
                 $assets[$name] = $asset;
             }
             $artifacts = [];
             foreach (['source', 'dist'] as $mode) {
                 $name = "cajeerengine-$version-$mode.zip";
-                if (!isset($assets[$name], $assets[$name.'.sha256'], $assets[$name.'.sig'])) continue;
+                if (!isset($assets[$name], $assets[$name.'.sha256'], $assets[$name.'.sig'])||isset($duplicates[$name])||isset($duplicates[$name.'.sha256'])||isset($duplicates[$name.'.sig'])) continue;
                 $artifact = [
                     'name' => $name,
                     'download_url' => GitHubEndpoints::assetUrl($tag, $name),
@@ -58,6 +58,7 @@ final class GitHubReleaseCatalog
                 'artifacts' => $artifacts,
             ];
         }
-        return ['releases' => $releases];
+        $counts=array_count_values(array_column($releases,'version'));
+        return ['releases' => array_values(array_filter($releases,static fn($r)=>$counts[$r['version']]===1))];
     }
 }

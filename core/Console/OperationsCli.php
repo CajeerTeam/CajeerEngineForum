@@ -13,7 +13,7 @@ use CajeerEngine\Update\UpdateManager;
 /** Operational CLI remains available without Composer; never execute through HTTP. */
 final class OperationsCli
 {
-    public const COMMANDS=['backup:create','stable:backup','backup:list','backup:verify','backup:restore','backup:keygen','backup:export','backup:import','backup:drill','release:keygen','release:sign','update:verify-signature','update:apply','update:rollback','update:stage','update:requests','update:run','update:status','maintenance:on','maintenance:off','maintenance:status','import:execute','import:requests'];
+    public const COMMANDS=['backup:create','stable:backup','backup:list','backup:verify','backup:restore','backup:keygen','backup:export','backup:import','backup:drill','release:keygen','release:sign','update:verify-signature','update:apply','update:rollback','update:stage','update:requests','update:run','update:status','update:history','maintenance:on','maintenance:off','maintenance:status','import:execute','import:requests'];
     public static function handles(array $argv): bool { return in_array($argv[1]??'',self::COMMANDS,true)||(($argv[1]??'')==='update'&&in_array('--apply',$argv,true)); }
     public static function run(string $root,array $argv): int
     {
@@ -51,6 +51,7 @@ final class OperationsCli
                     'update:requests'=>['ok'=>true,'requests'=>$m->pending()],
                     'update:run'=>$m->runRequest($required('id')),
                     'update:status'=>$m->wizardState(),
+                    'update:history'=>$m->history(isset($o['limit'])?self::seconds($o,'limit'):20),
                     'maintenance:status'=>$m->maintenanceState()+['ok'=>true],
                     'maintenance:on','maintenance:off'=>self::maintenance($root,$m,$c,$o),
                     default=>throw new \RuntimeException('Unknown operation'),

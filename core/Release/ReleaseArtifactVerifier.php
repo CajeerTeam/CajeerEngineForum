@@ -101,6 +101,10 @@ final class ReleaseArtifactVerifier
         elseif (version_compare($upstream,'1.2.5','>=')) $required = array_merge($required, ['deploy/production.py','deploy/install.php','deploy/verify.php','deploy/host-smoke.sh','deploy/test_production.py','deploy/site.example.json','docs/production-deployment.md']);
         if ($mode === 'source' && version_compare($upstream, '1.3.0', '>=')) $required = array_merge($required, ['tools/production-acceptance.py','tools/certification-evidence.py','tools/certification-regression.py','tools/rate-limit-concurrency.php','docs/production-certification.md']);
         if ($mode === 'source' && ($manifest['edition'] ?? null) === 'forum' && version_compare($version, '0.8.2', '>=')) $required = array_merge($required, ['.dockerignore','deploy/container/Dockerfile','deploy/container/compose.yaml','deploy/container/init.sh','deploy/container/gate.php','deploy/container/bootstrap.php','deploy/container/runtime.php','deploy/container/loop.sh','deploy/container/php-fpm.conf','deploy/container/nginx.conf.template','deploy/container/gateway.sh','deploy/container/postgres-start.sh','deploy/container/postgres-init.sh','deploy/container/redis-start.sh','deploy/container/prepare.sh','deploy/container/smoke.py','deploy/container/test_container.py','deploy/container/site.example.env','docs/container-deployment.md']);
+        if (($manifest['edition']??null)==='forum' && version_compare($version,'0.8.3','>=')) {
+            $required[]='core/Update/UpdatePreflight.php';
+            if ($mode==='source') $required=array_merge($required,['deploy/container/update.py','deploy/container/update-operator.php','deploy/container/update-operator.sh','deploy/container/test_update.py','docs/secure-updates.md']);
+        }
         foreach ($required as $file) if (!in_array($file, $files, true)) throw new \RuntimeException('Required ZIP entry missing: ' . $file);
         foreach (['pgsql', 'mysql', 'sqlite'] as $driver) {
             if (!array_filter($files, static fn ($file) => str_starts_with($file, 'migrations/' . $driver . '/') && str_ends_with($file, '.sql'))) throw new \RuntimeException('Missing migrations: ' . $driver);

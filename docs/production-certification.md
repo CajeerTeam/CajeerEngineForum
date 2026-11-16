@@ -1,4 +1,4 @@
-# Production certification — CajeerEngineForum 0.8.2 (Engine 1.3.0)
+# Production certification — CajeerEngineForum 0.8.3 (Engine 1.3.0)
 
 ## Scope and admission
 
@@ -7,7 +7,7 @@ The target profile for certification is a **single-node Linux/systemd installati
 ## Release run
 
 1. Commit a **real** `composer.lock` resolved from the project constraints; review dependency changes. Source archives without that lock cannot produce a reproducible dist. Composer 2, PHP 8.4 with the required extensions, Node 22, a disposable Linux/systemd host and PostgreSQL 17 are required. Do not bypass a failing dependency audit or fabricate a report.
-2. Run GitHub Actions `Forum Edition CI` for the reviewed candidate/tag `v0.8.2`. The required Forum CI jobs run the forum regression matrix, PostgreSQL/Redis integrations, browser checks, physical release acceptance and the dedicated production-host test. The separate release qualification and publication procedure also requires the full inherited regression suite and a clean locked Composer runtime audit; run the release scripts below on the approved commit. The real host smoke installs the exact dist with TLS, FPM, PostgreSQL and systemd; checks authentication, content and load; exercises a signed newer fixture with a failing and a successful migration; verifies that the service namespace cannot write code. A failure prevents signing/publication.
+2. Run GitHub Actions `Forum Edition CI` for the reviewed candidate/tag `v0.8.3`. The required Forum CI jobs run the forum regression matrix, PostgreSQL/Redis integrations, browser checks, physical release acceptance and the dedicated production-host test. The separate release qualification and publication procedure also requires the full inherited regression suite and a clean locked Composer runtime audit; run the release scripts below on the approved commit. The real host smoke installs the exact dist with TLS, FPM, PostgreSQL and systemd; checks authentication, content and load; exercises a signed newer fixture with a failing and a successful migration; verifies that the service namespace cannot write code. A failure prevents signing/publication.
 3. The host smoke runs `tools/production-acceptance.py` against loopback Nginx with the test certificate's CA and hostname verification. It cannot target an arbitrary remote host; it is destructive and must only run on a disposable server (`CE_DEPLOY_DISPOSABLE=yes`). The synthetic test account and pages are not production data.
 4. `tools/certification-evidence.py seal DIR` creates `certification.json` only if `production-acceptance.json` and `dependency-audit.json` satisfy policy. Generate the seal in the protected release qualification environment **after all preceding steps passed**. `verify DIR` checks the exact source/dist SHA-256, report SHA-256 and Git commit. The signing operator or protected signing job must verify it before accessing the signing key. The publishing script verifies it again and uploads the evidence alongside the signed packages. These JSON reports are not independent cryptographic attestations; trust the protected CI run, commit/tag, signing environment and signed release archives, not a report produced by an untrusted party.
 
@@ -33,11 +33,11 @@ From the reviewed checkout, with a clean Git tree and committed lock:
 composer audit --locked --no-dev --format=json --abandoned=fail > /tmp/dependency-audit.json
 bash tools/release-pipeline.sh /tmp/ce-release
 cp /tmp/dependency-audit.json /tmp/ce-release/dependency-audit.json
-bash tools/release-smoke.sh /tmp/ce-release/cajeerengine-0.8.2-dist.zip sqlite
+bash tools/release-smoke.sh /tmp/ce-release/cajeerengine-0.8.3-dist.zip sqlite
 # Configure CE_DB_USER and CE_DB_PASSWORD for a disposable PostgreSQL 17 server.
 export CE_DEPLOY_DISPOSABLE=yes CE_CERT_REPORT=/tmp/ce-release/production-acceptance.json
 sudo --preserve-env=CE_DB_USER,CE_DB_PASSWORD,CE_DEPLOY_DISPOSABLE,CE_CERT_REPORT \
-  bash deploy/host-smoke.sh /tmp/ce-release/cajeerengine-0.8.2-dist.zip
+  bash deploy/host-smoke.sh /tmp/ce-release/cajeerengine-0.8.3-dist.zip
 ```
 
 Run all remaining release workflow tests as well; the commands above alone are not complete certification. The host script uses fixed disposable paths, role/database and ports; never invoke it on a real installation. For a failing run, inspect stdout/stderr and the host report inside `/var/lib/ce-deploy-smoke` if using `CE_DEPLOY_KEEP=yes`; never copy private environment or keys to artifacts. A passed release run emits the three reports. The publication environment should require review and protect tags, credentials and workflow modifications.
@@ -52,3 +52,5 @@ Run all remaining release workflow tests as well; the commands above alone are n
 - Record responsible operator and approval. Any missing/failing requirement is NO-GO; keep maintenance enabled until recovery and verification succeed.
 
 Forum 0.8.1 added the required `production-host` job to `forum-required`; Forum 0.8.2 additionally requires `container-runtime` (PostgreSQL and Redis queue modes). These jobs build a physical dist and exercise disposable systemd and Docker hosts. Their actual successful evidence, not a version string or dry-run, is required. Build/publish scripts use `edition_version` and the CajeerEngineForum repository. Publication remains a separate operator/CI action.
+
+Forum 0.8.3 adds required `container-upgrade`: build authentic 0.8.2 and 0.8.3 signed dist/images, install the old version, verify dry-run leaves it serving, apply through the operator controller, verify persistent HTTP data, and explicitly roll back to the old release. The separate release acceptance job exercises failure injection and recovery.

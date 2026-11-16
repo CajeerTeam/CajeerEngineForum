@@ -28,16 +28,23 @@ $a = $data['releases'][0]['artifacts']['dist'];
 check($a['download_url'] === E::PROJECT_URL.'/releases/download/v1.2.6/cajeerengine-1.2.6-dist.zip' && $a['sha256'] === str_repeat('a',64), 'canonical asset URL and digest');
 check($data['releases'][1]['channel'] === 'rc' && $data['releases'][0]['channel'] === 'stable', 'prerelease channel isolation');
 check(Catalog::normalize(['message'=>'rate limit']) === null && Catalog::normalize([]) === ['releases'=>[]], 'API error differs from empty list');
+$dupe=release('v0.8.3'); $dupe['assets'][]=$dupe['assets'][0];
+check(Catalog::normalize([$dupe])===['releases'=>[]], 'duplicate asset names reject ambiguous release');
+check(Catalog::normalize([release('v0.8.3'),release('0.8.3')])===['releases'=>[]], 'duplicate version tags reject ambiguity');
 $tmp = tempnam(sys_get_temp_dir(), 'ce-gh-');
 try {
     file_put_contents($tmp, json_encode($data, JSON_THROW_ON_ERROR));
     $cfg = ['core'=>['releases_url'=>$tmp,'channel'=>'stable']];
     $result = (new UpdateResolver($cfg))->check('1.2.5');
     check($result['update_available'] && $result['latest']['version'] === '1.2.6', 'resolver selects latest stable');
+    $spoof=$data; $spoof['releases'][]=['version'=>'9.0.0-rc.1','channel'=>'stable','artifacts'=>['dist'=>['name'=>'fake']]];
+    file_put_contents($tmp,json_encode($spoof,JSON_THROW_ON_ERROR));
+    check((new UpdateResolver($cfg))->check('1.2.5')['latest']['version']==='1.2.6','fallback metadata cannot relabel prerelease stable');
     $cfg['core']['channel']='rc';
     check((new UpdateResolver($cfg))->check('1.2.5')['latest']['version'] === '1.3.0-rc.1', 'resolver selects rc');
     $cfg['core']['releases_url']=$tmp.'.missing'; $cfg['core']['channel']='stable';
-    check((new UpdateResolver($cfg,$root))->check('1.2.4')['latest']['version'] === '1.2.5', 'bundled metadata fallback');
+    $fallback=(new UpdateResolver($cfg,$root))->check('0.8.2');
+    check($fallback['latest']===null&&!$fallback['update_available'], 'empty forum catalog does not invent a CMS update');
 } finally { unlink($tmp); }
 $plan = (new ReleaseBuilder($root))->plan('source');
 check($plan['github']['release_url'] === E::releaseUrl('v'.$plan['version']) && $plan['github']['download_url'] === E::assetUrl('v'.$plan['version'],$plan['artifact']), 'release builder links match GitHub catalog');

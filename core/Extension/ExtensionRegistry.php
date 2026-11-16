@@ -277,19 +277,23 @@ final class ExtensionRegistry
     }
 
     /** Read-only deployment preflight. Never rewrite or relax a signed constraint. */
-    public function targetCompatibility(string $target): array
+    public function targetCompatibility(string $target,?string $targetEngineApi=null): array
     {
         \CajeerEngine\Forum\ForumVersion::validate($target);
+        $targetEngineApi??=$this->config->string('app.engine_api_version');
+        if (!preg_match('/^\d+\.\d+(?:\.\d+)?$/D',$targetEngineApi)) throw new \RuntimeException('Invalid target Engine API');
+        $engineCheck=new CompatibilityChecker($targetEngineApi);
         $items=$this->all();$blocked=[];
         foreach($items as $item){
             if(empty($item['installed'])||empty($item['enabled']))continue;
             $constraint=$item['forum']??null;
             if(empty($item['valid'])||!empty($item['missing']))$blocked[]=['name'=>$item['name'],'reason'=>'invalid_or_untrusted'];
             elseif($constraint!==null&&!DependencyGraph::matches($target,$constraint))$blocked[]=['name'=>$item['name'],'reason'=>'forum_version','constraint'=>$constraint];
+            elseif(!$engineCheck->isCompatible(new ExtensionManifest($item['name'],$item['type'],$item['version'],$item['engine'])))$blocked[]=['name'=>$item['name'],'reason'=>'engine_api_version','constraint'=>$item['engine']];
         }
         $graph=true;
         try{DependencyGraph::order($items);}catch(\Throwable){$graph=false;}
-        return ['ok'=>$blocked===[]&&$graph,'target'=>$target,'blocked'=>$blocked,'dependency_graph'=>$graph];
+        return ['ok'=>$blocked===[]&&$graph,'target'=>$target,'target_engine_api'=>$targetEngineApi,'blocked'=>$blocked,'dependency_graph'=>$graph];
     }
 
     /** @return array<string, mixed> */

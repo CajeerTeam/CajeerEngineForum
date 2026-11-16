@@ -29,6 +29,11 @@ try {
     foreach (['ce_content_entries','ce_users','ce_public_routes','ce_cms_search','ce_migrations','ce_forum_categories','ce_forum_boards','ce_forum_threads','ce_forum_posts','ce_forum_reactions','ce_forum_watches','ce_forum_reports'] as $table) {
         $db->connection()->query('SELECT 1 FROM '.$table.' WHERE 1=0');
     }
+    // Preflight is read-only: no rebuild, provider boot or public write.
+    if (($argv[1]??'')==='preflight') {
+        if (!(new AdminAssetPublisher($root))->manifest()['ready']) throw new RuntimeException('Admin assets invalid');
+        echo "Read-only update preflight passed\n"; exit(0);
+    }
     (new CajeerEngine\Public\RouteIndex($root,$db))->rebuild();
     if (!(new AdminAssetPublisher($root))->manifest()['ready']) throw new RuntimeException('Admin assets invalid');
     $doctor=(new ServerDoctorService($root))->run(false); if (!($doctor['ok']??false)) throw new RuntimeException('Doctor failed');

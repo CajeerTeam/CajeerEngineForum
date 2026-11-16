@@ -1,3 +1,11 @@
+## Forum Edition 0.8.3 — Secure Updates & Release Management
+
+- Enforce signed release channel, exact approved target version and target Engine API compatibility; reject altered historical migrations before backup/apply.
+- Recovery-aware preflight estimates staging/backup disk space, checks recovery prerequisites, verifies the current installation, and removes dry-run or abandoned unjournalled stages.
+- Durable CLI update history and sanitized ACP progress; reject ambiguous release catalog entries.
+- Offline, journalled Compose update/recovery using the installed publisher key, exact target digest, stopped writers, existing BackupManager and UpdateManager, and real TLS/SSR/ACP acceptance. PostgreSQL queue mode only; Redis queue restore remains unsupported.
+- No schema changes; upstream Engine 1.3.0 unchanged. Full Docker and native database acceptance remains a required CI gate.
+
 ## Forum Edition 0.8.2 — Containerized Deployment & Runtime
 
 - Verified signed-dist PHP-FPM image and TLS gateway; persistent PostgreSQL, Redis, application and runtime volumes.

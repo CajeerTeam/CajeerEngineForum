@@ -38,6 +38,22 @@ final class DatabaseBackup
             throw new \RuntimeException('Rehearse MySQL backup/restore on a disposable database, then explicitly set BACKUP_MYSQL_RESTORE_CONFIRMED=true');
         }
     }
+    public function estimatedBytes(): int
+    {
+        if ($this->driver==='sqlite') {
+            $path=$this->sqlitePath();
+            if (!is_file($path)) throw new \RuntimeException('SQLite database missing');
+            return (int)filesize($path)+(is_file($path.'-wal')?(int)filesize($path.'-wal'):0);
+        }
+        $tmp=tempnam(sys_get_temp_dir(),'ce-db-size-'); if ($tmp===false) throw new \RuntimeException('Cannot create DB size probe');
+        try {
+            if ($this->driver==='pgsql') self::run(['psql','--no-password','--tuples-only','--no-align','--dbname='.$this->name(),'--command=SELECT pg_database_size(current_database())'],$this->pgEnv(),$tmp);
+            else $this->mysql(['mysql','--batch','--skip-column-names','--database='.$this->name(),'--execute=SELECT COALESCE(SUM(data_length+index_length),0) FROM information_schema.tables WHERE table_schema=DATABASE()'],$tmp,null);
+            $value=trim((string)file_get_contents($tmp));
+            if (!ctype_digit($value)||strlen($value)>18) throw new \RuntimeException('Cannot estimate database size');
+            return (int)$value;
+        } finally { F::remove($tmp); }
+    }
     public function create(string $file): void
     {
         if ($this->driver==='sqlite') {

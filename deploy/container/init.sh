@@ -14,6 +14,11 @@ if [ ! -f release-manifest.json ]; then
 fi
 # Keep the bootstrap lock for the whole process, including the installer.
 php /opt/ce-container/runtime.php identity
+if [ -e /run/ce-keys/release.pub ]; then
+    cmp -s /opt/ce-release.pub /run/ce-keys/release.pub || { echo 'Publisher key differs; explicit rotation required' >&2; exit 1; }
+else
+    install -m 0644 /opt/ce-release.pub /run/ce-keys/release.pub
+fi
 chown 33:33 /srv/forum
 chmod 0755 /srv/forum
 for d in storage bootstrap/cache public/uploads public/extensions modules plugins themes; do
