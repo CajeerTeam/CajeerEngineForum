@@ -45079,7 +45079,9 @@
                 "settings",
                 "policy_history",
                 "delegation",
-                "themes"
+                "themes",
+                "imports",
+                "import_job"
               ],
               "default": "overview"
             }
@@ -45138,6 +45140,15 @@
               "type": "string",
               "format": "uuid"
             }
+          },
+          {
+            "name": "job",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "description": "Migration job identifier for import_job (global administrators only)."
           }
         ],
         "responses": {
@@ -45318,6 +45329,24 @@
                           "items": {
                             "type": "string"
                           }
+                        },
+                        "job": {
+                          "type": "object"
+                        },
+                        "results": {
+                          "type": "array",
+                          "items": {
+                            "type": "object"
+                          }
+                        },
+                        "relation_rows": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "integer"
+                          }
+                        },
+                        "ok": {
+                          "type": "boolean"
                         }
                       }
                     }

@@ -6,7 +6,7 @@ namespace CajeerEngine\Forum\Migration;
 use PDO;
 
 /** Read-only phpBB 3.3 snapshot. No source credentials are stored in the target. */
-final class PhpbbSource
+final class PhpbbSource implements ForumSource
 {
     public const PHASES=['groups','users','forums','topics','posts','finalize','attachments','polls','votes','watches','board_watches'];
     private const TABLES=['groups'=>['groups','group_id'],'users'=>['users','user_id'],'forums'=>['forums','left_id'],'topics'=>['topics','topic_id'],'posts'=>['posts','post_id'],'finalize'=>['topics','topic_id'],'attachments'=>['attachments','attach_id'],'polls'=>['topics','topic_id'],'votes'=>['topics','topic_id'],'watches'=>['topics','topic_id'],'board_watches'=>['forums','forum_id']];
@@ -26,6 +26,10 @@ final class PhpbbSource
         if(!preg_match('/\A3\.3\.\d+(?:[-a-zA-Z0-9.]*)?\z/D',$this->version))throw new \RuntimeException('Only phpBB 3.3 snapshots are supported');
         $this->identity=hash('sha256',$snapshotIdentity."\0".$prefix."\0".$this->version);
     }
+    public function platform(): string {return 'phpbb';}
+    public function identity(): string {return $this->identity;}
+    public function version(): string {return $this->version;}
+    public function unsupported(): array {return ['source ACL translation','password hashes','private messages','banlist','anonymous poll votes','remote media','profile fields'];}
     private function table(string $name): string {return $this->prefix.$name;}
     private function query(string $sql,array $params=[]): \PDOStatement {$s=$this->pdo->prepare($sql);$s->execute($params);return $s;}
     public function plan(): array

@@ -585,6 +585,11 @@ export const operations = {
                 "name": "id",
                 "in": "query",
                 "required": false
+            },
+            {
+                "name": "job",
+                "in": "query",
+                "required": false
             }
         ],
         "bodyRequired": false

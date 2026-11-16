@@ -87,6 +87,17 @@ final readonly class ForumAdminService
                 $id=V::id($q['id']??null);$user=(new UserRepository($this->db,new RoleRepository($this->db)))->findById($id)??throw new ForumException('Участник не найден.',404);
                 return ['user_id'=>$id,'scopes'=>array_values(array_filter(self::DELEGATED,fn($scope)=>in_array('forum-acp-'.substr($scope,10),$user['roles'],true)))];
             }
+            if($view==='imports') {
+                $rows=$this->db->connection()->query('SELECT id,source_version,category_id,backup_id,phase,cursor_id,state,created_at,updated_at,plan_json FROM ce_forum_import_jobs ORDER BY created_at DESC,id ASC LIMIT 26 OFFSET '.(int)$page)->fetchAll(\PDO::FETCH_ASSOC);
+                $more=count($rows)>25;if($more)array_pop($rows);
+                foreach($rows as &$row){$plan=json_decode($row['plan_json'],true,512,JSON_THROW_ON_ERROR);$row['platform']=$plan['source_platform']??'phpbb';unset($row['plan_json']);}unset($row);
+                return ['items'=>$rows,'page'=>intdiv($page,25)+1,'has_more'=>$more];
+            }
+            if($view==='import_job') {
+                $id=$q['job']??'';if(!is_string($id)||!preg_match('/\A[a-f0-9]{64}\z/D',$id))throw new ForumException('Некорректный ID импорта.',422);
+                $stmt=$this->db->connection()->prepare('SELECT id FROM ce_forum_import_jobs WHERE id=?');$stmt->execute([$id]);if(!$stmt->fetchColumn())throw new ForumException('Импорт не найден.',404);
+                return \CajeerEngine\Forum\Migration\ForumMigrationEngine::report($this->db,$id);
+            }
             if($view==='themes')return (new ForumThemeService($this->db,$this->tx))->editor($actor);
             if($view==='settings')return $this->tx->settings()->snapshot();
             if($view==='policy_history') {

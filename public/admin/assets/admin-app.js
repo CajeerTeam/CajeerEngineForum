@@ -591,7 +591,7 @@ document.addEventListener('click',async e=>{if(e.target.closest('[data-ops-refre
 // Forum ACP: same-origin session and CSRF transport provided by the existing SPA.
 const forumAcp = (() => {
   let tab = 'overview', page = 1, query = '', filter = '', serial = 0, caps = {}
-  const tabs = [['overview','Обзор'],['structure','Структура и ACL'],['users','Участники'],['groups','Группы'],['threads','Обсуждения'],['posts','Сообщения'],['moderation','Модерация'],['attachments','Вложения'],['audit','Аудит'],['settings','Настройки сообщества'],['themes','Оформление форума'],['policy_history','История политики'],['maintenance','Обслуживание'],['delegation','Делегирование']]
+  const tabs = [['overview','Обзор'],['structure','Структура и ACL'],['users','Участники'],['groups','Группы'],['threads','Обсуждения'],['posts','Сообщения'],['moderation','Модерация'],['attachments','Вложения'],['audit','Аудит'],['settings','Настройки сообщества'],['themes','Оформление форума'],['policy_history','История политики'],['maintenance','Обслуживание'],['delegation','Делегирование'],['imports','Миграции']]
   const el = (tag, text, cls) => { const n=document.createElement(tag); if(text!=null)n.textContent=text; if(cls)n.className=cls; return n }
   const add = (p,...nodes) => { p.append(...nodes); return p }
   const card = title => add(el('section',null,'card'),el('h2',title))
@@ -625,11 +625,28 @@ const forumAcp = (() => {
       if(tab==='policy_history')return await policyHistory(body,ticket)
       if(tab==='maintenance')return maintenance(body)
       if(tab==='delegation')return delegation(body)
+      if(tab==='imports')return await imports(body,ticket)
       if(tab==='structure')return await structure(body,ticket)
       if(tab==='groups')return await groups(body,ticket)
       if(tab==='moderation')return await moderation(body,ticket)
       return await records(body,ticket)
     }catch(e){if(ticket===serial&&root.isConnected){body.replaceChildren();error(body,e)}}
+  }
+  async function imports(body,ticket){
+    const d=await list('imports',{page:String(page)});if(ticket!==serial)return;
+    const c=card('Миграции форумов'),detail=el('div');body.append(c,detail);
+    const platforms={phpbb:['phpbb_','3.3.x'],xenforo:['xf_','2.2.x / 2.3.x'],mybb:['mybb_','1.8.x'],smf:['smf_','2.1.x']};
+    c.append(el('p','Импорт запускает оператор из CLI на неизменяемом снимке. Здесь можно подготовить команды и проверить реальные задания. Пароли исходных БД не вводятся в браузере.'));
+    const platform=select('platform',Object.keys(platforms).map(k=>[k,k]),'phpbb'),version=input('version'),snapshot=input('snapshot','community-snapshot'),prefix=input('prefix','phpbb_'),commands=el('pre','','json');
+    const redraw=()=>{prefix.value=platforms[platform.value][0];version.placeholder=platforms[platform.value][1];version.disabled=platform.value==='phpbb';version.value='';commands.textContent=''};platform.addEventListener('change',redraw);redraw();
+    c.append(form([field('Источник',platform),field('Точная установленная версия (кроме phpBB)',version),field('Имя снимка',snapshot),field('Префикс таблиц',prefix)],'Подготовить CLI-команды',x=>{
+      if(!/^[A-Za-z0-9_.-]{1,100}$/.test(x.snapshot)||!/^[A-Za-z0-9_]{1,40}$/.test(x.prefix))throw Error('Некорректное имя снимка или префикс.');
+      const patterns={xenforo:/^2\.[23]\.\d+$/,mybb:/^1\.8\.\d+$/,smf:/^2\.1\.\d+$/};if(x.platform!=='phpbb'&&!patterns[x.platform].test(x.version||''))throw Error('Укажите поддерживаемую точную версию источника.');
+      const opts=' --platform='+x.platform+' --snapshot='+x.snapshot+' --prefix='+x.prefix+(x.platform==='phpbb'?'':' --source-version='+x.version);
+      commands.textContent='php bin/cajeer forum:import:plan'+opts+' --json\n\n# После backup, остановки всех процессов и включения maintenance:\nphp bin/cajeer forum:import:run'+opts+' --confirm=import-'+x.platform+' --batch=100 --steps=50 --json';
+    }),commands,el('p','Для файлов добавьте --files=/absolute/path на стороне оператора. Подключение источника задаётся переменными FORUM_IMPORT_SOURCE_*.'),action('Обновить задания',()=>mount()));
+    c.append(tableDom(['Источник','Версия','Состояние','Фаза','Курсор','Действия'],d.items.map(r=>[r.platform,r.source_version,r.state,r.phase,r.cursor_id,action('Отчёт',async()=>{const v=await list('import_job',{job:r.id});if(ticket!==serial)return;detail.replaceChildren(add(card('Отчёт '+r.id),el('p','Backup: '+v.job.backup_id),el('pre',JSON.stringify(v,null,2),'json')));})])));
+    if(!d.items.length)c.append(el('p','Импорт ещё не запускался.'));c.append(add(el('div',null,'toolbar'),...(page>1?[action('Назад',()=>{page--;return mount()})]:[]),el('span','Страница '+d.page),...(d.has_more?[action('Далее',()=>{page++;return mount()})]:[])));
   }
   const localDate = epoch => {if(!epoch)return '';const d=new Date(epoch*1000);return new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,16)}
   async function settings(body,ticket){

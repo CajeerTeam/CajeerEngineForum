@@ -756,6 +756,12 @@ final class Operations {
         'in' => 'query',
         'required' => false,
       ),
+      7 => 
+      array (
+        'name' => 'job',
+        'in' => 'query',
+        'required' => false,
+      ),
     ),
     'bodyRequired' => false,
   ),

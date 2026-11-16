@@ -1,3 +1,10 @@
+## Forum Edition 0.7.6 — XenForo & Multi-Forum Migration
+
+- Native read-only adapters for XenForo 2.2/2.3, MyBB 1.8 and SMF 2.1; shared transactional importer, source-specific IDs and checkpoint verification.
+- Import disabled accounts, non-privileged memberships, nested hidden nodes, visible topics/posts, local attachments, closed polls and compatible votes/watches.
+- ACP migration command preparation, paginated job reports and backup IDs; credentials and execution remain CLI-only.
+- No schema migration; preserve phpBB jobs and existing API operations. Integration tests cover source snapshots, rollback/resume, FTS and attachment safety.
+
 ## 0.7.4 — Forum Extension Platform
 
 ## Forum Edition 0.7.5 — Forum Migration Engine & phpBB

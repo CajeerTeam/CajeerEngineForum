@@ -4,7 +4,7 @@ The importer is an operator-only CLI, not the CMS Portable ZIP importer. It acce
 
 ## Preparation and execution
 
-1. Upgrade the target to 0.7.5, run `php bin/cajeer migrate`, configure backup keys (`php bin/cajeer backup:keygen --key=/secure/backup.key` as documented), and verify a backup/restore drill. Stop all target PHP/queue/scheduler processes on **every** node and enter operator maintenance. Do not run other writers or deployments during import. Use a staging installation first.
+1. Upgrade the target to 0.7.6, run `php bin/cajeer migrate`, configure backup keys (`php bin/cajeer backup:keygen --key=/secure/backup.key` as documented), and verify a backup/restore drill. Stop all target PHP/queue/scheduler processes on **every** node and enter operator maintenance. Do not run other writers or deployments during import. Use a staging installation first.
 2. Freeze phpBB database and `files/` directory, use a stable snapshot label. Set `FORUM_IMPORT_SOURCE_DSN='mysql:host=127.0.0.1;dbname=phpbb_snapshot;charset=utf8mb4'`, `FORUM_IMPORT_SOURCE_USER`, `FORUM_IMPORT_SOURCE_PASSWORD` securely in the process environment. Alternatively `FORUM_IMPORT_SOURCE_DSN='sqlite:/absolute/path/source.sqlite'`. Never store credentials in Git or shell history. Source database and target database must be distinct.
 3. Plan (no target writes):
 
@@ -33,10 +33,52 @@ Wait for `job.state=complete`. `results` counts mapped/skipped source entities b
 - The new root category and every imported board are **hidden**, readonly and SEO-disabled. No automatic ACL translation. Review source ACLs and create appropriate target group/user rules through ACP before opening any board. Set parent and child visibility, read/write permissions, SEO, and state deliberately. Keep confidential boards hidden. The original site tree and accounts are not merged or replaced.
 - Every new account is disabled, with a random replacement password hash, private profile/activity, no verified email, and only normal `forum-member` plus non-privileged imported groups. Do not activate source banned/inactive accounts without manual review; source bans are not translated. For approved accounts activate through ACP, use existing password reset and email verification. Source founders/admins receive no special rights. Existing email collisions are skipped, not linked; authors without a mapped account become anonymous/null. Never change existing account credentials to resolve a collision.
 - Review the report: unapproved/deleted/moved topics, unapproved posts, links, unknown parents, empty topics, invalid emails, unsupported attachments and private messages are not imported. phpBB s9e XML/legacy BBCode is converted to literal text, not arbitrary HTML; formatting and embedded media/quote links may require manual repair. Post order follows source post IDs; timestamps retained (account timestamps are limited to MySQL TIMESTAMP range). Source polls are closed; compatible registered votes and internal subscriptions are imported. Guest votes, private messages, ACL rules, bans, custom profiles, remote media, avatars and source credentials are not imported.
-- Attachment source directory must be a frozen trusted local copy. Files use the existing type/size/MIME allowlist, basename-only paths, SHA-256 and base64 private storage. Missing/unsafe/unsupported files and files exceeding post limits are reported. The importer does not copy private-message or orphan files. Large imports require sufficient database/disk space and appropriate MySQL `max_allowed_packet` (base64 adds overhead).
+- Attachment source directory must be a frozen trusted local copy. Files use the existing type/size/MIME allowlist, validated paths relative to the source root, SHA-256 and base64 private storage. Missing/unsafe/unsupported files and files exceeding post limits are reported. The importer does not copy private-message or orphan files. Large imports require sufficient database/disk space and appropriate MySQL `max_allowed_packet` (base64 adds overhead).
 - The importer uses target FTS triggers, revisions, sequences, media state and cache generation triggers. It does not enqueue historical mail, notification or extension publication events. No separate counter rebuild is required for dynamic counters. At completion the target integrity check must pass. Run `php bin/cajeer forum:search:check --json` and `forum:performance:check --json` after leaving maintenance in the isolated installation; check search/SSR/sitemap visibility, attachment downloads, and test opening a permitted board. Keep target hidden from public traffic until checks pass.
 - Legacy ID map is available for future redirect integration. No automatic public redirects from phpBB URLs yet. If aborting, use `php bin/cajeer backup:restore --id=... --yes` with the saved backup ID (consult `backup:restore` CLI help for operator confirmation); this restores the full target recovery set, not just imported rows. Do not resume unrelated writes before restore. After review, leave maintenance and restart workers.
 
 ## Testing and limits
 
-`php tools/forum-migration-regression.php` exercises the actual importer on a disposable SQLite target and a synthetic phpBB-compatible snapshot, including failure/resume, hidden content, email collision, attachments and votes. `python tools/forum-tests/migration_sql_regression.py` exercises the exact target SQL on SQLite. Real phpBB MySQL/MariaDB dumps and PostgreSQL/MySQL targets must be tested in staging before production cutover. This version does not implement online delta migration, automatic ACL equivalence, an ACP wizard or large-scale performance certification.
+`php tools/forum-migration-regression.php` exercises the actual importer on a disposable SQLite target and a synthetic phpBB-compatible snapshot, including failure/resume, hidden content, email collision, attachments and votes. `python tools/forum-tests/migration_sql_regression.py` exercises the exact target SQL on SQLite. Real phpBB MySQL/MariaDB dumps and PostgreSQL/MySQL targets must be tested in staging before production cutover. Online delta migration, automatic ACL equivalence and large-scale performance certification are not implemented. The multi-forum ACP monitor is described below; execution remains operator-only.
+
+## Multi-forum sources (0.7.6)
+
+The same import ledger and transaction engine now reads XenForo, MyBB and SMF directly. No new target schema is required beyond 0047. Existing phpBB commands and jobs retain their original identity and checkpoint format.
+
+| `--platform` | Source family / schema | Default prefix | Local attachment root (`--files`) |
+|---|---|---|---|
+| `phpbb` (default) | 3.3.x (auto-detected) | `phpbb_` | Original `files/` |
+| `xenforo` | 2.2.x or 2.3.x | `xf_` | Original `internal_data/attachments/` |
+| `mybb` | 1.8.x | `mybb_` | Original `uploads/` |
+| `smf` | 2.1.x | `smf_` | Staged numbered subdirectories, one per `id_folder` |
+
+For non-phpBB sources specify the actual installed version, e.g. `--source-version=2.3.0`. The adapter validates the supported family and the required native tables/columns before taking a target backup. SMF additionally checks `smfVersion` when present. No promise is made that all patch releases, modified schemas or plugins are compatible. Test an actual frozen source in staging. Sources can be MySQL/MariaDB snapshots or SQLite copies with native table layouts (not SQL dumps passed directly as DSNs).
+
+Example for XenForo:
+
+```sh
+# Set FORUM_IMPORT_SOURCE_DSN, FORUM_IMPORT_SOURCE_USER and FORUM_IMPORT_SOURCE_PASSWORD securely first.
+php bin/cajeer forum:import:plan --platform=xenforo --source-version=2.3.0 --snapshot=xf-frozen-01 --files=/srv/xf/internal_data/attachments --json
+# Stop all application nodes and workers, enter maintenance, then:
+php bin/cajeer forum:import:run --platform=xenforo --source-version=2.3.0 --snapshot=xf-frozen-01 --files=/srv/xf/internal_data/attachments --confirm=import-xenforo --batch=100 --steps=50 --json
+```
+
+Use `--platform=mybb --source-version=1.8.39 --confirm=import-mybb` or `--platform=smf --source-version=2.1.6 --confirm=import-smf` for the corresponding source (omit `--confirm` for plan). Override `--prefix` as necessary. Keep the exact same platform/version/prefix/DSN/snapshot label/file root between resumptions. Changing any creates a distinct job; do not use a new label to restart an incomplete import. Restore its backup if the source snapshot has changed. New jobs compare the normalized node tree digest and source counts/high-water marks on resume and completion. This is not a full-content cryptographic snapshot guarantee.
+
+New sources transfer native users and ordinary group memberships (including numeric user ID 1), nested categories/boards, visible topics/posts, closed/locked/pinned metadata, post revisions, local post attachments, closed polls and compatible registered votes, topic and board subscriptions. Posts are imported as literal text; source BBCode, media embed tags and internal links are not fully rewritten. Source-specific system roles are not granted. All new users remain disabled and all imported boards hidden/readonly/noindex until reviewed. Email collisions are skipped. Source private messages, sessions, credentials, reactions, reputation, avatars, sanctions, custom fields, automatic ACL translation and public redirects are not imported; source counts are reported for the applicable major unsupported tables. Guest votes are skipped. No historical notification or extension events are emitted.
+
+Attachment handling:
+
+- XenForo: original file at `<floor(data_id/1000)>/<data_id>-<key>.data`. XF 2.3 uses `file_key`; older schema with no such column uses `file_hash`. Only associated post attachments and valid matching post authors are imported. Do not use thumbnail directories or remote storage URLs.
+- MyBB: `attachname` is a path relative to `uploads/`, often `YYYYMM/post_...attach`. Unapproved, orphan and unsafe paths are skipped.
+- SMF: stage immutable original files into numbered folders, e.g. `1/40_<file_hash>` under the specified root for attachment 40 and folder 1. Legacy unhashed files, avatars, thumbnails and unapproved files are not imported. The adapter does not read arbitrary original server paths from database settings. SMF category mappings use synthetic source ID `4294967296 + id_cat`, while original board IDs remain unchanged; `kind=forums` can inspect both. SMF recycle-board topics are excluded when the recycle setting is enabled.
+
+The importer verifies the target file allowlist, source length, canonical path containment, SHA-256 and attachment ownership; no arbitrary path traversal or symlink escape. It deliberately uses bounded per-file memory (up to 25 MiB) and SQL base64 storage, not a new blob storage backend. Node trees are bounded to 100,000 nodes and target depth 16; malformed, cyclic or orphan trees fail preflight. Source data remains untouched.
+
+### ACP migration monitor
+
+Global administrators can open `/admin/#/forum` → **Миграции** to prepare CLI commands and inspect real paginated job records, source platform/version, current phase/cursor, backup ID, mapped/skipped totals and relation counts. No source credentials are collected by the browser, and no web request can execute the importer or restore a backup. CLI remains responsible for backup, maintenance, start/resume and recovery. A complete job is not an instruction to open all imported ACLs.
+
+### Tests and compatibility
+
+`php tools/forum-multi-migration-regression.php` runs the production PHP importer and all three new source adapters on disposable SQLite snapshots/target, including an injected transactional failure, reopening source on resume, source ID collisions, group membership, file bytes, poll/watch transfer, hidden nodes, empty/deleted content, FTS and old XenForo file-hash layout. Fixtures in `tools/forum-tests/multi_forum_fixture.sql` use only the relevant native columns. They are synthetic, not licensed customer database exports. Run the full CI matrix and a real source migration/restore drill before production cutover. MyBB source column layouts are documented in the upstream [1.8.39 installer schema](https://github.com/mybb/mybb/blob/mybb_1839/install/resources/mysql_db_tables.php). XenForo local file paths follow the [2.2 attachment layout](https://xenforo.com/community/threads/attachments-system-locating-a-specific-file.225032/) and the [2.3 file-key distinction](https://xenforo.com/community/resources/attachment-integrity-check-cli.10689/).
