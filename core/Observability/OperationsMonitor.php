@@ -4,6 +4,7 @@ namespace CajeerEngine\Observability;
 
 use CajeerEngine\Runtime\ConfigRepository;
 use CajeerEngine\Database\DatabaseManager;
+use CajeerEngine\Database\ConnectionFactory;
 use CajeerEngine\Queue\QueueFactory;
 use CajeerEngine\Scheduler\TaskRunStore;
 use CajeerEngine\Storage\StorageManager;
@@ -71,7 +72,7 @@ final readonly class OperationsMonitor
             $file = new JsonFile($dir.'/http-readiness.json');
             $saved = $file->readObject();
             $now = time();
-            if ($this->healthySample($saved, $now, 10) && $this->liveReadinessCheck()) {
+            if ($this->healthySample($saved, $now, 10) && $this->liveReadinessCheck($saved['migration_fingerprint'] ?? null)) {
                 return $saved['readiness'];
             }
             $h = @fopen($dir.'/http-readiness.lock', 'c+');
@@ -81,18 +82,22 @@ final readonly class OperationsMonitor
                     // Another request is refreshing the expensive schema checks.
                     // A bounded fallback is allowed only after fresh DB/Redis
                     // probes, never during maintenance or on a failed sample.
-                    if ($this->healthySample($saved, $now, 30) && $this->liveReadinessCheck()) {
+                    if ($this->healthySample($saved, $now, 30) && $this->liveReadinessCheck($saved['migration_fingerprint'] ?? null)) {
                         return $saved['readiness'];
                     }
                     return $this->readiness();
                 }
                 $saved = $file->readObject();
-                if ($this->healthySample($saved, time(), 10) && $this->liveReadinessCheck()) {
+                if ($this->healthySample($saved, time(), 10) && $this->liveReadinessCheck($saved['migration_fingerprint'] ?? null)) {
                     return $saved['readiness'];
                 }
                 $ready = $this->readiness();
                 if ($ready['ok']) {
-                    $file->writeObject(['sampled_at' => time(), 'readiness' => $ready]);
+                    // A healthy schema sample is reusable only while the live
+                    // migration ledger still matches. The check is one bounded
+                    // read, not an unverified positive cache entry.
+                    $fingerprint = $this->migrationFingerprint($this->probeConnection());
+                    $file->writeObject(['sampled_at' => time(), 'migration_fingerprint' => $fingerprint, 'readiness' => $ready]);
                 }
                 return $ready;
             } finally {
@@ -112,22 +117,46 @@ final readonly class OperationsMonitor
             && ($saved['readiness']['ok'] ?? false) === true;
     }
 
-    private function liveReadinessCheck(): bool
+    /**
+     * Read-only operational connection. A persistent PDO cannot accept
+     * PDO::ATTR_STATEMENT_CLASS, which MeasuredPDO always installs; therefore
+     * it must not be constructed through the measured transactional manager.
+     * This probe has no application transaction or session-level write state.
+     */
+    private function probeConnection(): \PDO
     {
+        $database = $this->config->get('database', []);
+        if ($this->config->string('database.default') === 'pgsql') {
+            $database['connections']['pgsql']['persistent'] = true;
+        } elseif ($this->config->string('database.default') === 'sqlite') {
+            $path = $database['connections']['sqlite']['database'] ?? '';
+            if (is_string($path) && $path !== '' && $path !== ':memory:' && !str_starts_with($path, '/')) {
+                $database['connections']['sqlite']['database'] = $this->root.'/'.ltrim($path, '/');
+            }
+        }
+        return (new ConnectionFactory($database))->create();
+    }
+
+    private function migrationFingerprint(\PDO $pdo): string
+    {
+        // Include names and checksums, not just a migration count. A changed or
+        // deleted checksum must invalidate the cached positive health result.
+        $rows = $pdo->query('SELECT migration, checksum FROM ce_migrations ORDER BY migration')->fetchAll(\PDO::FETCH_NUM);
+        return hash('sha256', json_encode($rows, JSON_THROW_ON_ERROR));
+    }
+
+    private function liveReadinessCheck(?string $expectedFingerprint): bool
+    {
+        // Old cache records (without a ledger fingerprint) are not trusted.
+        if (!is_string($expectedFingerprint) || !preg_match('/\A[a-f0-9]{64}\z/D', $expectedFingerprint)) return false;
         $lease = null;
         try {
             $lease = OperationLock::acquire($this->root, false);
             if (OperationLock::maintenance($this->root)) return false;
             $this->assertDatabasePresent();
-            // A health endpoint must probe the database on every request, but
-            // should not establish a fresh PostgreSQL TCP/authentication
-            // connection for each load-balancer hit. This scoped connection is
-            // used for SELECT 1 only; write transactions remain nonpersistent.
-            if ($this->config->string('database.default') === 'pgsql') {
-                $this->config->set('database.connections.pgsql.persistent', true);
-            }
-            $db = new DatabaseManager($this->config);
-            if ($db->connection()->query('SELECT 1')->fetchColumn() === false) return false;
+            $pdo = $this->probeConnection();
+            if ($pdo->query('SELECT 1')->fetchColumn() === false) return false;
+            if (!hash_equals($expectedFingerprint, $this->migrationFingerprint($pdo))) return false;
             $requiredRedis = getenv('RATE_LIMIT_DRIVER') === 'redis'
                 || $this->config->string('queue.default') === 'redis';
             if ($requiredRedis) {

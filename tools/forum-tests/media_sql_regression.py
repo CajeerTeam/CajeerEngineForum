@@ -94,6 +94,13 @@ try:
         except sqlite3.IntegrityError:db.rollback()
         # With PDO available (CI), exercise the actual background service against the signed local S3 server.
         if b'sqlite' in php('echo implode(",",PDO::getAvailableDrivers());'):
+            # The migration fixture intentionally stops at v0030 to test the
+            # legacy backfill. Modern restoreOriginal() also requires the
+            # sanctions/permissions schema added in v0035 and later. Upgrade
+            # the fixture before exercising today's real PHP authorization.
+            for migration in sorted((ROOT/'migrations/sqlite').glob('*.sql')):
+                if migration.name > files[-1].name:
+                    db.executescript(migration.read_text())
             db.commit();env.update(DB_DRIVER='sqlite',SQLITE_DATABASE=str(path),DB_SQLITE_BUSY_TIMEOUT_MS='10000')
             work=r'''$db=new \CajeerEngine\Database\DatabaseManager(new \CajeerEngine\Runtime\ConfigRepository(getcwd()));$tx=new \CajeerEngine\Forum\Service\ForumTransaction($db,new \CajeerEngine\Database\Repository\AuditLogRepository($db));echo $tx->media()->syncReplica();'''
             db.execute("UPDATE ce_forum_media_state SET state='pending' WHERE attachment_id=?",(aid,));db.commit()

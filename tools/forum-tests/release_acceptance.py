@@ -280,7 +280,7 @@ def verify_data(base, state):
     c = Client(base)
     c.call('GET','/auth/me',token=token)
     posts = c.call('GET','/forum/threads/'+thread)['posts']
-    require([p['body'] for p in posts]==['Original content','Original reply'] and posts[0]['id']==post and int(posts[0]['likes'])==1, 'Content or reactions lost')
+    require(len(posts)>=2 and [p['body'] for p in posts[:2]]==['Original content','Original reply'] and posts[0]['id']==post and int(posts[0]['likes'])==1, 'Original content or reactions lost')
     require(thread in [t['id'] for t in c.call('GET','/forum/watches',token=token)], 'Watch lost')
     require(set(c.call('GET','/users/'+member,token=token)['roles'])=={'viewer','forum-member','forum-moderator'}, 'Existing roles lost')
     c.login(ADMIN, ADMIN_PASSWORD)
@@ -854,6 +854,12 @@ def verify_community_live(base,f):
 
 def verify_migration_recovery(site, env, report, work, port, current, state, ecosystem=None):
     # Exercise the actual encrypted recovery set, not a mock backup id.
+    # Take a complete snapshot before the import/backup. Later acceptance
+    # tests legitimately add rich replies to the original discussion; those
+    # must survive recovery rather than being rejected as unknown content.
+    with http(site, env, report, 'migration-baseline', port, current) as baseline:
+        original_posts = Client(baseline).call('GET', '/forum/threads/'+state[1])['posts']
+        original_signature = [(p['id'], p['body'], int(p['likes'])) for p in original_posts]
     source=work/'migration-source.sqlite'
     with sqlite3.connect(source) as db:
         db.executescript((HERE/'multi_forum_fixture.sql').read_text())
@@ -876,6 +882,9 @@ def verify_migration_recovery(site, env, report, work, port, current, state, eco
     run(site,menv,report,'migration-reopen',['php','bin/cajeer','maintenance:off'])
     with http(site,env,report,'migration-recovered',port,current) as base:
         verify_data(base,state)
+        restored_posts = Client(base).call('GET', '/forum/threads/'+state[1])['posts']
+        require([(p['id'], p['body'], int(p['likes'])) for p in restored_posts] == original_signature,
+                'Migration recovery lost or changed pre-existing discussion content')
         if ecosystem:verify_ecosystem(base,state,ecosystem,current)
     before=json.loads(run(site,env,report,'migration-extension-counts-before',['php','bin/cajeer','forum:extensions:check','--json']))['counts']
     run(site,menv,report,'migration-complete-maintenance',['php','bin/cajeer','maintenance:on'])
