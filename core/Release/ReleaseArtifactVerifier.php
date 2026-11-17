@@ -123,6 +123,7 @@ final class ReleaseArtifactVerifier
             $required[]='docs/production-qualification.md';
             if($mode==='source')$required=array_merge($required,['deploy/container/qualify.py','deploy/container/test_qualify.py','tools/forum-qualification-regression.php','tools/forum-tests/reliability_sql_regression.py']);
         }
+        if (($manifest['edition']??null)==='forum' && version_compare($version,'0.9.5','>=') && $mode==='source') $required=array_merge($required,['deploy/container/chaos.py','deploy/container/chaos_update.py','deploy/container/test_chaos.py','docs/forum-chaos-0.9.5.md']);
         foreach ($required as $file) if (!in_array($file, $files, true)) throw new \RuntimeException('Required ZIP entry missing: ' . $file);
         foreach (['pgsql', 'mysql', 'sqlite'] as $driver) {
             if (!array_filter($files, static fn ($file) => str_starts_with($file, 'migrations/' . $driver . '/') && str_ends_with($file, '.sql'))) throw new \RuntimeException('Missing migrations: ' . $driver);

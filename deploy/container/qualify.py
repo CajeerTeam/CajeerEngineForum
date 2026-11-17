@@ -12,6 +12,7 @@ import time
 import uuid
 from collections import Counter
 from qualification_telemetry import ResourceMonitor, QueueLatencyMonitor
+from chaos import run_chaos
 
 HERE = Path(__file__).resolve().parent
 spec = importlib.util.spec_from_file_location('acceptance', HERE.parents[1] / 'tools/production-acceptance.py')
@@ -232,10 +233,27 @@ def qualify(a):
         # Explicit fault windows are excluded from normal latency/error thresholds.
         if a.faults:
             dc.run('kill','-s','SIGKILL','worker');dc.run('stop','worker')
+            queue_job = None
             try:
                 pid,body,ms=publish(8,False);expected[pid]=body;publication.add(ms);verify_posts(thread,expected)
+                if a.chaos:
+                    # Enqueue through the *actual* CLI while the only worker is
+                    # stopped. The DB record must survive SIGKILL and then
+                    # transition from pending to processed after worker restart.
+                    payload=json.dumps({'message':'Chaos durable queue '+report['run_id'],
+                                        '_idempotency_key':'chaos-queue-'+report['run_id']})
+                    raw=dc.run('exec','-T','app','php','bin/cajeer','queue:push','log.message','--payload='+payload)
+                    queue_job=json.loads(raw)['id']
+                    require(re.fullmatch(r'[a-f0-9-]{36}',queue_job) is not None,'Invalid queue job identity')
+                    require(dc.sql("SELECT status FROM ce_jobs WHERE id='"+queue_job+"'::uuid")=='pending',
+                            'Queued task was not durable during worker shutdown')
             finally: dc.run('start','worker')
-            wait_until(lambda:any(x.get('post_id')==pid for x in data(call('/api/v1/forum/notifications',headers=admin)[1])['items']),120,'worker delivery after crash')
+            wait_until(lambda:any(x.get('post_id')==pid for x in data(call('/api/v1/forum/notifications',headers=admin)[1])['items']),420,'worker delivery after crash/lease expiry')
+            if queue_job:
+                wait_until(lambda:dc.sql("SELECT status FROM ce_jobs WHERE id='"+queue_job+"'::uuid")=='processed',
+                           420,'durable queue replay after SIGKILL')
+                report['checks']['durable_queue_replay'] = True
+                check('durable_queue_replay')
             check('worker_crash_recovered')
             for service in ('postgres','redis'):
                 begin=time.monotonic();dc.run('stop',service)
@@ -250,6 +268,12 @@ def qualify(a):
                 report.setdefault('fault_recovery_seconds',{})[service]=round(time.monotonic()-begin,3);check(service+'_recovered')
             # New publication after both dependency outages proves writes resume.
             pid,body,ms=publish(9,False);expected[pid]=body;publication.add(ms)
+        if a.chaos:
+            run_chaos(dc,c,project=a.project,path=path,member=member,
+                      marker_prefix='Rejected fault '+report['run_id']+' chaos ',
+                      wait_ready=assert_ready,
+                      verify_posts=lambda:verify_posts(thread,expected),
+                      report=report,save=save)
         verify_posts(thread,expected);report['confirmed_writes']=len(expected);report['publication']=publication.report()
         require(publication.percentile(.95)<=a.max_p95_ms,'publication p95 threshold')
         check('confirmed_writes_preserved')
@@ -282,12 +306,14 @@ def main():
     p.add_argument('--profile', choices=('smoke','10k','100k','1m-soak'),default='smoke')
     p.add_argument('--sample-interval',type=int,default=30)
     p.add_argument('--max-queue-p95-ms',type=int,default=30000)
-    p.add_argument('--port',type=int,default=18443);p.add_argument('--clients',type=int,default=8);p.add_argument('--seconds',type=int,default=60);p.add_argument('--rate',type=float,default=10);p.add_argument('--min-rps',type=float,default=5);p.add_argument('--max-p95-ms',type=int,default=1000);p.add_argument('--max-error-rate',type=float,default=.001);p.add_argument('--max-growth-mib',type=int,default=256);p.add_argument('--seed-posts',type=int,default=0);p.add_argument('--faults',action='store_true')
+    p.add_argument('--port',type=int,default=18443);p.add_argument('--clients',type=int,default=8);p.add_argument('--seconds',type=int,default=60);p.add_argument('--rate',type=float,default=10);p.add_argument('--min-rps',type=float,default=5);p.add_argument('--max-p95-ms',type=int,default=1000);p.add_argument('--max-error-rate',type=float,default=.001);p.add_argument('--max-growth-mib',type=int,default=256);p.add_argument('--seed-posts',type=int,default=0);p.add_argument('--faults',action='store_true');p.add_argument('--chaos',action='store_true',help='destructive FPM/network/tmpfs/migration faults on named disposable projects only')
     a=p.parse_args();require(1<=a.clients<=200 and 5<=a.seconds<=86400 and 0.1<=a.rate<=1000 and 0<a.min_rps<=a.rate and 0<=a.seed_posts<=1000000 and a.seed_posts%100==0 and 0<=a.max_error_rate<=.01 and a.max_p95_ms in BOUNDS and 1<=a.max_growth_mib<=8192,'invalid qualification limits')
     require(5<=a.sample_interval<=60 and a.max_queue_p95_ms in BOUNDS,'invalid telemetry limits')
     minimum={'smoke':(0,5),'10k':(10000,300),'100k':(100000,1800),'1m-soak':(1000000,86400)}[a.profile]
     if a.profile!='smoke':
         require(a.seed_posts==minimum[0] and a.seconds>=minimum[1], 'certification profile corpus/duration mismatch')
+    if a.chaos:
+        require(a.faults and any(word in a.project for word in ('load','qualification','benchmark','chaos')), 'chaos requires --faults and disposable project naming')
     if a.profile=='1m-soak':
         require(a.clients>=8 and a.faults, 'full soak requires concurrent writes and dependency recovery')
     qualify(a)

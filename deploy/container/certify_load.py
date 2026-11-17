@@ -19,6 +19,7 @@ ROUTES = ('ssr', 'api', 'search', 'acp', 'corpus_ssr', 'corpus_search')
 CHECKS = ('identity_and_fixture', 'corpus_seeded', 'concurrent_publications', 'load_thresholds',
           'cpu_ram_io_postgres_telemetry', 'memory_budget', 'queue_delivery_latency',
           'confirmed_writes_preserved', 'acl_revocation', 'cache_warmed', 'cache_invalidation', 'ecosystem_integrity')
+CHAOS_CHECKS = ('chaos_identity', 'php_fpm_restart', 'network_partition', 'temp_disk_full', 'interrupted_transaction_rollback', 'worker_crash_recovered', 'durable_queue_replay', 'postgres_recovered', 'redis_recovered')
 
 
 def require(ok, description):
@@ -41,6 +42,8 @@ def validate_report(path, name, commit, artifact_sha, version):
     require(doc.get('source_commit') == commit and doc.get('artifact_sha256') == artifact_sha, prefix+'release identity mismatch')
     require(doc.get('edition_version') == version and re.fullmatch(r'(?:sha256:)?[a-f0-9]{12,64}', doc.get('app_image', '')), prefix+'image/version identity')
     require(all(doc.get('checks', {}).get(check) is True for check in CHECKS), prefix+'missing successful mandatory check')
+    if tuple(int(part) for part in version.split('.')) >= (0, 9, 5) and name == '1m-soak':
+        require(all(doc.get('checks', {}).get(check) is True for check in CHAOS_CHECKS), prefix+'missing real chaos recovery evidence')
     posts, seconds = PROFILES[name]
     require(doc.get('seed_posts') == posts and doc.get('thresholds', {}).get('seconds', 0) >= seconds, prefix+'wrong corpus/duration')
     load = doc.get('load', {})
@@ -129,7 +132,7 @@ def main():
     p.add_argument('--small',type=Path,required=True)
     p.add_argument('--medium',type=Path,required=True)
     p.add_argument('--soak',type=Path,required=True)
-    p.add_argument('--version',default='0.9.4')
+    p.add_argument('--version',default='0.9.5')
     p.add_argument('--output',type=Path,required=True)
     a=p.parse_args()
     try: seal(a)

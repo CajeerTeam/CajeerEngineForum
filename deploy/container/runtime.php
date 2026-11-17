@@ -25,6 +25,10 @@ try {
         exit($time!==false && time()-$time<((int)$max+65) ? 0:1);
     }
     if ($mode!=='ready') throw new RuntimeException('Unknown mode');
+    foreach ([$root.'/storage'=>64 * 1048576, sys_get_temp_dir()=>16 * 1048576] as $directory=>$minimum) {
+        $free=@disk_free_space($directory);
+        if ($free===false || $free<$minimum) exit(1);
+    }
     require $root.'/vendor/autoload.php';
     \CajeerEngine\Console\OperationsCli::loadEnv($root);
     if (!(new \CajeerEngine\Observability\OperationsMonitor($root))->readiness()['ok']) exit(1);

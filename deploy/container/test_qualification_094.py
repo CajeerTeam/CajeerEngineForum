@@ -10,7 +10,7 @@ import unittest
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from qualification_telemetry import ResourceMonitor, QueueLatencyMonitor, sample, summarize, parse_cpu, parse_io, SERVICES
 from qualify import Histogram
-from certify_load import validate_report, PROFILES, CHECKS, ROUTES
+from certify_load import validate_report, PROFILES, CHECKS, CHAOS_CHECKS, ROUTES
 
 
 class FakeCompose:
@@ -97,6 +97,12 @@ class Tests(unittest.TestCase):
             path.write_text(json.dumps(doc))
             with self.assertRaisesRegex(RuntimeError,'telemetry gap'):validate_report(path,profile,commit,artifact,version)
             doc['resource_observations']=observations=[{'elapsed_seconds':i*30} for i in range(11)]
+            doc['edition_version']='0.9.5';doc['artifact_sha256']=artifact;doc['profile']='1m-soak'
+            path.write_text(json.dumps(doc))
+            with self.assertRaisesRegex(RuntimeError,'missing real chaos recovery evidence'):
+                validate_report(path,'1m-soak',commit,artifact,'0.9.5')
+            # Same 10k document need not contain 24h chaos, but soak must.
+            doc['edition_version']='0.9.4';doc['profile']='10k'
             doc['artifact_sha256']='f'*64;path.write_text(json.dumps(doc))
             with self.assertRaisesRegex(RuntimeError,'release identity'):validate_report(path,profile,commit,artifact,version)
 

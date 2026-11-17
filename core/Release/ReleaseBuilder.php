@@ -150,6 +150,7 @@ final readonly class ReleaseBuilder
     public function verifyArtifacts(?string $targetDir = null): array
     {
         $dir = $targetDir !== null && $targetDir !== '' ? $this->absolutePath($targetDir) : $this->rootPath . '/storage/releases';
+        if ($mode==='source' && version_compare($this->version(),'0.9.5','>=')) $required=array_merge($required,['deploy/container/chaos.py','deploy/container/chaos_update.py','deploy/container/test_chaos.py','docs/forum-chaos-0.9.5.md']);
         $checks = [];
         foreach (['source', 'dist'] as $mode) {
             $plan = $this->plan($mode, $dir);

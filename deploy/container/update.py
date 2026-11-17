@@ -130,6 +130,17 @@ class Deployment:
 
     def record(self,state):
         durable_json(self.path,{'identity':self.identity,'state':state,'updated_at':int(time.time())})
+        # Dedicated *disposable* chaos certification: pause after a fsynced
+        # checkpoint so an external runner can SIGKILL this host operator.
+        # Never honor fault injection on normally named projects or without
+        # the literal test-only confirmation. This cannot bypass preflight.
+        pause=os.environ.get('CE_CHAOS_PAUSE_AFTER_STATE')
+        if pause == state:
+            if (state not in ('drained','activating') or
+                os.environ.get('CE_CHAOS_DISPOSABLE') != 'destroy-test-services' or
+                re.search(r'(^|[-_])chaos([-_]|$)',self.args.project) is None):
+                raise RuntimeError('Chaos pause is forbidden outside disposable test project')
+            time.sleep(120)
 
     def operator(self,mode):
         # Old image and embedded old trust key are retained across rollback.

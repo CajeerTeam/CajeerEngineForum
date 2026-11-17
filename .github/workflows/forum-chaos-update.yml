@@ -1,0 +1,65 @@
+name: Forum 0.9.5 physical interrupted signed update
+on:
+  workflow_dispatch:
+    inputs:
+      checkpoint:
+        description: Durable state where the host updater is SIGKILLed; reset the disposable 0.9.4 fixture between runs
+        type: choice
+        required: true
+        options: [drained, activating]
+permissions:
+  contents: read
+concurrency:
+  group: forum-physical-certification
+  cancel-in-progress: false
+jobs:
+  interrupted-update:
+    runs-on: [self-hosted, linux, x64, forum-benchmark]
+    environment: forum-load-certification
+    timeout-minutes: 45
+    env:
+      CE_CHAOS_PROJECT: ${{ vars.CE_CHAOS_PROJECT }}
+      CE_CHAOS_OLD_ENV: ${{ vars.CE_CHAOS_OLD_ENV }}
+      CE_CHAOS_NEW_ENV: ${{ vars.CE_CHAOS_NEW_ENV }}
+      CE_CHAOS_CA: ${{ vars.CE_CHAOS_CA }}
+      CE_CHAOS_STATE_DIR: ${{ vars.CE_CHAOS_STATE_DIR }}
+      CE_CHAOS_SIGNED_DIR: ${{ vars.CE_CHAOS_SIGNED_DIR }}
+      CE_CHAOS_TRUSTED_PUB: ${{ vars.CE_CHAOS_TRUSTED_PUB }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Prepare independently trusted signed 0.9.5 target for a dedicated 0.9.4 disposable site
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$CE_CHAOS_PROJECT" =~ ^[a-z0-9_-]*[-_]chaos([-_][a-z0-9_-]*)?$ ]]
+          for name in CE_CHAOS_OLD_ENV CE_CHAOS_NEW_ENV CE_CHAOS_CA CE_CHAOS_STATE_DIR CE_CHAOS_SIGNED_DIR CE_CHAOS_TRUSTED_PUB; do
+            test -n "${!name}" && test -e "${!name}"
+          done
+          test -d "$CE_CHAOS_STATE_DIR" && test ! -L "$CE_CHAOS_STATE_DIR"
+          test "$(stat -c '%a' "$CE_CHAOS_STATE_DIR")" = 700
+          test ! -e "$CE_CHAOS_STATE_DIR/update.json"
+          php tools/verify-signed-release.php "$CE_CHAOS_SIGNED_DIR" "$CE_CHAOS_TRUSTED_PUB"
+          artifact="$CE_CHAOS_SIGNED_DIR/cajeerengine-0.9.5-dist.zip"
+          sha="$(sha256sum "$artifact" | cut -d' ' -f1)"
+          test "$(sed -n 's/^CE_RELEASE_SHA256=//p' "$CE_CHAOS_NEW_ENV")" = "$sha"
+          sh deploy/container/prepare.sh "$artifact" "$CE_CHAOS_TRUSTED_PUB" "$sha" 0.9.5
+      - name: Crash a real update after its durable checkpoint, then invoke the production recovery operator
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/forum-chaos"
+          python3 deploy/container/chaos_update.py \
+            --project "$CE_CHAOS_PROJECT" --disposable destroy-test-services \
+            --old-env "$CE_CHAOS_OLD_ENV" --new-env "$CE_CHAOS_NEW_ENV" \
+            --state-dir "$CE_CHAOS_STATE_DIR" --ca "$CE_CHAOS_CA" \
+            --checkpoint '${{ inputs.checkpoint }}' \
+            --report "$RUNNER_TEMP/forum-chaos/recovery.json"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: forum-095-physical-interrupted-update
+          path: ${{ runner.temp }}/forum-chaos/*.json
+          if-no-files-found: warn
+          retention-days: 90

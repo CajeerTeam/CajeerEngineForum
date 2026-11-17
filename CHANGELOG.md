@@ -1,3 +1,12 @@
+## [0.9.5] - 2026-11-17 — Failure Recovery & Chaos Testing
+
+- Added executable disposable-only failure injection for PHP-FPM restart, labeled backend network partition, real tmpfs ENOSPC and interrupted PostgreSQL transactional DDL, retaining worker SIGKILL and database/Redis outage recovery.
+- Failed-readiness/failed-write assertions and post-fault acknowledged-write integrity are verified after every applicable disruption; all faults have bounded recovery/cleanup paths.
+- Application gateway and container readiness now fail closed on critical `/tmp` or persistent storage free-space exhaustion.
+- Added gated SIGKILL-after-durable-checkpoint physical update interruption and invocation of the existing signed Compose recovery operator; never silently roll back post-activation writes.
+- 0.9.5 physical 24-hour certification requires all extra chaos checks, with local negative tests mandatory in short CI. Physical tests and signed full upgrade/recovery remain pending on a dedicated host.
+- No new schema migration. CajeerEngine core 1.3.0 unchanged.
+
 ## [0.9.4] - 2026-11-17 — Load & Soak Certification
 
 - Extended the **working** destructive Compose qualifier: PostgreSQL-backed corpus FTS, production SSR/API/ACP, concurrent writes, ACL/cache warm/invalidate/restore, verified notification delivery with p50/p95/p99 upper bounds, and the existing fault/confirmed-data checks.
