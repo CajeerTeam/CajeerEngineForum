@@ -81,10 +81,12 @@ token=$(php -r '$j=json_decode(stream_get_contents(STDIN),true,512,JSON_THROW_ON
 [[ -n $token ]]
 http /api/v1/admin/dashboard -H "Authorization: Bearer $token" >/dev/null
 http "/api/v1/forum/acp?view=overview" -H "Authorization: Bearer $token" >/dev/null
+# Run each destructive acceptance with a separate report and client IP. The
+# baseline auth-throttle test must not exhaust the candidate test's quota.
 python3 "$source/tools/production-acceptance.py" --artifact "$baseline" --version "$old" \
   --ca /etc/cajeerengine-deploy/tls/fullchain.pem --domain deploy.example.invalid \
   --secrets /etc/cajeerengine-deploy/install-secrets.json --email deploy@example.invalid \
-  --soak-seconds 60 --report "$work/production-acceptance.json"
+  --soak-seconds 60 --source-ip 127.0.0.2 --report "$work/baseline-production-acceptance.json"
 "${deploy[@]}" deploy "$work/inbox/original.zip" --sha256="$sha" --version="$old"
 # Corrupted input must not gate or change the existing website.
 cp "$work/inbox/original.zip" "$work/inbox/tampered.zip"; cp "$work/inbox/original.zip.sig" "$work/inbox/tampered.zip.sig"
@@ -109,7 +111,7 @@ http "/api/v1/forum/acp?view=overview" -H "Authorization: Bearer $token" >/dev/n
 python3 "$source/tools/production-acceptance.py" --artifact "$artifact" --version "$target" \
   --ca /etc/cajeerengine-deploy/tls/fullchain.pem --domain deploy.example.invalid \
   --secrets /etc/cajeerengine-deploy/install-secrets.json --email deploy@example.invalid \
-  --soak-seconds 60 --report "$work/production-acceptance.json"
+  --soak-seconds 60 --source-ip 127.0.0.1 --report "$work/production-acceptance.json"
 # Subsequent negative migration/rollback targets are newer than the installed
 # real release, not synthetic copies standing in for the historical hop.
 old="$target"

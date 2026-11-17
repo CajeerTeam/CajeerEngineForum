@@ -22,6 +22,51 @@ import production as p
 SITE={'domain':'deploy.example.invalid','db_host':'127.0.0.1','db_port':5432,'db_name':'cms','db_user':'cms','db_sslmode':'disable','admin_email':'admin@example.invalid'}
 
 class Safety(unittest.TestCase):
+    def test_host_smoke_keeps_baseline_and_candidate_evidence_separate(self):
+        # The acceptance command refuses to overwrite existing evidence. The
+        # candidate must have its own report; certification reads only that one.
+        host=(Path(__file__).resolve().parent/'host-smoke.sh').read_text()
+        self.assertIn('--source-ip 127.0.0.2 --report "$work/baseline-production-acceptance.json"',host)
+        self.assertEqual(host.count('--report "$work/production-acceptance.json"'),1)
+        self.assertIn('--source-ip 127.0.0.1 --report "$work/production-acceptance.json"',host)
+        self.assertIn('install -m 0644 "$work/production-acceptance.json" "$CE_CERT_REPORT"',host)
+        self.assertNotIn('install -m 0644 "$work/baseline-production-acceptance.json" "$CE_CERT_REPORT"',host)
+
+    def test_host_acceptance_rejects_non_loopback_client_source(self):
+        # The operator can select separate loopback quota buckets, but cannot
+        # make this disposable integration tool originate from an external IP.
+        import sys
+        script=Path(__file__).resolve().parents[1]/'tools/production-acceptance.py'
+        with tempfile.TemporaryDirectory() as d:
+            args=[sys.executable,str(script),'--artifact',str(Path(d)/'build.zip'),
+                  '--version','1.0.0','--ca',str(Path(d)/'ca.crt'),
+                  '--domain','deploy.example.invalid','--secrets',str(Path(d)/'secret.json'),
+                  '--email','deploy@example.invalid','--report',str(Path(d)/'out.json')]
+            for source in ('192.0.2.9','::1','not-an-ip'):
+                with self.subTest(source=source):
+                    result=subprocess.run([*args,'--source-ip',source],capture_output=True,text=True)
+                    self.assertNotEqual(result.returncode,0)
+                    self.assertIn('source IP must be loopback IPv4',result.stderr)
+                    self.assertFalse((Path(d)/'out.json').exists())
+
+    def test_loopback_source_address_retains_tls_hostname(self):
+        # Two real acceptance stages must not share an auth-throttle bucket;
+        # HTTPS still verifies deploy.example.invalid, not the source address.
+        import importlib.util
+        from unittest.mock import Mock
+        location=Path(__file__).resolve().parents[1]/'tools/production-acceptance.py'
+        spec=importlib.util.spec_from_file_location('forum_production_acceptance',location)
+        module=importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+        context=Mock()
+        context.wrap_socket.return_value=Mock()
+        conn=module.LocalTLS('deploy.example.invalid',443,timeout=3,context=context,
+                             source_address=('127.0.0.2',0))
+        raw=Mock()
+        with patch.object(module.socket,'create_connection',return_value=raw) as connection:
+            conn.connect()
+        connection.assert_called_once_with(('127.0.0.1',443),3,source_address=('127.0.0.2',0))
+        context.wrap_socket.assert_called_once_with(raw,server_hostname='deploy.example.invalid')
+
     def test_soak_qualification_imports_sibling_modules(self):
         # Production-host imports qualify.py by absolute path, rather than via
         # its usual script directory. All of its sibling imports must resolve.

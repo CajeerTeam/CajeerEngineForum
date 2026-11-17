@@ -3,6 +3,7 @@
 import argparse
 from concurrent.futures import ThreadPoolExecutor
 import hashlib
+import ipaddress
 import http.client
 import json
 import math
@@ -54,7 +55,7 @@ def write_report(path, data):
 class LocalTLS(http.client.HTTPSConnection):
     def connect(self):
         # SNI and hostname verification use the configured hostname; network is loopback only.
-        raw = socket.create_connection(('127.0.0.1', self.port), self.timeout)
+        raw = socket.create_connection(('127.0.0.1', self.port), self.timeout, source_address=self.source_address)
         try:
             self.sock = self._context.wrap_socket(raw, server_hostname=self.host)
         except BaseException:
@@ -62,13 +63,14 @@ class LocalTLS(http.client.HTTPSConnection):
 
 
 class Client:
-    def __init__(self, domain, ca, port=443):
-        self.domain = domain; self.port = port
+    def __init__(self, domain, ca, port=443, source_ip=None):
+        self.domain = domain; self.port = port; self.source_ip = source_ip
         self.context = ssl.create_default_context(cafile=str(ca))
         self.context.minimum_version = ssl.TLSVersion.TLSv1_2
 
     def request(self, path, method='GET', data=None, headers=None, raw=None):
-        conn = LocalTLS(self.domain, self.port, timeout=10, context=self.context)
+        conn = LocalTLS(self.domain, self.port, timeout=10, context=self.context,
+                        source_address=(self.source_ip, 0) if self.source_ip else None)
         headers = dict(headers or {})
         if data is not None:
             raw = json.dumps(data).encode(); headers['Content-Type'] = 'application/json'
@@ -167,7 +169,11 @@ def run(client, version, email, password, report, soak_seconds=0):
     call('/api/v1/auth/logout',403,method='POST',headers=browser)
     call('/api/v1/auth/logout',method='POST',headers={**browser,'X-CSRF-Token':csrf})
     call('/api/v1/auth/me',401,headers=browser); passed('cookie_csrf')
-    viewer_email='acceptance-viewer@example.invalid'
+    # A host smoke runs this full destructive profile twice against persistent DB
+    # state (historical baseline, then upgraded candidate). Namespace fixtures by
+    # the exact release artifact so neither run reuses another run's email/slug.
+    fixture_id=report['artifact_sha256'][:12]
+    viewer_email=f'acceptance-viewer-{fixture_id}@example.invalid'
     _,b=call('/api/v1/users',201,method='POST',headers=auth,data={'email':viewer_email,'name':'Acceptance Viewer','password':password,'roles':['viewer']})
     viewer_id=data(b)['id']; _,b=login(viewer_email,password); viewer={'Authorization':'Bearer '+data(b)['access_token']}
     call('/api/v1/content/pages',403,method='POST',headers=viewer,data={'title':'denied','data':{}}); passed('viewer_rbac')
@@ -175,7 +181,7 @@ def run(client, version, email, password, report, soak_seconds=0):
     call('/api/v1/auth/me',401,headers=viewer); passed('revocation')
     call('/api/v1/media',422,method='POST',headers=auth,data={'filename':'fake.png','mime_type':'image/png','content_base64':'PGh0bWw+YmFkPC9odG1sPg=='})
     passed('media_validation')
-    title='CertificationUniquePage'; path='/certification-unique-page'
+    title=f'CertificationUniquePage{fixture_id}'; path='/certification-unique-page-'+fixture_id
     _,b=call('/api/v1/content/pages',201,method='POST',headers=auth,data={'title':title,'slug':path[1:],'status':'draft','locale':'ru','data':{'heading':title,'path':path,'body':'<p>Certification</p>'}})
     entry=data(b)['id']; call(path,404)
     call('/api/v1/content/pages/'+entry+'/publish',method='POST',headers=auth)
@@ -199,7 +205,7 @@ def run(client, version, email, password, report, soak_seconds=0):
     _,b=call('/api/v1/forum/boards/'+board+'/threads',201,method='POST',headers=auth,data={'title':'ProductionForumMarker','body':'Production forum original content'})
     thread=data(b)['id']; forum_path='/forum/threads/'+thread; api_path='/api/v1'+forum_path
     call(api_path+'/watch',method='PUT',headers=auth,data={'enabled':True})
-    member_email='acceptance-member@example.invalid'
+    member_email=f'acceptance-member-{fixture_id}@example.invalid'
     call('/api/v1/users',201,method='POST',headers=auth,data={'name':'Forum acceptance member','email':member_email,'password':password,'roles':['viewer','forum-member']})
     _,b=login(member_email,password); member={'Authorization':'Bearer '+data(b)['access_token']}
     _,b=call(api_path+'/posts',201,method='POST',headers=member,data={'body':'Production forum reply content'})
@@ -274,15 +280,20 @@ def main():
     parser.add_argument('--secrets',type=Path,required=True); parser.add_argument('--email',required=True)
     parser.add_argument('--report',type=Path,required=True)
     parser.add_argument('--soak-seconds',type=int,default=0,help='Optional sustained TLS workload (5–600 seconds)')
+    parser.add_argument('--source-ip',help='Loopback IPv4 source for an independent test rate-limit bucket')
     args=parser.parse_args()
     require(args.soak_seconds==0 or 5<=args.soak_seconds<=600,'invalid host soak duration')
+    if args.source_ip is not None:
+        try: source=ipaddress.ip_address(args.source_ip)
+        except ValueError: raise RuntimeError('source IP must be loopback IPv4') from None
+        require(isinstance(source, ipaddress.IPv4Address) and source.is_loopback, 'source IP must be loopback IPv4')
     require(os.environ.get('CE_DEPLOY_DISPOSABLE')=='yes','disposable host required')
     require(not args.report.exists(),'report already exists')
     report={'schema':1,'version':args.version,'artifact_sha256':sha(args.artifact),'profile':'nginx-tls-fpm-pgsql',
             'checks':{},'ok':False}
     try:
         password=json.loads(args.secrets.read_text())['admin_password']
-        run(Client(args.domain,args.ca),args.version,args.email,password,report,args.soak_seconds)
+        run(Client(args.domain,args.ca,source_ip=args.source_ip),args.version,args.email,password,report,args.soak_seconds)
         require(set(report['checks'])==set(SECURITY),'incomplete security checks')
         report['ok']=True
     finally:
