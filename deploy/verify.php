@@ -14,7 +14,7 @@ try {
         echo json_encode(['edition'=>'forum','edition_version'=>$identity->current(),'upstream_version'=>$identity->upstream()],JSON_THROW_ON_ERROR)."\n";
         exit(0);
     }
-    if (!in_array($argc,[5,6],true) || ($argc===6 && $argv[5]!=='--installed') || !preg_match('/^\d+\.\d+\.\d+$/D',$argv[4])) throw new RuntimeException('Usage: verify.php ZIP PUBLIC_KEY SHA256 VERSION');
+    if (!in_array($argc,[5,6],true) || ($argc===6 && $argv[5]!=='--installed') || !preg_match('/^(?:\d+\.\d+\.\d+|1\.0\.0-rc\.1)$/D',$argv[4])) throw new RuntimeException('Usage: verify.php ZIP PUBLIC_KEY SHA256 VERSION');
     $signature=\CajeerEngine\Update\ReleaseSignature::verify($argv[1],$argv[1].'.sig',$argv[2],$argv[3]);
     $zip=new PharData($argv[1]);
     $name='cajeerengine/release-manifest.json';
@@ -23,7 +23,7 @@ try {
     if (($identity['edition']??null)!=='forum' || ($identity['mode']??null)!=='dist' || !isset($identity['upstream_version'])) throw new RuntimeException('Forum Edition dist required');
     $manifest=(new \CajeerEngine\Release\ReleaseArtifactVerifier())->verify($argv[1],'dist',$argv[4]);
     $release=json_decode($zip['cajeerengine/release.json']->getContent(),true,512,JSON_THROW_ON_ERROR);
-    if (($release['channel']??null)!=='stable') throw new RuntimeException('Stable Forum Edition release required');
+    if (($release['channel']??null)!==($argv[4]==='1.0.0-rc.1'?'rc':'stable')) throw new RuntimeException('Release channel and approved version differ');
     if ($argc===6) {
         $installed=getcwd();
         foreach ($manifest['checksums'] as $path=>$digest) {

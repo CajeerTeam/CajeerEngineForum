@@ -134,8 +134,10 @@ def current_version():
 
 
 def version_tuple(v):
-    if not re.fullmatch(r'(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)',v): raise ValueError('Expected stable semantic version')
-    return tuple(map(int,v.split('.')))
+    if v == '1.0.0-rc.1':
+        return (1, 0, 0, -1)  # Approved RC sorts before stable 1.0.0.
+    if not re.fullmatch(r'(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)',v): raise ValueError('Expected stable or explicitly approved RC version')
+    return (*map(int,v.split('.')), 0)
 
 
 def service_config(c):

@@ -247,6 +247,7 @@ final readonly class ReleaseBuilder
         if ($mode==='source' && version_compare($this->version(), '0.9.1', '>=')) $required = array_merge($required, ['tools/verify-signed-release.php','tools/collect-ci-jobs.py','tools/verify-certified-run.py','tools/github-publish-release.sh']);
         if ($mode==='source') $required=array_merge($required,['deploy/container/update.py','deploy/container/update-operator.php','deploy/container/update-operator.sh','deploy/container/test_update.py','docs/secure-updates.md']);
         if ($mode==='source' && version_compare($this->version(),'0.9.8','>=')) $required=array_merge($required,['tools/forum-tests/release_acceptance.py','tools/forum-tests/test_upgrade_098.py','docs/forum-upgrade-certification.md']);
+        if ($mode==='source' && version_compare($this->version(),'0.9.9','>=')) $required=array_merge($required,['tools/staging-gate.py','tools/final-audit.py','tools/final-audit-regression.py','tools/release-freeze.py','docs/forum-rc-final-audit.md']);
         $checks = [];
         foreach ($required as $file) $checks[$file] = is_file($this->rootPath . '/' . $file) && !is_link($this->rootPath . '/' . $file);
         foreach (['pgsql', 'mysql', 'sqlite'] as $driver) $checks['migrations/' . $driver] = count(glob($this->rootPath . '/migrations/' . $driver . '/*.sql') ?: []) > 0;

@@ -43,7 +43,7 @@ require(any(x['id']==thread for x in data(call('/api/v1/forum/search?q=Container
 hits=[]
 for _ in range(3): hits.append(call('/forum/threads/'+thread)[0].get('x-forum-cache'))
 require('HIT' in hits,'Redis cache hit not observed')
-if tuple(map(int,a.version.split('.'))) >= (0,8,6):
+if tuple(map(int,a.version.split('-')[0].split('.'))) >= (0,8,6):
     # The report cache has a 15-second lifetime; allow one fresh sample after the writes.
     for _ in range(25):
         report=json.loads(call('/api/v1/system/operations',headers=admin)[1])

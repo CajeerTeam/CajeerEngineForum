@@ -46,7 +46,7 @@ def inventory(directory, version):
         names.extend((base + '.zip', base + '.zip.sha256', base + '.zip.sig', base + '.manifest.json'))
     names.extend((f'cajeerengine-{version}-artifacts.json', 'ci-release.pub',
                   'production-acceptance.json', 'dependency-audit.json', 'ci-jobs.json',
-                  'dr-sqlite.json', 'dr-pg17.json', 'dr-pg18.json', 'dr-s3.json'))
+                  'dr-sqlite.json', 'dr-pg17.json', 'dr-pg18.json', 'dr-s3.json', 'staging-acceptance.json'))
     return {name: sha(directory / name) for name in names}
 
 
@@ -123,12 +123,34 @@ def verify_signatures(directory, trusted_key=None):
                    check=True, stdout=subprocess.DEVNULL)
 
 
+def validate_staging(directory, version, commit, hashes):
+    stage = read(directory / 'staging-acceptance.json')
+    host_sha = hashes['production-acceptance.json']
+    dist_sha = hashes[f'cajeerengine-{version}-dist.zip']
+    required = {'signed_exact_dist', 'actual_clean_install_and_migration',
+                'http_auth_acl_search_media_and_moderation',
+                'rollback_and_failed_migration_recovery',
+                'same_dist_nginx_https_php_fpm_postgresql'}
+    check(stage.get('schema') == 1 and stage.get('ok') is True
+          and stage.get('version') == version and stage.get('commit') == commit
+          and stage.get('artifact_sha256') == dist_sha
+          and stage.get('host_report_sha256') == host_sha,
+          'Final staging did not verify the signed candidate and same-host TLS evidence')
+    check(stage.get('checks') == dict.fromkeys(required, True), 'Staging coverage is incomplete')
+    logs = stage.get('command_log_sha256')
+    check(isinstance(logs, dict) and len(logs) >= 4
+          and all(isinstance(digest, str) and re.fullmatch('[0-9a-f]{64}', digest) for digest in logs.values())
+          and re.fullmatch('[0-9a-f]{64}', stage.get('staging_stdout_sha256', '')) is not None,
+          'Staging execution logs are missing')
+
+
 def validate(directory, version, commit, repo, run_id, attempt, trusted_key=None):
     check(re.fullmatch('[0-9a-f]{40}', commit) is not None, 'Invalid commit')
     check(isinstance(run_id, int) and run_id > 0 and isinstance(attempt, int) and attempt > 0, 'Invalid run identity')
     hashes = inventory(directory, version)
     validate_host(directory, version, hashes)
     validate_disaster_recovery(directory, version, commit, hashes[f'cajeerengine-{version}-dist.zip'])
+    validate_staging(directory, version, commit, hashes)
     jobs = validate_jobs(directory, commit, repo, run_id, attempt)
     verify_signatures(directory, trusted_key)
     return hashes, jobs
@@ -139,7 +161,7 @@ def seal(directory, version, commit, repo, run_id, attempt):
     report = {
         'schema': 2, 'ok': True, 'version': version, 'commit': commit,
         'repository': repo, 'run_id': run_id, 'attempt': attempt,
-        'scope': 'CI matrix + signed source/dist + audit + disposable host + filesystem/S3 HTTPS disaster recovery',
+        'scope': 'CI matrix + signed source/dist + audit + disposable host + final staging + filesystem/S3 HTTPS disaster recovery',
         'signing': 'trusted-release-key' if jobs.get('tagged_release') else 'ci-ephemeral',
         'sha256': hashes,
         'ci_jobs': jobs['jobs'],

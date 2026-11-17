@@ -216,6 +216,8 @@ class Safety(unittest.TestCase):
                 (root/'release.json').write_text(json.dumps(release|changes)); self.assertNotEqual(read().returncode,0)
         with patch.object(p,'app_run',return_value=result.stdout): self.assertEqual(p.current_version(),'0.8.1')
         self.assertLess(p.version_tuple('0.8.0'),p.version_tuple('0.8.1'))
+        self.assertLess(p.version_tuple('0.9.9'),p.version_tuple('1.0.0-rc.1'))
+        self.assertLess(p.version_tuple('1.0.0-rc.1'),p.version_tuple('1.0.0'))
         for value in ('1.03.0','0.8.1-rc1','0.8'):
             with self.assertRaises(ValueError): p.version_tuple(value)
 

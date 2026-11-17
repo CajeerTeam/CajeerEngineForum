@@ -17,10 +17,10 @@
     "docs": "GitHub repository docs/",
     "updates": "GitHub Releases",
     "release_builder": "tools/build-release.php",
-    "source_artifact": "storage/releases/cajeerengine-0.9.8-source.zip",
-    "dist_artifact": "storage/releases/cajeerengine-0.9.8-dist.zip",
+    "source_artifact": "storage/releases/cajeerengine-0.9.9-source.zip",
+    "dist_artifact": "storage/releases/cajeerengine-0.9.9-dist.zip",
     "checksums": "storage/releases/*.sha256",
-    "artifact_index": "storage/releases/cajeerengine-0.9.8-artifacts.json",
+    "artifact_index": "storage/releases/cajeerengine-0.9.9-artifacts.json",
     "support_bundle": "storage/app/support",
     "backup": "storage/app/backups/production",
     "server_reports": "storage/app/reports",
@@ -93,7 +93,8 @@
     "Forum Edition 0.9.5: real disposable-host failure injection for PHP-FPM stop/restart, backend network isolation, bounded tmpfs ENOSPC, interrupted PostgreSQL DDL, worker SIGKILL, PostgreSQL/Redis outage and acknowledged-write preservation; disk-headroom readiness and fsynced update-journal SIGKILL/recovery qualification.",
     "Forum Edition 0.9.6: signed-dist-bound disaster recovery certification of active-write backups to independent filesystem/S3, durable catalog readback and fetch after source destruction, new-host authenticated restore, user/ACL/FTS/media checks and CA-verified HTTPS with end-to-end measured RTO and snapshot-age RPO.",
     "Forum Edition 0.9.7: operator HTTPS certificate renewal-window gate, verified off-site backup freshness enforcement, expired queue lease and stale scheduler telemetry, missing-critical-series alerts, blackbox HTTPS/TLS expiry checks, real alert delivery/resolution and restart regression coverage.",
-    "Forum Edition 0.9.8: physical release-chain acceptance from authentic historical dist builds with per-hop postchecks and preservation of forum/ACL/media/FTS/theme/extensions; signed real-version systemd admission and failure-aware Compose rollback gates, CI evidence for upgrade and migration failures."
+    "Forum Edition 0.9.8: physical release-chain acceptance from authentic historical dist builds with per-hop postchecks and preservation of forum/ACL/media/FTS/theme/extensions; signed real-version systemd admission and failure-aware Compose rollback gates, CI evidence for upgrade and migration failures.",
+    "Forum Edition 0.9.9: release freeze, exact-dist staging acceptance, independent artifact and CI evidence verifier, prerelease-tag trust enforcement, and blocking release-candidate admission."
   ],
   "notes": {
     "1.0.4": "Install UX release: real web/CLI installer, SQLite quick start, install lock, first admin creation, secrets generation and dist-ready release plan.",
@@ -119,8 +120,8 @@
     "1.2.5": "Production Deployment",
     "1.3.0": "Integration Certification, Security & Load Testing"
   },
-  "stability": "forum-upgrade-compatibility-certification",
+  "stability": "release-candidate-final-audit",
   "edition": "forum",
-  "edition_version": "0.9.8",
+  "edition_version": "0.9.9",
   "upstream_version": "1.3.0"
 }

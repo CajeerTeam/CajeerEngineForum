@@ -19,7 +19,7 @@ def gh(path):
 
 
 def verify(report, repository, tag, commit, request=gh):
-    ci.check(re.fullmatch(r'v\d+\.\d+\.\d+', tag) is not None, 'Bad release tag')
+    ci.check(re.fullmatch(r'v(?:\d+\.\d+\.\d+|1\.0\.0-rc\.1)', tag) is not None, 'Bad release tag')
     ci.check(report.get('repository', '').lower() == repository.lower() and report.get('commit') == commit,
              'Published CI evidence does not match repo/commit')
     ci.check(report.get('tagged_release') is True and report.get('ref') == 'refs/tags/' + tag,

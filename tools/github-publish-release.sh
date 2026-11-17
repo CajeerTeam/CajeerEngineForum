@@ -13,6 +13,7 @@ version=$(php -r '$r=json_decode(file_get_contents($argv[1]."/release.json"),tru
 [[ -n ${RELEASE_TRUSTED_PUBLIC_KEY_FILE:-} && -f "$RELEASE_TRUSTED_PUBLIC_KEY_FILE" ]] || { echo 'RELEASE_TRUSTED_PUBLIC_KEY_FILE is required' >&2; exit 1; }
 [[ $(git -C "$root" rev-parse HEAD) == $(git -C "$root" rev-list -n1 "refs/tags/$tag") ]] || { echo 'Checkout does not match local release tag' >&2; exit 1; }
 python3 "$root/tools/certification-evidence.py" verify "$dir" --trusted-key "$RELEASE_TRUSTED_PUBLIC_KEY_FILE"
+python3 "$root/tools/final-audit.py" --directory "$dir" --trusted-public-key "$RELEASE_TRUSTED_PUBLIC_KEY_FILE" --version "$version" --commit "$(git -C "$root" rev-parse HEAD)"
 python3 - "$dir/certification.json" <<'PY_RELEASE'
 import json, sys
 report=json.load(open(sys.argv[1]))
@@ -22,7 +23,7 @@ PY_RELEASE
 python3 "$root/tools/verify-certified-run.py" "$dir/ci-jobs.json" "$repo" "$tag" "$(git -C "$root" rev-parse HEAD)"
 remote_commit=$(gh api "repos/$repo/commits/$tag" --jq '.sha')
 [[ "$remote_commit" == "$(git -C "$root" rev-parse HEAD)" ]] || { echo 'Remote release tag moved or points to the wrong commit' >&2; exit 1; }
-files=("$dir/certification.json" "$dir/production-acceptance.json" "$dir/dependency-audit.json" "$dir/ci-jobs.json" "$dir/ci-release.pub")
+files=("$dir/certification.json" "$dir/production-acceptance.json" "$dir/dependency-audit.json" "$dir/ci-jobs.json" "$dir/ci-release.pub" "$dir/staging-acceptance.json")
 for mode in source dist; do
   name="cajeerengine-$version-$mode.zip"
   for suffix in '' .sha256 .sig; do

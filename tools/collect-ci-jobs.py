@@ -14,7 +14,7 @@ EXPECTED = {
     'test': 1, 'postgres': 2, 'mysql-search': 2, 'browser': 2,
     'release': 3, 'production-host': 1, 'container-runtime': 2,
     'container-upgrade': 1, 'backup-s3': 1, 'monitoring': 1,
-    'release-candidate': 1,
+    'release-candidate': 1, 'staging': 1,
 }
 
 def check(value, message):
@@ -37,7 +37,7 @@ def validate_report(report, expected_commit, expected_run, expected_attempt, rep
     check(report.get('run_id') == expected_run and report.get('attempt') == expected_attempt, 'Wrong CI run/attempt')
     check(report.get('ok') is True, 'CI run not successful')
     check(isinstance(report.get('ref'), str) and isinstance(report.get('tagged_release'), bool), 'Missing CI ref/signing scope')
-    check(not report['tagged_release'] or (report['event'] == 'push' and re.fullmatch(r'refs/tags/v\d+\.\d+\.\d+', report['ref'])), 'Not an approved tag event')
+    check(not report['tagged_release'] or (report['event'] == 'push' and re.fullmatch(r'refs/tags/v(?:\d+\.\d+\.\d+|1\.0\.0-rc\.1)', report['ref'])), 'Not an approved tag event')
     jobs = report.get('jobs')
     check(isinstance(jobs, list), 'Missing CI jobs')
     actual = {name: 0 for name in EXPECTED}

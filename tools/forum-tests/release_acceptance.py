@@ -57,9 +57,13 @@ def unpack(artifact, dest, expected):
 def verify_release_sequence(releases):
     if not 2 <= len(releases) <= 10:
         raise ValueError('Upgrade chain must have two to ten real releases')
-    if not all(re.fullmatch(r'(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)',v) for v in releases):
-        raise ValueError('Upgrade chain requires stable release identities')
-    if not all(tuple(map(int,a.split('.')))<tuple(map(int,b.split('.'))) for a,b in zip(releases,releases[1:])):
+    stable = r'(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)'
+    if not all(re.fullmatch(stable, v) for v in releases[:-1]):
+        raise ValueError('All historical upgrade stages must be stable releases')
+    if not (re.fullmatch(stable, releases[-1]) or releases[-1] == '1.0.0-rc.1'):
+        raise ValueError('Only an explicitly approved final RC target is allowed')
+    keys = [tuple(map(int, v.split('-')[0].split('.'))) for v in releases]
+    if not all(a < b for a, b in zip(keys, keys[1:])):
         raise ValueError('Upgrade chain must be strictly increasing with no duplicates')
 
 
@@ -817,7 +821,7 @@ def verify_ecosystem(base, state, saved, current):
     board=next(b['id'] for b in c.call('GET','/forum')['boards'] if b.get('node_type','forum')!='container')
     with urllib.request.urlopen(base+'/forum/boards/'+board,timeout=20) as res:
         require('forum-extension-topic-templates' in res.read().decode(),'Topic template composer not rendered')
-    if tuple(map(int,current.split('.'))) >= (0,8,0):
+    if tuple(map(int,current.split('-')[0].split('.'))) >= (0,8,0):
         c.call('POST','/forum/acp/maintenance',403,{'action':'ecosystem_check'},token=token)
         require(c.call('POST','/forum/acp/maintenance',200,{'action':'ecosystem_check'},token=admin)['ok'],'ACP ecosystem check failed')
     print('PASS physical ACP delegation, policy, published theme and signed plugin state',flush=True)
@@ -831,6 +835,7 @@ def main():
     parser.add_argument('--report',type=Path,required=True)
     args=parser.parse_args(); report=args.report.resolve(); report.mkdir(parents=True,exist_ok=True)
     artifact=args.artifact.resolve(); current=version(ROOT); env=env_for_test()
+    rc_target = current == '1.0.0-rc.1'
     with tempfile.TemporaryDirectory(prefix='forum-release-', dir='/tmp') as tmp:
         work=Path(tmp); port=free_port()
         # With --previous use the authentic baseline for upgrade, not a relabelled current tree.
@@ -838,7 +843,7 @@ def main():
         initial=current
         if previous:
             with zipfile.ZipFile(previous) as z: initial=json.loads(z.read('cajeerengine/release.json'))['edition_version']
-            require(initial in ('0.5.5','0.5.6','0.6.0','0.6.1','0.6.2','0.6.3','0.6.4','0.6.5','0.6.6','0.7.0','0.7.1','0.7.2','0.7.3','0.7.4','0.7.5','0.7.6','0.7.7','0.8.0','0.8.1','0.8.2','0.8.3','0.8.4','0.8.5','0.8.6','0.8.7','0.9.0','0.9.1','0.9.2','0.9.3','0.9.4','0.9.5','0.9.6','0.9.7'),'Unsupported authentic baseline')
+            require(initial in ('0.5.5','0.5.6','0.6.0','0.6.1','0.6.2','0.6.3','0.6.4','0.6.5','0.6.6','0.7.0','0.7.1','0.7.2','0.7.3','0.7.4','0.7.5','0.7.6','0.7.7','0.8.0','0.8.1','0.8.2','0.8.3','0.8.4','0.8.5','0.8.6','0.8.7','0.9.0','0.9.1','0.9.2','0.9.3','0.9.4','0.9.5','0.9.6','0.9.7','0.9.8','0.9.9'),'Unsupported authentic baseline')
         stages=[]
         require(previous is not None or not args.intermediate, 'Intermediate releases require --previous')
         for intermediate in args.intermediate:
@@ -846,8 +851,8 @@ def main():
             with zipfile.ZipFile(intermediate) as z:
                 stage=json.loads(z.read('cajeerengine/release.json'))['edition_version']
             stages.append((intermediate,stage))
-        releases=[initial,*[v for _,v in stages],current]
-        verify_release_sequence(releases)
+        releases=[initial,*[v for _,v in stages],current] if previous else [current]
+        if previous: verify_release_sequence(releases)
         site=unpack(previous or artifact,work/'live',initial)
         install(site,env,report,'initial',port,args.driver)
         ecosystem=None
@@ -887,7 +892,8 @@ def main():
                 verify_moderation(base,state,fixture)
                 verify_sanctions(base,state)
                 verify_antispam(base,state)
-        if not previous and tuple(map(int,current.split("."))) >= (0,7,7):
+        if not previous and tuple(map(int,current.split("-")[0].split("."))) >= (0,7,7):
+            if rc_target: env['UPDATE_CHANNEL']='rc'
             verify_migration_recovery(site,env,report,work,port,current,state,ecosystem)
         if previous:
             key=work/'backup.key'; secret=work/'release.secret'; public=work/'release.public'
@@ -897,7 +903,7 @@ def main():
             # Never modify the caller's artifact or its signature.
             package=work/'target.zip'; shutil.copy2(artifact,package)
             run(site,env,report,'sign-target',['php','bin/cajeer','release:sign','--package='+str(package),'--secret-key='+str(secret)])
-            run(site,env,report,'dry-run',['php','bin/cajeer','update:apply','--package='+str(package),'--dry-run'])
+            run(site,env | ({'UPDATE_CHANNEL':'rc'} if rc_target else {}),report,'dry-run',['php','bin/cajeer','update:apply','--package='+str(package),'--dry-run'])
             require(version(site)==initial,'Dry run changed release')
             if initial=='0.7.7':
                 blocked=json.loads(run(site,env,report,'incompatible-extension-upgrade',['php','bin/cajeer','update:apply','--package='+str(package),'--json'],expected=1,timeout=600))
@@ -927,10 +933,11 @@ def main():
                     verify_community(base,community)
                     verify_content(base,state,fixture,content)
                     verify_media(base,state,fixture,media)
-                    if tuple(map(int,expected_version.split('.'))) >= (0,6,3):
+                    if tuple(map(int,expected_version.split('-')[0].split('.'))) >= (0,6,3):
                         verify_search_seo(base,state,fixture)
                     if ecosystem: verify_ecosystem(base,state,ecosystem,expected_version)
                 run(site,env,report,label+'-postcheck',['php','tools/update-postcheck.php','verify'])
+            if rc_target: env['UPDATE_CHANNEL']='rc'
             update=json.loads(run(site,env,report,'upgrade',['php','bin/cajeer','update:apply','--package='+str(package),'--json'],timeout=600))
             require(update['state']=='committed' and version(site)==current,'Update not committed')
             with http(site,env,report,'updated',port,current) as base:

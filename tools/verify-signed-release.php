@@ -20,7 +20,7 @@ try {
     if ($key === false || !is_file($key)) { throw new RuntimeException('Trusted key missing'); }
     $meta = json_decode((string) file_get_contents($root . '/release.json'), true, 512, JSON_THROW_ON_ERROR);
     $version = $meta['edition_version'] ?? null;
-    if (($meta['edition'] ?? null) !== 'forum' || !is_string($version) || !preg_match('/^\d+\.\d+\.\d+$/D', $version)) {
+    if (($meta['edition'] ?? null) !== 'forum' || !is_string($version) || !preg_match('/^(?:\d+\.\d+\.\d+|1\.0\.0-rc\.1)$/D', $version)) {
         throw new RuntimeException('Invalid Forum Edition release identity');
     }
     $indexFile = $dir . '/cajeerengine-' . $version . '-artifacts.json';

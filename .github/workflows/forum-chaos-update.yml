@@ -1,12 +1,14 @@
-name: Forum 0.9.8 physical interrupted signed update
+name: Forum 0.9.9 physical interrupted signed update
 on:
   workflow_dispatch:
     inputs:
       checkpoint:
-        description: Durable state where the host updater is SIGKILLed; reset the disposable 0.9.7 fixture between runs
+        description: Durable state where the host updater is SIGKILLed; reset the disposable old-release fixture between runs
         type: choice
         required: true
         options: [drained, activating]
+env:
+  FORUM_CHAOS_TARGET: ${{ github.ref == 'refs/tags/v1.0.0-rc.1' && '1.0.0-rc.1' || '0.9.9' }}
 permissions:
   contents: read
 concurrency:
@@ -29,7 +31,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - name: Prepare independently trusted signed 0.9.8 target for a dedicated 0.9.7 disposable site
+      - name: Prepare independently trusted signed candidate for a dedicated disposable old-release site
         shell: bash
         run: |
           set -euo pipefail
@@ -41,10 +43,10 @@ jobs:
           test "$(stat -c '%a' "$CE_CHAOS_STATE_DIR")" = 700
           test ! -e "$CE_CHAOS_STATE_DIR/update.json"
           php tools/verify-signed-release.php "$CE_CHAOS_SIGNED_DIR" "$CE_CHAOS_TRUSTED_PUB"
-          artifact="$CE_CHAOS_SIGNED_DIR/cajeerengine-0.9.8-dist.zip"
+          artifact="$CE_CHAOS_SIGNED_DIR/cajeerengine-${FORUM_CHAOS_TARGET}-dist.zip"
           sha="$(sha256sum "$artifact" | cut -d' ' -f1)"
           test "$(sed -n 's/^CE_RELEASE_SHA256=//p' "$CE_CHAOS_NEW_ENV")" = "$sha"
-          sh deploy/container/prepare.sh "$artifact" "$CE_CHAOS_TRUSTED_PUB" "$sha" 0.9.8
+          sh deploy/container/prepare.sh "$artifact" "$CE_CHAOS_TRUSTED_PUB" "$sha" "$FORUM_CHAOS_TARGET"
       - name: Crash a real update after its durable checkpoint, then invoke the production recovery operator
         shell: bash
         run: |
@@ -59,7 +61,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: forum-097-physical-interrupted-update
+          name: forum-099-physical-interrupted-update
           path: ${{ runner.temp }}/forum-chaos/*.json
           if-no-files-found: warn
           retention-days: 90

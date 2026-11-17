@@ -1,3 +1,11 @@
+## [0.9.9] - 2026-11-17 — Release Candidate & Final Audit
+
+- Freeze Forum feature development for the 1.0.0-rc.1 release branch; no new schema or feature changes.
+- Require an independently executed staging clean install on canonical signed dist, with real HTTP authentication, data/ACL/FTS/media checks, and corresponding HTTPS disposable host proof.
+- Gate publication on independent artifact/evidence audit bound to exact SHA-256 and GitHub CI run. Fail closed on missing, altered or incomplete staging evidence.
+- Allow a separate metadata-only `1.0.0-rc.1` commit and matching signed tag without confusing prerelease with stable 1.0.0.
+- The final RC cannot be declared certified until complete GitHub CI, staging and external physical soak/chaos and operator approval have succeeded.
+
 ## [0.9.8] - 2026-11-17 — Upgrade & Compatibility Certification
 
 - Execute **real chronological updates** in the physical dist matrix (0.8.7 → 0.9.2 → 0.9.7 → 0.9.8), verifying user accounts, permissions, signed plugins, theme, FTS, media, posts and data invariants at each hop. Missing historical tags fail CI instead of being simulated by relabelling.

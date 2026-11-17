@@ -23,7 +23,7 @@ COMMIT = 'a'*40
 REPO = 'CajeerTeam/CajeerEngineForum'
 RUN = 120
 ATTEMPT = 2
-VERSION = '0.9.8'
+VERSION = '0.9.9'
 
 
 def jobs():
@@ -36,7 +36,7 @@ def jobs():
                          'steps':[{'name':'Acceptance','conclusion':'success'}]})
     rows.sort(key=lambda j:(j['name'],j['id']))
     return {'schema':1,'ok':True,'repository':REPO,'run_id':RUN,'attempt':ATTEMPT,
-            'commit':COMMIT,'event':'push','head_sha':COMMIT,'ref':'refs/tags/v0.9.8',
+            'commit':COMMIT,'event':'push','head_sha':COMMIT,'ref':'refs/tags/v0.9.9',
             'tagged_release':True, 'needs':{name:'success' for name in ci.EXPECTED},'jobs':rows}
 
 
@@ -66,6 +66,15 @@ def fixture(directory):
             'transport':transport,'driver':driver,'checks':dict.fromkeys(e.DR_CHECKS,True),
             'load':{'reads':50,'writes':4,'busy':1},
             'service_rto_seconds':34.5,'rpo_upper_bound_seconds':50})
+    a.write_report(directory/'staging-acceptance.json',{
+        'schema':1,'ok':True,'version':VERSION,'commit':COMMIT,
+        'artifact_sha256':a.sha(directory/f'cajeerengine-{VERSION}-dist.zip'),
+        'host_report_sha256':a.sha(directory/'production-acceptance.json'),
+        'checks':dict.fromkeys(('signed_exact_dist','actual_clean_install_and_migration',
+            'http_auth_acl_search_media_and_moderation','rollback_and_failed_migration_recovery',
+            'same_dist_nginx_https_php_fpm_postgresql'),True),
+        'command_log_sha256':{str(i)+'.log':'f'*64 for i in range(4)},
+        'staging_stdout_sha256':'f'*64})
     with patch.object(e,'verify_signatures'):
         e.seal(directory,VERSION,COMMIT,REPO,RUN,ATTEMPT)
     return report
@@ -94,6 +103,8 @@ class EvidenceTests(unittest.TestCase):
                  ('bad CI conclusion','ci-jobs.json',lambda r:r['jobs'][0].update(conclusion='failure')),
                  ('missing CI matrix','ci-jobs.json',lambda r:r['jobs'].pop()),
                  ('wrong CI ref','ci-jobs.json',lambda r:r.update(ref='refs/heads/main')),
+                 ('staging missing ACL','staging-acceptance.json',lambda r:r['checks'].pop('http_auth_acl_search_media_and_moderation')),
+                 ('staging changed dist','staging-acceptance.json',lambda r:r.update(artifact_sha256='b'*64)),
                  ('DR report failed','dr-sqlite.json',lambda r:r.update(ok=False)),
                  ('DR bad dist','dr-pg17.json',lambda r:r.update(artifact_sha256='a'*64)),
                  ('DR missing ACL','dr-pg18.json',lambda r:r['checks'].pop('https_acl_media_search_identity_write')),
@@ -129,17 +140,17 @@ class EvidenceTests(unittest.TestCase):
         falsified=copy.deepcopy(report); falsified['needs']['postgres']='skipped'
         with self.assertRaises(ValueError):ci.validate_report(falsified,COMMIT,RUN,ATTEMPT,REPO,needs)
         run={'id':RUN,'run_attempt':ATTEMPT,'head_sha':COMMIT,'status':'completed',
-             'conclusion':'success','event':'push','head_branch':'v0.9.8'}
+             'conclusion':'success','event':'push','head_branch':'v0.9.9'}
         items=report['jobs']+[{'id':200,'name':'certification','conclusion':'success'},
                               {'id':201,'name':'forum-required','conclusion':'success'}]
         def request(path):return run if path.endswith('/actions/runs/'+str(RUN)) else {'jobs':items}
-        self.assertEqual(remote.verify(report,REPO,'v0.9.8',COMMIT,request),len(report['jobs']))
+        self.assertEqual(remote.verify(report,REPO,'v0.9.9',COMMIT,request),len(report['jobs']))
         broken=copy.deepcopy(run);broken['conclusion']='failure'
         with self.assertRaises(ValueError):
-            remote.verify(report,REPO,'v0.9.8',COMMIT,lambda p:broken if 'jobs?' not in p else {'jobs':items})
+            remote.verify(report,REPO,'v0.9.9',COMMIT,lambda p:broken if 'jobs?' not in p else {'jobs':items})
         broken_items=copy.deepcopy(items);broken_items[-1]['conclusion']='failure'
         with self.assertRaises(ValueError):
-            remote.verify(report,REPO,'v0.9.8',COMMIT,lambda p:run if 'jobs?' not in p else {'jobs':broken_items})
+            remote.verify(report,REPO,'v0.9.9',COMMIT,lambda p:run if 'jobs?' not in p else {'jobs':broken_items})
 
     def test_real_tls_load_transport_and_semantic_failure(self):
         # This is a test of the load generator, not a CMS benchmark. No production certificate is emitted.

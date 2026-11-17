@@ -49,7 +49,8 @@ old=$(unzip -p "$baseline" cajeerengine/release.json | php -r 'echo json_decode(
 target=$(unzip -p "$artifact" cajeerengine/release.json | php -r 'echo json_decode(stream_get_contents(STDIN),true,512,JSON_THROW_ON_ERROR)["edition_version"];')
 python3 - "$old" "$target" <<'PYVALID'
 import sys
-parts=[tuple(map(int,x.split('.'))) for x in sys.argv[1:]]
+parts=[tuple(map(int,x.split('-')[0].split('.'))) for x in sys.argv[1:]]
+if sys.argv[2].endswith('-rc.1') and sys.argv[2] != '1.0.0-rc.1': raise SystemExit('Unknown prerelease')
 if not parts[0]<parts[1]: raise SystemExit('Expected authentic increasing release identities')
 PYVALID
 upstream=$(cat "$source/VERSION")
@@ -103,6 +104,12 @@ http /health/ready | grep -q ready
 http /api/v1/health | php -r '$j=json_decode(stream_get_contents(STDIN),true,512,JSON_THROW_ON_ERROR);exit(($j["edition_version"]===$argv[1] && $j["version"]===$argv[2])?0:1);' "$target" "$upstream"
 http /api/v1/admin/dashboard -H "Authorization: Bearer $token" >/dev/null
 http "/api/v1/forum/acp?view=overview" -H "Authorization: Bearer $token" >/dev/null
+# Report the ACTUAL candidate installed on this physical TLS/FPM/PostgreSQL host.
+# The pre-upgrade baseline report above must never be used as current evidence.
+python3 "$source/tools/production-acceptance.py" --artifact "$artifact" --version "$target" \
+  --ca /etc/cajeerengine-deploy/tls/fullchain.pem --domain deploy.example.invalid \
+  --secrets /etc/cajeerengine-deploy/install-secrets.json --email deploy@example.invalid \
+  --soak-seconds 60 --report "$work/production-acceptance.json"
 # Subsequent negative migration/rollback targets are newer than the installed
 # real release, not synthetic copies standing in for the historical hop.
 old="$target"
@@ -110,7 +117,7 @@ old="$target"
 mkdir "$work/fixture"; unzip -q "$artifact" -d "$work/fixture"
 fixture="$work/fixture/cajeerengine"
 new=$(php -r '$v=explode(".",$argv[1]); echo $v[0].".".$v[1].".".((int)$v[2]+1);' "$old")
-php -r '$f=$argv[1]."/release.json";$j=json_decode(file_get_contents($f),true,512,JSON_THROW_ON_ERROR);$j["edition_version"]=$argv[2];file_put_contents($f,json_encode($j,JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES)."\n");' "$fixture" "$new"
+php -r '$f=$argv[1]."/release.json";$j=json_decode(file_get_contents($f),true,512,JSON_THROW_ON_ERROR);$j["edition_version"]=$argv[2];$j["channel"]="stable";file_put_contents($f,json_encode($j,JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES)."\n");' "$fixture" "$new"
 printf 'CREATE TABLE ce_deploy_probe(id INTEGER PRIMARY KEY); INVALID SQL;\n' > "$fixture/migrations/pgsql/9999_deploy_probe.sql"
 (cd "$fixture"; php tools/build-release.php --dist --target-dir="$work/broken" --json >/dev/null)
 broken="$work/broken/cajeerengine-$new-dist.zip"

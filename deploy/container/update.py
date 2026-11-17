@@ -37,7 +37,7 @@ def read_site(path):
     if not {'CE_RELEASE_VERSION','CE_RELEASE_SHA256','CE_DOMAIN','CE_ADMIN_EMAIL','CE_NAMESPACE','CE_SECRETS_DIR'} <= values.keys():
         raise ValueError('Incomplete site.env')
     values.setdefault('CE_QUEUE_DRIVER','pgsql'); values.setdefault('CE_HTTPS_PORT','443'); values.setdefault('CE_BIND_ADDRESS','0.0.0.0'); values.setdefault('CE_LOOP_TIMEOUT_SECONDS','600')
-    if not re.fullmatch(r'(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)', values['CE_RELEASE_VERSION']):
+    if not (re.fullmatch(r'(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)', values['CE_RELEASE_VERSION']) or values['CE_RELEASE_VERSION'] == '1.0.0-rc.1'):
         raise ValueError('Stable release version required')
     if not re.fullmatch(r'[a-f0-9]{64}',values['CE_RELEASE_SHA256']):
         raise ValueError('Approved SHA256 required')
@@ -63,7 +63,7 @@ def read_site(path):
 
 
 def version(v):
-    return tuple(map(int,v.split('.')))
+    return (1,0,0,-1) if v == '1.0.0-rc.1' else (*map(int,v.split('.')),0)
 
 
 def durable_json(path, data, mode=0o600):

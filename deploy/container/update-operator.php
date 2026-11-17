@@ -16,7 +16,7 @@ function cli(string ...$args):void { global $root; DatabaseBackup::run([PHP_BINA
 function identity(string $version):void { global $root; if((new ForumVersion($root))->current()!==$version)throw new RuntimeException('Live version differs'); }
 try {
     $mode=$argv[1]??''; $target=ForumVersion::validate($argv[2]??null); $sha=$argv[3]??'';
-    if(!preg_match('/^[a-f0-9]{64}$/D',$sha)||str_contains($target,'-'))throw new RuntimeException('Stable approved target required');
+    if(!preg_match('/^[a-f0-9]{64}$/D',$sha)|| (str_contains($target,'-') && $target!=='1.0.0-rc.1'))throw new RuntimeException('Stable or explicit 1.0.0-rc.1 target required');
     $previous=(new ForumVersion($old))->current();
     if(version_compare($target,$previous,'<='))throw new RuntimeException('Target must be newer');
     $active=$root.'/storage/app/updates/active.json';$last=$root.'/storage/app/updates/last-update.json';
@@ -31,7 +31,7 @@ try {
         if(($manifest['edition']??null)!=='forum')throw new RuntimeException('Forum Edition required');
         $zip=new PharData($package); $release=json_decode($zip['cajeerengine/release.json']->getContent(),true,512,JSON_THROW_ON_ERROR);
         if(($release['engine_api_version']??null)!==($manifest['engine_api_version']??null)||($release['engine_api_version']??null)!==json_decode(file_get_contents($old.'/release.json'),true,512,JSON_THROW_ON_ERROR)['engine_api_version'])throw new RuntimeException('Engine API changes require a separate operator qualification');
-        if(($release['channel']??null)!=='stable')throw new RuntimeException('Stable release required');
+        if(($release['channel']??null)!==($target==='1.0.0-rc.1'?'rc':'stable'))throw new RuntimeException('Signed target release channel differs');
         \CajeerEngine\Update\UpdatePreflight::migrations($root,$manifest['checksums']);
         $env=(new \CajeerEngine\Installer\InstallerEnvironment($root.'/.env'))->read();
         if(!in_array($env['QUEUE_DRIVER']??'',['pgsql','postgres','postgresql','database'],true))throw new RuntimeException('Redis queue recovery is not supported; use a PostgreSQL queue profile');
@@ -57,6 +57,7 @@ try {
     if($mode==='apply') {
         identity($previous);
         cli('maintenance:on','--message=Container release update');
+        if($target==='1.0.0-rc.1')putenv('UPDATE_CHANNEL=rc'); // Only the explicit signed RC operator target.
         cli('update:apply','--package='.$package,'--sha256='.$sha,'--version='.$target);
         identity($target);
         echo "Container code and database updated; traffic remains stopped\n"; exit(0);
