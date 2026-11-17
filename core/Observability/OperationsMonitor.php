@@ -41,7 +41,10 @@ final readonly class OperationsMonitor
         // A cache-only Redis outage may degrade performance, but must not block readiness.
         $requiredRedis=getenv('RATE_LIMIT_DRIVER')==='redis'||$this->config->string('queue.default')==='redis';
         $checks['redis_required']=!$requiredRedis;
-        if($requiredRedis&&$checks['installed']&&$checks['maintenance']&&$checks['activity_lock']){
+        // A Redis ping is safe during a maintenance lease. Keep checking an
+        // indispensable rate-limit/queue backend even while public traffic is
+        // intentionally denied. Otherwise post-update readiness misreports it.
+        if($requiredRedis&&$checks['installed']){
             $redis=null;
             try{$redis=\CajeerEngine\Cache\RedisConnection::open();$checks['redis_required']=(bool)$redis->ping();}
             catch(\Throwable){$checks['redis_required']=false;}

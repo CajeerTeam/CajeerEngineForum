@@ -27,6 +27,9 @@ PY,$db,$source.'/migrations/sqlite']);
     // A real multi-chunk file, also forces multipart upload in the optional S3 acceptance.
     F::write($root.'/public/uploads/media.bin',random_bytes(in_array('--s3',$argv,true)?9*1048576:2*1048576+9));
     $config=new ConfigRepository($root);$manager=new BackupManager($root,$config);
+    // A CLI may execute outside the managed installation. The backup/import
+    // lock must inspect the installed SQLite database, not a cwd-relative DB.
+    check((new DatabaseBackup($root,$config))->identity()['database'] === realpath($db), 'SQLite backup identity uses the installation root');
     $base=$root.'/storage/app/backups/automation';$catalog=$base.'/state.json';
     $policyData=['namespace'=>'backup-ci','interval_seconds'=>300,'lock_wait_seconds'=>0,'daily'=>1,'weekly'=>0,'monthly'=>0,'min_free_bytes'=>0,'require_separate_device'=>false,'prune_offsite'=>true,'destination'=>['type'=>'file','directory'=>$off]];
     if (in_array('--s3',$argv,true)) {

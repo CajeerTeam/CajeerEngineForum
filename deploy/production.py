@@ -70,16 +70,34 @@ def atomic(path, data, mode=0o644):
             tmp.unlink(missing_ok=True)
 
 
-def run(*args, input=None, capture=False, timeout=1800):
+def run(*args, input=None, capture=False, timeout=1800, env_extra=None):
+    safe_env={'PATH':'/usr/sbin:/usr/bin:/sbin:/bin','LANG':'C.UTF-8','TZ':'UTC'}
+    if env_extra is not None:
+        if set(env_extra) != {'PHP_INI_SCAN_DIR'} or not isinstance(env_extra['PHP_INI_SCAN_DIR'],str):
+            raise ValueError('Unexpected operator subprocess environment')
+        safe_env.update(env_extra)
     return subprocess.run([str(x) for x in args], input=input, text=True, check=True,
                           stdout=subprocess.PIPE if capture else None, timeout=timeout,
-                          env={'PATH':'/usr/sbin:/usr/bin:/sbin:/bin','LANG':'C.UTF-8','TZ':'UTC'}).stdout
+                          env=safe_env).stdout
 
 
-def app_run(*args, input=None, capture=False):
+def legacy_php_environment():
+    # The signed 0.8.x updater launches its own PHP postcheck subprocess. A
+    # parent -d auto_prepend_file does not reach that child; instead supply a
+    # root-owned PHP scan dir for this one signed update/recovery operation.
+    source=TOOL.parent/'core/Forum/Service/ForumSearchMaintenance.php'
+    root_file(source)
+    compat=STATE/'legacy-php-ini'
+    secure_dir(compat)
+    atomic(compat/'zz-ce-forum-fts.ini', 'auto_prepend_file='+str(source)+'\n')
+    return {'PHP_INI_SCAN_DIR': ':'+str(compat)}
+
+
+def app_run(*args, input=None, capture=False, legacy_compat=False):
     return run('runuser', '-u', USER, '-g', GROUP, '--', '/bin/sh', '-c',
                'umask 027; cd /srv/cajeerengine/app && exec "$@"', 'deploy', PHP, *args,
-               input=input, capture=capture, timeout=None)
+               input=input, capture=capture, timeout=None,
+               env_extra=legacy_php_environment() if legacy_compat else None)
 
 
 def secure_dir(path, mode=0o755):
@@ -461,7 +479,7 @@ def activate(version, sha256, site):
     # The signed pre-0.9.8 distribution contains a PostgreSQL catalog typo
     # (pg_am.am). Preload the audited operator class only for that known legacy
     # version; do not modify the signed dist, ledger, or installed files.
-    if version_tuple(version) < version_tuple('0.9.8'):
+    if version_tuple(version) <= version_tuple('1.0.0'):
         legacy_compat=TOOL.parent/'core/Forum/Service/ForumSearchMaintenance.php'
         if not legacy_compat.is_file() or legacy_compat.is_symlink():
             raise RuntimeError('Trusted historical FTS verifier unavailable')
@@ -552,8 +570,8 @@ def deploy(args,c):
         configure(c)
         if not existing: stop()
         if existing:
-            app_run('bin/cajeer','update:apply','--package='+str(package),'--sha256='+args.sha256,'--dry-run')
-            app_run('bin/cajeer','update:apply','--package='+str(package),'--sha256='+args.sha256)
+            app_run('bin/cajeer','update:apply','--package='+str(package),'--sha256='+args.sha256,'--dry-run',legacy_compat=True)
+            app_run('bin/cajeer','update:apply','--package='+str(package),'--sha256='+args.sha256,legacy_compat=True)
             committed=True
         else:
             with tempfile.TemporaryDirectory(dir=BASE,prefix='.stage-') as tmp:
@@ -570,7 +588,7 @@ def deploy(args,c):
             stop()
             state=json.loads(JOURNAL.read_text()).get('state')
             if existing and state not in ('starting_workers','ready'):
-                if committed: app_run('bin/cajeer','update:rollback','--yes')
+                if committed: app_run('bin/cajeer','update:rollback','--yes',legacy_compat=True)
                 activate(previous,args.previous_sha256,c)
                 print('Previous release recovered',file=sys.stderr)
             else: record('recovery_required',version=args.version,previous=previous,sha256=args.sha256,previous_sha256=args.previous_sha256,site=c)

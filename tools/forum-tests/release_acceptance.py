@@ -140,6 +140,23 @@ def http(site, env, report, label, port, expected_version):
                 # not secrets or arbitrary exception messages. Copy this narrow
                 # diagnostic into CI evidence so failures after plugin activation
                 # can be attributed to the actual runtime, rather than HTTP 500.
+                # Diagnose the root cause on a disposable CI host without
+                # returning exception messages or secrets to HTTP clients.
+                # Only fixed boot failure categories are surfaced in evidence.
+                probe = subprocess.run(
+                    ['php', '-r', 'require "vendor/autoload.php";'
+                     '(new Symfony\\Component\\Dotenv\\Dotenv())->usePutenv()->loadEnv(".env");'
+                     'try { CajeerEngine\\Kernel\\Application::boot(getcwd()); echo "ok"; }'
+                     'catch (Throwable $e) { $message=$e->getMessage();'
+                     'foreach (["Invalid enabled extension", "Provider class outside package",'
+                     '"Extension dependency cycle", "Provider ", "Extension ",'
+                     '"Registry lock", "Signing", "Permission", "database",'
+                     '"Cache", "Duplicate"] as $known)'
+                     '{ if (stripos($message,$known)!==false) { echo "boot:".$known; exit(0); } }'
+                     'echo "boot:".get_class($e); }'],
+                    cwd=site, env=env, stdout=subprocess.PIPE,
+                    stderr=subprocess.DEVNULL, text=True, timeout=15)
+                last_status['boot_diagnostic'] = probe.stdout.strip()[:120]
                 runtime_log = site / 'storage/logs/runtime.jsonl'
                 if runtime_log.is_file():
                     recent = []

@@ -1510,6 +1510,8 @@ class BrowserTests(unittest.TestCase):
                     admin_page.get_by_role('button',name='Сохранить метаданные',exact=True).click()
                     expect(admin_page.locator('.thread-prefix')).to_have_text('Browser prefix')
                     expect(admin_page.get_by_role('link',name='#browser-tag',exact=True)).to_be_visible()
+                    original_post_count = admin_page.locator('article.post').count()
+                    self.assertGreaterEqual(original_post_count, 2)
                     admin_page.locator('input[name=post-selection]').first.check()
                     admin_page.get_by_role('button',name='Разделить тему',exact=True).click()
                     admin_page.locator('[name=title]').fill('Browser split topic')
@@ -1518,7 +1520,10 @@ class BrowserTests(unittest.TestCase):
                     expect(admin_page.get_by_role('heading',name='Browser split topic',exact=True)).to_be_visible()
                     expect(admin_page.locator('article .body').first).to_have_text('Browser reply')
                     admin_page.goto(thread)
-                    expect(admin_page.locator('article.post')).to_have_count(1)
+                    # The fixture has other legitimate replies. Splitting
+                    # must move exactly the selected post, not empty the topic.
+                    expect(admin_page.locator('article.post')).to_have_count(original_post_count - 1)
+                    expect(admin_page.locator('article.post').filter(has_text='Browser reply')).to_have_count(0)
                     # Use the actual node-management forms, then navigate the public tree.
                     admin_page.goto(self.base + '/forum/manage')
                     group_form=admin_page.get_by_role('button',name='Создать группу',exact=True).locator('..')

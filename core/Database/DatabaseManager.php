@@ -39,7 +39,17 @@ final class DatabaseManager
             return $this->pdo;
         }
 
-        $factory = new ConnectionFactory($this->config->get('database', []),new \CajeerEngine\Observability\Metrics($this->config->rootPath()));
+        $connectionConfig = $this->config->get('database', []);
+        // SQLite paths are installation-relative, not relative to the CLI/worker
+        // current directory. Backups, recovery and operator tools can run from
+        // another cwd; opening a second empty database would be unsafe.
+        if (is_array($connectionConfig) && ($driver ?? $this->driver()) === 'sqlite') {
+            $sqlite = $connectionConfig['connections']['sqlite']['database'] ?? null;
+            if (is_string($sqlite) && $sqlite !== ':memory:' && $sqlite !== '' && !str_starts_with($sqlite, '/')) {
+                $connectionConfig['connections']['sqlite']['database'] = $this->config->rootPath() . '/' . ltrim($sqlite, '/');
+            }
+        }
+        $factory = new ConnectionFactory($connectionConfig,new \CajeerEngine\Observability\Metrics($this->config->rootPath()));
         $start=hrtime(true);$outcome='failure';
         try{$pdo=$factory->create($driver);$outcome='success';}catch(\PDOException $e){throw new DatabaseUnavailable('Database connection unavailable',0,$e);}
         finally{(new \CajeerEngine\Observability\Metrics($this->config->rootPath()))->buffered('database','connect',$outcome,(hrtime(true)-$start)/1e9);}

@@ -759,6 +759,17 @@ jobs:
           dc down
           dc up -d gateway
           smoke --verify-only
+      - name: Make operator evidence readable by the artifact uploader
+        if: always()
+        run: |
+          # Failure injection may leave the report root-owned and mode 0600.
+          # Preserve the evidence, but hand it back to the runner account.
+          for report in "$RUNNER_TEMP"/forum-operations*.json; do
+            if [ -f "$report" ]; then
+              sudo chown "$(id -u):$(id -g)" "$report"
+              chmod 0600 "$report"
+            fi
+          done
       - uses: actions/upload-artifact@v4
         if: always()
         with:
