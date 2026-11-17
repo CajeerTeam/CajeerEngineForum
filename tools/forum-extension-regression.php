@@ -16,7 +16,7 @@ $tmp=sys_get_temp_dir().'/ce-forum-extension-'.bin2hex(random_bytes(8));mkdir($t
 try{
  $config=new ConfigRepository($root);$container=new ServiceContainer();$events=new EventDispatcher();$logger=new RuntimeLogger($tmp);$platform=new PlatformServices();$loader=new ManifestLoader();
  $manifest=$loader->load($root.'/examples/extensions/forum-announcements');
- check((new CompatibilityChecker('1.1','0.7.4'))->isCompatible($manifest)&&!(new CompatibilityChecker('1.1','0.7.3'))->isCompatible($manifest)&&(new CompatibilityChecker('1.1','0.8.0'))->isCompatible($manifest)&&!(new CompatibilityChecker('1.1','1.0.0'))->isCompatible($manifest),'Forum and engine version constraints');
+ check((new CompatibilityChecker('1.1','0.7.4'))->isCompatible($manifest)&&!(new CompatibilityChecker('1.1','0.7.3'))->isCompatible($manifest)&&(new CompatibilityChecker('1.1','0.8.0'))->isCompatible($manifest)&&(new CompatibilityChecker('1.1','1.0.0'))->isCompatible($manifest)&&!(new CompatibilityChecker('1.1','1.1.0'))->isCompatible($manifest),'Forum and engine version constraints');
  check($loader->validatePayload(['name'=>'test/a','type'=>'plugin','version'=>'1.0.0','engine'=>'^1.1','permissions'=>['forum.events']])!==[],'missing Forum version rejected');
  $context=new ExtensionContext($tmp,$manifest,['enabled_at'=>gmdate(DATE_ATOM,time()-10)],$container,$config,$events,$logger,$platform);
  $sdk=new ForumExtension($context);$seen=[];$sdk->listen('first','forum.post.reply',function($payload,$event)use(&$seen){$seen[]=[$payload['event_id'],$event];});

@@ -104,18 +104,39 @@ def http(site, env, report, label, port, expected_version):
         proc = subprocess.Popen(['php', '-S', f'127.0.0.1:{port}', '-t', str(site / 'public'), str(HERE / 'router.php')], cwd=site, env=env, stdout=log, stderr=subprocess.STDOUT)
         try:
             deadline = time.monotonic() + 40
+            last_status = {'reason': 'no HTTP response'}
             while time.monotonic() < deadline:
                 require(proc.poll() is None, 'HTTP process stopped')
                 try:
                     with opener.open(base + '/api/v1/health', timeout=3) as res:
                         data = json.load(res)
-                        require(data['edition_version'] == expected_version and data['version'] == '1.3.0', 'Health reports wrong release')
-                        require(data['status'] == 'ok' and all(data['checks'].values()), 'Health not ready')
-                        break
-                except (urllib.error.URLError, TimeoutError):
-                    time.sleep(.2)
+                        last_status = {'http_status': res.status,
+                                       'status': data.get('status'),
+                                       'edition_version': data.get('edition_version'),
+                                       'checks': data.get('checks')}
+                        if (data.get('edition_version') == expected_version
+                                and data.get('version') == '1.3.0'
+                                and data.get('status') == 'ok'
+                                and all(data.get('checks', {}).values())):
+                            break
+                except urllib.error.HTTPError as exc:
+                    try:
+                        data = json.loads(exc.read(8192))
+                        last_status = {'http_status': exc.code, 'status': data.get('status'),
+                                       'edition_version': data.get('edition_version'),
+                                       'checks': data.get('checks')}
+                    except (ValueError, TypeError):
+                        last_status = {'http_status': exc.code}
+                except (urllib.error.URLError, TimeoutError) as exc:
+                    last_status = {'reason': type(exc).__name__}
+                time.sleep(.2)
             else:
-                raise RuntimeError('Physical dist HTTP readiness failed')
+                # Fail closed, but retain enough sanitized health evidence to
+                # distinguish a maintenance lock, missing extension, bad DB,
+                # or incorrect release identity without another blind CI run.
+                (report / (label + '-readiness.json')).write_text(
+                    json.dumps(last_status, indent=2, sort_keys=True) + '\n')
+                raise RuntimeError('Physical dist HTTP readiness failed: '+json.dumps(last_status, sort_keys=True)[:1500])
             yield base
         finally:
             proc.terminate()

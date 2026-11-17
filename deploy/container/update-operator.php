@@ -27,6 +27,14 @@ try {
         DatabaseBackup::run([PHP_BINARY,'/opt/ce-container/runtime.php','identity']);
         if(\CajeerEngine\Update\OperationLock::maintenance($root))throw new RuntimeException('Resolve existing maintenance/recovery first');
         ReleaseSignature::verify($package,$package.'.sig','/opt/ce-release.pub',$sha);
+        // Only after the immutable old publisher key verifies the signed ZIP
+        // may the trusted, locally provisioned operator validator be loaded.
+        // The installed 0.8.x verifier rejects legitimate newer release paths.
+        foreach (['ReleaseFilePolicy','ReleaseDependencyInventory','ReleaseArtifactVerifier'] as $validator) {
+            $file='/opt/ce-update/'.$validator.'.php';
+            if(!is_file($file)||is_link($file))throw new RuntimeException('Trusted operator verifier unavailable');
+            require_once $file;
+        }
         $manifest=(new ReleaseArtifactVerifier())->verify($package,'dist',$target);
         if(($manifest['edition']??null)!=='forum')throw new RuntimeException('Forum Edition required');
         $zip=new PharData($package); $release=json_decode($zip['cajeerengine/release.json']->getContent(),true,512,JSON_THROW_ON_ERROR);
@@ -51,7 +59,18 @@ try {
             }
         }
         \CajeerEngine\Update\UpdatePreflight::space($root,$package,$manifest,$bytes);
-        cli('forum:ecosystem:check','--target='.$target,'--deep','--json');
+        // Deep preflight is real, but the historical 0.8.x command uses the
+        // invalid pg_am.am column on PostgreSQL. Keep the non-FTS ecosystem
+        // gate and independently perform the same database, integrity and FTS
+        // checks using the audited operator implementation. No check is skipped.
+        cli('forum:ecosystem:check','--target='.$target,'--json');
+        $db=new \CajeerEngine\Database\DatabaseManager($config);
+        if (!(new \CajeerEngine\Forum\ForumDatabaseCheck($db))->check()['ok']) throw new RuntimeException('Forum schema check failed');
+        if (!(new \CajeerEngine\Forum\ForumIntegrityCheck($db))->check()['ok']) throw new RuntimeException('Forum integrity check failed');
+        $searchValidator='/opt/ce-update/ForumSearchMaintenance.php';
+        if(!is_file($searchValidator)||is_link($searchValidator))throw new RuntimeException('Trusted search verifier unavailable');
+        require_once $searchValidator;
+        if (!(new \CajeerEngine\Forum\Service\ForumSearchMaintenance($db))->check()['ok']) throw new RuntimeException('Forum search index check failed');
         echo "Approved target verified using installed publisher key\n"; exit(0);
     }
     if($mode==='apply') {

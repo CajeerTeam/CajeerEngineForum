@@ -147,11 +147,21 @@ class Deployment:
         args=['run','--rm','--no-deps','-T','--entrypoint','/bin/sh']
         mounts=[(HERE/'update-operator.sh','/opt/ce-update/operator.sh'),(HERE/'update-operator.php','/opt/ce-update/operator.php'),(ROOT/'core/Update/UpdatePreflight.php','/opt/ce-update/UpdatePreflight.php')]
         if mode in ('verify','apply'):
-            mounts.extend([(self.artifact,'/opt/ce-update/release.zip'),(Path(str(self.artifact)+'.sig'),'/opt/ce-update/release.zip.sig'),(HERE/'artifacts/release.pub','/opt/ce-update/release.pub')])
+            mounts.extend([(self.artifact,'/opt/ce-update/release.zip'),(Path(str(self.artifact)+'.sig'),'/opt/ce-update/release.zip.sig'),(HERE/'artifacts/release.pub','/opt/ce-update/release.pub'),
+                           # The installed 0.8.x image may not recognize files introduced by 1.0.
+                           # Supply the local trusted operator's updated verifier; it is
+                           # invoked only AFTER the old pinned publisher key validates the ZIP.
+                           (ROOT/'core/Release/ReleaseFilePolicy.php','/opt/ce-update/ReleaseFilePolicy.php'),
+                           (ROOT/'core/Release/ReleaseDependencyInventory.php','/opt/ce-update/ReleaseDependencyInventory.php'),
+                           (ROOT/'core/Release/ReleaseArtifactVerifier.php','/opt/ce-update/ReleaseArtifactVerifier.php'),
+                           (ROOT/'core/Forum/Service/ForumSearchMaintenance.php','/opt/ce-update/ForumSearchMaintenance.php')])
         for source,target in mounts:
             if not source.is_file() or source.is_symlink() or ':' in str(source): raise ValueError('Missing/unsafe operator input: '+source.name)
             args+=['--volume',f'{source}:{target}:ro']
-        self.dc(self.args.old_env,*args,'init','/opt/ce-update/operator.sh',mode,self.target,self.sha)
+        try:
+            self.dc(self.args.old_env,*args,'init','/opt/ce-update/operator.sh',mode,self.target,self.sha)
+        except subprocess.CalledProcessError as exc:
+            raise RuntimeError('Signed update operator '+mode+' failed (exit '+str(exc.returncode)+'); inspect the operator container log') from exc
 
     def stop(self,site):
         # Stop ingress first, then drain all writers. PostgreSQL/Redis stay running.

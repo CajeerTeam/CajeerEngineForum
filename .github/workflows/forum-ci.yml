@@ -911,9 +911,14 @@ jobs:
           with open(os.environ['AWS_CONFIG_FILE']+'.s3.json','w') as out:
               json.dump({'identities':[{'name':'forum-ci','credentials':[{'accessKey':os.environ['AWS_ACCESS_KEY_ID'],'secretKey':os.environ['AWS_SECRET_ACCESS_KEY']}],'actions':['Admin','Read','Write','List','Tagging']}]},out)
           PY_S3_CONFIG
-          chmod 0600 "$AWS_CONFIG_FILE.s3.json"
-          docker run -d --name forum-backup-s3 -p 127.0.0.1:19000:9000 \
-            -v "$work/certs:/certs:ro" -v "$AWS_CONFIG_FILE.s3.json:/etc/seaweedfs/s3.json:ro" \
+          # Run the disposable S3 server with the runner UID, not root, so
+          # both its private TLS key and IAM credentials remain mode 0600.
+          # The only writable container data is an isolated test directory.
+          mkdir -p -m 0700 "$work/data"
+          chmod 0700 "$work" "$work/data"
+          chmod 0600 "$AWS_CONFIG_FILE.s3.json" "$work/certs/private.key"
+          docker run -d --name forum-backup-s3 --user "$(id -u):$(id -g)" -p 127.0.0.1:19000:9000 \
+            -v "$work/data:/data" -v "$work/certs:/certs:ro" -v "$AWS_CONFIG_FILE.s3.json:/etc/seaweedfs/s3.json:ro" \
             chrislusf/seaweedfs:4.38 server -dir=/data -s3 -s3.port=8333 -s3.port.https=9000 \
             -s3.cert.file=/certs/public.crt -s3.key.file=/certs/private.key -s3.config=/etc/seaweedfs/s3.json
           export CE_BACKUP_TEST_ENDPOINT=https://127.0.0.1:19000 CE_BACKUP_TEST_BUCKET=forum-backup-ci

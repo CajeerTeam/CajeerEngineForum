@@ -4,7 +4,12 @@ import argparse
 from pathlib import Path
 from playwright.sync_api import sync_playwright, expect
 ROOT=Path(__file__).resolve().parents[2]
-SCRIPT=(ROOT/'public/forum-assets/forum.js').read_text().rsplit('run(init);',1)[0].replace('const go=url=>{location.href=url}','const go=url=>{window.destination=url}')
+SCRIPT=(ROOT/'public/forum-assets/forum.js').read_text().rsplit('run(init);',1)[0]
+# Preserve the production navigation code outside this browser fixture. Mock
+# only the navigation function; assert its exact boundaries before replacing.
+start=SCRIPT.index('const go=url=>{');stop=SCRIPT.index('};const threadUrl',start)+2
+assert 'location.assign(target.href)' in SCRIPT[start:stop], 'Forum navigation changed; update fixture'
+SCRIPT=SCRIPT[:start]+'const go=url=>{window.destination=url};'+SCRIPT[stop:]
 SCRIPT+='''\nme={user_id:'owner',scopes:['forum:write'],csrf_token:'test'};window.composer=()=>app.replaceChildren(topicComposer('22222222-2222-4222-8222-222222222222'));window.diff=revisionDiff;window.historyDemo=async()=>app.replaceChildren(await revisionPanel('/posts/test/revisions',2,()=>{window.refreshed=true}));'''
 MOCK='''()=>{window.confirm=()=>true;window.records=new Map();window.fetch=async(url,opts)=>{const method=opts.method,body=JSON.parse(opts.body||'null');const result=(data,status=200)=>({ok:status<400,status,json:async()=>status<400?{data}:{error:{message:'Черновик изменён'}}});if(url.includes('/drafts?'))return result([...window.records.values()].filter(x=>!x.result));if(url.includes('/drafts/')){const id=url.split('/drafts/')[1].split('/')[0];const old=window.records.get(id);if(method==='PUT'){if((old?.revision_number||0)!==body.revision_number)return result(null,409);const d={id,scope:body.scope,target_id:body.target_id,revision_number:body.revision_number+1,payload:body.payload,result:null,updated_at:1};window.records.set(id,d);return result(d)}if(url.endsWith('/publish')){window.published=old.payload;old.result={id:'published'};return result(old.result)}return result(old)}if(url.includes('/revisions/restore')){window.restored=body;return result({id:'test',revision_number:3})}if(url.includes('/revisions?'))return result([{revision_number:2,body:'same\\nnew',body_format:'plain',created_at:1,edit_reason:'edit'},{revision_number:1,body:'same\\nold',body_format:'plain',created_at:1,edit_reason:''}]);throw Error(url)}}'''
 
