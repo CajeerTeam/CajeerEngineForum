@@ -61,3 +61,27 @@ groups:
         labels: {severity: warning}
         annotations:
           summary: "Scheduled backup has not reported for an hour"
+      - alert: CajeerEngineQueueLeaseExpired
+        expr: cajeer_queue_expired_reservations > 0
+        for: 2m
+        labels: {severity: warning}
+        annotations:
+          summary: "Queue reservations have expired; inspect workers before retrying"
+      - alert: CajeerEngineSchedulerTaskStale
+        expr: cajeer_scheduler_task_stale == 1
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: "Scheduled task {{ $labels.task }} has stopped completing"
+      - alert: CajeerEngineCriticalTelemetryMissing
+        expr: (up{job="cajeerengine"} == 1) unless on(instance) cajeer_worker_last_success_timestamp_seconds
+        for: 2m
+        labels: {severity: critical}
+        annotations:
+          summary: "Forum worker telemetry is missing despite successful metrics scrape"
+      - alert: CajeerEngineQueueTelemetryMissing
+        expr: (up{job="cajeerengine"} == 1) unless on(instance) cajeer_queue_expired_reservations
+        for: 2m
+        labels: {severity: warning}
+        annotations:
+          summary: "Queue reservation telemetry unavailable"

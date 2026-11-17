@@ -21,13 +21,19 @@ SERVICES = ('postgres', 'redis', 'app', 'worker', 'scheduler', 'gateway')
 
 
 class Operations:
-    def __init__(self, project, site, ca=None, runner=None, requester=None):
+    def __init__(self, project, site, ca=None, runner=None, requester=None, tls_min_valid_days=0, backup_max_age_hours=30):
         self.project = project
         self.site = Path(site).resolve()
         self.config = read_site(self.site)
         self.ca = Path(ca).resolve() if ca is not None else None
         if self.ca is not None and not self.ca.is_file():
             raise ValueError('TLS CA file does not exist')
+        if not isinstance(tls_min_valid_days, int) or not 0 <= tls_min_valid_days <= 90:
+            raise ValueError('TLS validity requirement must be 0..90 days')
+        if not isinstance(backup_max_age_hours, int) or not 1 <= backup_max_age_hours <= 168:
+            raise ValueError('Backup age requirement must be 1..168 hours')
+        self.tls_min_valid_days = tls_min_valid_days
+        self.backup_max_age_hours = backup_max_age_hours
         self.runner = runner or subprocess.run
         self.requester = requester or self.http
         self.env = {k: v for k, v in os.environ.items() if not k.startswith(('CE_', 'COMPOSE_'))}
@@ -95,7 +101,24 @@ class Operations:
     def runtime(self):
         for service, check in [('app', 'identity'), ('app', 'ready'), ('worker', 'loop-health'),
                                ('scheduler', 'loop-health')]:
-            self.compose('exec', '-T', service, 'php', '/opt/ce-container/runtime.php', check, timeout=30)
+            self.compose('exec', '-T', service, 'php', '/opt/ce-container/runtime.php',
+                         check, timeout=120 if check == 'identity' else 30)
+
+    def integrity(self):
+        # Expensive, read-only scan. Explicit operator opt-in only; cannot run on
+        # every readiness request or under the update/rollback activation timeout.
+        output = self.compose('exec', '-T', 'app', 'php', 'bin/cajeer',
+                              'forum:ecosystem:check', '--deep', '--json', timeout=600)
+        try:
+            result = json.loads(output)
+        except (ValueError, TypeError):
+            raise RuntimeError('Deep integrity report is not JSON') from None
+        required = ('schema', 'integrity', 'search', 'migration_idle', 'extensions',
+                    'community_policy', 'theme', 'delegation')
+        checks = result.get('checks') if isinstance(result, dict) else None
+        if not isinstance(checks, dict) or result.get('deep') is not True or \
+                result.get('ok') is not True or any(checks.get(key) is not True for key in required):
+            raise RuntimeError('Database, search, permissions or extension integrity gate failed')
 
     def backups(self):
         output = self.compose('exec', '-T', 'app', 'php', 'bin/cajeer',
@@ -107,8 +130,19 @@ class Operations:
         # CLI consistently returns an object, but never trust a successful exit alone.
         if not isinstance(result, dict) or result.get('ok') is not True:
             raise RuntimeError('No recent verified off-site backup or backup schedule is unhealthy')
-        if int(result.get('last_offsite', 0)) <= 0 or int(result.get('pending', 1)) != 0:
-            raise RuntimeError('Backups missing or off-site deliveries pending')
+        try:
+            latest = int(result.get('last_offsite', 0))
+            pending = int(result.get('pending', 1))
+        except (ValueError, TypeError):
+            raise RuntimeError('Backup status contains invalid timestamps or counters') from None
+        now = int(time.time())
+        if latest <= 0 or latest > now + 300 or now - latest > self.backup_max_age_hours * 3600:
+            raise RuntimeError('Verified off-site backup is missing, stale or has an invalid clock')
+        if pending != 0:
+            raise RuntimeError('Off-site backup deliveries are pending')
+        if (result.get('latest_local_id') is not None or result.get('latest_offsite_id') is not None) and (
+                not result.get('latest_local_id') or result.get('latest_local_id') != result.get('latest_offsite_id')):
+            raise RuntimeError('Latest verified local recovery set is not confirmed off-site')
 
     def http(self, path):
         domain = self.config['CE_DOMAIN']
@@ -119,6 +153,15 @@ class Operations:
         with socket.create_connection((address, port), timeout=7) as raw:
             with context.wrap_socket(raw, server_hostname=domain) as tls:
                 tls.settimeout(7)
+                certificate = tls.getpeercert()
+                if not certificate or 'notAfter' not in certificate:
+                    raise RuntimeError('TLS peer has no verified certificate expiry')
+                try:
+                    remaining = ssl.cert_time_to_seconds(certificate['notAfter']) - time.time()
+                except (ValueError, TypeError):
+                    raise RuntimeError('TLS certificate validity cannot be determined') from None
+                if remaining < self.tls_min_valid_days * 86400:
+                    raise RuntimeError('TLS certificate expires before operator renewal window')
                 host = domain + (':'+str(port) if port != 443 else '')
                 request = ('GET '+path+' HTTP/1.1\r\nHost: '+host+
                            '\r\nUser-Agent: CajeerForumOperations/0.9\r\nConnection: close\r\n\r\n')
@@ -158,7 +201,7 @@ class Operations:
             if status != 404:
                 raise RuntimeError('Private path is exposed or returns unexpected status: '+path)
 
-    def run(self, require_backup=False):
+    def run(self, require_backup=False, require_integrity=False):
         self.results = {}
         self.check('containers', self.containers)
         # Running CLI checks and public TLS are independent for actionable diagnostics.
@@ -166,6 +209,8 @@ class Operations:
         self.check('https', self.public)
         if require_backup:
             self.check('offsite_backup', self.backups)
+        if require_integrity:
+            self.check('deep_integrity', self.integrity)
         return {'ok': all(item['ok'] for item in self.results.values()),
                 'edition': 'forum', 'edition_version': self.config['CE_RELEASE_VERSION'],
                 'checked_at': int(time.time()), 'checks': self.results}
@@ -177,6 +222,9 @@ def main(argv=None):
     parser.add_argument('--env-file', type=Path, required=True)
     parser.add_argument('--ca', type=Path)
     parser.add_argument('--require-backup', action='store_true')
+    parser.add_argument('--require-integrity', action='store_true', help='Run slow full forum/FTS/ACL integrity scan (read only)')
+    parser.add_argument('--tls-min-valid-days', type=int, default=7, help='Minimum remaining validity of public HTTPS certificate (0..90)')
+    parser.add_argument('--backup-max-age-hours', type=int, default=30, help='Maximum age of verified off-site backup (1..168)')
     parser.add_argument('--report', type=Path)
     args = parser.parse_args(argv)
     if not re.fullmatch(r'[a-z0-9][a-z0-9_-]{0,62}', args.project):
@@ -199,8 +247,10 @@ def main(argv=None):
                 raise RuntimeError('Cannot determine local Docker endpoint') from None
         if not host.startswith('unix://'):
             raise RuntimeError('Local Unix Docker endpoint required')
-        operations = Operations(args.project, args.env_file, args.ca)
-        report = operations.run(args.require_backup)
+        operations = Operations(args.project, args.env_file, args.ca,
+                                tls_min_valid_days=args.tls_min_valid_days,
+                                backup_max_age_hours=args.backup_max_age_hours)
+        report = operations.run(args.require_backup, args.require_integrity)
         if args.report is not None:
             durable_json(args.report, report, mode=0o600)
         print(json.dumps(report, indent=2, sort_keys=True))

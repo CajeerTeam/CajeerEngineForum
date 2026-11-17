@@ -56,7 +56,9 @@ class OperationsTests(unittest.TestCase):
         if 'ps' in cmd:
             return SimpleNamespace(returncode=0,stdout='\n'.join(json.dumps(v) for v in self.rows.values()))
         if 'backup:automation:status' in cmd:
-            return SimpleNamespace(returncode=0,stdout=json.dumps({'ok':True,'last_offsite':100,'pending':0}))
+            return SimpleNamespace(returncode=0,stdout=json.dumps({'ok':True,'last_offsite':int(time.time()),'pending':0,'latest_local_id':'abc','latest_offsite_id':'abc'}))
+        if 'forum:ecosystem:check' in cmd:
+            return SimpleNamespace(returncode=0,stdout=json.dumps({'ok':True,'deep':True,'checks':{k:True for k in ('schema','integrity','search','migration_idle','extensions','community_policy','theme','delegation')}}))
         return SimpleNamespace(returncode=0,stdout='')
 
     def test_real_tls_and_live_edition(self):
@@ -82,13 +84,22 @@ class OperationsTests(unittest.TestCase):
         op=Operations('production-test',self.site,self.cert,runner=self.run_command)
         result=op.run(require_backup=True)
         self.assertTrue(result['ok'],result)
+        deep=op.run(require_backup=True, require_integrity=True)
+        self.assertTrue(deep['ok'], deep)
+        self.assertIn('deep_integrity', deep['checks'])
         self.assertEqual(set(result['checks']),{'containers','runtime','https','offsite_backup'})
-        self.assertEqual(sum('/opt/ce-container/runtime.php' in cmd for cmd in self.commands),4)
+        self.assertEqual(sum('/opt/ce-container/runtime.php' in cmd for cmd in self.commands),8)
         # Real SSL hostname validation cannot be skipped by a successful local TCP connection.
         other=self.root/'other.env';other.write_text(self.site.read_text().replace('forum.test','different.test'))
         failed=Operations('production-test',other,self.cert,runner=self.run_command).run()
         self.assertFalse(failed['checks']['https']['ok'],failed)
         self.assertTrue(failed['checks']['containers']['ok'])
+        # Same real TLS peer with a certificate expiring in <7 days must fail
+        # the renewal-window policy even though its hostname and CA are valid.
+        expiring=Operations('production-test',self.site,self.cert,runner=self.run_command,
+                            tls_min_valid_days=7).run()
+        self.assertFalse(expiring['checks']['https']['ok'],expiring)
+        self.assertIn('certificate expires',expiring['checks']['https']['reason'])
         # Running wrong bytes under the expected release tag is refused even if HTTP looks healthy.
         self.rows['app']['Image']='cajeerengine-forum:0.8.7-'+('a'*64)
         self.assertFalse(op.run()['checks']['containers']['ok'])
@@ -105,6 +116,33 @@ class OperationsTests(unittest.TestCase):
         self.assertEqual(Operations.parse_ps('['+','.join(json.dumps(v) for v in self.rows.values())+']')['init']['ExitCode'],0)
         with self.assertRaises(RuntimeError):
             Operations.parse_ps(json.dumps(self.rows['worker'])+'\n'+json.dumps(self.rows['worker']))
+
+    def test_stale_offsite_backup_and_deep_integrity_fail_closed(self):
+        now=int(time.time())
+        for last, pending, local, remote in [
+            (now-32*3600,0,'x','x'), (now+900,0,'x','x'),
+            (now,1,'x','x'), (now,0,'x','y')]:
+            def fake(cmd, **kwargs):
+                if 'backup:automation:status' in cmd:
+                    return SimpleNamespace(returncode=0,stdout=json.dumps({
+                        'ok':True,'last_offsite':last,'pending':pending,
+                        'latest_local_id':local,'latest_offsite_id':remote}))
+                return self.run_command(cmd,**kwargs)
+            op=Operations('production-test',self.site,self.cert,runner=fake,
+                          requester=lambda p:(200,b''))
+            with self.subTest(last=last,pending=pending,remote=remote):
+                with self.assertRaises(RuntimeError): op.backups()
+        def corrupt(cmd,**kwargs):
+            if 'forum:ecosystem:check' in cmd:
+                return SimpleNamespace(returncode=0,stdout=json.dumps({'ok':True,'deep':True,'checks':{'schema':True,'integrity':False}}))
+            return self.run_command(cmd,**kwargs)
+        op=Operations('production-test',self.site,self.cert,runner=corrupt,
+                      requester=lambda p:(200,b''))
+        self.assertFalse(op.run(require_integrity=True)['checks']['deep_integrity']['ok'])
+        with self.assertRaises(ValueError):
+            Operations('production-test',self.site,self.cert,tls_min_valid_days=91)
+        with self.assertRaises(ValueError):
+            Operations('production-test',self.site,self.cert,backup_max_age_hours=0)
 
     def test_literal_env_parsing_and_upgrade_queue_policy(self):
         self.assertEqual(read_site(self.site)['CE_LOOP_TIMEOUT_SECONDS'],'1800')

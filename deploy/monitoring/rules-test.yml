@@ -43,3 +43,71 @@ tests:
       - eval_time: 6m
         alertname: CajeerForumPostgresConnections
         exp_alerts: []
+  - interval: 1m
+    input_series:
+      - series: 'cajeer_queue_expired_reservations{instance="forum"}'
+        values: '2 2 2 0 0 0 0 0'
+      - series: 'cajeer_scheduler_task_stale{instance="forum",task="search.index_published"}'
+        values: '1 1 1 1 1 1 0 0'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: CajeerEngineQueueLeaseExpired
+        exp_alerts: []
+      - eval_time: 2m
+        alertname: CajeerEngineQueueLeaseExpired
+        exp_alerts:
+          - exp_labels: {instance: forum, severity: warning}
+            exp_annotations: {summary: "Queue reservations have expired; inspect workers before retrying"}
+      - eval_time: 3m
+        alertname: CajeerEngineQueueLeaseExpired
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: CajeerEngineSchedulerTaskStale
+        exp_alerts:
+          - exp_labels: {instance: forum, task: search.index_published, severity: warning}
+            exp_annotations: {summary: "Scheduled task search.index_published has stopped completing"}
+      - eval_time: 6m
+        alertname: CajeerEngineSchedulerTaskStale
+        exp_alerts: []
+  - interval: 1m
+    input_series:
+      - series: 'up{job="cajeerengine",instance="forum"}'
+        values: '1 1 1 1 1 1 1 1 1 1 1 1'
+      - series: 'cajeer_queue_expired_reservations{job="cajeerengine",instance="forum"}'
+        values: '0 0 0 0 0 0 0 0 0 0 0 0'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: CajeerEngineCriticalTelemetryMissing
+        exp_alerts:
+          - exp_labels: {instance: forum, job: cajeerengine, severity: critical}
+            exp_annotations: {summary: "Forum worker telemetry is missing despite successful metrics scrape"}
+      - eval_time: 10m
+        alertname: CajeerForumOffsiteTelemetryMissing
+        exp_alerts:
+          - exp_labels: {instance: forum, job: cajeerengine, severity: warning}
+            exp_annotations: {summary: "Off-site backup success telemetry is missing"}
+  - interval: 1m
+    input_series:
+      - series: 'up{job="forum-tls",instance="https://forum.example/health/ready"}'
+        values: '1 1 1 1 1 1 1 1'
+      - series: 'probe_success{job="forum-tls",instance="https://forum.example/health/ready"}'
+        values: '0 0 0 1 1 1 1 1'
+      - series: 'probe_ssl_earliest_cert_expiry{job="forum-tls",instance="https://forum.example/health/ready"}'
+        values: '1000000 1000000 1000000 1000000 1000000 1000000 3000000 3000000'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: CajeerForumTLSProbeFailed
+        exp_alerts:
+          - exp_labels: {instance: "https://forum.example/health/ready", job: forum-tls, severity: critical}
+            exp_annotations: {summary: "Public HTTPS readiness/TLS probe failed"}
+      - eval_time: 3m
+        alertname: CajeerForumTLSProbeFailed
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: CajeerForumTLSExpiring
+        exp_alerts:
+          - exp_labels: {instance: "https://forum.example/health/ready", job: forum-tls, severity: warning}
+            exp_annotations: {summary: "Forum public TLS certificate expires within 14 days"}
+      - eval_time: 6m
+        alertname: CajeerForumTLSExpiring
+        exp_alerts: []

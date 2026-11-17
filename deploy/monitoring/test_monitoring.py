@@ -53,6 +53,12 @@ class ConfigurationTest(unittest.TestCase):
         self.assertFalse(json.loads(p)['scrape_configs'][0]['tls_config']['insecure_skip_verify'])
         self.assertEqual(json.loads(a)['receivers'][0]['webhook_configs'][0]['url_file'],'/run/secrets/alert-webhook')
         self.assertTrue(json.loads(a)['receivers'][0]['webhook_configs'][0]['send_resolved'])
+        blackbox=json.loads((self.d/'blackbox.json').read_text())
+        self.assertTrue(blackbox['modules']['forum_https']['http']['fail_if_not_ssl'])
+        self.assertFalse(blackbox['modules']['forum_https']['http']['tls_config']['insecure_skip_verify'])
+        tls=json.loads(p)['scrape_configs'][1]
+        self.assertEqual(tls['job_name'],'forum-tls')
+        self.assertEqual(tls['static_configs'][0]['targets'],['https://forum.example.test:443/health/ready'])
     def test_invalid_target_and_secret(self):
         for bad in ('http://example.test','forum.test:0','forum.test:65536','forum.test:443/path','forum..test:443'):
             with self.assertRaises(ValueError): config.configure(self.d,bad,self.ca)
@@ -111,6 +117,8 @@ def integration():
         class Handler(http.server.BaseHTTPRequestHandler):
             def log_message(self,*args): pass
             def do_GET(self):
+                if self.path=='/health/ready':
+                    self.send_response(200);self.send_header('Content-Length','2');self.end_headers();self.wfile.write(b'OK');return
                 if self.path!='/metrics': self.send_error(404);return
                 req=urllib.request.Request(f'http://127.0.0.1:{php_port}/metrics',headers={'Authorization':self.headers.get('Authorization','')})
                 try: response=urllib.request.urlopen(req,timeout=15)
@@ -133,7 +141,7 @@ def integration():
             a=json.loads((cfg/'alertmanager.json').read_text());a['route'].update(group_wait='1s',group_interval='3s',repeat_interval='1h');(cfg/'alertmanager.json').write_text(json.dumps(a))
             short=d/'forum-test-rules.yml';short.write_text('groups:\n  - name: test\n    rules:\n      - alert: CajeerForumQueueStale\n        expr: cajeer_forum_queue_oldest_age_seconds{queue="extensions"} > 300\n        for: 3s\n        labels: {severity: warning}\n        annotations: {summary: "Test queue delayed"}\n')
             # Override only the forum rule file and inject host-gateway into both services.
-            overlay=d/'overlay.json';overlay.write_text(json.dumps({'services':{'prometheus':{'extra_hosts':['host.docker.internal:host-gateway'],'volumes':[str(short)+':/etc/prometheus/rules/forum.yml:ro']},'alertmanager':{'extra_hosts':['host.docker.internal:host-gateway']}}}))
+            overlay=d/'overlay.json';overlay.write_text(json.dumps({'services':{'prometheus':{'extra_hosts':['host.docker.internal:host-gateway'],'volumes':[str(short)+':/etc/prometheus/rules/forum.yml:ro']},'alertmanager':{'extra_hosts':['host.docker.internal:host-gateway']},'blackbox':{'extra_hosts':['host.docker.internal:host-gateway']}}}))
             env=os.environ|{'CE_MONITOR_CONFIG_DIR':str(cfg),'CE_PROMETHEUS_PORT':str(pp),'CE_ALERTMANAGER_PORT':str(ap),'CE_GRAFANA_PORT':str(gp)}
             compose=['docker','compose','-p',project,'-f',str(HERE/'compose.yaml'),'-f',str(overlay)]
             run(*compose,'config','--quiet',env=env);run(*compose,'up','-d',env=env)
@@ -142,9 +150,15 @@ def integration():
             def query(expr):
                 return get_json(f'http://127.0.0.1:{pp}/api/v1/query?'+urllib.parse.urlencode({'query':expr}))['data']['result']
             wait_until(lambda: any(x['value'][1]=='1' for x in query('up{job="cajeerengine"}')))
+            wait_until(lambda:any(x['value'][1]=='1' for x in query('probe_success{job="forum-tls"}')))
+            assert int(float(query('probe_ssl_earliest_cert_expiry{job="forum-tls"}')[0]['value'][1]))>int(time.time())
             assert query('cajeer_forum_queue_items{queue="extensions"}')[0]['value'][1]=='1'
             assert query('cajeer_forum_request_duration_seconds_count{operation="search",outcome="2xx"}')[0]['value'][1]=='1'
             wait_until(lambda:any(e.get('status')=='firing' and any(a['labels']['alertname']=='CajeerForumQueueStale' for a in e['alerts']) for e in events))
+            # Restart both monitoring daemons while the alert is firing. Persistent
+            # state must survive and the same external receiver must get resolved.
+            run(*compose, 'restart', 'prometheus', 'alertmanager', env=env)
+            wait_until(lambda:any(x['value'][1]=='1' for x in query('up{job="cajeerengine"}')),seconds=120)
             with sqlite3.connect(db) as con: con.execute("UPDATE ce_forum_extension_events SET state='done'")
             wait_until(lambda:any(e.get('status')=='resolved' and any(a['labels']['alertname']=='CajeerForumQueueStale' for a in e['alerts']) for e in events))
             auth={'Authorization':'Basic '+base64.b64encode(('admin:'+password).encode()).decode()}

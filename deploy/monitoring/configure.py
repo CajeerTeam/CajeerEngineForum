@@ -62,11 +62,29 @@ def configure(directory, target, ca):
                   'scrape_configs': [{'job_name': 'cajeerengine', 'scheme': 'https', 'metrics_path': '/metrics',
                                       'authorization': {'type': 'Bearer', 'credentials_file': '/run/secrets/metrics-token'},
                                       'tls_config': tls, 'static_configs': [{'targets': [target]}]}]}
+    # Independent HTTPS probe: metrics scraping a TLS endpoint does not export
+    # its certificate expiry. Blackbox checks the actual public readiness URL
+    # using the same operator-provided CA bundle, with SNI and hostname checks.
+    blackbox = {'modules': {'forum_https': {
+        'prober': 'http', 'timeout': '10s',
+        'http': {'method': 'GET', 'valid_status_codes': [200], 'fail_if_not_ssl': True, 'follow_redirects': False,
+                 'tls_config': {'ca_file': '/etc/blackbox/forum-ca.pem', 'insecure_skip_verify': False}}
+    }}}
+    prometheus['scrape_configs'].append({
+        'job_name': 'forum-tls', 'metrics_path': '/probe',
+        'params': {'module': ['forum_https']},
+        'static_configs': [{'targets': ['https://' + target + '/health/ready']}],
+        'relabel_configs': [
+            {'source_labels': ['__address__'], 'target_label': '__param_target'},
+            {'source_labels': ['__param_target'], 'target_label': 'instance'},
+            {'target_label': '__address__', 'replacement': 'blackbox:9115'},
+        ],
+    })
     alertmanager = {'route': {'receiver': 'operator', 'group_by': ['alertname', 'instance'], 'group_wait': '30s',
                               'group_interval': '5m', 'repeat_interval': '4h'},
                     'receivers': [{'name': 'operator', 'webhook_configs': [{'url_file': '/run/secrets/alert-webhook', 'send_resolved': True,
                        'http_config': {'tls_config': {'ca_file': '/etc/alertmanager/forum-ca.pem', 'insecure_skip_verify': False}}}]}]}
-    for name, data in [('prometheus.json', prometheus), ('alertmanager.json', alertmanager)]:
+    for name, data in [('prometheus.json', prometheus), ('alertmanager.json', alertmanager), ('blackbox.json', blackbox)]:
         write_atomic(directory / name, (json.dumps(data, indent=2)+'\n').encode())
 
 

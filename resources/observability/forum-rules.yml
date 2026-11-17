@@ -96,3 +96,23 @@ groups:
         for: 5m
         labels: {severity: warning}
         annotations: {summary: "Storage disk has less than 15% free"}
+      - alert: CajeerForumOffsiteTelemetryMissing
+        expr: (up{job="cajeerengine"} == 1) unless on(instance) cajeer_backup_offsite_last_success_timestamp_seconds
+        for: 10m
+        labels: {severity: warning}
+        annotations: {summary: "Off-site backup success telemetry is missing"}
+      - alert: CajeerForumTLSExpiring
+        expr: probe_ssl_earliest_cert_expiry{job="forum-tls"} - time() < 1209600
+        for: 5m
+        labels: {severity: warning}
+        annotations: {summary: "Forum public TLS certificate expires within 14 days"}
+      - alert: CajeerForumTLSProbeFailed
+        expr: probe_success{job="forum-tls"} == 0
+        for: 2m
+        labels: {severity: critical}
+        annotations: {summary: "Public HTTPS readiness/TLS probe failed"}
+      - alert: CajeerForumTLSExporterDown
+        expr: up{job="forum-tls"} == 0
+        for: 2m
+        labels: {severity: critical}
+        annotations: {summary: "TLS probe exporter is unavailable"}

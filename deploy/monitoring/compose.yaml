@@ -1,4 +1,15 @@
 services:
+  blackbox:
+    image: prom/blackbox-exporter:v0.27.0
+    restart: unless-stopped
+    command: [--config.file=/etc/blackbox/blackbox.json]
+    volumes:
+      - ${CE_MONITOR_CONFIG_DIR:?set absolute config directory}/blackbox.json:/etc/blackbox/blackbox.json:ro
+      - ${CE_MONITOR_CONFIG_DIR}/forum-ca.pem:/etc/blackbox/forum-ca.pem:ro
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
   prometheus:
     image: prom/prometheus:v3.5.0
     restart: unless-stopped

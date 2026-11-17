@@ -1,6 +1,6 @@
-# Production Operations Stable — Forum Edition 0.9.0
+# Production Operations Stable — Forum Edition 0.9.7 (updated)
 
-This release closes the gap between a successful **build/deployment** and a demonstrably healthy **running** service. No new database schema or endpoint is introduced. The upstream engine remains 1.3.0; the independent Forum Edition release advances from 0.8.7 to 0.9.0. Apply these changed files to the matching 0.8.7 checkout, rebuild a complete signed dist, and deploy only the resulting verified artifact. The changed-files archive itself is not an installable or signed dist.
+This documentation covers the production admission gate introduced in 0.9.0 and hardened in 0.9.7. No new schema migration or public endpoint is introduced in 0.9.7. Core remains 1.3.0. Apply the 0.9.7 changed-files archive only to the matching 0.9.6 checkout; rebuild and sign the complete release before deployment. The changed-files archive is not a deployable dist. The changed-files archive itself is not an installable or signed dist.
 
 ## Read-only live operations gate (Docker Compose)
 
@@ -43,6 +43,56 @@ The `pgsql` queue remains mandatory for the snapshot-based automatic update and 
 
 ## Acceptance before calling a host production-ready
 
-Run the project's local unit suites (`test_operations.py`, `test_update.py`, `test_container.py`) and the signed release verifier. On a **disposable** Compose environment run `smoke.py`, the destructive `qualify.py` with its exact `destroy-test-services` confirmation, and the live `operations.py` gate. For a recovery-supported PostgreSQL queue installation, run the real backup service, verify the off-site status and repeat `operations.py --require-backup`. The repository CI runs these checks in the supported queue profiles and also tests a signed 0.8.7 → 0.9.0 upgrade/rollback against a real PostgreSQL installation.
+Run the project's local unit suites (`test_operations.py`, `test_update.py`, `test_container.py`) and the signed release verifier. On a **disposable** Compose environment run `smoke.py`, the destructive `qualify.py` with its exact `destroy-test-services` confirmation, and the live `operations.py` gate. For a recovery-supported PostgreSQL queue installation, run the real backup service, verify the off-site status and repeat `operations.py --require-backup`. The repository CI runs these checks in the supported queue profiles and retains physical upgrade/rollback regressions; the specific baseline and current release are declared in the CI workflow.
 
 A successful local unit suite cannot certify a live environment by itself. No claim of production host acceptance or off-site restore is made unless the corresponding live scenarios have actually passed for that host and signed artifact.
+
+## 0.9.7 operational admission and safe recovery
+
+Use the read-only operator gate on a trusted host (never in the public web process):
+
+```bash
+python3 deploy/container/operations.py --project community-prod \
+  --env-file /secure/forum/site.env --require-backup --require-integrity \
+  --tls-min-valid-days 14 --backup-max-age-hours 30 \
+  --report /secure/reports/forum-operations.json
+```
+
+The TLS gate validates the actual SNI certificate chain and hostname, then rejects
+certificates expiring inside the operator renewal window (7 days by default).
+`--tls-min-valid-days` accepts 0–90, and `--backup-max-age-hours` accepts
+1–168. Off-site checks reject stale and future-dated success timestamps, pending
+transfers, and a latest recovery-set ID that has not arrived off-site. They
+**do not** test that the remote object can be restored; schedule independent
+restore drills. The default 30-hour window assumes daily delivery; set it to
+match an approved schedule. Only `--require-backup` enables the off-site gate.
+
+`--require-integrity` runs the **real** `forum:ecosystem:check --deep` in the
+running app, including full schema, content, search, ACL and extension checks.
+This can be slow and can create database load: run during a maintenance window
+or on a restored staging clone of a large forum. It is deliberately *not*
+part of HTTP readiness or automatic update admission. Exit nonzero means the
+operator must investigate, not repair or delete data automatically.
+
+`cajeer_queue_expired_reservations` reports expired, not-yet-recovered leases
+from the configured file/PostgreSQL/Redis queue without changing queue state.
+`cajeer_scheduler_task_stale` reports last-success gaps for monitored tasks.
+Inspect queue diagnostics, worker logs and task history before using the
+existing, bounded `php bin/cajeer queue:recover --queue=default --limit=100`;
+this command only releases expired reservations, and never retries terminal
+failed jobs. Recoveries preserve lease fencing; do not blanket-retry jobs with
+external side effects. Alertmanager firing **and resolved** delivery is tested
+by the disposable HTTPS receiver integration, including a monitoring-service
+restart while an alert is active. Verify escalation and receiver credentials
+against each actual production endpoint separately.
+
+To recover after an unclean deployment restart: verify the persisted update
+journal, restore the exact signed image, use the operator `recover` command if
+needed, then run the read-only operations gate and inspect expired leases.
+Never delete journal/lock files or disable readiness to force traffic.
+
+The independent monitoring stack also probes the actual public HTTPS
+certificate using Blackbox Exporter and alerts on less than 14 days validity.
+This catches expiry without waiting for a manually invoked operations gate;
+monitor the monitoring host itself and verify that notifications reach the
+intended operator receiver.

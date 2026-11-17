@@ -1,6 +1,6 @@
-# Forum Observability & Monitoring (0.8.6)
+# Forum Observability & Monitoring (current 0.9.7)
 
-The Forum Edition extends the existing protected `/metrics` endpoint, `ops:report`, and **System** (`/admin/#/system`) in ACP. Engine version remains 1.3.0. Apply migration 0048 on SQLite, PostgreSQL or MySQL before monitoring the new queues. The four indexes cover replica state/due time, review/report status and creation time, and import checkpoint state/time. Index creation can take time and locks on large databases: use the normal maintenance/backup/update procedure, not an online migration claim.
+The Forum Edition extends the existing protected `/metrics` endpoint, `ops:report`, and **System** (`/admin/#/system`) in ACP. Engine version remains 1.3.0. Queue monitoring was introduced with migration 0048; an existing 0.9.6 installation already contains subsequent migrations through 0049. The four indexes cover replica state/due time, review/report status and creation time, and import checkpoint state/time. Index creation can take time and locks on large databases: use the normal maintenance/backup/update procedure, not an online migration claim.
 
 ## What is measured
 
@@ -85,3 +85,32 @@ python deploy/monitoring/test_monitoring.py --integration
 ```
 
 The final integration runs actual Prometheus, Alertmanager and Grafana containers, tests the unchanged rules with promtool (firing and resolution), scrapes an authenticated HTTPS proxy to a disposable real PHP/SQLite exporter, checks actual SQL metrics and Grafana provisioning, and receives a firing and resolved webhook. It uses shortened test-only evaluation/routing intervals. It is a required CI job, not a claim that the test ran on every production host. Production throughput, cross-host clocks, TLS network paths, receiver escalation and SLOs still require site-specific qualification.
+
+## 0.9.7 operator metrics and restart proof
+
+New queue metric `cajeer_queue_expired_reservations` counts unexpired-vs-expired
+leases without running recovery. `cajeer_scheduler_task_stale{task=...}` exposes
+stale successful task cycles. Prometheus alerts now detect expired leases,
+stale scheduler tasks, and missing essential worker/queue/off-site series while
+the exporter still scrapes successfully. **Missing telemetry is not zero.**
+The HTTPS Prometheus→Alertmanager integration keeps its test-only receiver up
+while restarting Prometheus and Alertmanager after firing, then proves a
+resolved event is delivered. This exercise is destructive only to disposable
+monitoring containers. For production TLS certificate expiry and backup
+freshness, use the independent read-only operator gate in
+[production operations](production-operations.md); exporters do not know the
+public site's certificate chain lifetime by themselves.
+
+### Public TLS certificate monitoring
+
+0.9.7 adds a private `prom/blackbox-exporter` service and a generated
+`blackbox.json`. The exporter independently probes
+`https://<approved-target>/health/ready` with SNI/hostname and the protected
+CA bundle. Its loopback-only Prometheus scrape exposes `probe_success`,
+`probe_ssl_earliest_cert_expiry` and `up{job="forum-tls"}`. The corresponding
+alerts fire for expiry inside 14 days, failed HTTPS/TLS checks or an unavailable
+probe exporter. No blackbox port is published to the internet. Recreate the
+monitoring containers after regeneration to apply updated bind-mounted config.
+To qualify a production setup, validate DNS routing from the monitoring host,
+CA rotation and actual receiver delivery. The separate operator command can
+set its own TLS renewal threshold and must be run on an external schedule.

@@ -1,3 +1,11 @@
+## [0.9.7] - 2026-11-17 — Safe Production Operations
+
+- Read-only Compose gate: verified public TLS renewal-window policy, verified off-site age and recovery-set parity, and optional deep existing ecosystem integrity scan.
+- Real leased queue diagnostics: expired reservations across PostgreSQL, Redis and file backends, with Prometheus metric and alert; no autonomous retries.
+- Scheduler task-staleness metrics and missing-critical-series alert rules; independently verified Blackbox HTTPS/TLS-expiry alerting; delivery/resolution integration exercises restarts of Prometheus and Alertmanager.
+- Guarded subprocess timeouts, negative operator checks, durable post-crash queue recovery tests, and updated on-call instructions.
+- These tests do not constitute proof that a remote production site delivered a paging notification or passed an independent audit.
+
 ## [0.9.6] - 2026-11-17 — Disaster Recovery Certification
 
 - Added a **physical signed-current-dist** DR acceptance that takes a real managed, encrypted backup while HTTP reads and acknowledged writes continue; verifies off-site readback using the durable catalog, then completely deletes the source app and source database.

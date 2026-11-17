@@ -62,7 +62,7 @@ final readonly class OperationsMonitor
         $probe('forum_database',function()use($db){$this->assertDatabasePresent();return ForumMetrics::database($db);});
         $probe('forum_cache',fn()=>ForumMetrics::cache());
         $probe('storage',function(){ $s=new StorageManager($this->root,$this->config);$d=$s->diagnostics();return ['ok'=>(bool)($d['local_probe_write']??false)&&(bool)($d['local_probe_delete']??false)&&(bool)($d['driver_probe']['ok']??false),'driver'=>$s->driver()];});
-        $probe('queue',function()use($db){if($this->config->string('queue.default')==='pgsql')$this->assertDatabasePresent();$d=(new QueueFactory($this->root,$this->config,$db))->make()->diagnostics();$counts=array_fill_keys(['pending','reserved','processed','failed'],0);foreach($d['queues']??[] as $q)foreach($counts as $k=>$v)$counts[$k]+=(int)($q[$k]??0);return ['ok'=>($d['writable']??true)&&($d['connected']??true),'driver'=>$d['driver']??'unknown','counts'=>$counts,'oldest_ready_age_seconds'=>(int)($d['oldest_ready_age_seconds']??0)];});
+        $probe('queue',function()use($db){if($this->config->string('queue.default')==='pgsql')$this->assertDatabasePresent();$d=(new QueueFactory($this->root,$this->config,$db))->make()->diagnostics();$counts=array_fill_keys(['pending','reserved','processed','failed'],0);foreach($d['queues']??[] as $q)foreach($counts as $k=>$v)$counts[$k]+=(int)($q[$k]??0);return ['ok'=>($d['writable']??true)&&($d['connected']??true),'driver'=>$d['driver']??'unknown','counts'=>$counts,'oldest_ready_age_seconds'=>(int)($d['oldest_ready_age_seconds']??0),'expired_reservations'=>(int)($d['expired_reservations']??0)];});
         $probe('scheduler',function()use($db){if($this->config->string('scheduler.driver')==='pgsql')$this->assertDatabasePresent();$store=TaskRunStore::fromConfig($this->root,$this->config,$db);$tasks=[];foreach(['tmp.cleanup'=>3600,'queue.cleanup_processed'=>86400,'search.index_published'=>60,'webhooks.dispatch_pending'=>60] as $name=>$interval){$s=$store->status($name);$last=strtotime((string)($s['last_success_at']??''))?:0;$tasks[$name]=['status'=>$s['status']??'never','last_success'=>$last,'stale'=>$last===0||time()-$last>max(180,$interval*2)];}return ['ok'=>!in_array(true,array_column($tasks,'stale'),true),'tasks'=>$tasks];});
         $probe('cache',fn()=> $this->cache());
         $probe('search',function()use($db){$this->assertDatabasePresent();$d=(new \CajeerEngine\Search\SearchFactory($this->root,$this->config,$db))->make()->diagnostics();return ['ok'=>(bool)($d['ok']??$d['writable']??true),'documents'=>(int)($d['documents']??0)];});
@@ -79,6 +79,7 @@ final readonly class OperationsMonitor
         if($free===false||$free<$this->minFree())$alerts[]='disk_low';
         if(($checks['queue']['counts']['failed']??0)>0)$alerts[]='queue_failed_jobs';
         if(($checks['queue']['oldest_ready_age_seconds']??0)>$this->config->int('observability.queue_max_age',300))$alerts[]='queue_backlog_stale';
+        if(($checks['queue']['expired_reservations']??0)>0)$alerts[]='queue_lease_expired';
         $fq=$checks['forum_database']['queues']??[];
         foreach(['notifications','answer_notifications','mail','extensions','media','replicas'] as $name)if(($fq[$name]['oldest_age_seconds']??0)>$this->config->int('observability.queue_max_age',300))$alerts[]='forum_'.$name.'_stale';
         foreach(['extension_dead','mail_dead','media_failed'] as $name)if(($fq[$name]['count']??0)>0)$alerts[]='forum_'.$name;
@@ -124,6 +125,8 @@ final readonly class OperationsMonitor
         foreach(['free_bytes','total_bytes'] as $key)if($r['disk'][$key]!==null)$out.="# TYPE cajeer_disk_$key gauge\ncajeer_disk_$key ".$r['disk'][$key]."\n";
         $out.="# TYPE cajeer_queue_jobs gauge\n";foreach($r['checks']['queue']['counts']??[] as $k=>$v)$out.='cajeer_queue_jobs{state="'.$k.'"} '.$v."\n";
         $out.="# TYPE cajeer_queue_oldest_ready_age_seconds gauge\ncajeer_queue_oldest_ready_age_seconds ".(int)($r['checks']['queue']['oldest_ready_age_seconds']??0)."\n";
+        if(($r['checks']['queue']['ok']??false)===true)$out.="# TYPE cajeer_queue_expired_reservations gauge\ncajeer_queue_expired_reservations ".(int)($r['checks']['queue']['expired_reservations']??0)."\n";
+        $out.="# TYPE cajeer_scheduler_task_stale gauge\n";foreach($r['checks']['scheduler']['tasks']??[] as $n=>$t)$out.='cajeer_scheduler_task_stale{task="'.$n.'"} '.(int)($t['stale']??false)."\n";
         $out.="# TYPE cajeer_scheduler_last_success_timestamp_seconds gauge\n";foreach($r['checks']['scheduler']['tasks']??[] as $n=>$t)$out.='cajeer_scheduler_last_success_timestamp_seconds{task="'.$n.'"} '.$t['last_success']."\n";
         foreach(['backup'=>'last_success','worker'=>'last_seen','update'=>'last_success'] as $n=>$k)$out.="# TYPE cajeer_{$n}_{$k}_timestamp_seconds gauge\ncajeer_{$n}_{$k}_timestamp_seconds ".(int)($r['checks'][$n][$k]??0)."\n";
         if(isset($r['checks']['backup_automation'])) {
