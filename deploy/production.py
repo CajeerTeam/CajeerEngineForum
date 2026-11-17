@@ -182,9 +182,11 @@ listen = /run/cajeerengine/php.sock
 listen.mode = 0660
 pm = dynamic
 pm.max_children = 12
-pm.start_servers = 2
-pm.min_spare_servers = 1
-pm.max_spare_servers = 4
+; Keep enough warmed workers for the eight-way TLS qualification burst.
+; Dynamic scaling still caps the total worker count at twelve.
+pm.start_servers = 8
+pm.min_spare_servers = 4
+pm.max_spare_servers = 10
 clear_env = yes
 catch_workers_output = yes
 security.limit_extensions = .php

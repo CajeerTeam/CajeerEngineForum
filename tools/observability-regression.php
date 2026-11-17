@@ -32,7 +32,22 @@ try{
     $logger=new RuntimeLogger($root);$logger->info('HTTP request handled',$trace->fields()+['request_id'=>'req-1','route'=>'api.v1.health','password'=>'supersecret','path'=>'/preview/private-token','message'=>'private SQL']);$log=file_get_contents($root.'/storage/logs/runtime.jsonl');check(str_contains($log,'req-1')&&str_contains($log,$trace->traceId)&&!str_contains($log,'supersecret')&&!str_contains($log,'private-token')&&!str_contains($log,'private SQL'),'structured log correlation and sensitive context removal');
     for($i=0;$i<500;$i++)$logger->info('HTTP request handled',['request_id'=>str_repeat('r',100),'route'=>'api.v1.health','status'=>200]);check(is_file($root.'/storage/logs/runtime.jsonl.1')&&filesize($root.'/storage/logs/runtime.jsonl')<=65536,'bounded log rotation');
     $cfg=new ConfigRepository($root);$monitor=new OperationsMonitor($root,$cfg);$r=$monitor->readiness();check(!$r['ok']&&!$r['checks']['database']&&!$r['checks']['installed'],'readiness fails missing installation and database');
-    $report=$monitor->report();check($report['checks']['storage']['ok']&&$report['checks']['queue']['ok'],'real local storage round-trip and queue probe');check(!$report['checks']['database']['ok']&&in_array('database_unavailable',$report['alerts'],true),'database outage produces alert');check(!$report['checks']['scheduler']['ok']&&in_array('scheduler_unavailable',$report['alerts'],true),'never-run scheduler detected');check(!$report['checks']['backup']['ok'],'missing backup detected');
+    // HTTP readiness is a reconstructible cache, not a journal. Verify that
+    // its atomic publication rejects symlinks and a corrupt sample fails shut.
+    $writeCache=(new ReflectionClass(OperationsMonitor::class))->getMethod('writeReadinessSample');
+    $cachePath=$root.'/storage/cache/http-readiness-test.json';
+    $sample=['sampled_at'=>time(),'migration_fingerprint'=>str_repeat('a',64),'readiness'=>['ok'=>true]];
+    $writeCache->invoke($monitor,$cachePath,$sample);
+    check((new JsonFile($cachePath))->readObject()===$sample,'atomic non-durable readiness sample is valid JSON');
+    $symlinkPath=$root.'/storage/cache/http-readiness-symlink.json';
+    symlink($cachePath,$symlinkPath);
+    try { $writeCache->invoke($monitor,$symlinkPath,$sample);throw new RuntimeException('Symlink accepted'); }
+    catch (RuntimeException $e) { if($e->getMessage()==='Symlink accepted')throw $e; }
+    check((new JsonFile($cachePath))->readObject()===$sample,'readiness sample rejects symlink targets');
+    file_put_contents($root.'/storage/cache/http-readiness.json','{broken');
+    check(!$monitor->cachedReadiness()['ok'],'corrupt readiness sample never bypasses missing DB');
+    $report=$monitor->report();check($report['checks']['storage']['ok']
+&&$report['checks']['queue']['ok'],'real local storage round-trip and queue probe');check(!$report['checks']['database']['ok']&&in_array('database_unavailable',$report['alerts'],true),'database outage produces alert');check(!$report['checks']['scheduler']['ok']&&in_array('scheduler_unavailable',$report['alerts'],true),'never-run scheduler detected');check(!$report['checks']['backup']['ok'],'missing backup detected');
     $q=new FileQueueDriver($root);$q->push('log.message',['message'=>'test','_available_at'=>gmdate(DATE_ATOM,time()-600)]);$d=$q->diagnostics();check($d['oldest_ready_age_seconds']>=599,'oldest ready age from actual queue data');$r=$monitor->report();check(in_array('queue_backlog_stale',$r['alerts'],true),'queue age alert');
     $wh=new WebhookRepository($root);$indexer=new SearchIndexer(new ContentTypeRepository($root),new ContentEntryRepository($root),new FileSearchIndex($root));$worker=new QueueWorker($q,$indexer,$wh,new WebhookDispatcher(new SignedPayload(),$wh));check($worker->work(null,1)['processed']===1,'actual worker executes queued task');check($m->snapshot()['job|log.message|success']['count']===1,'worker duration metric recorded');check($monitor->report()['checks']['worker']['ok'],'worker heartbeat observed');
     $q->push('unknown',['_max_attempts'=>1]);check($worker->work(null,1)['failed']===1,'actual worker fails unknown handler');check(isset($m->snapshot()['job|other|failure'])&&in_array('queue_failed_jobs',$monitor->report()['alerts'],true),'failure metric and failed jobs alert');

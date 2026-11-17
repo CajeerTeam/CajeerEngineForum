@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 """Release-chain admission negative tests; physical SQL/HTTP runs in CI."""
 import json
+import os
+import subprocess
 from pathlib import Path
 import sys
 import tempfile
 import unittest
 
 sys.path.insert(0,str(Path(__file__).resolve().parent))
-from release_acceptance import verify_release_sequence, chain_receipt
+from release_acceptance import verify_release_sequence, chain_receipt, enable_legacy_pgsql_fts_compat
 
 class UpgradeChainRegression(unittest.TestCase):
     def test_supported_chronological_versions(self):
@@ -25,6 +27,23 @@ class UpgradeChainRegression(unittest.TestCase):
         for bad in (['0.9.8','1.0.0-rc.2'], ['1.0.0-rc.1','1.0.0'], ['0.9.8','1.0.0-rc.1','1.0.0']):
             with self.subTest(bad=bad), self.assertRaises(ValueError):
                 verify_release_sequence(bad)
+
+    def test_authentic_legacy_php_uses_temporary_fts_preload(self):
+        with tempfile.TemporaryDirectory() as temp:
+            work=Path(temp)
+            original=work/'historical-signed.zip'
+            original.write_bytes(b'never-edit-authentic-release')
+            env=os.environ.copy()
+            enable_legacy_pgsql_fts_compat(work,env)
+            ini=work/'legacy-php-ini'/'zz-ce-forum-fts.ini'
+            self.assertTrue(ini.is_file())
+            self.assertIn('auto_prepend_file=',ini.read_text())
+            self.assertEqual(env['PHP_INI_SCAN_DIR'],':'+str(ini.parent))
+            script=work/'probe.php'
+            script.write_text('<?php echo class_exists("CajeerEngine\\Forum\\Service\\ForumSearchMaintenance",false)?"preloaded":"missing";')
+            result=subprocess.run(['php',str(script)],env=env,text=True,capture_output=True,check=True)
+            self.assertEqual(result.stdout,'preloaded')
+            self.assertEqual(original.read_bytes(),b'never-edit-authentic-release')
 
     def test_receipt_uses_real_artifact_hashes_only_after_recovery(self):
         with tempfile.TemporaryDirectory() as temp:

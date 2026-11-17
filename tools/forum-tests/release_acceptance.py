@@ -915,12 +915,38 @@ def install_ecosystem_plugins(site, env, report, work, initial):
     run(site,env,report,'ecosystem-key',['php','bin/cajeer','release:keygen','--secret-key='+str(secret),'--public-key='+str(trust/'cajeer.pub')])
     run(site,env,report,'ecosystem-backup-key',['php','bin/cajeer','backup:keygen','--key='+str(key)])
     env |= {'EXTENSIONS_TRUST_DIR':str(trust),'BACKUP_KEY_FILE':str(key)}
+    # Legacy 0.8.x web entrypoints call Dotenv::loadEnv(), which may replace an
+    # inherited trust root with the empty value in the generated .env. Persist
+    # only the operator-owned paths; the signing key bytes remain outside dist.
+    configure = (r'require "vendor/autoload.php";'
+                 r'(new CajeerEngine\Installer\InstallerEnvironment(".env"))->write('
+                 r'["EXTENSIONS_TRUST_DIR"=>$argv[1],"BACKUP_KEY_FILE"=>$argv[2]], ".env.example");')
+    run(site,env,report,'ecosystem-configure-trust',['php','-r',configure,str(trust),str(key)])
     for name in ('forum-announcements','forum-topic-templates'):
         package=work/name; shutil.copytree(ROOT/'examples/extensions'/name,package)
         if initial=='0.7.7' and name=='forum-topic-templates':
             manifest=package/'cajeer.extension.json'; data=json.loads(manifest.read_text());data['version']='1.0.0';data['forum']='>=0.7.4 <0.8.0';manifest.write_text(json.dumps(data))
         run(site,env,report,'sign-'+name,['php','bin/cajeer','extension:sign',str(package),'--secret-key='+str(secret)])
         run(site,env,report,'install-'+name,['php','bin/cajeer','extension:package:install',str(package),'--enable'],timeout=600)
+
+
+def enable_legacy_pgsql_fts_compat(work, env):
+    """Load the fixed index inspector in authentic pre-1.0 PHP processes.
+
+    Released 0.8.7–0.9.9 archives use pg_am.am, a nonexistent PostgreSQL
+    catalog column. The production operator already uses this exact preload
+    when upgrading historical installations (deploy/production.py). Apply the
+    same guarded PHP INI scan-dir overlay in disposable release acceptance;
+    never modify the historical archive or an extracted signed release.
+    """
+    source = ROOT / 'core/Forum/Service/ForumSearchMaintenance.php'
+    require(source.is_file() and not source.is_symlink(), 'Missing trusted legacy FTS compatibility source')
+    ini_dir = work / 'legacy-php-ini'
+    ini_dir.mkdir(mode=0o700)
+    (ini_dir / 'zz-ce-forum-fts.ini').write_text('auto_prepend_file=' + str(source.resolve()) + '\n')
+    # Empty first component includes PHP's compiled-in default scan directory,
+    # so existing extensions and their INI configuration remain enabled.
+    env['PHP_INI_SCAN_DIR'] = ':' + str(ini_dir)
 
 
 def seed_ecosystem(base, state):
@@ -987,6 +1013,8 @@ def main():
         releases=[initial,*[v for _,v in stages],current] if previous else [current]
         if previous: verify_release_sequence(releases)
         site=unpack(previous or artifact,work/'live',initial)
+        if previous and args.driver == 'pgsql':
+            enable_legacy_pgsql_fts_compat(work,env)
         install(site,env,report,'initial',port,args.driver)
         ecosystem=None
         if tuple(map(int,initial.split('.'))) >= (0,7,4):
@@ -1037,6 +1065,12 @@ def main():
             run(site,env,report,'backup-key',['php','bin/cajeer','backup:keygen','--key='+str(key)])
             run(site,env,report,'release-key',['php','bin/cajeer','release:keygen','--secret-key='+str(secret),'--public-key='+str(public)])
             env |= {'BACKUP_KEY_FILE':str(key),'UPDATE_TRUSTED_PUBLIC_KEY_FILE':str(public)}
+            # The historical CLI child processes also load .env. Keep the
+            # disposable operator's trusted public key visible to every child.
+            configure = (r'require "vendor/autoload.php";'
+                         r'(new CajeerEngine\Installer\InstallerEnvironment(".env"))->write('
+                         r'["BACKUP_KEY_FILE"=>$argv[1],"UPDATE_TRUSTED_PUBLIC_KEY_FILE"=>$argv[2]], ".env.example");')
+            run(site,env,report,'configure-update-trust',['php','-r',configure,str(key),str(public)])
             # Never modify the caller's artifact or its signature.
             package=work/'target.zip'; shutil.copy2(artifact,package)
             run(site,env,report,'sign-target',['php','bin/cajeer','release:sign','--package='+str(package),'--secret-key='+str(secret)])
@@ -1077,6 +1111,10 @@ def main():
             if rc_target: env['UPDATE_CHANNEL']='rc'
             update=json.loads(run(site,env,report,'upgrade',['php','bin/cajeer','update:apply','--package='+str(package),'--json'],timeout=600))
             require(update['state']=='committed' and version(site)==current,'Update not committed')
+            # The 1.0 release must pass on its own classes, without the shim.
+            # Preserve the legacy overlay in the operator environment so a
+            # rollback to 0.9.9 can still verify that authentic old runtime.
+            legacy_scan = env.pop('PHP_INI_SCAN_DIR', None)
             with http(site,env,report,'updated',port,current) as base:
                 if ecosystem:verify_ecosystem(base,state,ecosystem,current)
                 verify_content(base,state,fixture,content)
@@ -1097,6 +1135,7 @@ def main():
                 verify_moderation(base,state,fixture)
                 verify_sanctions(base,state)
                 verify_antispam(base,state)
+            if legacy_scan is not None: env['PHP_INI_SCAN_DIR'] = legacy_scan
             run(site,env,report,'rollback',['php','bin/cajeer','update:rollback','--yes','--json'],timeout=600)
             rollback_version = stages[-1][1] if stages else initial
             require(version(site)==rollback_version,'Rollback did not restore immediately previous release')

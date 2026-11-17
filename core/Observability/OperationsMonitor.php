@@ -70,7 +70,11 @@ final readonly class OperationsMonitor
             $dir = $this->root.'/storage/cache';
             \CajeerEngine\Update\OperationFiles::dir($dir, 0770);
             $file = new JsonFile($dir.'/http-readiness.json');
-            $saved = $file->readObject();
+            // A truncated cache file is not a failed database check. Rebuild
+            // it from live probes instead of permanently running the full,
+            // expensive schema audit on every public health request.
+            try { $saved = $file->readObject(); }
+            catch (\Throwable) { $saved = []; }
             $now = time();
             if ($this->healthySample($saved, $now, 10) && $this->liveReadinessCheck($saved['migration_fingerprint'] ?? null)) {
                 return $saved['readiness'];
@@ -87,7 +91,8 @@ final readonly class OperationsMonitor
                     }
                     return $this->readiness();
                 }
-                $saved = $file->readObject();
+                try { $saved = $file->readObject(); }
+                catch (\Throwable) { $saved = []; }
                 if ($this->healthySample($saved, time(), 10) && $this->liveReadinessCheck($saved['migration_fingerprint'] ?? null)) {
                     return $saved['readiness'];
                 }
@@ -97,7 +102,7 @@ final readonly class OperationsMonitor
                     // migration ledger still matches. The check is one bounded
                     // read, not an unverified positive cache entry.
                     $fingerprint = $this->migrationFingerprint($this->probeConnection());
-                    $file->writeObject(['sampled_at' => time(), 'migration_fingerprint' => $fingerprint, 'readiness' => $ready]);
+                    $this->writeReadinessSample($dir.'/http-readiness.json', ['sampled_at' => time(), 'migration_fingerprint' => $fingerprint, 'readiness' => $ready]);
                 }
                 return $ready;
             } finally {
@@ -107,6 +112,32 @@ final readonly class OperationsMonitor
         } catch (\Throwable) {
             // A broken cache must never make an unhealthy system look ready.
             return $this->readiness();
+        }
+    }
+
+    /**
+     * The HTTP readiness sample is a reconstructible performance cache, not a
+     * backup or migration ledger. A durable fsync plus directory fsync under
+     * concurrent TLS probes can cost much more than the cached read itself.
+     * Publish atomically and restrict permissions, but leave durable writes to
+     * OperationFiles for actual application state and recovery journals.
+     */
+    private function writeReadinessSample(string $path, array $sample): void
+    {
+        if (is_link($path)) throw new \RuntimeException('Readiness cache is a symlink');
+        $data = json_encode($sample, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)."\n";
+        $tmp = dirname($path).'/.readiness-'.bin2hex(random_bytes(12));
+        $out = fopen($tmp, 'xb');
+        if ($out === false) throw new \RuntimeException('Cannot open readiness cache');
+        try {
+            if (!chmod($tmp, 0660) || fwrite($out, $data) !== strlen($data) || !fflush($out)) {
+                throw new \RuntimeException('Cannot write readiness cache');
+            }
+            fclose($out); $out = null;
+            if (is_link($path) || !rename($tmp, $path)) throw new \RuntimeException('Cannot publish readiness cache');
+        } finally {
+            if (is_resource($out)) fclose($out);
+            if (is_file($tmp)) unlink($tmp);
         }
     }
 
