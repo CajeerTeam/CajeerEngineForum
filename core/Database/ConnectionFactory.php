@@ -47,7 +47,15 @@ final readonly class ConnectionFactory
             PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
             PDO::ATTR_STRINGIFY_FETCHES => false,
         ];
-        if ($driver === 'pgsql') $options[PDO::ATTR_EMULATE_PREPARES] = false;
+        if ($driver === 'pgsql') {
+            $options[PDO::ATTR_EMULATE_PREPARES] = false;
+            // Only explicitly opted-in, read-only operational probes may reuse
+            // the authenticated connection in a long-lived PHP-FPM worker.
+            // Normal application transactions stay request-scoped.
+            if (($connection['persistent'] ?? false) === true) {
+                $options[PDO::ATTR_PERSISTENT] = true;
+            }
+        }
         if ($driver === 'mysql') {
             $options[PDO::ATTR_EMULATE_PREPARES] = false;
             $options[PDO::ATTR_TIMEOUT] = self::bounded($connection,'connect_timeout',5,1,60);

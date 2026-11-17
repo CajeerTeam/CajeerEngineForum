@@ -53,9 +53,14 @@ class QualificationTests(unittest.TestCase):
                 end=time.monotonic()+5
                 while not (d/'ce-loop-health').exists() and time.monotonic()<end:time.sleep(.02)
                 self.assertTrue((d/'ce-loop-health').exists())
-                end=time.monotonic()+6
-                while (d/'ce-loop-health').exists() and time.monotonic()<end:time.sleep(.02)
-                self.assertFalse((d/'ce-loop-health').exists());self.assertIsNone(proc.poll())
+                # A transient failed batch must retain the *last successful*
+                # marker, not erase it immediately. It must also never refresh
+                # the timestamp on failure (runtime.php bounds its age).
+                marker=d/'ce-loop-health'; initial=marker.stat().st_mtime_ns
+                time.sleep(3)
+                self.assertTrue(marker.exists())
+                self.assertEqual(initial,marker.stat().st_mtime_ns)
+                self.assertIsNone(proc.poll())
             finally:
                 proc.send_signal(signal.SIGTERM)
                 try:proc.wait(timeout=4)

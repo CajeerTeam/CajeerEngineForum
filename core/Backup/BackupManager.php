@@ -35,7 +35,18 @@ final class BackupManager
     }
     public function create(): array
     {
-        $lock=OperationLock::acquire($this->root,true);
+        // A live request may briefly hold a shared activity lease even after
+        // the gateway is drained. A manual backup should wait for that request
+        // to finish, but must never take the snapshot concurrently or hang
+        // indefinitely on an orphaned lease.
+        $deadline=microtime(true)+10.0;
+        do {
+            try { $lock=OperationLock::acquire($this->root,true); break; }
+            catch (\RuntimeException $e) {
+                if ($e->getMessage()!=='Another operation is running; retry after drain' || microtime(true)>=$deadline) throw $e;
+                usleep(100000);
+            }
+        } while (true);
         try { if (OperationLock::active($this->root)||is_file($this->root.'/storage/app/backup-restore.json')) throw new \RuntimeException('Recover the active operation first'); return $this->capture(); }
         finally { OperationLock::release($lock); }
     }

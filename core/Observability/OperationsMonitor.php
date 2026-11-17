@@ -119,6 +119,13 @@ final readonly class OperationsMonitor
             $lease = OperationLock::acquire($this->root, false);
             if (OperationLock::maintenance($this->root)) return false;
             $this->assertDatabasePresent();
+            // A health endpoint must probe the database on every request, but
+            // should not establish a fresh PostgreSQL TCP/authentication
+            // connection for each load-balancer hit. This scoped connection is
+            // used for SELECT 1 only; write transactions remain nonpersistent.
+            if ($this->config->string('database.default') === 'pgsql') {
+                $this->config->set('database.connections.pgsql.persistent', true);
+            }
             $db = new DatabaseManager($this->config);
             if ($db->connection()->query('SELECT 1')->fetchColumn() === false) return false;
             $requiredRedis = getenv('RATE_LIMIT_DRIVER') === 'redis'

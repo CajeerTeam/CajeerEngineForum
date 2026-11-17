@@ -653,7 +653,17 @@ def verify_notifications(base, state, fixture):
 def verify_identity(site, env, report, base):
     code = r'require "vendor/autoload.php"; (new CajeerEngine\Installer\InstallerEnvironment(".env"))->write(["FORUM_REGISTRATION"=>"true"], ".env.example");'
     run(site, env, report, 'open-registration', ['php','-r',code])
-    c=Client(base); email=unique_email()
+    c=Client(base)
+    # The production installer intentionally persists a CLOSED community policy
+    # in the database. The operator's .env switch is only an upper bound, not
+    # an override of that policy. Enable both gates through the real ACP API.
+    admin=c.login(ADMIN,ADMIN_PASSWORD)[0]['data']['access_token']
+    policy=c.call('GET','/forum/acp?view=settings',token=admin)
+    values={k:v for k,v in policy['values'].items() if k not in ('paused','registration_open')}
+    if not values['registration_enabled']:
+        values['registration_enabled']=True
+        c.call('PUT','/forum/acp/policy',200,{'revision':policy['revision'],'values':values},token=admin)
+    email=unique_email()
     reg=c.call('POST','/forum/register',201,{'name':'Acceptance member','email':email,'password':PASSWORD})
     require(reg['verification_required'], 'Email verification bypassed')
     c.login(email,status=401)

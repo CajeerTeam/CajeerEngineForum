@@ -220,11 +220,13 @@ class NetworkTests(unittest.TestCase):
     rate_limit_dir = None
 
     def setUp(self):
-        # A previous test must not consume the next test's auth quota. Reset
-        # only the disposable fixture's AUTH bucket, never production traffic.
+        # Isolate *all* middleware quotas between unrelated test cases. The
+        # file directory belongs to this disposable installation; individual
+        # tests still exercise authentic global/auth/search limits and 429s.
         assert self.rate_limit_dir is not None
-        for state in self.rate_limit_dir.glob('auth-*.json'):
-            state.unlink()
+        for bucket in ('auth', 'global', 'forum_search'):
+            for state in self.rate_limit_dir.glob(bucket + '-*.json'):
+                state.unlink()
 
     def activated(self, client):
         email = unique_email()
