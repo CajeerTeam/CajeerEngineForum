@@ -1,3 +1,11 @@
+## [0.9.4] - 2026-11-17 — Load & Soak Certification
+
+- Extended the **working** destructive Compose qualifier: PostgreSQL-backed corpus FTS, production SSR/API/ACP, concurrent writes, ACL/cache warm/invalidate/restore, verified notification delivery with p50/p95/p99 upper bounds, and the existing fault/confirmed-data checks.
+- Sampled real cgroup-v2 CPU/RAM/block I/O and PostgreSQL transactions, reads/cache, temp I/O, WAL, locks, database size, durable queue and notification backlog from **running** containers. Sampling runs concurrently with the paced HTTPS workload and fails closed on missing telemetry; fixed-memory HTTP histograms remain bounded for 24-hour runs.
+- Added three executable, **non-shortcuttable** certification profiles for 10k, 100k and 1M synthetic PostgreSQL posts (24-hour soak for 1M); independent Ed25519/artifact SHA-256 and Git-commit-bound evidence verification; a manually protected, dedicated self-hosted workflow.
+- Added local regression tests of telemetry parsing, background observation, queue-delivery measurements, and rejection of incomplete/incorrect certification evidence; short Compose CI remains a mandatory smoke gate.
+- **Important:** no PostgreSQL/24-hour physical runs are claimed by source implementation alone. Site-specific capacity certification needs the actual completed independent reports and operator signoff. No SQL migration beyond 0049; upstream Core stays 1.3.0.
+
 ## [0.9.3] - 2026-11-17 — Database & Performance Optimization
 
 - Replaced unbounded in-memory candidate and lock maps in mark-board/mark-all read operations with snapshot-captured, disk-spillable 500-row streams, preserving deterministic locks and post-lock ACL revalidation.

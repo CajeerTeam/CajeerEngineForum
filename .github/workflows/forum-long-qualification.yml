@@ -1,0 +1,73 @@
+name: Forum 0.9.4 physical load and 24-hour soak certification
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: forum-physical-certification
+  cancel-in-progress: false
+jobs:
+  physical-soak:
+    # Dedicated, pre-provisioned disposable Docker/PG17+ host. Never GitHub-hosted
+    # shared CI and never a real production forum. The runner has signed release
+    # files and paths provisioned by the independently approved environment.
+    runs-on: [self-hosted, linux, x64, forum-benchmark]
+    environment: forum-load-certification
+    timeout-minutes: 1620
+    env:
+      CE_QUAL_PROJECT: ${{ vars.CE_QUAL_PROJECT }}
+      CE_QUAL_ENV: ${{ vars.CE_QUAL_ENV }}
+      CE_QUAL_DOMAIN: ${{ vars.CE_QUAL_DOMAIN }}
+      CE_QUAL_PORT: ${{ vars.CE_QUAL_PORT }}
+      CE_QUAL_CA: ${{ vars.CE_QUAL_CA }}
+      CE_QUAL_EMAIL: ${{ vars.CE_QUAL_EMAIL }}
+      CE_QUAL_PASSWORD_FILE: ${{ vars.CE_QUAL_PASSWORD_FILE }}
+      CE_QUAL_STATE: ${{ vars.CE_QUAL_STATE }}
+      CE_QUAL_SIGNED_DIR: ${{ vars.CE_QUAL_SIGNED_DIR }}
+      CE_QUAL_TRUSTED_PUB: ${{ vars.CE_QUAL_TRUSTED_PUB }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Validate pre-provisioned disposable fixture and independent signed release
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$CE_QUAL_PROJECT" =~ ^[a-z0-9_-]*(load|qualification|benchmark)[a-z0-9_-]*$ ]]
+          test -n "$CE_QUAL_DOMAIN"
+          for name in CE_QUAL_ENV CE_QUAL_CA CE_QUAL_PASSWORD_FILE CE_QUAL_STATE CE_QUAL_SIGNED_DIR CE_QUAL_TRUSTED_PUB; do
+            test -n "${!name}" && test -e "${!name}"
+          done
+          test "$(python3 -c 'import json;print(json.load(open("release.json"))["edition_version"])')" = '0.9.4'
+          php tools/verify-signed-release.php "$CE_QUAL_SIGNED_DIR" "$CE_QUAL_TRUSTED_PUB"
+          sha256sum "$CE_QUAL_SIGNED_DIR/cajeerengine-0.9.4-dist.zip"
+          grep -q '^CE_RELEASE_VERSION=0.9.4$' "$CE_QUAL_ENV"
+          test "$(sed -n 's/^CE_RELEASE_SHA256=//p' "$CE_QUAL_ENV")" = "$(sha256sum "$CE_QUAL_SIGNED_DIR/cajeerengine-0.9.4-dist.zip" | cut -d' ' -f1)"
+      - name: Physical 10k PostgreSQL, FTS, SSR, writes and queue
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/forum-load"
+          python3 deploy/container/qualify.py --project "$CE_QUAL_PROJECT" --env "$CE_QUAL_ENV" --domain "$CE_QUAL_DOMAIN" --port "${CE_QUAL_PORT:-18443}" --ca "$CE_QUAL_CA" --email "$CE_QUAL_EMAIL" --password-file "$CE_QUAL_PASSWORD_FILE" --state "$CE_QUAL_STATE" --version 0.9.4 --disposable destroy-test-services --profile 10k --seed-posts 10000 --clients 32 --seconds 300 --rate 30 --min-rps 20 --max-p95-ms 500 --max-error-rate .001 --max-growth-mib 512 --max-queue-p95-ms 30000 --report "$RUNNER_TEMP/forum-load/10k.json"
+      - name: Physical 100k PostgreSQL sustained load
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 deploy/container/qualify.py --project "$CE_QUAL_PROJECT" --env "$CE_QUAL_ENV" --domain "$CE_QUAL_DOMAIN" --port "${CE_QUAL_PORT:-18443}" --ca "$CE_QUAL_CA" --email "$CE_QUAL_EMAIL" --password-file "$CE_QUAL_PASSWORD_FILE" --state "$CE_QUAL_STATE" --version 0.9.4 --disposable destroy-test-services --profile 100k --seed-posts 100000 --clients 64 --seconds 1800 --rate 50 --min-rps 40 --max-p95-ms 500 --max-error-rate .001 --max-growth-mib 512 --max-queue-p95-ms 30000 --report "$RUNNER_TEMP/forum-load/100k.json"
+      - name: Physical million-post 24-hour soak and dependency faults
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 deploy/container/qualify.py --project "$CE_QUAL_PROJECT" --env "$CE_QUAL_ENV" --domain "$CE_QUAL_DOMAIN" --port "${CE_QUAL_PORT:-18443}" --ca "$CE_QUAL_CA" --email "$CE_QUAL_EMAIL" --password-file "$CE_QUAL_PASSWORD_FILE" --state "$CE_QUAL_STATE" --version 0.9.4 --disposable destroy-test-services --profile 1m-soak --seed-posts 1000000 --clients 200 --seconds 86400 --rate 50 --min-rps 40 --max-p95-ms 500 --max-error-rate .001 --max-growth-mib 512 --max-queue-p95-ms 30000 --faults --report "$RUNNER_TEMP/forum-load/1m-soak.json"
+      - name: Verify all profiles with signed artifact and Git identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 deploy/container/certify_load.py --release-dir "$CE_QUAL_SIGNED_DIR" --trusted-public-key "$CE_QUAL_TRUSTED_PUB" --version 0.9.4 --small "$RUNNER_TEMP/forum-load/10k.json" --medium "$RUNNER_TEMP/forum-load/100k.json" --soak "$RUNNER_TEMP/forum-load/1m-soak.json" --output "$RUNNER_TEMP/forum-load/certified.json"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: forum-physical-soak-evidence
+          path: ${{ runner.temp }}/forum-load/*.json
+          if-no-files-found: warn
+          retention-days: 90

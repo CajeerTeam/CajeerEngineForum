@@ -11,6 +11,7 @@ import subprocess
 import time
 import uuid
 from collections import Counter
+from qualification_telemetry import ResourceMonitor, QueueLatencyMonitor
 
 HERE = Path(__file__).resolve().parent
 spec = importlib.util.spec_from_file_location('acceptance', HERE.parents[1] / 'tools/production-acceptance.py')
@@ -18,7 +19,7 @@ acceptance = importlib.util.module_from_spec(spec); spec.loader.exec_module(acce
 Client, require, data, expect, write_report = (acceptance.Client, acceptance.require, acceptance.data, acceptance.expect, acceptance.write_report)
 
 # Bounded histograms: constant memory even for a 24-hour, 200-client run.
-BOUNDS = (1, 2, 5, 10, 20, 30, 50, 75, 100, 150, 200, 300, 400, 500, 750, 1000, 1500, 2000, 3000, 5000, 10000, 20000, 60000)
+BOUNDS = (1, 2, 5, 10, 20, 30, 50, 75, 100, 150, 200, 300, 400, 500, 750, 1000, 1500, 2000, 3000, 5000, 10000, 20000, 30000, 60000)
 
 class Histogram:
     def __init__(self):
@@ -70,7 +71,7 @@ def seed(dc, thread, posts, namespace):
         # One data-modifying CTE per dependency: later statements see committed rows.
         dc.sql(f"""BEGIN;
 INSERT INTO ce_forum_threads(id,board_id,author_id,title,read_sequence)
-SELECT md5('{ns}:t:'||i)::uuid,board_id,author_id,'Qualification corpus '||i,100
+SELECT md5('{ns}:t:'||i)::uuid,board_id,author_id,'QualificationCorpus'||i,100
 FROM ce_forum_threads CROSS JOIN generate_series({start},{stop}) i WHERE id='{thread}'::uuid;
 INSERT INTO ce_forum_posts(id,thread_id,author_id,body,ordinal,read_sequence)
 SELECT md5('{ns}:p:'||i||':'||j)::uuid,md5('{ns}:t:'||i)::uuid,author_id,'Qualification corpus body '||i||' entry '||j,j,j
@@ -138,8 +139,18 @@ def qualify(a):
     require(a.disposable=='destroy-test-services','explicit disposable confirmation required')
     require(re.fullmatch(r'[a-z0-9][a-z0-9_-]*',a.project) is not None,'invalid project name')
     dc=Compose(a.project,a.env); c=Client(a.domain,a.ca,a.port)
+    env_text = a.env.read_text()
+    found = re.search(r'^CE_RELEASE_SHA256=([a-f0-9]{64})$', env_text, flags=re.M)
+    require(found is not None, 'site.env must identify approved release SHA-256')
+    commit = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=HERE.parents[1], capture_output=True, text=True, check=True).stdout.strip()
+    require(re.fullmatch(r'[a-f0-9]{40}', commit) is not None, 'Git commit identity unavailable')
     port=dc.run('port','gateway','8443').strip();require(port in ('127.0.0.1:'+str(a.port),'0.0.0.0:'+str(a.port),'[::]:'+str(a.port)), 'gateway mapping differs from target')
-    report={'schema':1,'profile':'compose','edition_version':a.version,'run_id':str(uuid.uuid4()),'started_at':int(time.time()),'ok':False,'checks':{},'samples':[], 'thresholds':{'clients':a.clients,'seconds':a.seconds,'target_rps':a.rate,'minimum_rps':a.min_rps,'max_p95_ms':a.max_p95_ms,'max_error_rate':a.max_error_rate,'max_memory_growth_mib':a.max_growth_mib}}
+    import hashlib, os, platform, socket
+    host_bytes=socket.gethostname().encode('utf-8')
+    report={'hardware':{'host_sha256':hashlib.sha256(host_bytes).hexdigest(),
+                        'cpu_count':os.cpu_count(),'architecture':platform.machine(),
+                        'kernel':platform.release()},
+            'schema':2,'profile':a.profile,'source_commit':commit,'artifact_sha256':found.group(1),'edition_version':a.version,'run_id':str(uuid.uuid4()),'started_at':int(time.time()),'ok':False,'checks':{},'samples':[], 'thresholds':{'clients':a.clients,'seconds':a.seconds,'target_rps':a.rate,'minimum_rps':a.min_rps,'max_p95_ms':a.max_p95_ms,'max_error_rate':a.max_error_rate,'max_memory_growth_mib':a.max_growth_mib,'max_queue_p95_ms':a.max_queue_p95_ms}}
     a.report.parent.mkdir(parents=True,exist_ok=True)
     def save(): write_report(a.report,report)
     def check(name): report['checks'][name]=True;save();print('PASS',name,flush=True)
@@ -169,41 +180,60 @@ def qualify(a):
         admin=login(a.email); member=login('container-smoke-member@example.invalid')
         thread_data=data(call(path)[1]);board=str(uuid.UUID(thread_data['thread']['board_id']))
         category=str(uuid.UUID(thread_data['board']['category_id']))
-        expected={};publication=Histogram();check('identity_and_fixture')
+        expected={};publication=Histogram(); queue=QueueLatencyMonitor(c,admin,Histogram()).start();check('identity_and_fixture')
         if a.seed_posts:
             samples=seed(dc,thread,a.seed_posts,report['run_id']);report['seed_posts']=a.seed_posts;check('corpus_seeded')
         else: samples=[]
         # One burst of concurrent writes; do not disable normal moderation or quotas.
-        def publish(i):
+        def publish(i, observe=True):
             body=f"Qualification reply {report['run_id']} {i}"
-            begin=time.monotonic();pid=data(call(path+'/posts',201,method='POST',headers=member,data={'body':body})[1])['id'];return pid,body,(time.monotonic()-begin)*1000
+            begin=time.monotonic();pid=data(call(path+'/posts',201,method='POST',headers=member,data={'body':body})[1])['id'];
+            if observe: queue.track(pid)
+            return pid,body,(time.monotonic()-begin)*1000
         with concurrent.futures.ThreadPoolExecutor(max_workers=min(a.clients,8)) as pool:
             for pid,body,ms in pool.map(publish,range(8)): expected[pid]=body;publication.add(ms)
         verify_posts(thread,expected);report['confirmed_writes']=len(expected);check('concurrent_publications')
         routes=[('ssr','/forum/threads/'+thread,{},lambda b:b'ContainerSmokeBody' in b),('api',path,{},lambda b:data(b)['thread']['id']==thread),('search','/api/v1/forum/search?q=ContainerSmokeMarker',{},lambda b:any(r['id']==thread for r in data(b))),('acp','/api/v1/forum/acp?view=overview',admin,lambda b:isinstance(data(b),dict))]
-        for idx,t in enumerate(samples):
+        for t in samples:
             routes.append(('corpus_ssr','/forum/threads/'+t,{},lambda b:b'Qualification corpus body' in b))
+        if samples:
+            routes.append(('corpus_search','/api/v1/forum/search?q=QualificationCorpus1',{},
+                           lambda b:any(row['id']==samples[0] for row in data(b))))
+
+        # Verify the actual public SSR cache, not just API response semantics.
+        cache_headers=[]
+        for _ in range(3): cache_headers.append(call('/forum/threads/'+thread)[0].get('x-forum-cache'))
+        require('HIT' in cache_headers,'real SSR cache did not warm')
+        check('cache_warmed')
         # Warm memory after real concurrent traffic; do not count initial allocator/cache startup as a leak.
         warmup=load(c,routes,a.clients,5,a.rate);require(not any(r['errors'] for r in warmup['operations'].values()),'warmup failed')
-        before=dc.memory();report['memory_before']=before
+        resources=ResourceMonitor(dc, interval_seconds=a.sample_interval).start()
+        report['resource_samples_interval_seconds']=a.sample_interval
         next_write=time.monotonic()+60; sequence=100
         def progress(rows):
             nonlocal next_write,sequence
             if time.monotonic()>=next_write:
                 pid,body,ms=publish(sequence);expected[pid]=body;publication.add(ms);sequence+=1;next_write=time.monotonic()+60
-            report['samples'].append({'elapsed_seconds':int(time.time())-report['started_at'],'memory_bytes':dc.memory(),'operations':rows});save()
+            report['samples'].append({'elapsed_seconds':int(time.time())-report['started_at'],'operations':rows});save()
         result=load(c,routes,a.clients,a.seconds,a.rate,progress);report['load']=result;save()
         assert_load(result,a.max_p95_ms,a.max_error_rate,a.min_rps);check('load_thresholds')
-        after=dc.memory();report['memory_after']=after
-        for service in before:
-            peak=max([after[service]]+[row['memory_bytes'][service] for row in report['samples']])
-            require(peak-before[service]<=a.max_growth_mib*1048576,'memory growth threshold: '+service)
+        report['resources']=resources.finish()
+        report['resource_observations']=resources.samples
+        for service, row in report['resources']['services'].items():
+            require(row['memory_growth_bytes']<=a.max_growth_mib*1048576,'memory growth threshold: '+service)
+        check('cpu_ram_io_postgres_telemetry')
         check('memory_budget')
+        # Stop the queue delivery poller BEFORE deliberate database/Redis outages;
+        # a 503 inside a controlled fault window is not steady-state queue latency.
+        report['queue_delivery']=queue.finish()
+        require(report['queue_delivery']['errors']==0,'queue delivery errors')
+        require(report['queue_delivery']['p95_upper_ms']<=a.max_queue_p95_ms,'queue delivery p95 threshold')
+        check('queue_delivery_latency')
         # Explicit fault windows are excluded from normal latency/error thresholds.
         if a.faults:
             dc.run('kill','-s','SIGKILL','worker');dc.run('stop','worker')
             try:
-                pid,body,ms=publish(8);expected[pid]=body;publication.add(ms);verify_posts(thread,expected)
+                pid,body,ms=publish(8,False);expected[pid]=body;publication.add(ms);verify_posts(thread,expected)
             finally: dc.run('start','worker')
             wait_until(lambda:any(x.get('post_id')==pid for x in data(call('/api/v1/forum/notifications',headers=admin)[1])['items']),120,'worker delivery after crash')
             check('worker_crash_recovered')
@@ -219,8 +249,10 @@ def qualify(a):
                 verify_posts(thread,expected)
                 report.setdefault('fault_recovery_seconds',{})[service]=round(time.monotonic()-begin,3);check(service+'_recovered')
             # New publication after both dependency outages proves writes resume.
-            pid,body,ms=publish(9);expected[pid]=body;publication.add(ms)
-        verify_posts(thread,expected);report['confirmed_writes']=len(expected);report['publication']=publication.report();require(publication.percentile(.95)<=a.max_p95_ms,'publication p95 threshold');check('confirmed_writes_preserved')
+            pid,body,ms=publish(9,False);expected[pid]=body;publication.add(ms)
+        verify_posts(thread,expected);report['confirmed_writes']=len(expected);report['publication']=publication.report()
+        require(publication.percentile(.95)<=a.max_p95_ms,'publication p95 threshold')
+        check('confirmed_writes_preserved')
         policy='/api/v1/forum/categories/'+category+'/permissions'; original=data(call(policy,headers=admin)[1])
         try:
             call(policy,method='PUT',headers=admin,data={'visibility':'hidden','rules':[],'revision':original['revision']})
@@ -229,9 +261,17 @@ def qualify(a):
             check('acl_revocation')
         finally:
             current=data(call(policy,headers=admin)[1]);call(policy,method='PUT',headers=admin,data={'visibility':original['visibility'],'rules':original['rules'],'revision':current['revision']})
+        require(b'ContainerSmokeBody' in call('/forum/threads/'+thread)[1],'SSR cache not revalidated after ACL restore')
+        require(any(x['id']==thread for x in data(call('/api/v1/forum/search?q=ContainerSmokeMarker')[1])),'FTS cache not revalidated after ACL restore')
+        check('cache_invalidation')
         dc.run('exec','-T','app','php','bin/cajeer','forum:ecosystem:check','--deep','--json',timeout=600);check('ecosystem_integrity')
         report['ok']=True;report['finished_at']=int(time.time());save()
     except BaseException as exc:
+        if 'resources' in locals() and resources._thread is not None and resources._thread.is_alive():
+            resources._stop.set();resources._thread.join(timeout=20)
+        if 'queue' in locals():
+            queue._stop.set()
+            if queue._thread is not None: queue._thread.join(timeout=5)
         report['failure']=type(exc).__name__;report['finished_at']=int(time.time());save();raise
 
 
@@ -239,7 +279,16 @@ def main():
     p=argparse.ArgumentParser(description=__doc__)
     for name in ('project','domain','email','version','disposable'):p.add_argument('--'+name,required=True)
     for name in ('env','ca','password-file','state','report'):p.add_argument('--'+name,type=Path,required=True)
+    p.add_argument('--profile', choices=('smoke','10k','100k','1m-soak'),default='smoke')
+    p.add_argument('--sample-interval',type=int,default=30)
+    p.add_argument('--max-queue-p95-ms',type=int,default=30000)
     p.add_argument('--port',type=int,default=18443);p.add_argument('--clients',type=int,default=8);p.add_argument('--seconds',type=int,default=60);p.add_argument('--rate',type=float,default=10);p.add_argument('--min-rps',type=float,default=5);p.add_argument('--max-p95-ms',type=int,default=1000);p.add_argument('--max-error-rate',type=float,default=.001);p.add_argument('--max-growth-mib',type=int,default=256);p.add_argument('--seed-posts',type=int,default=0);p.add_argument('--faults',action='store_true')
     a=p.parse_args();require(1<=a.clients<=200 and 5<=a.seconds<=86400 and 0.1<=a.rate<=1000 and 0<a.min_rps<=a.rate and 0<=a.seed_posts<=1000000 and a.seed_posts%100==0 and 0<=a.max_error_rate<=.01 and a.max_p95_ms in BOUNDS and 1<=a.max_growth_mib<=8192,'invalid qualification limits')
+    require(5<=a.sample_interval<=60 and a.max_queue_p95_ms in BOUNDS,'invalid telemetry limits')
+    minimum={'smoke':(0,5),'10k':(10000,300),'100k':(100000,1800),'1m-soak':(1000000,86400)}[a.profile]
+    if a.profile!='smoke':
+        require(a.seed_posts==minimum[0] and a.seconds>=minimum[1], 'certification profile corpus/duration mismatch')
+    if a.profile=='1m-soak':
+        require(a.clients>=8 and a.faults, 'full soak requires concurrent writes and dependency recovery')
     qualify(a)
 if __name__=='__main__':main()

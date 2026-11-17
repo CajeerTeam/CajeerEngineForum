@@ -10,14 +10,14 @@ import tempfile
 import threading
 import time
 import unittest
-from qualify import Histogram, load, assert_load, Client
+from qualify import Histogram, load, assert_load, Client, BOUNDS
 
 class QualificationTests(unittest.TestCase):
     def test_histogram_and_gate(self):
         h=Histogram()
         for n in range(100000): h.add(20 if n<95000 else 500)
         self.assertEqual(h.percentile(.95),20);self.assertEqual(h.percentile(.99),500)
-        self.assertEqual(len(h.counts),24)
+        self.assertEqual(len(h.counts),len(BOUNDS)+1)
         h.add(70000,'semantic_mismatch');self.assertEqual(h.report()['errors'],1)
         with self.assertRaises(RuntimeError): assert_load({'requests_per_second':20,'operations':{'ssr':h.report()}},1000,.01,10)
 
