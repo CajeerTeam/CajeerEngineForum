@@ -458,7 +458,16 @@ def activate(version, sha256, site):
     verify_installed(version,sha256)
     if current_version()!=version: raise RuntimeError('Unexpected installed version')
     app_run('bin/cajeer','maintenance:off')
-    app_run('tools/update-postcheck.php','verify')
+    # The signed pre-0.9.8 distribution contains a PostgreSQL catalog typo
+    # (pg_am.am). Preload the audited operator class only for that known legacy
+    # version; do not modify the signed dist, ledger, or installed files.
+    if version_tuple(version) < version_tuple('0.9.8'):
+        legacy_compat=TOOL.parent/'core/Forum/Service/ForumSearchMaintenance.php'
+        if not legacy_compat.is_file() or legacy_compat.is_symlink():
+            raise RuntimeError('Trusted historical FTS verifier unavailable')
+        app_run('-d','auto_prepend_file='+str(legacy_compat),'tools/update-postcheck.php','verify')
+    else:
+        app_run('tools/update-postcheck.php','verify')
     atomic(FPM_ALLOWED,'enabled\n')
     run('systemctl','start',FPM)
     health(version)

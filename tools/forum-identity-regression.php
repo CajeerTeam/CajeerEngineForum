@@ -27,6 +27,9 @@ function mailToken(string $email,string $path): string {
 try {
     foreach(['APP_ENV=testing','APP_DEBUG=false','APP_URL=https://forum.test','DB_DRIVER='.$driver,'SQLITE_DATABASE='.$tmp.'/forum.sqlite','CACHE_DRIVER=file','QUEUE_DRIVER=file','STORAGE_DRIVER=local','CONTENT_STORAGE=database','CMS_STORAGE=database','FORUM_REGISTRATION=true','FORUM_REQUIRE_EMAIL_VERIFICATION=true','FORUM_SMTP_HOST=127.0.0.1','FORUM_SMTP_PORT=1025','FORUM_SMTP_SECURITY=plain','FORUM_SMTP_FROM=forum@example.test','FORUM_SMTP_USERNAME=','FORUM_SMTP_PASSWORD=','RATE_LIMIT_AUTH=1000','RATE_LIMIT_GLOBAL=1000','PASSWORD_ARGON2_MEMORY=8192','PASSWORD_ARGON2_TIME=2'] as $env) putenv($env);
     if($driver==='pgsql')putenv('DB_DATABASE='.(getenv('FORUM_TEST_IDENTITY_DB')?:throw new RuntimeException('Dedicated DB required')));
+    // Registration anti-abuse fingerprints require a real, process-local HMAC key.
+    // The disposable test must not inherit production secrets from CI.
+    putenv('APP_KEY='.base64_encode(random_bytes(32)));
     $cfg=new ConfigRepository($root);$db=new DatabaseManager($cfg);$pdo=$db->connection();
     (new MigrationRunner($pdo,$root.'/migrations'))->run($driver);
     check((int)$pdo->query('SELECT COUNT(*) FROM ce_users')->fetchColumn()===0,'disposable empty DB');

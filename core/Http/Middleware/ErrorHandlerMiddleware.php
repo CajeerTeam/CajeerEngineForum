@@ -34,7 +34,16 @@ final readonly class ErrorHandlerMiddleware implements MiddlewareInterface
             return $this->jsonError($request, 'validation_failed', $e->getMessage(), Response::HTTP_UNPROCESSABLE_ENTITY);
         } catch (\RuntimeException $e) {
             if ($e instanceof \PDOException && \CajeerEngine\Database\DatabaseUnavailable::causedBy($e)) return $this->unavailable($request);
-            if ($e instanceof \PDOException) return $this->jsonError($request,'internal_error','Внутренняя ошибка базы данных.',500);
+            if ($e instanceof \PDOException) {
+                // Unexpected database failures must be diagnosable without
+                // exposing statements, bind values or credentials to clients.
+                $this->logger->error('Unhandled HTTP exception', [
+                    'request_id'=>(string)$request->attributes->get('request_id',''),
+                    'exception'=>$e::class,
+                    'code'=>'unexpected_database_exception',
+                ]);
+                return $this->jsonError($request,'internal_error','Внутренняя ошибка базы данных.',500);
+            }
             // Do not echo arbitrary runtime exception messages: they can contain
             // filesystem paths, remote responses, credentials or infrastructure details.
             $missing=str_contains($e->getMessage(),'не найден');

@@ -100,6 +100,10 @@ try {
     $response = $app->handle(Request::createFromGlobals());
     $handled=true;
 } catch (Throwable $e) {
+    // Fail closed. Record only the exception class for operator diagnosis;
+    // no path, SQL, secret or exception message reaches the public response.
+    try { (new CajeerEngine\Runtime\RuntimeLogger($root))->error('Unhandled HTTP exception', ['exception'=>$e::class]); }
+    catch (Throwable) { /* Never replace the original boot failure. */ }
     $debug = in_array(getenv('APP_ENV'), ['local', 'dev', 'testing'], true) && filter_var(getenv('APP_DEBUG') ?: false, FILTER_VALIDATE_BOOLEAN);
     $payload = [
         'error' => [

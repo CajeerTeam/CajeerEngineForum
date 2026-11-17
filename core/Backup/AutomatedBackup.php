@@ -125,7 +125,13 @@ final class AutomatedBackup
             if (!str_starts_with($python,'/')||!is_executable($python)) throw new \RuntimeException('PDO SQLite or configured backup Python required');
             $db=new DatabaseBackup($this->root,$this->config);
             DatabaseBackup::run([$python,'-I','-c', 'import sqlite3,sys,pathlib; c=sqlite3.connect(pathlib.Path(sys.argv[1]).resolve().as_uri()+"?mode=ro",uri=True); sys.exit(1 if c.execute("SELECT 1 FROM ce_forum_import_jobs WHERE state<>\'complete\' LIMIT 1").fetchone() else 0)', $db->identity()['database']]);
-        } else ForumMigrationEngine::assertNoRunning(new DatabaseManager($this->config));
+        } else {
+            // A stable installation must have the import ledger. Query it
+            // directly; never infer safety from a cached schema probe.
+            $db=new DatabaseManager($this->config);
+            $row=$db->connection()->query("SELECT id FROM ce_forum_import_jobs WHERE state<>'complete' LIMIT 1")->fetchColumn();
+            if ($row!==false) throw new \RuntimeException('An incomplete forum import exists; resume it or restore its verified backup');
+        }
     }
     private function transfer(OffsiteBackup $dest,string $id): void
     {

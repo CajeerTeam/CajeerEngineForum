@@ -124,7 +124,9 @@ def http(site, env, report, label, port, expected_version):
                         data = json.loads(exc.read(8192))
                         last_status = {'http_status': exc.code, 'status': data.get('status'),
                                        'edition_version': data.get('edition_version'),
-                                       'checks': data.get('checks')}
+                                       'checks': data.get('checks'),
+                                       'error_code': ((data.get('error') or {}).get('code')
+                                                      if isinstance(data.get('error'), dict) else None)}
                     except (ValueError, TypeError):
                         last_status = {'http_status': exc.code}
                 except (urllib.error.URLError, TimeoutError) as exc:

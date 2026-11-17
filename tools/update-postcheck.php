@@ -59,8 +59,18 @@ try {
         throw new RuntimeException('HTTP health smoke failed: expected '.$expectedCode.', got '.$response->getStatusCode());
     }
     // Only the public traffic guards and their intentional DB skip may be false.
+    // The public readiness endpoint intentionally skips Redis during a
+    // maintenance lease. Verify it independently while the one-shot operator
+    // has network access, then expect the deliberately unprobed public flag.
+    $requiresRedis=getenv('RATE_LIMIT_DRIVER')==='redis'||$config->string('queue.default')==='redis';
+    if ($requiresRedis) {
+        $redis=\CajeerEngine\Cache\RedisConnection::open();
+        try { if (!$redis->ping()) throw new RuntimeException('Required Redis unavailable during postcheck'); }
+        finally { $redis->close(); }
+    }
     $expected=['dependencies'=>true,'installed'=>true,'storage'=>true,'disk'=>true,
-        'maintenance'=>!$maintenance,'activity_lock'=>$activityAvailable,'database'=>!$protected];
+        'maintenance'=>!$maintenance,'activity_lock'=>$activityAvailable,'database'=>!$protected,
+        'redis_required'=>!($protected&&$requiresRedis)];
     foreach ($expected as $name=>$value) {
         if (($checks[$name]??null)!==$value) throw new RuntimeException('HTTP health smoke failed: '.$name);
     }
