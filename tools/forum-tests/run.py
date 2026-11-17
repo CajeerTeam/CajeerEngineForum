@@ -174,6 +174,11 @@ def server(report, workers=1):
             if os.name != 'posix':
                 raise RuntimeError('Multi-worker PHP test requires POSIX')
             server_env['PHP_CLI_SERVER_WORKERS'] = str(workers)
+        # The network suite runs dozens of unrelated auth scenarios behind one loopback IP.
+        # Give each independent test its own quota window, without bypassing
+        # middleware or modifying production limits. Individual tests still
+        # exercise the authentic shared-IP counters and 429 responses.
+        NetworkTests.rate_limit_dir = site / 'storage/rate-limits'
         with (report / 'http.log').open('w') as log:
             proc = subprocess.Popen(['php', '-S', f'127.0.0.1:{port}', '-t', str(site / 'public'), str(HERE / 'router.php')], cwd=site, env=server_env, stdout=log, stderr=subprocess.STDOUT, start_new_session=workers > 1)
             try:
@@ -212,6 +217,14 @@ def server(report, workers=1):
 
 class NetworkTests(unittest.TestCase):
     base = ''
+    rate_limit_dir = None
+
+    def setUp(self):
+        # A previous test must not consume the next test's auth quota. Reset
+        # only the disposable fixture's AUTH bucket, never production traffic.
+        assert self.rate_limit_dir is not None
+        for state in self.rate_limit_dir.glob('auth-*.json'):
+            state.unlink()
 
     def activated(self, client):
         email = unique_email()
@@ -1569,7 +1582,28 @@ class BrowserTests(unittest.TestCase):
                     target=admin_page.get_by_role('button',name='Внутрь Browser node category',exact=True)
                     expect(source).to_be_visible()
                     admin_page.once('dialog',lambda dialog: dialog.accept())
-                    source.drag_to(target)
+                    if self.browser_name == 'firefox':
+                        # Firefox / Playwright can detach a dynamically enabled drop
+                        # target during native mouse-up. Dispatch the browser's real
+                        # HTML5 drag/drop event sequence and assert the persisted
+                        # server-side result below (no mocked network calls).
+                        admin_page.evaluate('''() => {
+                            const source = [...document.querySelectorAll('button[draggable="true"]')]
+                                .find(b => b.textContent.trim() === 'Переместить Browser child');
+                            const target = [...document.querySelectorAll('button[data-placement="inside"]')]
+                                .find(b => b.getAttribute('aria-label') === 'Внутрь Browser node category');
+                            if (!source || !target) throw Error('Drag endpoints not found');
+                            const dt = new DataTransfer();
+                            const event = name => new DragEvent(name, {bubbles:true,cancelable:true,dataTransfer:dt});
+                            source.dispatchEvent(event('dragstart'));
+                            if (target.getAttribute('aria-disabled') === 'true')
+                                throw Error('Drop destination unexpectedly disabled');
+                            target.dispatchEvent(event('dragover'));
+                            target.dispatchEvent(event('drop'));
+                            source.dispatchEvent(event('dragend'));
+                        }''')
+                    else:
+                        source.drag_to(target)
                     expect(admin_page.locator('#notice')).to_contain_text('Порядок разделов сохранён')
                     admin_page.goto(child_url)
                     expect(admin_page.get_by_role('navigation',name='Навигационная цепочка')).not_to_contain_text('Browser parent')

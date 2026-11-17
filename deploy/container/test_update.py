@@ -34,14 +34,14 @@ class UpdateTests(unittest.TestCase):
         if php is None:
             self.skipTest('PHP unavailable')
         compat = (HERE/'php-compat.ini').read_text()
-        self.assertIn('auto_prepend_file=/opt/ce-update/ForumSearchMaintenance.php', compat)
+        self.assertIn('auto_prepend_file=/opt/ce-update/compat/prepend.php', compat)
         operator = (HERE/'update-operator.php').read_text()
         self.assertIn("putenv('PHP_INI_SCAN_DIR=:/opt/ce-update/compat')", operator)
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
-            (root/'zz-compat.ini').write_text('auto_prepend_file=' +
-                str(HERE.parents[1]/'core/Forum/Service/ForumSearchMaintenance.php')+'\n')
-            (root/'probe.php').write_text('<?php echo class_exists("CajeerEngine\\Forum\\Service\\ForumSearchMaintenance",false)?"loaded":"missing";')
+            (root/'prepend.php').write_text('<?php require_once ' + repr(str(HERE.parents[1]/'core/Forum/Service/ForumSearchMaintenance.php')) + '; require_once ' + repr(str(HERE.parents[1]/'core/Observability/OperationsMonitor.php')) + ';')
+            (root/'zz-compat.ini').write_text('auto_prepend_file=' + str(root/'prepend.php') + '\n')
+            (root/'probe.php').write_text('<?php echo class_exists("CajeerEngine\\Forum\\Service\\ForumSearchMaintenance",false) && class_exists("CajeerEngine\\Observability\\OperationsMonitor",false)?"loaded":"missing";')
             baseline = subprocess.check_output([php, str(root/'probe.php')], text=True)
             env = dict(os.environ, PHP_INI_SCAN_DIR=':'+str(root))
             observed = subprocess.check_output([php, str(root/'probe.php')], env=env, text=True)

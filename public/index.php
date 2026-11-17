@@ -102,7 +102,14 @@ try {
 } catch (Throwable $e) {
     // Fail closed. Record only the exception class for operator diagnosis;
     // no path, SQL, secret or exception message reaches the public response.
-    try { (new CajeerEngine\Runtime\RuntimeLogger($root))->error('Unhandled HTTP exception', ['exception'=>$e::class]); }
+    try {
+        $where = $e->getFile();
+        $relative = str_starts_with($where, $root . DIRECTORY_SEPARATOR)
+            ? substr($where, strlen($root) + 1) : 'external';
+        if (!preg_match('~^(?:core|public|vendor)/[A-Za-z0-9_./-]+\.php$~D', $relative)) $relative = 'external';
+        error_log('CajeerEngine HTTP exception: ' . $e::class . ' @ ' . $relative . ':' . $e->getLine());
+        (new CajeerEngine\Runtime\RuntimeLogger($root))->error('Unhandled HTTP exception', ['exception'=>$e::class]);
+    }
     catch (Throwable) { /* Never replace the original boot failure. */ }
     $debug = in_array(getenv('APP_ENV'), ['local', 'dev', 'testing'], true) && filter_var(getenv('APP_DEBUG') ?: false, FILTER_VALIDATE_BOOLEAN);
     $payload = [

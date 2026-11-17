@@ -22,7 +22,7 @@ root_controlled_parents(Path(sys.argv[2]))
 PY
 umask 022
 mkdir -m 0755 "$work"
-trap 'systemctl stop cajeerengine-scheduler.timer cajeerengine-scheduler.service cajeerengine-worker.service cajeerengine-php.service 2>/dev/null || true; if [[ ${CE_DEPLOY_KEEP:-} != yes ]]; then rm -rf /srv/cajeerengine /etc/cajeerengine-deploy /var/lib/cajeerengine-deploy "$work"; rm -f /etc/nginx/conf.d/cajeerengine.conf /etc/systemd/system/cajeerengine-{php,worker,scheduler}.service /etc/systemd/system/cajeerengine-scheduler.timer; systemctl daemon-reload; systemctl reload nginx 2>/dev/null || true; fi' EXIT
+trap 'if [[ -n ${CE_CERT_REPORT:-} && -f "$work/production-acceptance.json" ]]; then install -m 0644 "$work/production-acceptance.json" "$CE_CERT_REPORT"; fi; systemctl stop cajeerengine-scheduler.timer cajeerengine-scheduler.service cajeerengine-worker.service cajeerengine-php.service 2>/dev/null || true; if [[ ${CE_DEPLOY_KEEP:-} != yes ]]; then rm -rf /srv/cajeerengine /etc/cajeerengine-deploy /var/lib/cajeerengine-deploy "$work"; rm -f /etc/nginx/conf.d/cajeerengine.conf /etc/systemd/system/cajeerengine-{php,worker,scheduler}.service /etc/systemd/system/cajeerengine-scheduler.timer; systemctl daemon-reload; systemctl reload nginx 2>/dev/null || true; fi' EXIT
 mkdir "$work/tool" "$work/inbox"
 cp -a "$source/deploy" "$source/core" "$work/tool/"
 chown -R root:root "$work"; chmod -R go-w "$work"

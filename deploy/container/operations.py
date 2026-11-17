@@ -101,8 +101,13 @@ class Operations:
     def runtime(self):
         for service, check in [('app', 'identity'), ('app', 'ready'), ('worker', 'loop-health'),
                                ('scheduler', 'loop-health')]:
-            self.compose('exec', '-T', service, 'php', '/opt/ce-container/runtime.php',
-                         check, timeout=120 if check == 'identity' else 30)
+            try:
+                self.compose('exec', '-T', service, 'php', '/opt/ce-container/runtime.php',
+                             check, timeout=120 if check == 'identity' else 30)
+            except RuntimeError as exc:
+                # Preserve the precise failed service and fixed operator check,
+                # but never include Docker stdout, stderr, paths or credentials.
+                raise RuntimeError('Runtime '+service+'/'+check+' failed: '+str(exc)) from None
 
     def integrity(self):
         # Expensive, read-only scan. Explicit operator opt-in only; cannot run on

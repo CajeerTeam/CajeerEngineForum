@@ -220,7 +220,7 @@ try {
     check(is_array($trash)&&$trash['deleted_at']!==null&&is_string($trash['deletion_id']),'soft-deleted discussion retained for recovery');
     $call('POST',"/forum/recycle-bin/thread/$t",['action'=>'purge','deletion_id'=>$trash['deletion_id']],$a);
     $remaining=$db->connection()->prepare('SELECT COUNT(*) FROM ce_forum_posts WHERE thread_id=?');$remaining->execute([$t]);
-    check((int)$remaining->fetchColumn()===0,'explicit purge cascades posts');
+    check((int)$remaining->fetchColumn()===0,'explicit purge cascades posts');$remaining->closeCursor();
     check($call('GET','/forum/search?q=searchmarker&mode=posts')===[],'purged post removed from index');
     check($htmlRequest('/forum/threads/'.$t)->getStatusCode()===404&&!str_contains((string)$htmlRequest('/forum/sitemap.xml?page=1')->getContent(),$t),'purged content disappears from SSR and sitemap');
     // Merge and multi-page SSR against the actual database; old URLs must not reveal hidden targets.

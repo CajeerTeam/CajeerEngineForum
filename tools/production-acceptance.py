@@ -227,7 +227,11 @@ def run(client, version, email, password, report, soak_seconds=0):
             'health':('/api/v1/health',{},lambda b:json.loads(b).get('edition_version')==version),
             'editorial':('/api/v1/forum/acp?view=overview',auth,lambda b:isinstance(data(b),dict))}
     report['load']=load(client,routes)
-    require(load_pass(report['load']),'load budget failed'); print('PASS mixed load',flush=True)
+    if not load_pass(report['load']):
+        # Metrics are aggregate counts/latencies only; no tokens or PII.
+        print('Load budget evidence: '+json.dumps(report['load'],sort_keys=True),flush=True)
+        raise RuntimeError('load budget failed')
+    print('PASS mixed load',flush=True)
     if soak_seconds:
         # Reuse the bounded, paced runner; use the same real response assertions.
         import importlib.util

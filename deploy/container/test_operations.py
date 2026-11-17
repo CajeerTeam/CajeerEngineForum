@@ -179,6 +179,16 @@ class OperationsTests(unittest.TestCase):
         result=subprocess.run(['php',str(script),'loop-health'],capture_output=True)
         self.assertEqual(result.returncode,1)
 
+    def test_runtime_failure_reports_fixed_service_and_mode_only(self):
+        def fail(command, **kwargs):
+            if 'loop-health' in command and 'worker' in command:
+                return SimpleNamespace(returncode=1,stdout='',stderr='secret key material')
+            return self.run_command(command,**kwargs)
+        op=Operations('production-test',self.site,self.cert,runner=fail)
+        with self.assertRaisesRegex(RuntimeError,r'worker/loop-health failed') as raised:
+            op.runtime()
+        self.assertNotIn('secret key material',str(raised.exception))
+
     def test_http_failure_and_operator_failure_are_nonzero(self):
         def fail(command, **kwargs):
             return SimpleNamespace(returncode=1,stdout='',stderr='secret key material')

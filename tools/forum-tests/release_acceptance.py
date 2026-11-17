@@ -175,6 +175,39 @@ echo json_encode(['exception'=>get_class($e),'file'=>$relative,'line'=>$e->getLi
                 diagnostic = subprocess.run(['php','-r',handle_probe],cwd=site,env=env,
                     stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,text=True,timeout=15)
                 last_status['handle_diagnostic'] = diagnostic.stdout.strip()[:240]
+                # Keep a scoped diagnostic HTTP request in the CI fixture, with
+                # debug enabled only in its process environment; production
+                # continues using APP_DEBUG=false. Never include exception
+                # message / stack / request data in the evidence.
+                diag_env = {**env, 'APP_ENV':'testing', 'APP_DEBUG':'true'}
+                diag_port = free_port()
+                with (report / (label + '-diagnostic-http.log')).open('w') as debug_log:
+                    debug_server = subprocess.Popen(
+                        ['php','-S',f'127.0.0.1:{diag_port}','-t',str(site/'public'),str(HERE/'router.php')],
+                        cwd=site,env=diag_env,stdout=debug_log,stderr=subprocess.STDOUT)
+                    try:
+                        for _ in range(20):
+                            try:
+                                opener.open(f'http://127.0.0.1:{diag_port}/api/v1/health',timeout=2)
+                                break
+                            except urllib.error.HTTPError as exc:
+                                try:
+                                    error = json.loads(exc.read(16384)).get('error',{}).get('debug',{})
+                                    path = error.get('file','')
+                                    prefix = str(site) + os.sep
+                                    relative = path[len(prefix):] if isinstance(path,str) and path.startswith(prefix) else 'external'
+                                    if re.fullmatch(r'(?:core|public|vendor)/[A-Za-z0-9_./-]+\.php',relative):
+                                        last_status['http_exception_source'] = relative + ':' + str(error.get('line',0))
+                                    last_status['http_exception_class'] = str(error.get('exception',''))[:100]
+                                except (ValueError,TypeError,AttributeError):
+                                    pass
+                                break
+                            except (urllib.error.URLError,TimeoutError):
+                                time.sleep(.1)
+                    finally:
+                        debug_server.terminate()
+                        try: debug_server.wait(timeout=5)
+                        except subprocess.TimeoutExpired: debug_server.kill(); debug_server.wait(timeout=5)
                 runtime_log = site / 'storage/logs/runtime.jsonl'
                 if runtime_log.is_file():
                     recent = []

@@ -25,7 +25,11 @@ while :; do
         touch /tmp/ce-loop-health
         retry_delay=$delay
     else
-        rm -f /tmp/ce-loop-health
+        # Keep the timestamp of the last successful batch. A transient failed
+        # attempt must not immediately invalidate a recently healthy worker,
+        # while runtime.php still fails once its bounded success age expires.
+        # Do not refresh the timestamp on failure: repeated failures cannot
+        # keep an unhealthy loop alive indefinitely.
         retry_delay=$((retry_delay * 2))
         [ "$retry_delay" -le 60 ] || retry_delay=60
         # The CLI records detailed errors in application logs. Do not expose payloads on stdout.

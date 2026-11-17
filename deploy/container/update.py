@@ -160,7 +160,11 @@ class Deployment:
         if mode == 'recover':
             mounts.append((ROOT/'core/Forum/Service/ForumSearchMaintenance.php','/opt/ce-update/ForumSearchMaintenance.php'))
         if mode in ('apply','recover'):
-            mounts.append((HERE/'php-compat.ini','/opt/ce-update/compat/zz-ce-forum-compat.ini'))
+            mounts.extend([
+                (HERE/'php-compat.ini','/opt/ce-update/compat/zz-ce-forum-compat.ini'),
+                (HERE/'operator-compat-prepend.php','/opt/ce-update/compat/prepend.php'),
+                (ROOT/'core/Observability/OperationsMonitor.php','/opt/ce-update/OperationsMonitor.php'),
+            ])
         for source,target in mounts:
             if not source.is_file() or source.is_symlink() or ':' in str(source): raise ValueError('Missing/unsafe operator input: '+source.name)
             args+=['--volume',f'{source}:{target}:ro']

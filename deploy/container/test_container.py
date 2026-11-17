@@ -86,6 +86,33 @@ class ContainerTests(unittest.TestCase):
             finally:
                 if proc.poll() is None: proc.kill(); proc.wait()
 
+    def test_supervised_worker_retains_only_recent_success(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            d=pathlib.Path(tmp)
+            fake=d/'php'
+            fake.write_text('#!/bin/sh\nif [ ! -f "'+str(d/'first')+'" ]; then touch "'+str(d/'first')+'"; exit 0; fi\nexit 1\n')
+            fake.chmod(0o755)
+            script=d/'loop.sh'
+            script.write_text((HERE/'loop.sh').read_text().replace('/srv/forum',str(d))
+                              .replace('/tmp/ce-loop-',str(d/'ce-loop-')).replace('delay=5', 'delay=1'))
+            error_log=d/'errors.log'
+            with error_log.open('wb') as errors:
+                proc=subprocess.Popen(['sh',str(script),'worker'],env=os.environ|{'PATH':str(d)+':'+os.environ['PATH']},stderr=errors)
+                try:
+                    deadline=time.monotonic()+6
+                    marker=d/'ce-loop-health'
+                    while time.monotonic()<deadline and not marker.exists(): time.sleep(.05)
+                    self.assertTrue(marker.exists())
+                    first_mtime=marker.stat().st_mtime_ns
+                    while time.monotonic()<deadline and b'Background batch failed' not in error_log.read_bytes():
+                        time.sleep(.05)
+                    self.assertIn(b'Background batch failed',error_log.read_bytes())
+                    self.assertEqual(marker.stat().st_mtime_ns,first_mtime)
+                finally:
+                    if proc.poll() is None: proc.send_signal(signal.SIGTERM)
+                    try: proc.wait(timeout=4)
+                    except subprocess.TimeoutExpired: proc.kill(); proc.wait()
+
     @unittest.skipUnless(shutil.which('nginx') and shutil.which('openssl') and os.geteuid()==0,'real nginx TLS requires root, nginx, openssl')
     def test_nginx_tls_and_gates(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -79,7 +79,7 @@ try {
         // The selected old image's historical postcheck has a PostgreSQL 17+
         // catalog typo. Apply a scoped in-memory PHP class compatibility layer
         // to child processes. No installed source, release or backup is patched.
-        if(!is_file('/opt/ce-update/compat/zz-ce-forum-compat.ini')||!is_file('/opt/ce-update/ForumSearchMaintenance.php'))throw new RuntimeException('Trusted compatibility layer missing');
+        if(!is_file('/opt/ce-update/compat/zz-ce-forum-compat.ini')||!is_file('/opt/ce-update/compat/prepend.php')||!is_file('/opt/ce-update/OperationsMonitor.php')||!is_file('/opt/ce-update/ForumSearchMaintenance.php'))throw new RuntimeException('Trusted compatibility layer missing');
         putenv('PHP_INI_SCAN_DIR=:/opt/ce-update/compat');
         if($target==='1.0.0-rc.1')putenv('UPDATE_CHANNEL=rc'); // Only the explicit signed RC operator target.
         cli('update:apply','--package='.$package,'--sha256='.$sha,'--version='.$target);
@@ -87,7 +87,7 @@ try {
         echo "Container code and database updated; traffic remains stopped\n"; exit(0);
     }
     if($mode==='recover') {
-        if(!is_file('/opt/ce-update/compat/zz-ce-forum-compat.ini')||!is_file('/opt/ce-update/ForumSearchMaintenance.php'))throw new RuntimeException('Trusted compatibility layer missing');
+        if(!is_file('/opt/ce-update/compat/zz-ce-forum-compat.ini')||!is_file('/opt/ce-update/compat/prepend.php')||!is_file('/opt/ce-update/OperationsMonitor.php')||!is_file('/opt/ce-update/ForumSearchMaintenance.php'))throw new RuntimeException('Trusted compatibility layer missing');
         putenv('PHP_INI_SCAN_DIR=:/opt/ce-update/compat');
         if(is_file($active)) {
             $j=F::read($active);
