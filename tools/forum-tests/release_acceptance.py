@@ -792,8 +792,16 @@ def seed_community(base,state):
     require(work['failed']==0 and work['forum_mail']['sent']>=1,'Baseline email delivery did not run')
     mail_link(email,'/forum/unsubscribe',base)
     c.call('PUT',url+'/watch',200,{'enabled':True,'mode':'weekly'},token=token)
-    c.call('POST',url+'/posts',201,{'body':'Pending weekly digest'},token=admin)
+    late_reply=c.call('POST',url+'/posts',201,{'body':'Pending weekly digest'},token=admin)['id']
     c.call('PUT','/forum/members/'+owner+'/relationship',200,{'kind':'follow','enabled':True},token=token)
+    # The second reply creates another durable *internal* notification, while
+    # its weekly email is deliberately not due yet. Snapshotting before the
+    # notification outbox drains makes a healthy upgrade appear to have mutated
+    # the inbox: the upgrade worker can promote that pending row to delivered.
+    # Settle ready notification events now, but preserve the future weekly mail.
+    settled=c.call('POST','/queue/work',200,{'limit':10},token=admin)
+    require(settled['failed']==0 and settled['forum_notifications_processed']>=1,
+            'Pending baseline notification was not dispatched')
     conv=c.call('POST','/forum/conversations',201,{'kind':'direct','title':'Community baseline private','participant_ids':[user],'body':'Persistent private message'},token=admin)
     cid=conv['id']; c.call('PATCH','/forum/conversations/'+cid+'/settings',200,{'muted':True},token=token)
     f={'token':token,'user':user,'owner':owner,'thread':thread,'post':post,'reply':reply,'conversation':cid,'field':field,'admin':admin,'email':email}
@@ -801,7 +809,8 @@ def seed_community(base,state):
     require(f['snapshot']['delivery']['sent']==1 and f['snapshot']['delivery']['pending']==1,'Expected sent and pending delivery before update')
     require(f['snapshot']['read']['unread_posts']==2 and f['snapshot']['private_unread']==1,'Expected baseline unread state')
     require(f['snapshot']['reputation']['reputation']==2,'Expected baseline reputation')
-    require(any(n['post_id']==reply for n in f['snapshot']['notifications']),'Baseline reply notification missing')
+    require(all(any(n['post_id']==post_id for n in f['snapshot']['notifications']) for post_id in (reply,late_reply)),
+            'A baseline reply notification was lost before taking the upgrade snapshot')
     print('PASS seeded real community data, sent email and pending digest',flush=True)
     return f
 

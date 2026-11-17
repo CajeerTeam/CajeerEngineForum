@@ -25,6 +25,7 @@ GATE = STATE / 'maintenance'
 WORKERS_ALLOWED = STATE / 'workers-enabled'
 FPM_ALLOWED = STATE / 'fpm-enabled'
 JOURNAL = STATE / 'deployment.json'
+HEALTH_CACHE = Path('/var/cache/nginx/cajeerengine-health')
 USER = 'cajeerengine'
 GROUP = 'www-data'
 FPM = 'cajeerengine-php.service'
@@ -271,7 +272,13 @@ WantedBy=timers.target
     admin_security = static_security + """
         add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'self'; form-action 'self'" always;
         add_header Cache-Control 'no-cache' always;"""
-    nginx=f'''server {{
+    # Historic signed releases predate the application's optimized HTTP health
+    # path. A narrowly scoped, one-second FastCGI microcache prevents a burst
+    # of identical anonymous health probes from saturating PostgreSQL. The
+    # separate /health/ready operator gate remains uncached and live. We never
+    # cache authenticated/cookie requests or non-200 upstream responses.
+    nginx=f'''fastcgi_cache_path {HEALTH_CACHE} levels=1:2 keys_zone=ce_forum_health:1m max_size=8m inactive=10s use_temp_path=off;
+server {{
     listen 80;
     server_name {c['domain']};
     return 308 https://{c['domain']}$request_uri;
@@ -290,6 +297,22 @@ server {{
     location ~ /\\. {{ return 404; }}
     location ~* ^/(install|upgrade)(/|$) {{ return 404; }}
     location = /index.php {{ {fastcgi} }}
+    location = /api/v1/health {{
+        limit_except GET {{ deny all; }}
+        fastcgi_cache ce_forum_health;
+        fastcgi_cache_key "$scheme|$host|$request_uri";
+        fastcgi_cache_valid 200 1s;
+        fastcgi_cache_lock on;
+        fastcgi_cache_background_update on;
+        fastcgi_cache_use_stale updating;
+        fastcgi_cache_bypass $http_authorization $http_cookie;
+        fastcgi_no_cache $http_authorization $http_cookie;
+        # The public health JSON is anonymous infrastructure information. Its
+        # generic API no-store header protects browser/proxy storage, while
+        # this explicitly scoped internal cache retains it for at most 1s.
+        fastcgi_ignore_headers Cache-Control Expires;
+        {fastcgi}
+    }}
     location ~* \\.(php[0-9]*|phtml|phar)(/|$) {{ return 404; }}
     location = /admin {{ return 308 /admin/; }}
     location /admin/assets/ {{ try_files $uri =404; {admin_security} }}
@@ -337,6 +360,17 @@ def validate_host_material(c):
 
 def configure(c):
     validate_host_material(c)
+    # The cache holds public health JSON only and is written by the nginx
+    # worker, never by the unprivileged PHP application or deploy user.
+    HEALTH_CACHE.parent.mkdir(parents=True, exist_ok=True)
+    root_controlled_parents(HEALTH_CACHE)
+    if HEALTH_CACHE.is_symlink():
+        raise ValueError('Unsafe health cache path')
+    HEALTH_CACHE.mkdir(exist_ok=True)
+    if not HEALTH_CACHE.is_dir():
+        raise ValueError('Unsafe health cache path')
+    os.chown(HEALTH_CACHE,pwd.getpwnam('www-data').pw_uid,grp.getgrnam('www-data').gr_gid)
+    HEALTH_CACHE.chmod(0o750)
     fpm,units,nginx=service_config(c)
     files={ETC/'fpm.conf':fpm,Path('/etc/nginx/conf.d/cajeerengine.conf'):nginx}
     files.update({Path('/etc/systemd/system')/k:v for k,v in units.items()})

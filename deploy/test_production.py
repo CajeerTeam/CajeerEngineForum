@@ -22,6 +22,24 @@ import production as p
 SITE={'domain':'deploy.example.invalid','db_host':'127.0.0.1','db_port':5432,'db_name':'cms','db_user':'cms','db_sslmode':'disable','admin_email':'admin@example.invalid'}
 
 class Safety(unittest.TestCase):
+    def test_health_cache_is_scoped_to_anonymous_success(self):
+        _, _, config = p.service_config(SITE)
+        self.assertIn('fastcgi_cache_path ', config)
+        self.assertEqual(config.count('fastcgi_cache ce_forum_health;'), 1)
+        public = config.split('location = /api/v1/health {', 1)[1].split('location ~*', 1)[0]
+        for directive in (
+            'fastcgi_cache_valid 200 1s;',
+            'fastcgi_cache_background_update on;',
+            'fastcgi_cache_use_stale updating;',
+            'fastcgi_cache_bypass $http_authorization $http_cookie;',
+            'fastcgi_no_cache $http_authorization $http_cookie;',
+            'fastcgi_ignore_headers Cache-Control Expires;',
+        ):
+            self.assertIn(directive, public)
+        # The private loopback readiness probe is always a fresh PHP check.
+        loopback = config.split('listen 127.0.0.1:18085;', 1)[1]
+        self.assertNotIn('fastcgi_cache ce_forum_health;', loopback)
+
     @unittest.skipUnless(os.geteuid()==0 and Path(p.FPM_BIN).is_file(),'requires root and PHP-FPM 8.4')
     def test_fpm_journal_socket_startup(self):
         # systemd connects stderr to an AF_UNIX stream socket. Unlike a pipe,
@@ -320,7 +338,8 @@ class Safety(unittest.TestCase):
             def port():
                 with socket.socket() as s: s.bind(('127.0.0.1',0)); return s.getsockname()[1]
             http,tls,local=port(),port(),port()
-            with patch.object(p,'APP',app),patch.object(p,'ETC',etc),patch.object(p,'GATE',state/'maintenance'),patch.object(p,'WORKERS_ALLOWED',state/'workers'),patch.object(p,'FPM_ALLOWED',state/'fpm'):
+            cache=d/'health-cache';cache.mkdir();cache.chmod(0o777)
+            with patch.object(p,'HEALTH_CACHE',cache),patch.object(p,'APP',app),patch.object(p,'ETC',etc),patch.object(p,'GATE',state/'maintenance'),patch.object(p,'WORKERS_ALLOWED',state/'workers'),patch.object(p,'FPM_ALLOWED',state/'fpm'):
                 _,_,nginx=p.service_config(SITE)
                 nginx=nginx.replace('listen 80;','listen 127.0.0.1:'+str(http)+';').replace('listen 443 ssl;','listen 127.0.0.1:'+str(tls)+' ssl;').replace('127.0.0.1:18085','127.0.0.1:'+str(local))
                 conf=d/'nginx.conf'; conf.write_text(f'pid {d}/nginx.pid; error_log {d}/error.log; events {{ worker_connections 32; }} http {{ access_log off; client_body_temp_path {d}/body; fastcgi_temp_path {d}/fastcgi; proxy_temp_path {d}/proxy; uwsgi_temp_path {d}/uwsgi; scgi_temp_path {d}/scgi; {nginx} }}')
