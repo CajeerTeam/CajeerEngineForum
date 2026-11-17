@@ -19,6 +19,13 @@ try{
   $engine=new ForumMigrationEngine($db,$adapter,$tmp);$plan=$engine->plan();
   check($plan['platform']===$platform&&$plan['counts']['topics']['count']===3&&$plan['counts']['source_private_messages']===1&&!$engine->exists(),"$platform preflight and source counts");
   $tree=$adapter->batch('forums',0,3,3);check((int)$tree[0]['forum_type']===0&&(int)$tree[1]['parent_id']===(int)$tree[0]['forum_id'],"$platform topological ordering");
+  // SMF synthesizes category IDs above UINT32. Keyset bounds must be bound as
+  // integers: SQLite compares computed UNION columns differently from strings.
+  if($platform==='smf'){
+   $last=$adapter->batch('board_watches',16,(int)$plan['counts']['board_watches']['high'],10);
+   check(count($last)===1&&(int)$last[0]['forum_id']>4294967296,'SMF wide category ID survives relation keyset pagination');
+  }
+
   try{$source->exec('DELETE FROM '.$prefix.($platform==='smf'?'members':($platform==='xenforo'?'user':'users')));throw new RuntimeException('Source write succeeded');}catch(PDOException){echo "PASS $platform source read-only\n";}
   $job=$engine->start('test-backup')['job']['id'];$jobs[]=$job;
   $pdo->exec("CREATE TRIGGER reject_import BEFORE INSERT ON ce_forum_import_map BEGIN SELECT RAISE(ABORT,'injected'); END");

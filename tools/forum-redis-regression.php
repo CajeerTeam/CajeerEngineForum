@@ -37,6 +37,9 @@ try{
     check(in_array($t,$publicSearch(),true)&&str_contains($sitemap(),$t)&&str_contains($rss(),$t),'public search, sitemap and RSS agree');
     $first=$http('GET',$path);$hit=$http('GET',$path,null,null,$second);
     check($first->headers->get('X-Forum-Cache')==='MISS'&&$hit->headers->get('X-Forum-Cache')==='HIT'&&$first->getContent()===$hit->getContent(),'SSR Redis hit shared by independent application instances');
+    // Nginx forwards HTTP_AUTHORIZATION even when empty. It must not disable anonymous caching.
+    $emptyGatewayHeader=Request::create('https://forum.test'.$path,'GET',[],[],[],['HTTP_AUTHORIZATION'=>'']);
+    check($second->handle($emptyGatewayHeader)->headers->get('X-Forum-Cache')==='HIT','empty FastCGI Authorization does not bypass anonymous cache');
     // Draft saves do not invalidate public HTML; activation does across instances.
     $theme=$api('GET','/forum/acp?view=themes',null,$a);$design=$theme['presets']['ocean'];
     $theme=$api('PUT','/forum/acp/theme',['revision'=>$theme['revision'],'action'=>'draft','design'=>$design],$a);

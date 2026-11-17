@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 """Real browser UI with isolated API transport; full HTTP lifecycle lives in run.py."""
 import argparse
+import re
 from pathlib import Path
 from playwright.sync_api import sync_playwright, expect
 ROOT=Path(__file__).resolve().parents[2]
 SCRIPT=(ROOT/'public/forum-assets/forum.js').read_text().rsplit('run(init);',1)[0]
 # Stub only navigation/reload at the test boundary, not the poll UI or serialization.
-SCRIPT=SCRIPT.replace('const go=url=>{location.href=url}', 'const go=url=>{window.destination=url}').replace('async function thread(id){','async function realThread(id){',1)
+SCRIPT,replacements=re.subn(r'const go=url=>\{.*?\};const threadUrl', 'const go=url=>{window.destination=url};const threadUrl', SCRIPT, count=1, flags=re.S)
+if replacements!=1:raise RuntimeError('Cannot isolate the live navigation handler in browser test')
+SCRIPT=SCRIPT.replace('async function thread(id){','async function realThread(id){',1)
 SCRIPT+='''\nasync function thread(id){window.reloaded=id};me={user_id:'owner',scopes:['forum:write'],csrf_token:'test'};window.composer=()=>app.replaceChildren(topicComposer('board'));window.pollDemo=d=>app.replaceChildren(pollPanel(d,'topic'));window.answerDemo=(d,p)=>app.replaceChildren(answerActions(d,p,'topic'));'''
 
 def main():

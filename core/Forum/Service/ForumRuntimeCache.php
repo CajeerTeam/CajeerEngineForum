@@ -18,7 +18,7 @@ final class ForumRuntimeCache
     private function redis(): \Redis {return $this->redis??=RedisConnection::open();}
     public function response(Request $request,string $view,callable $load,?ForumSeoSettings $seo=null): Response
     {
-        if(!self::enabled()||time()<$this->retryAfter||$request->getMethod()!=='GET'||$request->attributes->get('auth')!==null||$request->headers->has('Authorization')||$request->headers->has('X-API-Token')||$request->cookies->count()>0)return $load();
+        if(!self::enabled()||time()<$this->retryAfter||$request->getMethod()!=='GET'||$request->attributes->get('auth')!==null||(string)$request->headers->get('Authorization','')!==''||$request->headers->has('X-API-Token')||$request->cookies->count()>0)return $load();
         $q=$request->query->all();
         // Bound cardinality. Unknown variants (including tracking and unread) are served normally.
         if($view==='latest-cursor'&&$q===['cursor'=>''])$q=[];

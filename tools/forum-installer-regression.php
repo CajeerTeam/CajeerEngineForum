@@ -97,7 +97,7 @@ try {
     $before=$pdo->query('SELECT migration,checksum FROM ce_migrations ORDER BY migration')->fetchAll();
     $runner=new MigrationRunner($pdo,$root.'/migrations');
     $pending=count($runner->status($driver)['pending']);
-    check($pending===32,'32 pending migrations from 0.1.1');
+    check($pending===count(glob($root.'/migrations/'.$driver.'/*.sql'))-count($before),'all later migrations pending from 0.1.1');
     check($runner->run($driver)['applied']===$pending&&$runner->run($driver)['applied']===0,'upgrade once and idempotent rerun');
     check($pdo->query("SELECT migration,checksum FROM ce_migrations WHERE migration < '0016_' ORDER BY migration")->fetchAll()===$before,'old ledger checksums unchanged');
     check((new PostRepository($db))->inThread($thread,0)[0]['body']==='Existing body','upgrade preserved existing post');

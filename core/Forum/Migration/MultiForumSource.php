@@ -39,7 +39,15 @@ final class MultiForumSource implements ForumSource
     public function identity(): string{return hash('sha256',$this->type."\0".$this->sourceVersion."\0".$this->prefix."\0".$this->snapshot);}
     public function unsupported(): array{return ['source ACL translation','password hashes','private messages','bans and sanctions','anonymous poll votes','reactions and reputation','avatars and custom profile fields','remote media','source-specific BBCode rendering', 'source-specific poll visibility (imported closed)'];}
     private function t(string $table):string{return $this->prefix.$table;}
-    private function q(string $sql,array $params=[]):\PDOStatement{$s=$this->pdo->prepare($sql);$s->execute($params);return $s;}
+    private function q(string $sql,array $params=[]):\PDOStatement
+    {
+        $s=$this->pdo->prepare($sql);
+        foreach(array_values($params) as $index=>$value){
+            $type=is_int($value)?PDO::PARAM_INT:($value===null?PDO::PARAM_NULL:PDO::PARAM_STR);
+            $s->bindValue($index+1,$value,$type);
+        }
+        $s->execute();return $s;
+    }
     private function all(string $sql,array $params=[]):array{return $this->q($sql,$params)->fetchAll(PDO::FETCH_ASSOC);}
     private function configure():void
     {

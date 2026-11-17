@@ -40,16 +40,22 @@ h,b=call('/forum/threads/'+thread); require(b'ContainerSmokeBody' in b and b'Con
 require(h.get('x-cajeerengine-forum-version')==a.version,'SSR edition')
 require(any(x['id']==thread for x in data(call('/api/v1/forum/search?q=ContainerSmokeMarker')[1])),'FTS')
 # Repeat anonymous SSR and verify Redis hit, using the actual runtime diagnostic in CI.
-hits=[]
-for _ in range(3): hits.append(call('/forum/threads/'+thread)[0].get('x-forum-cache'))
-require('HIT' in hits,'Redis cache hit not observed')
-if tuple(map(int,a.version.split('-')[0].split('.'))) >= (0,8,6):
+hits={}
+for cache_path in (path, '/forum/threads/'+thread):
+    # Both views are served by ForumRuntimeCache and share the same Redis backing store.
+    hits[cache_path]=[call(cache_path)[0].get('x-forum-cache') for _ in range(3)]
+release_version=tuple(map(int,a.version.split('-')[0].split('.')))
+# Upgrade acceptance installs an authentic, immutable historical image. Require
+# the corrected FastCGI cache behavior for the target, not the unpatched baseline.
+if release_version >= (1,0,0):
+    require(any('HIT' in results for results in hits.values()),f'Redis cache hit not observed: {hits}')
+if release_version >= (0,8,6):
     # The report cache has a 15-second lifetime; allow one fresh sample after the writes.
     for _ in range(25):
         report=json.loads(call('/api/v1/system/operations',headers=admin)[1])
         checks=report['checks']; http=report.get('forum_http',{})
         if (checks.get('forum_database',{}).get('ok') and checks['forum_database']['postgres']['max_connections']>0
-            and checks.get('forum_cache',{}).get('stats',{}).get('hit',0)>0
+            and (release_version < (1,0,0) or checks.get('forum_cache',{}).get('stats',{}).get('hit',0)>0)
             and all(http.get(group,{}).get('requests',0)>0 for group in ('ssr','search','publication'))): break
         time.sleep(1)
     else: raise RuntimeError('Forum observability did not report real PostgreSQL, Redis and HTTP traffic')
