@@ -213,7 +213,14 @@ try {
     $browser=$app->handle(Request::create('https://forum.test/api/v1/auth/login','POST',[],[],[],['CONTENT_TYPE'=>'application/json','HTTP_X_CAJEER_BROWSER'=>'1','REMOTE_ADDR'=>'127.0.0.1'],json_encode(['email'=>'member@example.test','password'=>'MemberPass12345'])));check($browser->getStatusCode()===201,'browser login');$cookie=$browser->headers->getCookies()[0]->getValue();$csrf=json_decode($browser->getContent(),true)['data']['csrf_token'];
     $call('POST',"/forum/threads/$t/posts",['body'=>'CSRF blocked'],null,403,['ce_session'=>$cookie]);$call('POST',"/forum/threads/$t/posts",['body'=>'CSRF valid'],null,201,['ce_session'=>$cookie],['HTTP_X_CSRF_TOKEN'=>$csrf]);
     $call('POST',"/forum/threads/$t/moderate",['action'=>'delete'],$a);$call('GET',"/forum/threads/$t",null,null,404);
-    check((int)$db->connection()->query('SELECT COUNT(*) FROM ce_forum_posts')->fetchColumn()===0,'cascade removal');
+    // Moderation deletion moves a thread into the recycle bin; it deliberately
+    // preserves its posts until an administrator performs an explicit purge.
+    $retained=$db->connection()->prepare('SELECT deleted_at,deletion_id FROM ce_forum_threads WHERE id=?');
+    $retained->execute([$t]);$trash=$retained->fetch(\PDO::FETCH_ASSOC);
+    check(is_array($trash)&&$trash['deleted_at']!==null&&is_string($trash['deletion_id']),'soft-deleted discussion retained for recovery');
+    $call('POST',"/forum/recycle-bin/thread/$t",['action'=>'purge','deletion_id'=>$trash['deletion_id']],$a);
+    $remaining=$db->connection()->prepare('SELECT COUNT(*) FROM ce_forum_posts WHERE thread_id=?');$remaining->execute([$t]);
+    check((int)$remaining->fetchColumn()===0,'explicit purge cascades posts');
     check($call('GET','/forum/search?q=searchmarker&mode=posts')===[],'purged post removed from index');
     check($htmlRequest('/forum/threads/'.$t)->getStatusCode()===404&&!str_contains((string)$htmlRequest('/forum/sitemap.xml?page=1')->getContent(),$t),'purged content disappears from SSR and sitemap');
     // Merge and multi-page SSR against the actual database; old URLs must not reveal hidden targets.
@@ -232,6 +239,6 @@ try {
     putenv('FORUM_REGISTRATION=false');
     $call('POST','/forum/register',['name'=>'Closed','email'=>'closed@example.test','password'=>'MemberPass12345'],null,403);
     check(str_contains((string)$app->handle(Request::create('https://forum.test/'))->getContent(),'data-registration="false"'),'closed registration UI');
-    check($app->handle(Request::create('https://forum.test/'))->headers->get('X-CajeerEngine-Forum-Version')==='0.9.5','forum version header');
+    check($app->handle(Request::create('https://forum.test/'))->headers->get('X-CajeerEngine-Forum-Version')===(new \CajeerEngine\Forum\ForumVersion($root))->current(),'forum version header');
     echo "Forum integration passed\n";
 } finally {foreach(glob($tmp.'/*')?:[] as $f)unlink($f);rmdir($tmp);}

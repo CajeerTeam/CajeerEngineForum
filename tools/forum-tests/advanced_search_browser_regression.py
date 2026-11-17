@@ -2,9 +2,14 @@
 """Real forum UI with isolated HTTP transport: search filters, discovery, safe highlights and composer."""
 import argparse
 from pathlib import Path
+import re
 from playwright.sync_api import sync_playwright, expect
 ROOT=Path(__file__).resolve().parents[2]
-SCRIPT=(ROOT/'public/forum-assets/forum.js').read_text().replace('run(init);','',1).replace('new URLSearchParams(location.search)','new URLSearchParams(window.testQuery)').replace('const go=url=>{location.href=url}','const go=url=>{window.destination=url}')
+SCRIPT=(ROOT/'public/forum-assets/forum.js').read_text().replace('run(init);','',1).replace('new URLSearchParams(location.search)','new URLSearchParams(window.testQuery)')
+# This harness intercepts navigation in the current production implementation,
+# including hash-only navigation introduced for live post refreshes.
+SCRIPT, replaced = re.subn(r'const go=url=>\{[\s\S]*?\};const threadUrl=', 'const go=url=>{window.destination=url};const threadUrl=', SCRIPT, count=1)
+if replaced != 1: raise RuntimeError('Forum navigation hook missing; update browser harness')
 SCRIPT+='''\nwindow.openSearch=async()=>{app.replaceChildren();await search()};window.openComposer=()=>app.replaceChildren(topicComposer('22222222-2222-4222-8222-222222222222'));'''
 MOCK='''()=>{window.requests=[];window.fetch=async(url,opts)=>{window.requests.push(url);const u=new URL(url,'https://forum.test');const hit={id:'11111111-1111-4111-8111-111111111111',title:'Database index <img src=x onerror=alert(1)>',prefix:'',post_id:'33333333-3333-4333-8333-333333333333',post_page:2,match_type:'post',snippet:'Database index <script>alert(1)</script>',updated_at:'2026-01-01 00:00:00',total_results:1,reply_count:2,matched_tag:null};let data;if(u.pathname==='/api/v1/forum')data={boards:[{id:'22222222-2222-4222-8222-222222222222',name:'Database',node_type:'forum'}]};else if(u.pathname.endsWith('/members'))data=[{id:'44444444-4444-4444-8444-444444444444',name:'Visible author'}];else if(u.pathname.endsWith('/search'))data=u.searchParams.has('discover')?[{...hit,matched_tag:'database'}]:[hit];else throw Error(url);return {ok:true,status:200,json:async()=>({data})}}}'''
 def main():

@@ -592,9 +592,14 @@ jobs:
             sudo apt-get update
           fi
           if ! apt-cache show postgresql-client-17 >/dev/null 2>&1; then
+            sudo apt-get install -y gnupg ca-certificates
             sudo install -d -m 0755 /usr/share/keyrings
-            curl --fail --silent --show-error --location https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo tee /usr/share/keyrings/ce-pgdg.asc >/dev/null
-            echo 'deb [signed-by=/usr/share/keyrings/ce-pgdg.asc] https://apt.postgresql.org/pub/repos/apt noble-pgdg main' | sudo tee /etc/apt/sources.list.d/ce-forum-pgdg.list >/dev/null
+            key_file="$(mktemp)"
+            curl --fail --silent --show-error --location --retry 3 https://www.postgresql.org/media/keys/ACCC4CF8.asc -o "$key_file"
+            gpg --show-keys --with-colons "$key_file" | grep -qi '^fpr:::::::::B97B0AFCAA1A47F044F244A07FCC7D46ACCC4CF8:' || { echo 'Unexpected PostgreSQL package signing key' >&2; rm -f "$key_file"; exit 1; }
+            gpg --dearmor < "$key_file" | sudo tee /usr/share/keyrings/ce-pgdg.gpg >/dev/null
+            rm -f "$key_file"
+            echo 'deb [signed-by=/usr/share/keyrings/ce-pgdg.gpg] https://apt.postgresql.org/pub/repos/apt noble-pgdg main' | sudo tee /etc/apt/sources.list.d/ce-forum-pgdg.list >/dev/null
             sudo apt-get update
           fi
           sudo apt-get install -y nginx php8.4-fpm php8.4-pgsql php8.4-mbstring php8.4-xml php8.4-curl php8.4-gd postgresql-client-17

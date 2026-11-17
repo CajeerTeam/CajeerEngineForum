@@ -76,12 +76,19 @@ try {
     if($mode==='apply') {
         identity($previous);
         cli('maintenance:on','--message=Container release update');
+        // The selected old image's historical postcheck has a PostgreSQL 17+
+        // catalog typo. Apply a scoped in-memory PHP class compatibility layer
+        // to child processes. No installed source, release or backup is patched.
+        if(!is_file('/opt/ce-update/compat/zz-ce-forum-compat.ini')||!is_file('/opt/ce-update/ForumSearchMaintenance.php'))throw new RuntimeException('Trusted compatibility layer missing');
+        putenv('PHP_INI_SCAN_DIR=:/opt/ce-update/compat');
         if($target==='1.0.0-rc.1')putenv('UPDATE_CHANNEL=rc'); // Only the explicit signed RC operator target.
         cli('update:apply','--package='.$package,'--sha256='.$sha,'--version='.$target);
         identity($target);
         echo "Container code and database updated; traffic remains stopped\n"; exit(0);
     }
     if($mode==='recover') {
+        if(!is_file('/opt/ce-update/compat/zz-ce-forum-compat.ini')||!is_file('/opt/ce-update/ForumSearchMaintenance.php'))throw new RuntimeException('Trusted compatibility layer missing');
+        putenv('PHP_INI_SCAN_DIR=:/opt/ce-update/compat');
         if(is_file($active)) {
             $j=F::read($active);
             if(($j['target_version']??null)!==$target||($j['previous_version']??null)!==$previous||($j['sha256']??null)!==$sha||!preg_match('/^\d{8}-\d{6}-[a-f0-9]{16}$/D',$j['id']??''))throw new RuntimeException('Active transaction is not this deployment');

@@ -134,6 +134,24 @@ def http(site, env, report, label, port, expected_version):
                 # Fail closed, but retain enough sanitized health evidence to
                 # distinguish a maintenance lock, missing extension, bad DB,
                 # or incorrect release identity without another blind CI run.
+                # The HTTP middleware logs only allowlisted exception classes,
+                # not secrets or arbitrary exception messages. Copy this narrow
+                # diagnostic into CI evidence so failures after plugin activation
+                # can be attributed to the actual runtime, rather than HTTP 500.
+                runtime_log = site / 'storage/logs/runtime.jsonl'
+                if runtime_log.is_file():
+                    recent = []
+                    for line in runtime_log.read_text(errors='replace').splitlines()[-300:]:
+                        try:
+                            item = json.loads(line)
+                        except (ValueError, TypeError):
+                            continue
+                        if item.get('level') != 'error':
+                            continue
+                        context = item.get('context', {})
+                        recent.append({'message': item.get('message'),
+                                       'exception': context.get('exception') if isinstance(context, dict) else None})
+                    last_status['runtime_errors'] = recent[-8:]
                 (report / (label + '-readiness.json')).write_text(
                     json.dumps(last_status, indent=2, sort_keys=True) + '\n')
                 raise RuntimeError('Physical dist HTTP readiness failed: '+json.dumps(last_status, sort_keys=True)[:1500])

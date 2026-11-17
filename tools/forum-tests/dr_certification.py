@@ -26,7 +26,11 @@ from release_acceptance import (ROOT, Client, ADMIN, ADMIN_PASSWORD, PASSWORD,
 
 
 def private_dir(path):
-    path.mkdir(mode=0o700, parents=True)
+    if path.is_symlink():
+        raise RuntimeError('Recovery directory must not be a symbolic link')
+    path.mkdir(mode=0o700, parents=True, exist_ok=True)
+    if not path.is_dir() or path.is_symlink():
+        raise RuntimeError('Recovery directory is not a regular directory')
     path.chmod(0o700)
     return path
 

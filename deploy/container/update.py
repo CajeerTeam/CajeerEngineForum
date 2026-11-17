@@ -155,6 +155,12 @@ class Deployment:
                            (ROOT/'core/Release/ReleaseDependencyInventory.php','/opt/ce-update/ReleaseDependencyInventory.php'),
                            (ROOT/'core/Release/ReleaseArtifactVerifier.php','/opt/ce-update/ReleaseArtifactVerifier.php'),
                            (ROOT/'core/Forum/Service/ForumSearchMaintenance.php','/opt/ce-update/ForumSearchMaintenance.php')])
+        # Preload only in the one-shot update/recovery child PHP processes.
+        # No filesystem modifications to the historical signed installation.
+        if mode == 'recover':
+            mounts.append((ROOT/'core/Forum/Service/ForumSearchMaintenance.php','/opt/ce-update/ForumSearchMaintenance.php'))
+        if mode in ('apply','recover'):
+            mounts.append((HERE/'php-compat.ini','/opt/ce-update/compat/zz-ce-forum-compat.ini'))
         for source,target in mounts:
             if not source.is_file() or source.is_symlink() or ':' in str(source): raise ValueError('Missing/unsafe operator input: '+source.name)
             args+=['--volume',f'{source}:{target}:ro']

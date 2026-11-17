@@ -28,10 +28,10 @@ try{
     $manifest=['name'=>'test/old','type'=>'plugin','version'=>'1.0.0','engine'=>'^1.1','forum'=>'>=0.7.4 <0.8.0','permissions'=>['forum.events']];
     F::json($dir.'/cajeer.extension.json',$manifest,0644);PackageTrust::sign($dir,$tmp.'/secret');$item=$registry->install($dir,true);
     check($registry->targetCompatibility('0.7.7')['ok']&&!$registry->targetCompatibility('0.8.0')['ok'],'signed old manifest blocks upgrade target');
-    $epoch=$item['enabled_at'];sleep(1);$manifest['version']='1.0.1';$manifest['forum']='>=0.7.4 <0.9.0';F::json($dir.'/cajeer.extension.json',$manifest,0644);PackageTrust::sign($dir,$tmp.'/secret');
+    $epoch=$item['enabled_at'];sleep(1);$manifest['version']='1.0.1';$manifest['forum']='>=0.7.4 <1.1.0';F::json($dir.'/cajeer.extension.json',$manifest,0644);PackageTrust::sign($dir,$tmp.'/secret');
     $item=$registry->install($dir,true);check($item['enabled_at']===$epoch&&$registry->targetCompatibility('0.8.0')['ok'],'resigned compatible upgrade preserves original activation');
     $registry->enable('test/old');check($registry->findInstalled('test/old')['enabled_at']===$epoch,'idempotent enable retains activation');
-    F::json($site.'/release.json',$release);$config=new ConfigRepository($site);$registry=new ExtensionRegistry($site,$config);check($registry->targetCompatibility('0.8.0')['ok'],'new release accepts verified compatible package');
+    F::json($site.'/release.json',$release);$config=new ConfigRepository($site);$registry=new ExtensionRegistry($site,$config);check($registry->targetCompatibility($release['edition_version'])['ok']&&!$registry->targetCompatibility('1.1.0')['ok'],'current release accepts verified compatible package within bounded range');
     // Verify real delivery selection after a package update, using the retained activation time.
     $services=new CajeerEngine\Extension\Runtime\PlatformServices();$ctx=new CajeerEngine\Extension\Runtime\ExtensionContext($site,(new CajeerEngine\Extension\ManifestLoader())->load($dir),$registry->findInstalled('test/old'),new CajeerEngine\Runtime\ServiceContainer(),$config,new CajeerEngine\Runtime\EventDispatcher(),new CajeerEngine\Runtime\RuntimeLogger($site),$services);
     $seen=0;(new CajeerEngine\Forum\Extension\ForumExtension($ctx))->listen('event','forum.post.reply',function()use(&$seen){$seen++;});
