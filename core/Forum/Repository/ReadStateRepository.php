@@ -25,28 +25,47 @@ final readonly class ReadStateRepository extends Repository
             : ' ON CONFLICT (user_id,thread_id) DO UPDATE SET read_sequence=CASE WHEN excluded.read_sequence>ce_forum_read_state.read_sequence THEN excluded.read_sequence ELSE ce_forum_read_state.read_sequence END';
     }
 
-    /** Existing candidate IDs only: concurrent new threads remain unread. */
-    public function markThreads(string $user,array $ids): void
+    /** Monotone, snapshot-captured ID stream, bounded to 1 MiB of PHP memory.
+     * A million-topic forum previously allocated two complete PHP arrays.
+     * SplTempFileObject spills automatically to an OS-managed private temp file.
+     */
+    public function candidateThreads(array $boards): \SplTempFileObject
     {
-        foreach(array_chunk($ids,500) as $chunk) {
-            $sql='INSERT INTO ce_forum_read_state(user_id,thread_id,read_sequence) SELECT ?,t.id,t.read_sequence FROM ce_forum_live_threads t WHERE '.$this->boardFilter('t.id',$chunk).$this->upsert();
-            $this->query($sql,[$user]);
-        }
+        $captured=new \SplTempFileObject(1024*1024);
+        if($boards===[])return $captured;
+        $query=$this->query('SELECT id FROM ce_forum_live_threads WHERE '.$this->boardFilter('board_id',$boards).' ORDER BY id');
+        while(($id=$query->fetchColumn())!==false)$captured->fwrite($id."\n");
+        $query->closeCursor();
+        $captured->rewind();
+        return $captured;
     }
 
-    public function candidateThreads(array $boards): array
-    { return array_column($this->rows('SELECT id FROM ce_forum_live_threads WHERE '.$this->boardFilter('board_id',$boards).' ORDER BY id'),'id'); }
-
-    /** The same UUID lock order as discussion merge/transfer. Batch queries avoid N+1 locks. */
-    public function lockCandidates(array $ids): array
+    /** Lock captured threads in UUID order; stream the locked ID/board pairs to
+     * disk-backed storage. No mark happens before the tree and ACL are rechecked.
+     */
+    public function lockCandidates(\SplTempFileObject $candidates): \SplTempFileObject
     {
         if (!$this->db->connection()->inTransaction()) throw new \LogicException('Thread locks require a transaction');
-        sort($ids,SORT_STRING);$locked=[];
-        foreach (array_chunk($ids,500) as $chunk) {
-            $sql='SELECT id,board_id FROM ce_forum_threads WHERE deleted_at IS NULL AND '.$this->boardFilter('id',$chunk).' ORDER BY id';
-            if($this->db->driver()!=='sqlite') $sql.=' FOR UPDATE';
-            foreach($this->rows($sql) as $thread) $locked[$thread['id']]=$thread['board_id'];
+        $locked=new \SplTempFileObject(1024*1024);
+        $ids=[];
+        $flush=function()use(&$ids,$locked): void {
+            if(!$ids)return;
+            $sql='SELECT id,board_id FROM ce_forum_threads WHERE deleted_at IS NULL AND '.$this->boardFilter('id',$ids).' ORDER BY id';
+            if($this->db->driver()!=='sqlite')$sql.=' FOR UPDATE';
+            $cursor=$this->query($sql);
+            while(($row=$cursor->fetch(\PDO::FETCH_ASSOC))!==false)$locked->fwrite($row['id'].' '.$row['board_id']."\n");
+            $cursor->closeCursor();
+            $ids=[];
+        };
+        $candidates->rewind();
+        while(!$candidates->eof()){
+            $id=trim($candidates->fgets());
+            if($id==='')continue;
+            $ids[]=$id;
+            if(count($ids)===500)$flush();
         }
+        $flush();
+        $locked->rewind();
         return $locked;
     }
 

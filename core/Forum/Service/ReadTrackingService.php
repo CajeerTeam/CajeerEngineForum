@@ -78,9 +78,20 @@ final readonly class ReadTrackingService
             $locked=$this->repo->lockCandidates($candidates);
             if(!$sqlite) $this->boards->lockTree();
             $allowed=array_fill_keys($this->allowedBoards($this->tx->permissions()->access($actor,lockActor:true),$id),true);
-            $ids=array_keys(array_filter($locked,fn($board)=>isset($allowed[$board])));
-            $this->repo->markThreads($actor->userId,$ids);
-            return ['scope'=>$scope,'id'=>$id,'marked_threads'=>count($ids)];
+            $batch=[];$marked=0;
+            while(!$locked->eof()){
+                $line=trim($locked->fgets());
+                if($line==='')continue;
+                [$threadId,$boardId]=explode(' ',$line,2);
+                if(!isset($allowed[$boardId]))continue;
+                $batch[]=$threadId;
+                if(count($batch)===500){
+                    $this->repo->markThreads($actor->userId,$batch);
+                    $marked+=count($batch);$batch=[];
+                }
+            }
+            if($batch){$this->repo->markThreads($actor->userId,$batch);$marked+=count($batch);}
+            return ['scope'=>$scope,'id'=>$id,'marked_threads'=>$marked];
         });
     }
 }

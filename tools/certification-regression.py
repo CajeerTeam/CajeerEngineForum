@@ -23,7 +23,7 @@ COMMIT = 'a'*40
 REPO = 'CajeerTeam/CajeerEngineForum'
 RUN = 120
 ATTEMPT = 2
-VERSION = '0.9.2'
+VERSION = '0.9.3'
 
 
 def jobs():
@@ -36,7 +36,7 @@ def jobs():
                          'steps':[{'name':'Acceptance','conclusion':'success'}]})
     rows.sort(key=lambda j:(j['name'],j['id']))
     return {'schema':1,'ok':True,'repository':REPO,'run_id':RUN,'attempt':ATTEMPT,
-            'commit':COMMIT,'event':'push','head_sha':COMMIT,'ref':'refs/tags/v0.9.2',
+            'commit':COMMIT,'event':'push','head_sha':COMMIT,'ref':'refs/tags/v0.9.3',
             'tagged_release':True, 'needs':{name:'success' for name in ci.EXPECTED},'jobs':rows}
 
 
@@ -114,17 +114,17 @@ class EvidenceTests(unittest.TestCase):
         falsified=copy.deepcopy(report); falsified['needs']['postgres']='skipped'
         with self.assertRaises(ValueError):ci.validate_report(falsified,COMMIT,RUN,ATTEMPT,REPO,needs)
         run={'id':RUN,'run_attempt':ATTEMPT,'head_sha':COMMIT,'status':'completed',
-             'conclusion':'success','event':'push','head_branch':'v0.9.2'}
+             'conclusion':'success','event':'push','head_branch':'v0.9.3'}
         items=report['jobs']+[{'id':200,'name':'certification','conclusion':'success'},
                               {'id':201,'name':'forum-required','conclusion':'success'}]
         def request(path):return run if path.endswith('/actions/runs/'+str(RUN)) else {'jobs':items}
-        self.assertEqual(remote.verify(report,REPO,'v0.9.2',COMMIT,request),len(report['jobs']))
+        self.assertEqual(remote.verify(report,REPO,'v0.9.3',COMMIT,request),len(report['jobs']))
         broken=copy.deepcopy(run);broken['conclusion']='failure'
         with self.assertRaises(ValueError):
-            remote.verify(report,REPO,'v0.9.2',COMMIT,lambda p:broken if 'jobs?' not in p else {'jobs':items})
+            remote.verify(report,REPO,'v0.9.3',COMMIT,lambda p:broken if 'jobs?' not in p else {'jobs':items})
         broken_items=copy.deepcopy(items);broken_items[-1]['conclusion']='failure'
         with self.assertRaises(ValueError):
-            remote.verify(report,REPO,'v0.9.2',COMMIT,lambda p:run if 'jobs?' not in p else {'jobs':broken_items})
+            remote.verify(report,REPO,'v0.9.3',COMMIT,lambda p:run if 'jobs?' not in p else {'jobs':broken_items})
 
     def test_real_tls_load_transport_and_semantic_failure(self):
         # This is a test of the load generator, not a CMS benchmark. No production certificate is emitted.

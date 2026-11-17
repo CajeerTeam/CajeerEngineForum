@@ -15,7 +15,14 @@ final readonly class PostRepository extends Repository
             foreach($this->rows("SELECT post_id,reaction_type,COUNT(*) AS amount FROM ce_forum_reactions WHERE post_id IN ($in) GROUP BY post_id,reaction_type",$ids) as $r)$counts[$r['post_id']][$r['reaction_type']]=(int)$r['amount'];
             if($viewer!==''){
                 foreach($this->rows("SELECT post_id,reaction_type FROM ce_forum_reactions WHERE user_id=? AND post_id IN ($in)",[$viewer,...$ids]) as $r)$mine[$r['post_id']]=$r['reaction_type'];
-                $ignored=array_fill_keys(array_column($this->rows("SELECT target_id FROM ce_forum_member_relations WHERE user_id=? AND kind='ignore'",[$viewer]),'target_id'),true);
+                // Only authors on this 25-post page matter. A member may have millions
+                // of ignored accounts; fetching the full relation table on every GET
+                // grows unboundedly even when rendering one tiny page.
+                $authors=array_values(array_unique(array_filter(array_column($rows,'author_id'),static fn($id)=>is_string($id)&&$id!=='')));
+                if($authors){
+                    $authorSlots=implode(',',array_fill(0,count($authors),'?'));
+                    $ignored=array_fill_keys(array_column($this->rows("SELECT target_id FROM ce_forum_member_relations WHERE user_id=? AND kind='ignore' AND target_id IN ($authorSlots)",[$viewer,...$authors]),'target_id'),true);
+                }
             }
         }
         

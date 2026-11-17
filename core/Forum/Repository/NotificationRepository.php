@@ -76,27 +76,37 @@ final readonly class NotificationRepository extends Repository
     { return $this->row('SELECT t.board_id FROM ce_forum_live_posts p JOIN ce_forum_live_threads t ON t.id=p.thread_id WHERE p.id=?',[$post]); }
     public function finish(string $event,string $user,bool $deliver,string $kind): void
     { $table=$kind==='accepted'?'ce_forum_answer_notifications':'ce_forum_notifications'; $this->query(($deliver?'UPDATE '.$table.' SET state=1':'DELETE FROM '.$table).' WHERE event_id=? AND recipient_id=? AND state=0',[$event,$user]); }
-    private function visible(array $allowed): string
-    { return ' FROM '.self::FEED.' n JOIN ce_forum_live_posts p ON p.id=n.post_id JOIN ce_forum_live_threads t ON t.id=p.thread_id WHERE n.recipient_id=? AND n.state=1 AND (n.kind=\'moderation\' OR NOT EXISTS (SELECT 1 FROM ce_forum_user_blocks b WHERE (b.user_id=n.recipient_id AND b.blocked_id=n.actor_id) OR (b.blocked_id=n.recipient_id AND b.user_id=n.actor_id))) AND '.$this->boardFilter('t.board_id',$allowed); }
+    /** Push recipient and delivery-state filtering into BOTH UNION branches.
+     * A large global notification history must never be materialized before
+     * filtering the requesting principal's inbox or unread count.
+     */
+    private function visible(array $allowed,bool $unread=false): string
+    {
+        $predicate='recipient_id=? AND state=1'.($unread?' AND is_read=0':'');
+        $feed="(SELECT event_id,recipient_id,actor_id,post_id,kind,moderation_action,subscription_kind,state,is_read,created_at FROM ce_forum_notifications WHERE $predicate UNION ALL SELECT event_id,recipient_id,actor_id,post_id,'accepted' AS kind,NULL AS moderation_action,NULL AS subscription_kind,state,is_read,created_at FROM ce_forum_answer_notifications WHERE $predicate)";
+        return ' FROM '.$feed.' n JOIN ce_forum_live_posts p ON p.id=n.post_id JOIN ce_forum_live_threads t ON t.id=p.thread_id WHERE (n.kind=\'moderation\' OR NOT EXISTS (SELECT 1 FROM ce_forum_user_blocks b WHERE (b.user_id=n.recipient_id AND b.blocked_id=n.actor_id) OR (b.blocked_id=n.recipient_id AND b.user_id=n.actor_id))) AND '.$this->boardFilter('t.board_id',$allowed);
+    }
     public function inbox(string $user,array $allowed,int $offset,?string $id=null): array
     {
-        $params=[$user];if($id!==null)$params[]=$id;
+        $params=[$user,$user];if($id!==null)$params[]=$id;
         $rows=$this->rows('SELECT pgrow.*,u.name AS actor_name,(SELECT COUNT(*) FROM ce_forum_posts p2 WHERE p2.thread_id=pgrow.thread_id AND p2.deleted_at IS NULL AND p2.ordinal<pgrow.ordinal) AS preceding FROM (SELECT n.event_id AS id,n.kind,n.moderation_action,n.subscription_kind,n.is_read,n.created_at,n.actor_id,n.post_id,t.id AS thread_id,t.title,p.ordinal'.$this->visible($allowed).($id===null?'':' AND n.event_id=?').' ORDER BY n.created_at DESC,n.event_id DESC LIMIT 25 OFFSET '.$offset.') pgrow LEFT JOIN ce_users u ON u.id=pgrow.actor_id ORDER BY pgrow.created_at DESC,pgrow.id DESC',$params);
         foreach($rows as &$r){$r['is_read']=(int)$r['is_read']===1;$r['page']=1+intdiv((int)$r['preceding'],25);unset($r['preceding'],$r['ordinal']);}unset($r);
         return $rows;
     }
     public function countUnread(string $user,array $allowed): int
-    { return (int)$this->query('SELECT COUNT(*)'.$this->visible($allowed).' AND n.is_read=0',[$user])->fetchColumn(); }
+    { return (int)$this->query('SELECT COUNT(*)'.$this->visible($allowed,true),[$user,$user])->fetchColumn(); }
     public function mark(string $user,array $allowed,?string $id): bool
     {
-        $params=[$user];$where=$this->visible($allowed);
-        if($id!==null){$where.=' AND n.event_id=?';$params[]=$id;}
+        $where=$this->visible($allowed);
+        $selectParams=[$user,$user];
+        $updateParams=[$user];
+        if($id!==null){$where.=' AND n.event_id=?';$selectParams[]=$id;$updateParams[]=$id;}
         // Select in the same snapshot; do not expose foreign or hidden notification IDs.
-        if($id!==null && $this->row('SELECT n.event_id'.$where,$params)===null)return false;
+        if($id!==null && $this->row('SELECT n.event_id'.$where,$selectParams)===null)return false;
         // Correlated EXISTS is portable, including MySQL's target-table restriction.
         foreach(['ce_forum_notifications','ce_forum_answer_notifications'] as $table){
             $sql='UPDATE '.$table.' SET is_read=1 WHERE recipient_id=? AND state=1 AND is_read=0 AND EXISTS (SELECT 1 FROM ce_forum_live_posts p JOIN ce_forum_live_threads t ON t.id=p.thread_id WHERE p.id='.$table.'.post_id AND '.$this->boardFilter('t.board_id',$allowed).')';
-            $this->query($sql.($id===null?'':' AND event_id=?'),$params);
+            $this->query($sql.($id===null?'':' AND event_id=?'),$updateParams);
         }
         return true;
     }

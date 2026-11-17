@@ -1,3 +1,13 @@
+## [0.9.3] - 2026-11-17 — Database & Performance Optimization
+
+- Replaced unbounded in-memory candidate and lock maps in mark-board/mark-all read operations with snapshot-captured, disk-spillable 500-row streams, preserving deterministic locks and post-lock ACL revalidation.
+- Scoped ignored-author queries to authors on the current 25-post page instead of loading every ignored member for a user.
+- Pushed recipient and delivery-state filters into both notification UNION branches to prevent large cross-user inbox intermediates; the inbox update uses independent parameter sets.
+- Filtered deleted PostgreSQL/MySQL FTS candidates before rank calculation without weakening subsequent live-thread/ACL checks.
+- Added driver-specific inbox and unread-by-board access indexes in migration 0049.
+- Added populated-database upgrade checks and query-plan evidence for PostgreSQL and SQLite.
+- Performance limits remain workload- and hardware-dependent; complete production PostgreSQL profiling and 1-million-post soak certification are separate acceptance requirements.
+
 ## [0.9.2] - 2026-11-17 — Production Security Hardening
 
 ### Security fixes (working runtime)

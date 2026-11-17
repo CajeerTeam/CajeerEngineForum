@@ -126,12 +126,16 @@ final class ForumSearchQuery
             if ($term==='') {
                 $parts[]=$select."0.0 AS relevance,$date AS match_date FROM $table s$scope WHERE $where";
             } elseif ($trigram) {
-                $sub="SELECT s0.*, similarity(title,?) AS relevance FROM $table s0 WHERE title % ?";
+                $live=$kind==='tag'?'':'s0.deleted_at IS NULL AND ';
+                $sub="SELECT s0.*, similarity(title,?) AS relevance FROM $table s0 WHERE $live".'title % ?';
                 array_push($params,$term,$term);
                 $parts[]=$select."s.relevance,$date AS match_date FROM ($sub) s$scope WHERE $where";
             } elseif ($driver==='pgsql') {
                 $vector='('.self::VECTORS[$kind].')';
-                $sub="SELECT s0.*, ts_rank_cd($vector,needle.q) AS relevance FROM $table s0 CROSS JOIN needle WHERE ".($phraseOnly?"($vector @@ needle.q OR numnode(needle.q)=0)":"$vector @@ needle.q");
+                // Filtering physically deleted rows before ranking limits FTS work
+                // without relaxing the later live-thread / ACL predicates.
+                $live=$kind==='tag'?'':'s0.deleted_at IS NULL AND ';
+                $sub="SELECT s0.*, ts_rank_cd($vector,needle.q) AS relevance FROM $table s0 CROSS JOIN needle WHERE $live".($phraseOnly?"($vector @@ needle.q OR numnode(needle.q)=0)":"$vector @@ needle.q");
                 $parts[]=$select."s.relevance,$date AS match_date FROM ($sub) s$scope WHERE $where";
             } elseif ($driver==='sqlite') {
                 $ctes[]="hit_$kind AS MATERIALIZED (SELECT rowid,-bm25($fts) AS relevance FROM $fts WHERE $fts MATCH ?)";$cteParams[]=$query;
@@ -144,12 +148,14 @@ final class ForumSearchQuery
                     $pattern='(^|[^[:alnum:]])'.str_replace(' ','[^[:alnum:]]+',$x['text']).($discover==='suggest'?'':'([^[:alnum:]]|$)');
                     if ($x['negative']) {$no[]="LOWER($text) NOT REGEXP ?";$noParams[]=mb_strtolower($pattern);} else {$yes[]="LOWER($text) REGEXP ?";$yesParams[]=mb_strtolower($pattern);}
                 }
-                $sub="SELECT s0.*, 1.0 AS relevance FROM $table s0 WHERE (".implode($discover==='similar'?' OR ':' AND ',$yes).')'.($no?' AND '.implode(' AND ',$no):'');
+                $live=$kind==='tag'?'':'s0.deleted_at IS NULL AND ';
+                $sub="SELECT s0.*, 1.0 AS relevance FROM $table s0 WHERE $live(".implode($discover==='similar'?' OR ':' AND ',$yes).')'.($no?' AND '.implode(' AND ',$no):'');
                 array_push($params,...$yesParams,...$noParams);
                 $parts[]=$select."s.relevance,$date AS match_date FROM ($sub) s$scope WHERE $where";
             } else {
                 $match="MATCH($columns) AGAINST (? IN BOOLEAN MODE)";
-                $sub="SELECT s0.*, $match AS relevance FROM $table s0 WHERE $match > 0";array_push($params,$query,$query);
+                $live=$kind==='tag'?'':'s0.deleted_at IS NULL AND ';
+                $sub="SELECT s0.*, $match AS relevance FROM $table s0 WHERE $live$match > 0";array_push($params,$query,$query);
                 $parts[]=$select."s.relevance,$date AS match_date FROM ($sub) s$scope WHERE $where";
             }
             array_push($params,...$filters);
