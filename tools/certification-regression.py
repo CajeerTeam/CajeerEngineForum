@@ -23,7 +23,7 @@ COMMIT = 'a'*40
 REPO = 'CajeerTeam/CajeerEngineForum'
 RUN = 120
 ATTEMPT = 2
-VERSION = '0.9.5'
+VERSION = '0.9.6'
 
 
 def jobs():
@@ -36,7 +36,7 @@ def jobs():
                          'steps':[{'name':'Acceptance','conclusion':'success'}]})
     rows.sort(key=lambda j:(j['name'],j['id']))
     return {'schema':1,'ok':True,'repository':REPO,'run_id':RUN,'attempt':ATTEMPT,
-            'commit':COMMIT,'event':'push','head_sha':COMMIT,'ref':'refs/tags/v0.9.5',
+            'commit':COMMIT,'event':'push','head_sha':COMMIT,'ref':'refs/tags/v0.9.6',
             'tagged_release':True, 'needs':{name:'success' for name in ci.EXPECTED},'jobs':rows}
 
 
@@ -58,6 +58,14 @@ def fixture(directory):
     a.write_report(directory/'production-acceptance.json',report)
     a.write_report(directory/'dependency-audit.json',{'advisories':[],'abandoned':[]})
     a.write_report(directory/'ci-jobs.json',jobs())
+    for label,driver,transport in (('sqlite','sqlite','file'),('pg17','pgsql','file'),
+                                   ('pg18','pgsql','file'),('s3','sqlite','s3')):
+        a.write_report(directory/('dr-'+label+'.json'),{
+            'schema':1,'ok':True,'version':VERSION,'commit':COMMIT,
+            'artifact_sha256':a.sha(directory/f'cajeerengine-{VERSION}-dist.zip'),
+            'transport':transport,'driver':driver,'checks':dict.fromkeys(e.DR_CHECKS,True),
+            'load':{'reads':50,'writes':4,'busy':1},
+            'service_rto_seconds':34.5,'rpo_upper_bound_seconds':50})
     with patch.object(e,'verify_signatures'):
         e.seal(directory,VERSION,COMMIT,REPO,RUN,ATTEMPT)
     return report
@@ -85,7 +93,14 @@ class EvidenceTests(unittest.TestCase):
                  ('suppressed severity','dependency-audit.json',lambda r:r.update(**{'ignored-severity':['high']})),
                  ('bad CI conclusion','ci-jobs.json',lambda r:r['jobs'][0].update(conclusion='failure')),
                  ('missing CI matrix','ci-jobs.json',lambda r:r['jobs'].pop()),
-                 ('wrong CI ref','ci-jobs.json',lambda r:r.update(ref='refs/heads/main'))]
+                 ('wrong CI ref','ci-jobs.json',lambda r:r.update(ref='refs/heads/main')),
+                 ('DR report failed','dr-sqlite.json',lambda r:r.update(ok=False)),
+                 ('DR bad dist','dr-pg17.json',lambda r:r.update(artifact_sha256='a'*64)),
+                 ('DR missing ACL','dr-pg18.json',lambda r:r['checks'].pop('https_acl_media_search_identity_write')),
+                 ('DR wrong transport','dr-s3.json',lambda r:r.update(transport='file')),
+                 ('DR missing HTTP load','dr-s3.json',lambda r:r['load'].update(reads=0)),
+                 ('DR RTO over budget','dr-s3.json',lambda r:r.update(service_rto_seconds=1900)),
+                 ('DR RPO over budget','dr-pg18.json',lambda r:r.update(rpo_upper_bound_seconds=3601))]
         for name,filename,mutate in changes:
             with self.subTest(name=name),tempfile.TemporaryDirectory() as tmp:
                 directory=Path(tmp); fixture(directory)
@@ -114,17 +129,17 @@ class EvidenceTests(unittest.TestCase):
         falsified=copy.deepcopy(report); falsified['needs']['postgres']='skipped'
         with self.assertRaises(ValueError):ci.validate_report(falsified,COMMIT,RUN,ATTEMPT,REPO,needs)
         run={'id':RUN,'run_attempt':ATTEMPT,'head_sha':COMMIT,'status':'completed',
-             'conclusion':'success','event':'push','head_branch':'v0.9.5'}
+             'conclusion':'success','event':'push','head_branch':'v0.9.6'}
         items=report['jobs']+[{'id':200,'name':'certification','conclusion':'success'},
                               {'id':201,'name':'forum-required','conclusion':'success'}]
         def request(path):return run if path.endswith('/actions/runs/'+str(RUN)) else {'jobs':items}
-        self.assertEqual(remote.verify(report,REPO,'v0.9.5',COMMIT,request),len(report['jobs']))
+        self.assertEqual(remote.verify(report,REPO,'v0.9.6',COMMIT,request),len(report['jobs']))
         broken=copy.deepcopy(run);broken['conclusion']='failure'
         with self.assertRaises(ValueError):
-            remote.verify(report,REPO,'v0.9.5',COMMIT,lambda p:broken if 'jobs?' not in p else {'jobs':items})
+            remote.verify(report,REPO,'v0.9.6',COMMIT,lambda p:broken if 'jobs?' not in p else {'jobs':items})
         broken_items=copy.deepcopy(items);broken_items[-1]['conclusion']='failure'
         with self.assertRaises(ValueError):
-            remote.verify(report,REPO,'v0.9.5',COMMIT,lambda p:run if 'jobs?' not in p else {'jobs':broken_items})
+            remote.verify(report,REPO,'v0.9.6',COMMIT,lambda p:run if 'jobs?' not in p else {'jobs':broken_items})
 
     def test_real_tls_load_transport_and_semantic_failure(self):
         # This is a test of the load generator, not a CMS benchmark. No production certificate is emitted.

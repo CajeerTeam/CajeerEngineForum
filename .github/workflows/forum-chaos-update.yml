@@ -1,9 +1,9 @@
-name: Forum 0.9.5 physical interrupted signed update
+name: Forum 0.9.6 physical interrupted signed update
 on:
   workflow_dispatch:
     inputs:
       checkpoint:
-        description: Durable state where the host updater is SIGKILLed; reset the disposable 0.9.4 fixture between runs
+        description: Durable state where the host updater is SIGKILLed; reset the disposable 0.9.5 fixture between runs
         type: choice
         required: true
         options: [drained, activating]
@@ -29,7 +29,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - name: Prepare independently trusted signed 0.9.5 target for a dedicated 0.9.4 disposable site
+      - name: Prepare independently trusted signed 0.9.6 target for a dedicated 0.9.5 disposable site
         shell: bash
         run: |
           set -euo pipefail
@@ -41,10 +41,10 @@ jobs:
           test "$(stat -c '%a' "$CE_CHAOS_STATE_DIR")" = 700
           test ! -e "$CE_CHAOS_STATE_DIR/update.json"
           php tools/verify-signed-release.php "$CE_CHAOS_SIGNED_DIR" "$CE_CHAOS_TRUSTED_PUB"
-          artifact="$CE_CHAOS_SIGNED_DIR/cajeerengine-0.9.5-dist.zip"
+          artifact="$CE_CHAOS_SIGNED_DIR/cajeerengine-0.9.6-dist.zip"
           sha="$(sha256sum "$artifact" | cut -d' ' -f1)"
           test "$(sed -n 's/^CE_RELEASE_SHA256=//p' "$CE_CHAOS_NEW_ENV")" = "$sha"
-          sh deploy/container/prepare.sh "$artifact" "$CE_CHAOS_TRUSTED_PUB" "$sha" 0.9.5
+          sh deploy/container/prepare.sh "$artifact" "$CE_CHAOS_TRUSTED_PUB" "$sha" 0.9.6
       - name: Crash a real update after its durable checkpoint, then invoke the production recovery operator
         shell: bash
         run: |

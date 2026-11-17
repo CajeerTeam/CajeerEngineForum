@@ -1,4 +1,6 @@
-# Disaster Recovery — 1.2.4
+# Disaster Recovery — Core 1.2.4, Forum Edition 0.9.6
+
+Forum 0.9.6 adds [end-to-end disaster recovery certification, independent-catalog discovery and HTTPS RTO evidence](forum-dr-0.9.6.md). **These are CI-tested mechanisms; physical cross-host certification is not implied.**
 
 Recovery sets are consistent, authenticated snapshots of the database, managed release files, local media/content, installed extensions, file queue and encrypted environment. The DR transport encrypts **all** snapshot data with libsodium XChaCha20-Poly1305 secretstream, not only `.env`. It authenticates each frame and requires the final frame; truncation, tampering, wrong keys, trailing data and path traversal are rejected. Files are streamed in 1 MiB chunks. Imported sets are verified with their original manifest MAC, file hashes and database checks before atomic publication. Existing backups are never overwritten.
 

@@ -151,6 +151,7 @@ final readonly class ReleaseBuilder
     {
         $dir = $targetDir !== null && $targetDir !== '' ? $this->absolutePath($targetDir) : $this->rootPath . '/storage/releases';
         if ($mode==='source' && version_compare($this->version(),'0.9.5','>=')) $required=array_merge($required,['deploy/container/chaos.py','deploy/container/chaos_update.py','deploy/container/test_chaos.py','docs/forum-chaos-0.9.5.md']);
+        if ($mode==='source' && version_compare($this->version(),'0.9.6','>=')) $required=array_merge($required,['tools/forum-tests/dr_certification.py','tools/forum-tests/dr_tls.py','tools/forum-tests/test_dr_tls.py','tools/backup-discovery-regression.php','docs/forum-dr-0.9.6.md']);
         $checks = [];
         foreach (['source', 'dist'] as $mode) {
             $plan = $this->plan($mode, $dir);

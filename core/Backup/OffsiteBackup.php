@@ -81,6 +81,83 @@ final class OffsiteBackup
             return ['ok'=>true,'id'=>$id,'bundle_sha256'=>$sha,'bytes'=>$bytes,'file'=>$destination];
         } finally { F::remove($tmp); }
     }
+    /**
+     * Untrusted discovery after complete loss of the original catalog. Entries are
+     * *not authenticated*: fetch with the exact digest, then authenticate the
+     * encrypted bundle with the independently stored recovery key before use.
+     * No remote mutation and no broad bucket listing outside the namespace.
+     */
+    public function discover(int $limit=100,?string $cursor=null): array
+    {
+        if ($limit<1||$limit>200) throw new \RuntimeException('Discovery page limit must be 1..200');
+        $prefix=$this->directory!==null?'':$this->dest['prefix'].'/'.$this->policy->data['namespace'].'/';
+        $entries=[];$next=null;
+        if ($this->directory!==null) {
+            if ($cursor!==null&&!preg_match('/^\d{8}-\d{6}-[a-f0-9]{16}-[a-f0-9]{64}\.cebackup$/D',$cursor)) throw new \RuntimeException('Invalid file discovery cursor');
+            // Bounded result memory. Avoid scandir() on an unlimited archive.
+            foreach (new \FilesystemIterator($this->directory,\FilesystemIterator::SKIP_DOTS) as $entry) {
+                $name=$entry->getFilename();
+                if (!$entry->isFile()||$entry->isLink()||($cursor!==null&&strcmp($name,$cursor)<=0)||!self::objectName($name)) continue;
+                $entries[$name]=true;
+                if (count($entries)>$limit) {
+                    krsort($entries,SORT_STRING);array_shift($entries);
+                }
+            }
+            ksort($entries,SORT_STRING);
+            if (count($entries)===$limit) $next=array_key_last($entries);
+            $names=array_keys($entries);
+        } else {
+            if ($cursor!==null&&(strlen($cursor)>4096||preg_match('/[^\x21-\x7e]/',$cursor))) throw new \RuntimeException('Invalid S3 continuation token');
+            $args=['s3api','list-objects-v2','--bucket',$this->dest['bucket'],'--prefix',$prefix,'--max-keys',(string)$limit,'--output','json'];
+            if ($cursor!==null) array_push($args,'--continuation-token',$cursor);
+            $data=$this->awsJson($args);
+            if (!is_array($data['Contents']??[])) throw new \RuntimeException('Invalid off-site object listing');
+            $names=[];
+            foreach ($data['Contents']??[] as $object) {
+                $key=$object['Key']??null;
+                if (!is_string($key)||!str_starts_with($key,$prefix)) continue;
+                $name=substr($key,strlen($prefix));
+                if (self::objectName($name)) $names[]=$name;
+            }
+            if (($data['IsTruncated']??false)===true) {
+                $next=$data['NextContinuationToken']??null;
+                if (!is_string($next)||$next==='') throw new \RuntimeException('S3 listing missing continuation token');
+            }
+        }
+        $items=[];
+        foreach ($names as $name) {
+            if (!self::objectName($name)) continue;
+            $items[]=['id'=>substr($name,0,32),'sha256'=>substr($name,33,64),'authenticated'=>false];
+        }
+        return ['ok'=>true,'objects'=>$items,'next_cursor'=>$next,'authenticated'=>false];
+    }
+    private static function objectName(string $name): bool
+    {
+        return (bool)preg_match('/^\d{8}-\d{6}-[a-f0-9]{16}-[a-f0-9]{64}\.cebackup$/D',$name);
+    }
+    /** The only AWS command that captures JSON; restrict input/output to a single bounded page. */
+    private function awsJson(array $args): array
+    {
+        $command=['aws','--no-cli-pager','--cli-connect-timeout','15','--cli-read-timeout','60'];
+        if (isset($this->dest['endpoint'])) array_push($command,'--endpoint-url',$this->dest['endpoint']);
+        if (isset($this->dest['region'])) array_push($command,'--region',$this->dest['region']);
+        $command=array_merge($command,$args);
+        $proc=proc_open($command,[0=>['file','/dev/null','r'],1=>['pipe','w'],2=>['file','/dev/null','a']],$pipes,null,null,['bypass_shell'=>true]);
+        if (!is_resource($proc)) throw new \RuntimeException('Cannot list off-site objects');
+        $body=''; $failed=false;
+        try {
+            while (!feof($pipes[1])) {
+                $piece=fread($pipes[1],8192);
+                if ($piece===false) throw new \RuntimeException('S3 listing read failed');
+                $body.=$piece;
+                if (strlen($body)>2097152) throw new \RuntimeException('S3 listing response too large');
+            }
+        } catch (\Throwable $e) {$failed=true;proc_terminate($proc);throw $e;}
+        finally {fclose($pipes[1]);$exit=proc_close($proc);if (!$failed&&$exit!==0) throw new \RuntimeException('S3 listing failed');}
+        $decoded=json_decode($body,true,128,JSON_THROW_ON_ERROR);
+        if (!is_array($decoded)) throw new \RuntimeException('Invalid S3 listing');
+        return $decoded;
+    }
     public function delete(string $id,string $sha): void
     {
         $target=$this->location($id,$sha);

@@ -37,8 +37,8 @@ jobs:
           php bin/cajeer admin:assets --check
           export SOURCE_DATE_EPOCH="$(git show -s --format=%ct HEAD)"
           php tools/build-release.php --all --target-dir="$RUNNER_TEMP/forum-candidate" --json > "$RUNNER_TEMP/forum-candidate/build-report.json"
-          php bin/cajeer release:verify --dist --strict --artifact="$RUNNER_TEMP/forum-candidate/cajeerengine-0.9.5-dist.zip"
-          php bin/cajeer release:verify --strict --artifact="$RUNNER_TEMP/forum-candidate/cajeerengine-0.9.5-source.zip"
+          php bin/cajeer release:verify --dist --strict --artifact="$RUNNER_TEMP/forum-candidate/cajeerengine-0.9.6-dist.zip"
+          php bin/cajeer release:verify --strict --artifact="$RUNNER_TEMP/forum-candidate/cajeerengine-0.9.6-source.zip"
       - name: Sign exact ZIP bytes and verify Ed25519 against CI/release trust root
         env:
           RELEASE_SECRET_B64: ${{ secrets.FORUM_RELEASE_SIGNING_KEY_B64 }}
@@ -50,14 +50,14 @@ jobs:
           key="$RUNNER_TEMP/forum-ci-release.secret"
           pub="$dir/ci-release.pub"
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
-            [[ "$GITHUB_REF" == 'refs/tags/v0.9.5' && -n "$RELEASE_SECRET_B64" && -n "$RELEASE_PUBLIC_B64" ]] || { echo 'Tagged release needs configured publisher signing key and trusted public key' >&2; exit 1; }
+            [[ "$GITHUB_REF" == 'refs/tags/v0.9.6' && -n "$RELEASE_SECRET_B64" && -n "$RELEASE_PUBLIC_B64" ]] || { echo 'Tagged release needs configured publisher signing key and trusted public key' >&2; exit 1; }
             printf '%s\n' "$RELEASE_SECRET_B64" > "$key"
             printf '%s\n' "$RELEASE_PUBLIC_B64" > "$pub"
           else
             php bin/cajeer release:keygen --secret-key="$key" --public-key="$pub"
           fi
           for mode in source dist; do
-            php bin/cajeer release:sign --package="$dir/cajeerengine-0.9.5-$mode.zip" --secret-key="$key"
+            php bin/cajeer release:sign --package="$dir/cajeerengine-0.9.6-$mode.zip" --secret-key="$key"
           done
           php tools/verify-signed-release.php "$dir" "$pub"
           shred -u "$key" || rm -f "$key"
@@ -125,6 +125,7 @@ jobs:
       - run: php tools/forum-extension-regression.php --database
       - run: php tools/forum-ecosystem-regression.php --database
       - run: php tools/backup-automation-regression.php
+      - run: php tools/backup-discovery-regression.php
       - run: php tools/cold-recovery-regression.php
       - run: php tools/extension-regression.php
       - run: php tools/forum-regression.php
@@ -134,6 +135,7 @@ jobs:
       - run: php tools/forum-observability-regression.php --database
       - run: php tools/forum-qualification-regression.php
       - run: python deploy/container/test_qualify.py
+      - run: python tools/forum-tests/test_dr_tls.py
       - name: Chaos guards, disk readiness and SIGKILL durable-journal regressions
         run: python deploy/container/test_chaos.py
       - name: Qualification telemetry, queue delay and certification rejection tests
@@ -165,7 +167,7 @@ jobs:
       - run: python tools/forum-tests/stable_search_seo_sql_regression.py
       - run: python tools/forum-tests/cache_sql_regression.py
       - run: python tools/forum-tests/performance_sql_regression.py
-      - name: Forum 0.9.5 database migration and query regression (SQLite)
+      - name: Forum 0.9.6 database migration and query regression (SQLite)
         run: python tools/forum-tests/database_optimization_sql_regression.py
       - run: php tools/forum-reliability-regression.php
       - run: python tools/forum-tests/reliability_sql_regression.py
@@ -274,7 +276,7 @@ jobs:
           CE_QUEUE_PG_USER: forum_ci
           CE_QUEUE_PG_PASSWORD: 'ForumCI-Disposable-123!'
         run: php tools/queue-regression.php --pgsql
-      - name: Physical 0.9.2 to 0.9.5 upgrade, FTS/ACL plans and streamed bulk marks (PostgreSQL)
+      - name: Physical 0.9.2 to 0.9.6 upgrade, FTS/ACL plans and streamed bulk marks (PostgreSQL)
         run: php tools/forum-performance-pg-regression.php
       - run: php tools/forum-redis-regression.php
         env:
@@ -379,7 +381,7 @@ jobs:
   release:
     needs: [release-candidate]
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 65
     strategy:
       fail-fast: false
       matrix:
@@ -422,7 +424,7 @@ jobs:
       - name: Prepare disposable PostgreSQL and matching backup clients
         if: matrix.driver == 'pgsql'
         run: |
-          php -r '$p=new PDO("pgsql:host=127.0.0.1;port=5432;dbname=postgres",getenv("DB_USERNAME"),getenv("DB_PASSWORD")); foreach (["forum_test_release_clean","forum_test_release_upgrade","forum_test_release_dr"] as $db) $p->exec("CREATE DATABASE ".$db);'
+          php -r '$p=new PDO("pgsql:host=127.0.0.1;port=5432;dbname=postgres",getenv("DB_USERNAME"),getenv("DB_PASSWORD")); foreach (["forum_test_release_clean","forum_test_release_upgrade","forum_test_release_dr","forum_test_release_dr096"] as $db) $p->exec("CREATE DATABASE ".$db);'
           php -r '$p=new PDO("pgsql:host=127.0.0.1;port=5432;dbname=postgres",getenv("DB_USERNAME"),getenv("DB_PASSWORD")); $p->exec("CREATE ROLE forum_dr_target LOGIN CREATEDB NOSUPERUSER NOCREATEROLE PASSWORD ".$p->quote("ForumDR-Disposable-123!"));'
           mkdir -p "$RUNNER_TEMP/pg-client"
           cat > "$RUNNER_TEMP/pg-client/pg_dump" <<'SH'
@@ -464,16 +466,27 @@ jobs:
       - name: Clean install, live HTTP, identity and corrupt-ledger rejection
         env:
           FORUM_TEST_RELEASE_DB: forum_test_release_clean
-        run: python tools/forum-tests/release_acceptance.py --driver ${{ matrix.driver }} --artifact "$RUNNER_TEMP/forum-current/cajeerengine-0.9.5-dist.zip" --report storage/tmp/forum-ci/release/clean
+        run: python tools/forum-tests/release_acceptance.py --driver ${{ matrix.driver }} --artifact "$RUNNER_TEMP/forum-current/cajeerengine-0.9.6-dist.zip" --report storage/tmp/forum-ci/release/clean
       - name: Signed upgrade from authentic baseline, recovery and rollback
         env:
           FORUM_TEST_RELEASE_DB: forum_test_release_upgrade
-        run: python tools/forum-tests/release_acceptance.py --driver ${{ matrix.driver }} --artifact "$RUNNER_TEMP/forum-current/cajeerengine-0.9.5-dist.zip" --previous "$RUNNER_TEMP/forum-previous-dist/cajeerengine-${FORUM_BASELINE_VERSION}-dist.zip" --report storage/tmp/forum-ci/release/upgrade
+        run: python tools/forum-tests/release_acceptance.py --driver ${{ matrix.driver }} --artifact "$RUNNER_TEMP/forum-current/cajeerengine-0.9.6-dist.zip" --previous "$RUNNER_TEMP/forum-previous-dist/cajeerengine-${FORUM_BASELINE_VERSION}-dist.zip" --report storage/tmp/forum-ci/release/upgrade
       - name: Cold recovery from authentic baseline after loss of source host and database
         env:
           FORUM_TEST_RELEASE_DB: forum_test_release_dr
           FORUM_DR_PASSWORD: ForumDR-Disposable-123!
         run: python tools/forum-tests/cold_recovery_acceptance.py --driver ${{ matrix.driver }} --artifact "$RUNNER_TEMP/forum-previous-dist/cajeerengine-${FORUM_BASELINE_VERSION}-dist.zip" --report storage/tmp/forum-ci/release/cold-recovery
+      - name: "Disaster recovery: live-write backup, off-site filesystem, replacement host and verified HTTPS"
+        env:
+          FORUM_DR_DISPOSABLE: destroy-test-services
+          FORUM_TEST_RELEASE_DB: forum_test_release_dr096
+          FORUM_DR_PASSWORD: ForumDR-Disposable-123!
+        run: |
+          python tools/forum-tests/dr_certification.py \
+            --driver ${{ matrix.driver }} --transport file \
+            --release-dir "$RUNNER_TEMP/forum-current" \
+            --trusted-public-key "$RUNNER_TEMP/forum-current/ci-release.pub" \
+            --report storage/tmp/forum-ci/release/dr096-${{ matrix.label }}/result.json
       - name: Upload release acceptance evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -538,7 +551,7 @@ jobs:
           CE_DB_PASSWORD: ForumDeployDisposable123
         run: |
           export CE_CERT_REPORT="$RUNNER_TEMP/forum-host/production-acceptance.json"
-          sudo --preserve-env=CE_DEPLOY_DISPOSABLE,CE_DB_USER,CE_DB_PASSWORD,CE_CERT_REPORT bash /var/lib/ce-forum-ci-source/deploy/host-smoke.sh "$RUNNER_TEMP/forum-host/cajeerengine-0.9.5-dist.zip"
+          sudo --preserve-env=CE_DEPLOY_DISPOSABLE,CE_DB_USER,CE_DB_PASSWORD,CE_CERT_REPORT bash /var/lib/ce-forum-ci-source/deploy/host-smoke.sh "$RUNNER_TEMP/forum-host/cajeerengine-0.9.6-dist.zip"
       - name: Upload production host evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -569,10 +582,10 @@ jobs:
           composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader
           php tools/build-release.php --dist --target-dir="$RUNNER_TEMP/forum-container-dist" --json
           php bin/cajeer release:keygen --secret-key="$RUNNER_TEMP/forum-container.secret" --public-key="$RUNNER_TEMP/forum-container.pub"
-          artifact="$RUNNER_TEMP/forum-container-dist/cajeerengine-0.9.5-dist.zip"
+          artifact="$RUNNER_TEMP/forum-container-dist/cajeerengine-0.9.6-dist.zip"
           php bin/cajeer release:sign --package="$artifact" --secret-key="$RUNNER_TEMP/forum-container.secret"
           sha=$(sha256sum "$artifact" | cut -d' ' -f1)
-          sh deploy/container/prepare.sh "$artifact" "$RUNNER_TEMP/forum-container.pub" "$sha" 0.9.5
+          sh deploy/container/prepare.sh "$artifact" "$RUNNER_TEMP/forum-container.pub" "$sha" 0.9.6
           umask 077
           secret_dir="$RUNNER_TEMP/forum-container-secrets"
           mkdir -p "$secret_dir"
@@ -581,7 +594,7 @@ jobs:
           openssl rand -base64 32 > "$secret_dir/backup-key"
           openssl req -x509 -newkey rsa:2048 -nodes -days 2 -subj /CN=forum.test -addext subjectAltName=DNS:forum.test -keyout "$secret_dir/tls.key" -out "$secret_dir/tls.crt"
           cat > deploy/container/site.env <<EOF
-          CE_RELEASE_VERSION=0.9.5
+          CE_RELEASE_VERSION=0.9.6
           CE_RELEASE_SHA256=$sha
           CE_DOMAIN=forum.test
           CE_ADMIN_EMAIL=container-admin@example.invalid
@@ -605,7 +618,7 @@ jobs:
           secret_dir="$RUNNER_TEMP/forum-container-secrets"
           smoke() { python deploy/container/smoke.py --domain forum.test --port 18443 --ca "$secret_dir/tls.crt" --email container-admin@example.invalid --password-file "$secret_dir/admin-password" --state "$RUNNER_TEMP/container-state.json" "$@"; }
           smoke
-          python deploy/container/qualify.py --project forum-container-ci --env deploy/container/site.env --domain forum.test --port 18443 --ca "$secret_dir/tls.crt" --email container-admin@example.invalid --password-file "$secret_dir/admin-password" --state "$RUNNER_TEMP/container-state.json" --version 0.9.5 --disposable destroy-test-services --seconds 60 --clients 8 --rate 10 --min-rps 5 --seed-posts 10000 --faults --report "$RUNNER_TEMP/forum-qualification.json"
+          python deploy/container/qualify.py --project forum-container-ci --env deploy/container/site.env --domain forum.test --port 18443 --ca "$secret_dir/tls.crt" --email container-admin@example.invalid --password-file "$secret_dir/admin-password" --state "$RUNNER_TEMP/container-state.json" --version 0.9.6 --disposable destroy-test-services --seconds 60 --clients 8 --rate 10 --min-rps 5 --seed-posts 10000 --faults --report "$RUNNER_TEMP/forum-qualification.json"
           dc up -d --wait --wait-timeout 180 gateway
           sudo python3 deploy/container/operations.py --project forum-container-ci --env-file deploy/container/site.env --ca "$secret_dir/tls.crt" --report "$RUNNER_TEMP/forum-operations.json"
           sudo chown "$(id -u):$(id -g)" "$RUNNER_TEMP/forum-operations.json"
@@ -690,7 +703,7 @@ jobs:
           (cd "$old"; composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader; php tools/build-release.php --dist --target-dir="$RUNNER_TEMP/container-old-dist" --json)
           php bin/cajeer release:keygen --secret-key="$RUNNER_TEMP/container-upgrade.secret" --public-key="$RUNNER_TEMP/container-upgrade.pub"
           for v in old new; do
-            if [ "$v" = old ]; then version=0.8.7; tree="$old"; else version=0.9.5; tree="$root"; fi
+            if [ "$v" = old ]; then version=0.8.7; tree="$old"; else version=0.9.6; tree="$root"; fi
             artifact="$RUNNER_TEMP/container-$v-dist/cajeerengine-$version-dist.zip"
             php bin/cajeer release:sign --package="$artifact" --secret-key="$RUNNER_TEMP/container-upgrade.secret"
             sha=$(sha256sum "$artifact" | cut -d' ' -f1)
@@ -729,7 +742,7 @@ jobs:
           op apply --dry-run
           smoke --version 0.8.7 --verify-only
           op apply
-          smoke --version 0.9.5 --verify-only
+          smoke --version 0.9.6 --verify-only
           op status
           op rollback --yes
           smoke --version 0.8.7 --verify-only
@@ -742,15 +755,26 @@ jobs:
             docker compose --project-name forum-container-upgrade --env-file "$RUNNER_TEMP/container-old.env" -f deploy/container/compose.yaml down -v --remove-orphans
           fi
   backup-s3:
+    needs: [release-candidate]
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - uses: shivammathur/setup-php@v2
         with:
           php-version: '8.4'
-          extensions: pdo_sqlite, sodium, mbstring
+          extensions: pdo_sqlite, sodium, mbstring, zip, gd, dom, xml, xmlwriter, curl, openssl
           coverage: none
+          tools: composer:v2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          name: forum-signed-candidate
+          path: ${{ runner.temp }}/forum-current
+      - name: Install trusted release verifier dependencies
+        run: composer install --no-dev --prefer-dist --no-interaction --no-progress --optimize-autoloader
       - name: Encrypted multipart backup and exact object rotation over TLS
         run: |
           set -euo pipefail
@@ -769,6 +793,23 @@ jobs:
           for i in $(seq 1 30); do if curl --cacert "$AWS_CA_BUNDLE" -fsS "$CE_BACKUP_TEST_ENDPOINT/minio/health/live" >/dev/null; then break; fi; sleep 2; done
           aws --endpoint-url "$CE_BACKUP_TEST_ENDPOINT" s3 mb "s3://$CE_BACKUP_TEST_BUCKET"
           php tools/backup-automation-regression.php --s3
+          # Fresh namespace/bucket for the full physical DR path; never a production object.
+          aws --endpoint-url "$CE_BACKUP_TEST_ENDPOINT" s3 mb s3://forum-dr-ci
+          export FORUM_DR_DISPOSABLE=destroy-test-services
+          mkdir -p storage/tmp/forum-ci/dr-s3
+          python3 tools/forum-tests/dr_certification.py \
+            --driver sqlite --transport s3 \
+            --s3-endpoint "$CE_BACKUP_TEST_ENDPOINT" --s3-bucket forum-dr-ci \
+            --release-dir "$RUNNER_TEMP/forum-current" \
+            --trusted-public-key "$RUNNER_TEMP/forum-current/ci-release.pub" \
+            --report storage/tmp/forum-ci/dr-s3/result.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: forum-dr096-s3-evidence
+          path: storage/tmp/forum-ci/dr-s3/
+          if-no-files-found: warn
+          retention-days: 90
       - name: Remove disposable S3 service
         if: always()
         run: docker rm -f forum-backup-s3 || true
@@ -809,6 +850,22 @@ jobs:
         with:
           name: forum-production-host-evidence
           path: ${{ runner.temp }}/forum-host-evidence
+      - uses: actions/download-artifact@v4
+        with:
+          name: forum-release-sqlite-evidence
+          path: ${{ runner.temp }}/forum-dr-raw/sqlite
+      - uses: actions/download-artifact@v4
+        with:
+          name: forum-release-pg17-evidence
+          path: ${{ runner.temp }}/forum-dr-raw/pg17
+      - uses: actions/download-artifact@v4
+        with:
+          name: forum-release-pg18-evidence
+          path: ${{ runner.temp }}/forum-dr-raw/pg18
+      - uses: actions/download-artifact@v4
+        with:
+          name: forum-dr096-s3-evidence
+          path: ${{ runner.temp }}/forum-dr-raw/s3
       - name: Aggregate real GitHub Actions jobs and seal exact signed release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -817,6 +874,10 @@ jobs:
           set -euo pipefail
           dir="$RUNNER_TEMP/forum-certification"
           cp "$RUNNER_TEMP/forum-host-evidence/production-acceptance.json" "$dir/production-acceptance.json"
+          cp "$RUNNER_TEMP/forum-dr-raw/sqlite/dr096-sqlite/result.json" "$dir/dr-sqlite.json"
+          cp "$RUNNER_TEMP/forum-dr-raw/pg17/dr096-pg17/result.json" "$dir/dr-pg17.json"
+          cp "$RUNNER_TEMP/forum-dr-raw/pg18/dr096-pg18/result.json" "$dir/dr-pg18.json"
+          cp "$RUNNER_TEMP/forum-dr-raw/s3/result.json" "$dir/dr-s3.json"
           printf '%s\n' "$NEEDS_JSON" > "$RUNNER_TEMP/forum-needs.json"
           python tools/collect-ci-jobs.py "$dir/ci-jobs.json" "$RUNNER_TEMP/forum-needs.json"
           python tools/certification-evidence.py seal "$dir"

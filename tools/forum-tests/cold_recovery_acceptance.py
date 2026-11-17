@@ -36,6 +36,9 @@ def main():
             state=seed(base); ecosystem=seed_ecosystem(base,state); fixture=seed_structure(base,state); media=seed_media(base,fixture)
             verify_data(base,state); verify_structure(base,fixture); verify_ecosystem(base,state,ecosystem,version)
         bundle=work/'offsite.cebackup'; key=work/'ecosystem-backup.key'
+        require(key.is_file() and key.stat().st_mode & 0o077 == 0, 'Missing external protected backup key')
+        env['BACKUP_KEY_FILE']=str(key)
+        env['EXTENSIONS_TRUST_DIR']=str(work/'extension-trust')
         capture=json.loads(run(source,env,report,'dr-backup',['php','bin/cajeer','backup:create','--json']))
         run(source,env,report,'dr-export',['php','bin/cajeer','backup:export','--id='+capture['id'],'--file='+str(bundle),'--json'])
         # Nothing in the old app, local database, or local backup directory remains.

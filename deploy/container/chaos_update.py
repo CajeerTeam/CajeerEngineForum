@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """SIGKILL a real signed Compose update at a fsynced deployment checkpoint.
 
-Operator pre-provisions disposable OLD (0.9.4) and signed NEW (0.9.5), with
+Operator pre-provisions disposable OLD (0.9.5) and signed NEW (0.9.6), with
 working update.py artifact, trust anchor, CA, and empty private state-dir.
 This program never performs destructive rollback; it invokes normal recovery.
 """
@@ -34,8 +34,8 @@ def verify_fixture(args):
         require(path.is_file() and not path.is_symlink(), 'Missing independent operator input: '+path.name)
     from update import read_site
     old,new=read_site(args.old_env),read_site(args.new_env)
-    require(old['CE_RELEASE_VERSION']=='0.9.4' and new['CE_RELEASE_VERSION']=='0.9.5',
-            'Chaos update requires real 0.9.4 -> 0.9.5 artifacts')
+    require(old['CE_RELEASE_VERSION']=='0.9.5' and new['CE_RELEASE_VERSION']=='0.9.6',
+            'Chaos update requires real 0.9.5 -> 0.9.6 artifacts')
     require(old['CE_QUEUE_DRIVER']=='pgsql' and new['CE_QUEUE_DRIVER']=='pgsql',
             'Only PostgreSQL-backed queue updates are supported')
     return old,new

@@ -13,7 +13,7 @@ use CajeerEngine\Update\UpdateManager;
 /** Operational CLI remains available without Composer; never execute through HTTP. */
 final class OperationsCli
 {
-    public const COMMANDS=['backup:create','backup:automation:run','backup:automation:status','stable:backup','backup:list','backup:verify','backup:restore','backup:keygen','backup:export','backup:import','backup:drill','backup:recover','backup:fetch','release:keygen','release:sign','update:verify-signature','update:apply','update:rollback','update:stage','update:requests','update:run','update:status','update:history','maintenance:on','maintenance:off','maintenance:status','import:execute','import:requests'];
+    public const COMMANDS=['backup:create','backup:automation:run','backup:automation:status','stable:backup','backup:list','backup:verify','backup:restore','backup:keygen','backup:export','backup:import','backup:drill','backup:recover','backup:fetch','backup:discover','release:keygen','release:sign','update:verify-signature','update:apply','update:rollback','update:stage','update:requests','update:run','update:status','update:history','maintenance:on','maintenance:off','maintenance:status','import:execute','import:requests'];
     public static function handles(array $argv): bool { return in_array($argv[1]??'',self::COMMANDS,true)||(($argv[1]??'')==='update'&&in_array('--apply',$argv,true)); }
     public static function run(string $root,array $argv): int
     {
@@ -24,6 +24,10 @@ final class OperationsCli
             if ($c==='backup:recover') {
                 if (!isset($o['yes'])) throw new \RuntimeException('Recovery creates a new installation and database; pass --yes');
                 $result=(new \CajeerEngine\Backup\ColdRecovery($root))->run($required('file'),$required('key'),$required('target'),$required('profile'),self::seconds($o,'rto-seconds'),self::seconds($o,'rpo-seconds'));
+            } elseif ($c==='backup:discover') {
+                $policy=\CajeerEngine\Backup\BackupPolicy::load($root,$required('policy'));
+                $limit=isset($o['limit'])?self::seconds($o,'limit'):100;
+                $result=(new \CajeerEngine\Backup\OffsiteBackup($root,$policy,true))->discover($limit,$o['cursor']??null);
             } elseif ($c==='backup:fetch') {
                 $policy=\CajeerEngine\Backup\BackupPolicy::load($root,$required('policy'));
                 $result=(new \CajeerEngine\Backup\OffsiteBackup($root,$policy,true))->fetch($required('id'),$required('sha256'),$required('file'));

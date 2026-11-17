@@ -45,7 +45,8 @@ def inventory(directory, version):
         base = f'cajeerengine-{version}-{mode}'
         names.extend((base + '.zip', base + '.zip.sha256', base + '.zip.sig', base + '.manifest.json'))
     names.extend((f'cajeerengine-{version}-artifacts.json', 'ci-release.pub',
-                  'production-acceptance.json', 'dependency-audit.json', 'ci-jobs.json'))
+                  'production-acceptance.json', 'dependency-audit.json', 'ci-jobs.json',
+                  'dr-sqlite.json', 'dr-pg17.json', 'dr-pg18.json', 'dr-s3.json'))
     return {name: sha(directory / name) for name in names}
 
 
@@ -66,6 +67,38 @@ def validate_host(directory, version, hashes):
           'Host security/load acceptance failed')
     check_audit(read(directory / 'dependency-audit.json'))
     return host
+
+
+
+DR_CHECKS = frozenset((
+    'pre_snapshot_write_acknowledged', 'backup_under_http_load', 'offsite_readback_verified',
+    'source_installation_destroyed', 'catalog_free_offsite_discovery',
+    'offsite_fetch_after_host_loss', 'isolated_recovery_and_maintenance',
+    'https_acl_media_search_identity_write', 'end_to_end_rto_rpo',
+))
+
+
+def validate_disaster_recovery(directory, version, commit, digest):
+    for label, driver, transport in (
+        ('sqlite','sqlite','file'), ('pg17','pgsql','file'),
+        ('pg18','pgsql','file'), ('s3','sqlite','s3'),
+    ):
+        row = read(directory / ('dr-' + label + '.json'))
+        check(row.get('schema') == 1 and row.get('ok') is True
+              and row.get('version') == version and row.get('commit') == commit
+              and row.get('artifact_sha256') == digest
+              and row.get('driver') == driver and row.get('transport') == transport,
+              'Missing or unbound physical DR report: ' + label)
+        check(row.get('checks') == dict.fromkeys(DR_CHECKS, True),
+              'Missing physical DR check: ' + label)
+        check(isinstance(row.get('load'), dict)
+              and isinstance(row['load'].get('reads'), int) and row['load']['reads'] > 0
+              and isinstance(row['load'].get('writes'), int) and row['load']['writes'] >= 0,
+              'No real backup workload: ' + label)
+        rto, age = row.get('service_rto_seconds'), row.get('rpo_upper_bound_seconds')
+        check(type(rto) in (int, float) and 0 < rto <= 1800
+              and type(age) in (int, float) and 0 <= age <= 3600,
+              'Unacceptable HTTPS service RTO / snapshot age: ' + label)
 
 
 def validate_jobs(directory, commit, repo, run_id, attempt):
@@ -95,6 +128,7 @@ def validate(directory, version, commit, repo, run_id, attempt, trusted_key=None
     check(isinstance(run_id, int) and run_id > 0 and isinstance(attempt, int) and attempt > 0, 'Invalid run identity')
     hashes = inventory(directory, version)
     validate_host(directory, version, hashes)
+    validate_disaster_recovery(directory, version, commit, hashes[f'cajeerengine-{version}-dist.zip'])
     jobs = validate_jobs(directory, commit, repo, run_id, attempt)
     verify_signatures(directory, trusted_key)
     return hashes, jobs
@@ -105,7 +139,7 @@ def seal(directory, version, commit, repo, run_id, attempt):
     report = {
         'schema': 2, 'ok': True, 'version': version, 'commit': commit,
         'repository': repo, 'run_id': run_id, 'attempt': attempt,
-        'scope': 'CI matrix + signed source/dist + locked Composer audit + actual disposable host',
+        'scope': 'CI matrix + signed source/dist + audit + disposable host + filesystem/S3 HTTPS disaster recovery',
         'signing': 'trusted-release-key' if jobs.get('tagged_release') else 'ci-ephemeral',
         'sha256': hashes,
         'ci_jobs': jobs['jobs'],

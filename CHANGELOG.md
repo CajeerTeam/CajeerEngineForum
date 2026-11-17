@@ -1,3 +1,12 @@
+## [0.9.6] - 2026-11-17 — Disaster Recovery Certification
+
+- Added a **physical signed-current-dist** DR acceptance that takes a real managed, encrypted backup while HTTP reads and acknowledged writes continue; verifies off-site readback using the durable catalog, then completely deletes the source app and source database.
+- Fetches the exact content-addressed recovery set through `backup:fetch` from independent filesystem or TLS S3, with the recovery key escrowed outside the failed host and no local backup available; restores to a different app path and fresh PostgreSQL database when selected.
+- Requires authenticated portable recovery, protected maintenance state, idempotent resume, actual CA-verified HTTPS, user login, roles/ACL/hidden content, full-text search/SSR, extensions/theme, original private media and a new write on the restored site.
+- Measures service RTO **through successful HTTPS read/write acceptance**, and bounds snapshot age at service availability for RPO reporting. Both reject missed limits. A test-only TLS ingress is used in CI; this does not certify production Nginx, DNS failover or a separate physical failure domain.
+- Current signed dist is tested on SQLite, PostgreSQL 17/18, and an additional S3/MinIO TLS fixture; release acceptance remains fail-closed. Corrected the older cold-recovery test to actually pass its separate backup key and extension trust root to the backup process.
+- No database migration, no changes to upstream Core 1.3.0. Physical cross-host recovery in an independent production-like environment is still required before claiming disaster-recovery certification.
+
 ## [0.9.5] - 2026-11-17 — Failure Recovery & Chaos Testing
 
 - Added executable disposable-only failure injection for PHP-FPM restart, labeled backend network partition, real tmpfs ENOSPC and interrupted PostgreSQL transactional DDL, retaining worker SIGKILL and database/Redis outage recovery.

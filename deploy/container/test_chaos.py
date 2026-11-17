@@ -94,12 +94,12 @@ class Tests(unittest.TestCase):
     def test_no_real_upgrade_without_private_disposable_two_release_fixture(self):
         with tempfile.TemporaryDirectory() as d:
             path=Path(d);os.chmod(path,0o700)
-            for version,name in [('0.9.4','old'),('0.9.5','new')]:
+            for version,name in [('0.9.5','old'),('0.9.6','new')]:
                 (path/(name+'.env')).write_text('CE_RELEASE_VERSION='+version+'\nCE_RELEASE_SHA256='+'a'*64+'\nCE_DOMAIN=forum.test\nCE_ADMIN_EMAIL=admin@example.invalid\nCE_NAMESPACE=chaos\nCE_SECRETS_DIR=/secret\n')
             (path/'ca.pem').touch()
             from types import SimpleNamespace
             args=SimpleNamespace(project='forum-chaos',disposable='destroy-test-services',state_dir=path,old_env=path/'old.env',new_env=path/'new.env',ca=path/'ca.pem')
-            self.assertEqual(chaos_update.verify_fixture(args)[1]['CE_RELEASE_VERSION'],'0.9.5')
+            self.assertEqual(chaos_update.verify_fixture(args)[1]['CE_RELEASE_VERSION'],'0.9.6')
             (path/'update.json').write_text('{}')
             with self.assertRaisesRegex(RuntimeError,'Fresh journal'):
                 chaos_update.verify_fixture(args)
