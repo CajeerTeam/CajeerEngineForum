@@ -97,10 +97,10 @@ class Tests(unittest.TestCase):
             path.write_text(json.dumps(doc))
             with self.assertRaisesRegex(RuntimeError,'telemetry gap'):validate_report(path,profile,commit,artifact,version)
             doc['resource_observations']=observations=[{'elapsed_seconds':i*30} for i in range(11)]
-            doc['edition_version']='0.9.7';doc['artifact_sha256']=artifact;doc['profile']='1m-soak'
+            doc['edition_version']='0.9.8';doc['artifact_sha256']=artifact;doc['profile']='1m-soak'
             path.write_text(json.dumps(doc))
             with self.assertRaisesRegex(RuntimeError,'missing real chaos recovery evidence'):
-                validate_report(path,'1m-soak',commit,artifact,'0.9.7')
+                validate_report(path,'1m-soak',commit,artifact,'0.9.8')
             # Same 10k document need not contain 24h chaos, but soak must.
             doc['edition_version']='0.9.4';doc['profile']='10k'
             doc['artifact_sha256']='f'*64;path.write_text(json.dumps(doc))

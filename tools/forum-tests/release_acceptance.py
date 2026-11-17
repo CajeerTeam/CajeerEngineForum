@@ -54,6 +54,38 @@ def unpack(artifact, dest, expected):
     return site
 
 
+def verify_release_sequence(releases):
+    if not 2 <= len(releases) <= 10:
+        raise ValueError('Upgrade chain must have two to ten real releases')
+    if not all(re.fullmatch(r'(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)',v) for v in releases):
+        raise ValueError('Upgrade chain requires stable release identities')
+    if not all(tuple(map(int,a.split('.')))<tuple(map(int,b.split('.'))) for a,b in zip(releases,releases[1:])):
+        raise ValueError('Upgrade chain must be strictly increasing with no duplicates')
+
+
+def artifact_sha256(path):
+    import hashlib
+    with path.open('rb') as package:
+        return hashlib.file_digest(package,'sha256').hexdigest()
+
+
+def chain_receipt(releases, paths, git_sha, rollback, failed_migration):
+    if not (rollback and failed_migration):
+        raise RuntimeError('Incomplete upgrade/recovery certification')
+    verify_release_sequence(releases)
+    if len(paths)!=len(releases): raise ValueError('Artifact chain does not match versions')
+    if not re.fullmatch('[a-f0-9]{40}',git_sha or ''):
+        raise ValueError('Verified Git commit is mandatory for release chain evidence')
+    # A receipt is created only by the real acceptance script after all probes.
+    return {'schema':1,'edition':'forum','target_version':releases[-1],
+            'git_commit':git_sha,
+            'steps':[{'from':a,'to':b,'source_sha256':artifact_sha256(src),
+                      'target_sha256':artifact_sha256(dst),'http_data_acl_media_fts_verified':True}
+                     for a,b,src,dst in zip(releases,releases[1:],paths,paths[1:])],
+            'rollback_to':releases[-2],'rollback_verified':True,
+            'failed_migration_restored':True}
+
+
 def free_port():
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0))
@@ -793,7 +825,8 @@ def verify_ecosystem(base, state, saved, current):
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--artifact',type=Path,required=True)
-    parser.add_argument('--previous',type=Path,help='Original 0.8.6 dist (or supported historical baseline); enables real signed upgrade and rollback')
+    parser.add_argument('--previous',type=Path,help='Authentic historical signed-update baseline dist')
+    parser.add_argument('--intermediate',type=Path,action='append',default=[],help='Authentic intermediate dist, oldest first; each is installed with the real updater')
     parser.add_argument('--driver',choices=('sqlite','pgsql'),default='sqlite')
     parser.add_argument('--report',type=Path,required=True)
     args=parser.parse_args(); report=args.report.resolve(); report.mkdir(parents=True,exist_ok=True)
@@ -805,7 +838,16 @@ def main():
         initial=current
         if previous:
             with zipfile.ZipFile(previous) as z: initial=json.loads(z.read('cajeerengine/release.json'))['edition_version']
-            require(initial in ('0.5.5','0.5.6','0.6.0','0.6.1','0.6.2','0.6.3','0.6.4','0.6.5','0.6.6','0.7.0','0.7.1','0.7.2','0.7.3','0.7.4','0.7.5','0.7.6','0.7.7','0.8.0','0.8.1','0.8.2','0.8.3','0.8.4','0.8.5','0.8.6'),'Unsupported authentic baseline')
+            require(initial in ('0.5.5','0.5.6','0.6.0','0.6.1','0.6.2','0.6.3','0.6.4','0.6.5','0.6.6','0.7.0','0.7.1','0.7.2','0.7.3','0.7.4','0.7.5','0.7.6','0.7.7','0.8.0','0.8.1','0.8.2','0.8.3','0.8.4','0.8.5','0.8.6','0.8.7','0.9.0','0.9.1','0.9.2','0.9.3','0.9.4','0.9.5','0.9.6','0.9.7'),'Unsupported authentic baseline')
+        stages=[]
+        require(previous is not None or not args.intermediate, 'Intermediate releases require --previous')
+        for intermediate in args.intermediate:
+            intermediate=intermediate.resolve()
+            with zipfile.ZipFile(intermediate) as z:
+                stage=json.loads(z.read('cajeerengine/release.json'))['edition_version']
+            stages.append((intermediate,stage))
+        releases=[initial,*[v for _,v in stages],current]
+        verify_release_sequence(releases)
         site=unpack(previous or artifact,work/'live',initial)
         install(site,env,report,'initial',port,args.driver)
         ecosystem=None
@@ -865,6 +907,30 @@ def main():
                 run(site,env,report,'upgrade-compatible-templates',['php','bin/cajeer','extension:package:upgrade',str(replacement)],timeout=600)
                 with http(site,env,report,'compatible-templates',port,initial) as base:
                     verify_ecosystem(base,state,ecosystem,initial)
+            # Real historical sequence. Use the installed release's trusted updater
+            # for every step. Do not merely replace manifests or copy current files.
+            for index,(intermediate,expected_version) in enumerate(stages):
+                label=f'chain-{index+1}-{expected_version}'
+                # Inspect the whole historical dist, then sign its exact bytes
+                # with the disposable operator key trusted by the old runtime.
+                unpack(intermediate,work/('intermediate-'+str(index)),expected_version)
+                stage_package=work/(label+'.zip')
+                shutil.copy2(intermediate,stage_package)
+                run(site,env,report,label+'-sign',['php','bin/cajeer','release:sign','--package='+str(stage_package),'--secret-key='+str(secret)])
+                run(site,env,report,label+'-dry-run',['php','bin/cajeer','update:apply','--package='+str(stage_package),'--dry-run'])
+                require(version(site)==releases[index], 'Intermediate preflight mutated live version')
+                step=json.loads(run(site,env,report,label+'-apply',['php','bin/cajeer','update:apply','--package='+str(stage_package),'--json'],timeout=600))
+                require(step['state']=='committed' and version(site)==expected_version, 'Intermediate upgrade was not committed')
+                with http(site,env,report,label+'-http',port,expected_version) as base:
+                    verify_data(base,state)
+                    verify_structure(base,fixture)
+                    verify_community(base,community)
+                    verify_content(base,state,fixture,content)
+                    verify_media(base,state,fixture,media)
+                    if tuple(map(int,expected_version.split('.'))) >= (0,6,3):
+                        verify_search_seo(base,state,fixture)
+                    if ecosystem: verify_ecosystem(base,state,ecosystem,expected_version)
+                run(site,env,report,label+'-postcheck',['php','tools/update-postcheck.php','verify'])
             update=json.loads(run(site,env,report,'upgrade',['php','bin/cajeer','update:apply','--package='+str(package),'--json'],timeout=600))
             require(update['state']=='committed' and version(site)==current,'Update not committed')
             with http(site,env,report,'updated',port,current) as base:
@@ -888,9 +954,10 @@ def main():
                 verify_sanctions(base,state)
                 verify_antispam(base,state)
             run(site,env,report,'rollback',['php','bin/cajeer','update:rollback','--yes','--json'],timeout=600)
-            require(version(site)==initial,'Rollback did not restore release')
-            with http(site,env,report,'rollback',port,initial) as base:
-                if ecosystem:verify_ecosystem(base,state,ecosystem,initial)
+            rollback_version = stages[-1][1] if stages else initial
+            require(version(site)==rollback_version,'Rollback did not restore immediately previous release')
+            with http(site,env,report,'rollback',port,rollback_version) as base:
+                if ecosystem:verify_ecosystem(base,state,ecosystem,rollback_version)
                 verify_data(base,state); verify_structure(base,fixture); verify_community(base,community); verify_media(base,state,fixture,media,False); verify_content(base,state,fixture,content)
                 if tuple(map(int,initial.split("."))) >= (0,6,3): verify_search_seo(base,state,fixture)
             # Inject actual failing SQL into a separately built, correctly signed target.
@@ -901,11 +968,24 @@ def main():
             pkg=out/f'cajeerengine-{current}-dist.zip'
             run(site,env,report,'sign-broken',['php','bin/cajeer','release:sign','--package='+str(pkg),'--secret-key='+str(secret)])
             failed=json.loads(run(site,env,report,'failed-upgrade',['php','bin/cajeer','update:apply','--package='+str(pkg),'--json'],expected=1,timeout=600))
-            require(failed['state']=='rolled_back' and version(site)==initial and not (site/'storage/app/updates/active.json').exists(), 'Automatic rollback failed')
-            with http(site,env,report,'failed-rollback',port,initial) as base:
-                if ecosystem:verify_ecosystem(base,state,ecosystem,initial)
+            require(failed['state']=='rolled_back' and version(site)==rollback_version and not (site/'storage/app/updates/active.json').exists(), 'Automatic rollback failed')
+            with http(site,env,report,'failed-rollback',port,rollback_version) as base:
+                if ecosystem:verify_ecosystem(base,state,ecosystem,rollback_version)
                 verify_data(base,state); verify_structure(base,fixture); verify_community(base,community); verify_media(base,state,fixture,media,False); verify_content(base,state,fixture,content)
                 if tuple(map(int,initial.split("."))) >= (0,6,3): verify_search_seo(base,state,fixture)
+        if previous:
+            # Include hashes of the *actual* tested ZIPs in the evidence file;
+            # CI publishes this alongside the HTTP/SQL logs. Never emit a pass
+            # certificate for an incomplete chain or an interrupted rollback.
+            commit=os.environ.get('GITHUB_SHA') or os.environ.get('FORUM_RELEASE_COMMIT')
+            if not commit:
+                commit=subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True,timeout=10).strip()
+            receipt=chain_receipt(releases,[previous,*[path for path,_ in stages],artifact],
+                                 commit,True,True)
+            destination=report/'upgrade-chain.json'
+            with destination.open('x') as output:
+                json.dump(receipt,output,indent=2,sort_keys=True)
+                output.write('\n')
         print('PASS physical dist acceptance',flush=True)
 
 

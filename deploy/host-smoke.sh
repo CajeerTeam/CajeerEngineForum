@@ -2,7 +2,11 @@
 # Destructive integration gate: run ONLY on a disposable Linux/systemd host as root.
 set -euo pipefail
 [[ $EUID == 0 && ${CE_DEPLOY_DISPOSABLE:-} == yes ]] || { echo 'Disposable root host required'; exit 1; }
-artifact=$(realpath "${1:?dist ZIP required}")
+artifact=$(realpath "${1:?current dist ZIP required}")
+# An authentic earlier dist is mandatory for update certification. Both
+# packages are re-signed by the disposable operator key; neither is relabelled.
+baseline=$(realpath "${2:?authentic historical dist ZIP required}")
+[[ -f "$artifact" && -f "$baseline" && "$baseline" != "$artifact" ]] || { echo 'Two distinct release artifacts required' >&2; exit 1; }
 source=$(cd "$(dirname "$0")/.." && pwd)
 # Hosted runners may grant write access to /opt. Never use such a parent
 # for a signed deployment candidate or the trusted operator tools.
@@ -41,9 +45,15 @@ chmod 0600 /etc/cajeerengine-deploy/tls/privkey.pem
 php "$source/bin/cajeer" release:keygen --secret-key="$work/sign.key" --public-key=/etc/cajeerengine-deploy/release.pub >/dev/null
 php "$source/bin/cajeer" backup:keygen --key=/etc/cajeerengine-deploy/backup.key >/dev/null
 chown cajeerengine:www-data /etc/cajeerengine-deploy/backup.key
-old=$(cd "$source" && php deploy/verify.php --identity | php -r 'echo json_decode(stream_get_contents(STDIN),true,512,JSON_THROW_ON_ERROR)["edition_version"];')
+old=$(unzip -p "$baseline" cajeerengine/release.json | php -r 'echo json_decode(stream_get_contents(STDIN),true,512,JSON_THROW_ON_ERROR)["edition_version"];')
+target=$(unzip -p "$artifact" cajeerengine/release.json | php -r 'echo json_decode(stream_get_contents(STDIN),true,512,JSON_THROW_ON_ERROR)["edition_version"];')
+python3 - "$old" "$target" <<'PYVALID'
+import sys
+parts=[tuple(map(int,x.split('.'))) for x in sys.argv[1:]]
+if not parts[0]<parts[1]: raise SystemExit('Expected authentic increasing release identities')
+PYVALID
 upstream=$(cat "$source/VERSION")
-cp "$artifact" "$work/inbox/original.zip"; chmod 0644 "$work/inbox/original.zip"
+cp "$baseline" "$work/inbox/original.zip"; chmod 0644 "$work/inbox/original.zip"
 php "$source/bin/cajeer" release:sign --package="$work/inbox/original.zip" --secret-key="$work/sign.key" >/dev/null
 sha=$(sha256sum "$work/inbox/original.zip" | cut -d' ' -f1)
 deploy=(python3 "$work/tool/deploy/production.py")
@@ -70,7 +80,7 @@ token=$(php -r '$j=json_decode(stream_get_contents(STDIN),true,512,JSON_THROW_ON
 [[ -n $token ]]
 http /api/v1/admin/dashboard -H "Authorization: Bearer $token" >/dev/null
 http "/api/v1/forum/acp?view=overview" -H "Authorization: Bearer $token" >/dev/null
-python3 "$source/tools/production-acceptance.py" --artifact "$artifact" --version "$old" \
+python3 "$source/tools/production-acceptance.py" --artifact "$baseline" --version "$old" \
   --ca /etc/cajeerengine-deploy/tls/fullchain.pem --domain deploy.example.invalid \
   --secrets /etc/cajeerengine-deploy/install-secrets.json --email deploy@example.invalid \
   --soak-seconds 60 --report "$work/production-acceptance.json"
@@ -80,6 +90,22 @@ cp "$work/inbox/original.zip" "$work/inbox/tampered.zip"; cp "$work/inbox/origin
 printf 'tamper' >> "$work/inbox/tampered.zip"
 if "${deploy[@]}" deploy "$work/inbox/tampered.zip" --sha256="$sha" --version="$old"; then exit 1; fi
 http /health/ready | grep -q ready
+# Actual supported historical -> current signed upgrade, with the real
+# systemd/FPM/PostgreSQL operator and pre-existing authenticated admin session.
+cp "$artifact" "$work/inbox/current.zip"
+chmod 0644 "$work/inbox/current.zip"
+php "$source/bin/cajeer" release:sign --package="$work/inbox/current.zip" --secret-key="$work/sign.key" >/dev/null
+current_sha=$(sha256sum "$work/inbox/current.zip" | cut -d' ' -f1)
+"${deploy[@]}" deploy "$work/inbox/current.zip" --sha256="$current_sha" --version="$target" --dry-run
+http /health/ready | grep -q ready
+"${deploy[@]}" deploy "$work/inbox/current.zip" --sha256="$current_sha" --version="$target"
+"${deploy[@]}" verify --ca /etc/cajeerengine-deploy/tls/fullchain.pem
+http /api/v1/health | php -r '$j=json_decode(stream_get_contents(STDIN),true,512,JSON_THROW_ON_ERROR);exit(($j["edition_version"]===$argv[1] && $j["version"]===$argv[2])?0:1);' "$target" "$upstream"
+http /api/v1/admin/dashboard -H "Authorization: Bearer $token" >/dev/null
+http "/api/v1/forum/acp?view=overview" -H "Authorization: Bearer $token" >/dev/null
+# Subsequent negative migration/rollback targets are newer than the installed
+# real release, not synthetic copies standing in for the historical hop.
+old="$target"
 # Use real dist dependencies and a real PostgreSQL migration for update/rollback verification.
 mkdir "$work/fixture"; unzip -q "$artifact" -d "$work/fixture"
 fixture="$work/fixture/cajeerengine"
@@ -112,4 +138,4 @@ nsenter -t "$mainpid" -m -- runuser -u cajeerengine -g www-data -- test ! -w /sr
 if [[ -n ${CE_CERT_REPORT:-} ]]; then
   install -m 0644 "$work/production-acceptance.json" "$CE_CERT_REPORT"
 fi
-echo 'Forum production host smoke passed: TLS, real FPM, PostgreSQL, worker, update and rollback'
+echo 'Forum production host smoke passed: authentic signed upgrade, TLS, FPM, PostgreSQL, failed migration recovery and controlled rollback'

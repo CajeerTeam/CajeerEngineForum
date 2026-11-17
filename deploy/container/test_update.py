@@ -50,6 +50,22 @@ class UpdateTests(unittest.TestCase):
         self.args.dry_run=True; d=u.Deployment(self.args)
         d.verify=Mock(); d.dc=Mock(); d.operator=Mock(); d.stop=Mock(); d.apply()
         d.verify.assert_called_once(); d.dc.assert_not_called(); d.operator.assert_not_called(); d.stop.assert_not_called(); self.assertIsNone(d.state())
+    def test_prepared_recovery_restores_old_without_database_rollback(self):
+        d=u.Deployment(self.args);d.record('prepared')
+        d.stop=Mock();d.operator=Mock();d.activate=Mock()
+        d.recover()
+        d.stop.assert_called_once_with(self.old)
+        d.operator.assert_not_called()
+        d.activate.assert_called_once_with(self.old,'0.8.2','rolled_back')
+        self.assertEqual(d.state(),'prepared')  # Not committed until activation passes.
+
+    def test_committed_rollback_requires_explicit_data_loss_ack(self):
+        d=u.Deployment(self.args);d.record('committed')
+        d.stop=Mock();d.operator=Mock();d.activate=Mock()
+        with self.assertRaisesRegex(RuntimeError,'Explicit --yes'):
+            d.recover(rollback=True)
+        d.stop.assert_not_called();d.operator.assert_not_called()
+
     def test_recover_before_activation(self):
         d=u.Deployment(self.args); d.record('drained'); d.stop=Mock(); d.operator=Mock(); d.activate=Mock()
         d.recover(); d.operator.assert_called_once_with('recover'); d.activate.assert_called_once_with(self.old,'0.8.2','rolled_back'); self.assertEqual(d.state(),'rolling_back')

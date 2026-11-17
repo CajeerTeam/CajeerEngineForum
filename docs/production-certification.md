@@ -1,4 +1,4 @@
-# Release Certification Pipeline — Forum Edition 0.9.1+ (current 0.9.7; Engine 1.3.0)
+# Release Certification Pipeline — Forum Edition 0.9.1+ (current 0.9.8; Engine 1.3.0)
 
 This is a **release admission mechanism**, not third-party certification of a production installation. The 0.9.1 certification mechanism itself does not change the schema or API; Forum 0.9.3 separately adds database index migration 0049. Real end-to-end deployment and sustained workload certification remain separate responsibilities. It replaces the outdated 0.8.3 publication instructions. The changed-files ZIP is not an installable or signed distribution.
 
@@ -13,7 +13,7 @@ This is a **release admission mechanism**, not third-party certification of a pr
 
 ### Key provisioning and publication
 
-A normal branch/PR run uses a disposable CI-only signing key and is **not publishable**. For a tag `v0.9.7` to be eligible, provision:
+A normal branch/PR run uses a disposable CI-only signing key and is **not publishable**. For a tag `v0.9.8` to be eligible, provision:
 
 - GitHub Actions **secret** `FORUM_RELEASE_SIGNING_KEY_B64`: the *single-line base64 text* from a pre-generated Ed25519 private key file (`php bin/cajeer release:keygen --secret-key=/secure/release.secret --public-key=/secure/release.pub`). Limit access to reviewed release workflows. Never print or upload the private key.
 - GitHub Actions **repository variable** `FORUM_RELEASE_TRUSTED_PUBLIC_KEY_B64`: the public key's single-line base64 text from `/secure/release.pub`, approved independently of the candidate. Restrict who may edit this variable and approve its fingerprint out of band.
@@ -23,7 +23,7 @@ The tagged run requires these values and rejects missing/mismatched keys. After 
 
 ```sh
 export RELEASE_TRUSTED_PUBLIC_KEY_FILE=/secure/release.pub
-bash tools/github-publish-release.sh /secure/forum-certified-release v0.9.7 CajeerTeam/CajeerEngineForum
+bash tools/github-publish-release.sh /secure/forum-certified-release v0.9.8 CajeerTeam/CajeerEngineForum
 ```
 
 `gh` must have permission to read GitHub Actions run/jobs and create releases. The publisher re-fetches the successful **completed** run/attempt and checks `certification`, `forum-required` and the exact complete matrix against the sealed report. It cryptographically verifies both ZIPs against the externally trusted key and refuses branch/PR evidence, altered bytes, re-signed packages, an incorrect tag/commit or an existing release (including drafts). After uploading a draft, it checks each remote asset's name, size and GitHub digest (when available) before publication. A failed upload leaves a draft for manual inspection; it is never overwritten automatically.
@@ -43,13 +43,15 @@ The offline builder runs the real Composer audit and signs archives, but cannot 
 
 | Gate | Required outcome |
 | --- | --- |
-| Source and dist | Correct Forum 0.9.7/Engine 1.3.0 internal manifests; strict inventory, locked dependencies, sidecars and SHA-256; detached Ed25519 signatures verified |
+| Source and dist | Correct Forum 0.9.8/Engine 1.3.0 internal manifests; strict inventory, locked dependencies, sidecars and SHA-256; detached Ed25519 signatures verified |
 | Supply chain | Locked production Composer audit with **zero advisories**, **zero abandoned packages** and no suppressed findings |
 | Actual CI | Exact 17 matrix/required jobs (including candidate, excluding certification/final gate), all succeeded in same attempt; final `forum-required` also passed |
 | Disposable Linux host | Real TLS, FPM, PostgreSQL 17, SSR/API/ACP, auth/ACL, concurrency, migration/update/rollback, exact dist digest |
 | Integration | Existing database, browser, Compose PostgreSQL/Redis, recovery/S3 and monitoring suites successfully completed |
 | End-to-end disaster recovery | Actual signed current dist; automated backup under HTTP load, loss of source and original DB, catalog-free filesystem or TLS S3 fetch, private reinstallation, CA-verified HTTPS, ACL/media/search/auth/new write and measured RTO/RPO; SQLite, PostgreSQL 17/18 and S3 reports match the same SHA-256/commit |
 | Final admission | Trusted publication key, signed files bound to commit and GitHub run/attempt, completed GitHub workflow success, successful `certification` and `forum-required` |
+
+Upgrade-chain acceptance details and evidence: [0.9.8 real upgrade certification](forum-upgrade-certification.md).
 
 DR report verification also rejects missing/mismatched signed artifacts, failed source-destruction/HTTPS checks or incomplete timing. See [0.9.6 disaster recovery qualification](forum-dr-0.9.6.md) for precise meaning and limitations.
 

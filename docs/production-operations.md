@@ -1,6 +1,6 @@
-# Production Operations Stable — Forum Edition 0.9.7 (updated)
+# Production Operations Stable — Forum Edition 0.9.8 (updated)
 
-This documentation covers the production admission gate introduced in 0.9.0 and hardened in 0.9.7. No new schema migration or public endpoint is introduced in 0.9.7. Core remains 1.3.0. Apply the 0.9.7 changed-files archive only to the matching 0.9.6 checkout; rebuild and sign the complete release before deployment. The changed-files archive is not a deployable dist. The changed-files archive itself is not an installable or signed dist.
+This documentation covers the production admission gate introduced in 0.9.0 and hardened in 0.9.8. No new schema migration or public endpoint is introduced in 0.9.8. Core remains 1.3.0. Apply the 0.9.8 changed-files archive only to the matching 0.9.6 checkout; rebuild and sign the complete release before deployment. The changed-files archive is not a deployable dist. The changed-files archive itself is not an installable or signed dist.
 
 ## Read-only live operations gate (Docker Compose)
 
@@ -47,7 +47,7 @@ Run the project's local unit suites (`test_operations.py`, `test_update.py`, `te
 
 A successful local unit suite cannot certify a live environment by itself. No claim of production host acceptance or off-site restore is made unless the corresponding live scenarios have actually passed for that host and signed artifact.
 
-## 0.9.7 operational admission and safe recovery
+## 0.9.8 operational admission and safe recovery
 
 Use the read-only operator gate on a trusted host (never in the public web process):
 

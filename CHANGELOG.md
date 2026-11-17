@@ -1,3 +1,11 @@
+## [0.9.8] - 2026-11-17 — Upgrade & Compatibility Certification
+
+- Execute **real chronological updates** in the physical dist matrix (0.8.7 → 0.9.2 → 0.9.7 → 0.9.8), verifying user accounts, permissions, signed plugins, theme, FTS, media, posts and data invariants at each hop. Missing historical tags fail CI instead of being simulated by relabelling.
+- Exercise rollback to the immediate predecessor and reject a correctly signed target with an invalid SQL migration. CI release candidates remain bound to the signed 0.9.8 dist bytes.
+- Test systemd updates using an authentic prior release before deliberately injected migration failure; ensure TLS and existing accounts survive.
+- Correct Compose recovery after interrupted preparation: resume the unchanged old release without invoking a database restore before a snapshot exists.
+- The dedicated full Compose/process-kill tests require a disposable physical runner; local unit checks do not constitute physical certification.
+
 ## [0.9.7] - 2026-11-17 — Safe Production Operations
 
 - Read-only Compose gate: verified public TLS renewal-window policy, verified off-site age and recovery-set parity, and optional deep existing ecosystem integrity scan.

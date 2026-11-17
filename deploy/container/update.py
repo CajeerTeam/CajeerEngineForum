@@ -246,11 +246,17 @@ class Deployment:
         if state in ('committed','rolled_back') and not rollback: print('Deployment already '+state); return
         if rollback and not self.args.yes: raise RuntimeError('Explicit --yes required: rollback discards writes after the snapshot')
         if state=='rolled_back': return
+        if state=='prepared' and not rollback:
+            # The snapshot has not yet been taken, but stopping old services
+            # may have started before the checkpoint was interrupted. Restore
+            # the unchanged old release; never invoke destructive DB rollback.
+            self.stop(self.args.old_env)
+            self.activate(self.args.old_env,self.previous,'rolled_back'); return
         if state=='activating' and not rollback:
             self.stop(self.args.new_env)
             self.activate(self.args.new_env,self.target,'committed'); return
         # For interrupted operations before activation, no new release writers
-        # were started. For explicit rollback, the operator accepts data loss.
+        # were started. After activation, destructive rollback requires --yes.
         self.record('rolling_back')
         self.stop(self.args.new_env)
         self.operator('recover')

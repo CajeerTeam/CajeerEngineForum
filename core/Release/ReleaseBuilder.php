@@ -150,8 +150,6 @@ final readonly class ReleaseBuilder
     public function verifyArtifacts(?string $targetDir = null): array
     {
         $dir = $targetDir !== null && $targetDir !== '' ? $this->absolutePath($targetDir) : $this->rootPath . '/storage/releases';
-        if ($mode==='source' && version_compare($this->version(),'0.9.5','>=')) $required=array_merge($required,['deploy/container/chaos.py','deploy/container/chaos_update.py','deploy/container/test_chaos.py','docs/forum-chaos-0.9.5.md']);
-        if ($mode==='source' && version_compare($this->version(),'0.9.6','>=')) $required=array_merge($required,['tools/forum-tests/dr_certification.py','tools/forum-tests/dr_tls.py','tools/forum-tests/test_dr_tls.py','tools/backup-discovery-regression.php','docs/forum-dr-0.9.6.md']);
         $checks = [];
         foreach (['source', 'dist'] as $mode) {
             $plan = $this->plan($mode, $dir);
@@ -248,6 +246,7 @@ final readonly class ReleaseBuilder
         if ($mode === 'source' && version_compare((new \CajeerEngine\Forum\ForumVersion($this->rootPath))->upstream(), '1.3.0', '>=')) $required = array_merge($required, ['tools/production-acceptance.py','tools/certification-evidence.py','tools/certification-regression.py','tools/rate-limit-concurrency.php','docs/production-certification.md']);
         if ($mode==='source' && version_compare($this->version(), '0.9.1', '>=')) $required = array_merge($required, ['tools/verify-signed-release.php','tools/collect-ci-jobs.py','tools/verify-certified-run.py','tools/github-publish-release.sh']);
         if ($mode==='source') $required=array_merge($required,['deploy/container/update.py','deploy/container/update-operator.php','deploy/container/update-operator.sh','deploy/container/test_update.py','docs/secure-updates.md']);
+        if ($mode==='source' && version_compare($this->version(),'0.9.8','>=')) $required=array_merge($required,['tools/forum-tests/release_acceptance.py','tools/forum-tests/test_upgrade_098.py','docs/forum-upgrade-certification.md']);
         $checks = [];
         foreach ($required as $file) $checks[$file] = is_file($this->rootPath . '/' . $file) && !is_link($this->rootPath . '/' . $file);
         foreach (['pgsql', 'mysql', 'sqlite'] as $driver) $checks['migrations/' . $driver] = count(glob($this->rootPath . '/migrations/' . $driver . '/*.sql') ?: []) > 0;

@@ -125,6 +125,7 @@ final class ReleaseArtifactVerifier
         }
         if (($manifest['edition']??null)==='forum' && version_compare($version,'0.9.5','>=') && $mode==='source') $required=array_merge($required,['deploy/container/chaos.py','deploy/container/chaos_update.py','deploy/container/test_chaos.py','docs/forum-chaos-0.9.5.md']);
         if (($manifest['edition']??null)==='forum' && version_compare($version,'0.9.6','>=') && $mode==='source') $required=array_merge($required,['tools/forum-tests/dr_certification.py','tools/forum-tests/dr_tls.py','tools/forum-tests/test_dr_tls.py','tools/backup-discovery-regression.php','docs/forum-dr-0.9.6.md']);
+        if (($manifest['edition']??null)==='forum' && version_compare($version,'0.9.8','>=') && $mode==='source') $required=array_merge($required,['tools/forum-tests/test_upgrade_098.py','docs/forum-upgrade-certification.md']);
         foreach ($required as $file) if (!in_array($file, $files, true)) throw new \RuntimeException('Required ZIP entry missing: ' . $file);
         foreach (['pgsql', 'mysql', 'sqlite'] as $driver) {
             if (!array_filter($files, static fn ($file) => str_starts_with($file, 'migrations/' . $driver . '/') && str_ends_with($file, '.sql'))) throw new \RuntimeException('Missing migrations: ' . $driver);

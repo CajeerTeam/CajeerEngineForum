@@ -1,4 +1,4 @@
-# Forum Observability & Monitoring (current 0.9.7)
+# Forum Observability & Monitoring (current 0.9.8)
 
 The Forum Edition extends the existing protected `/metrics` endpoint, `ops:report`, and **System** (`/admin/#/system`) in ACP. Engine version remains 1.3.0. Queue monitoring was introduced with migration 0048; an existing 0.9.6 installation already contains subsequent migrations through 0049. The four indexes cover replica state/due time, review/report status and creation time, and import checkpoint state/time. Index creation can take time and locks on large databases: use the normal maintenance/backup/update procedure, not an online migration claim.
 
@@ -86,7 +86,7 @@ python deploy/monitoring/test_monitoring.py --integration
 
 The final integration runs actual Prometheus, Alertmanager and Grafana containers, tests the unchanged rules with promtool (firing and resolution), scrapes an authenticated HTTPS proxy to a disposable real PHP/SQLite exporter, checks actual SQL metrics and Grafana provisioning, and receives a firing and resolved webhook. It uses shortened test-only evaluation/routing intervals. It is a required CI job, not a claim that the test ran on every production host. Production throughput, cross-host clocks, TLS network paths, receiver escalation and SLOs still require site-specific qualification.
 
-## 0.9.7 operator metrics and restart proof
+## 0.9.8 operator metrics and restart proof
 
 New queue metric `cajeer_queue_expired_reservations` counts unexpired-vs-expired
 leases without running recovery. `cajeer_scheduler_task_stale{task=...}` exposes
@@ -103,7 +103,7 @@ public site's certificate chain lifetime by themselves.
 
 ### Public TLS certificate monitoring
 
-0.9.7 adds a private `prom/blackbox-exporter` service and a generated
+0.9.8 adds a private `prom/blackbox-exporter` service and a generated
 `blackbox.json`. The exporter independently probes
 `https://<approved-target>/health/ready` with SNI/hostname and the protected
 CA bundle. Its loopback-only Prometheus scrape exposes `probe_success`,
