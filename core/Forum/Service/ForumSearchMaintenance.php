@@ -38,7 +38,7 @@ final readonly class ForumSearchMaintenance
                 $rows=(int)$pdo->query("SELECT COUNT(*) FROM $table")->fetchColumn();
                 $checks[$kind]=['ok'=>$missing===0&&$extra===0&&$keys===$rows,'missing_or_stale'=>$missing,'extra'=>$extra,'source_rows'=>$rows,'keys'=>$keys];
             } elseif ($driver==='pgsql') {
-                $q=$pdo->prepare("SELECT pg_get_indexdef(i.indexrelid) FROM pg_index i JOIN pg_class c ON c.oid=i.indexrelid JOIN pg_am a ON a.oid=c.relam WHERE c.oid=to_regclass(?) AND i.indrelid=to_regclass(?) AND i.indisvalid AND i.indisready AND i.indislive AND i.indpred IS NULL AND i.indexprs IS NOT NULL AND i.indnkeyatts=1 AND a.am='gin'");
+                $q=$pdo->prepare("SELECT pg_get_indexdef(i.indexrelid) FROM pg_index i JOIN pg_class c ON c.oid=i.indexrelid JOIN pg_am a ON a.oid=c.relam WHERE c.oid=to_regclass(?) AND i.indrelid=to_regclass(?) AND i.indisvalid AND i.indisready AND i.indislive AND i.indpred IS NULL AND i.indexprs IS NOT NULL AND i.indnkeyatts=1 AND a.amname='gin'");
                 $q->execute([$index,$table]);$definition=$q->fetchColumn();$checks[$kind]=['ok'=>is_string($definition),'definition'=>$definition===false?null:$definition];
             } else {
                 $q=$pdo->prepare("SELECT column_name FROM information_schema.statistics WHERE table_schema=DATABASE() AND table_name=? AND index_name=? AND index_type='FULLTEXT' ORDER BY seq_in_index");

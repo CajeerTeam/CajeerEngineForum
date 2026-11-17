@@ -58,7 +58,9 @@ final class ProductionSecurityHardeningTest extends TestCase
     public function testRedirectAndMetadataTargetsAreDenied(): void
     {
         foreach(['http://127.0.0.1','http://169.254.169.254/latest/meta-data','file:///etc/passwd','http://8.8.8.8:9000/'] as $url){
-            try{PublicHttpClient::target($url);self::fail('SSRF target permitted: '.$url);}catch(\InvalidArgumentException){}
+            $rejected=false;
+            try { PublicHttpClient::target($url); } catch (\InvalidArgumentException) { $rejected=true; }
+            self::assertTrue($rejected, 'SSRF target permitted: '.$url);
         }
     }
 }

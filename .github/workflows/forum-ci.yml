@@ -587,10 +587,13 @@ jobs:
             echo 'deb [signed-by=/usr/share/keyrings/ce-pgdg.asc] https://apt.postgresql.org/pub/repos/apt noble-pgdg main' | sudo tee /etc/apt/sources.list.d/ce-forum-pgdg.list >/dev/null
             sudo apt-get update
           fi
-          sudo apt-get install -y nginx php8.4-fpm php8.4-pgsql php8.4-mbstring php8.4-xml php8.4-curl php8.4-gd php8.4-zip postgresql-client-17
+          sudo apt-get install -y nginx php8.4-fpm php8.4-pgsql php8.4-mbstring php8.4-xml php8.4-curl php8.4-gd postgresql-client-17
           sudo systemctl stop php8.4-fpm || true
           sudo /usr/bin/php8.4 -v
           sudo /usr/sbin/php-fpm8.4 -v
+          # setup-php supplies zip on the CI host; verify it instead of relying
+          # on an unavailable distro php8.4-zip APT package.
+          php -r 'exit(extension_loaded("zip") ? 0 : 1);' 
       - uses: actions/download-artifact@v4
         with:
           name: forum-signed-candidate
@@ -702,7 +705,7 @@ jobs:
           dc() { docker compose --project-name forum-container-ci --env-file deploy/container/site.env -f deploy/container/compose.yaml "$@"; }
           dc up -d gateway
           secret_dir="$RUNNER_TEMP/forum-container-secrets"
-          smoke() { python deploy/container/smoke.py --domain forum.test --port 18443 --ca "$secret_dir/tls.crt" --email container-admin@example.invalid --password-file "$secret_dir/admin-password" --state "$RUNNER_TEMP/container-state.json" "$@"; }
+          smoke() { python deploy/container/smoke.py --domain forum.test --port 18443 --ca "$secret_dir/tls.crt" --email container-admin@example.invalid --password-file "$secret_dir/admin-password" --state "$RUNNER_TEMP/container-state.json" --version "$FORUM_CURRENT_VERSION" "$@"; }
           smoke
           python deploy/container/qualify.py --project forum-container-ci --env deploy/container/site.env --domain forum.test --port 18443 --ca "$secret_dir/tls.crt" --email container-admin@example.invalid --password-file "$secret_dir/admin-password" --state "$RUNNER_TEMP/container-state.json" --version ${FORUM_CURRENT_VERSION} --disposable destroy-test-services --seconds 60 --clients 8 --rate 10 --min-rps 5 --seed-posts 10000 --faults --report "$RUNNER_TEMP/forum-qualification.json"
           dc up -d --wait --wait-timeout 180 gateway
@@ -891,7 +894,7 @@ jobs:
           export AWS_DEFAULT_REGION=us-east-1 AWS_EC2_METADATA_DISABLED=true AWS_CA_BUNDLE="$work/certs/public.crt"
           export AWS_CONFIG_FILE="$work/aws-config"
           printf '[default]\nregion = us-east-1\ns3 =\n    addressing_style = path\n    multipart_threshold = 8MB\n    multipart_chunksize = 8MB\n' > "$AWS_CONFIG_FILE"
-          docker run -d --user 0:0 --name forum-backup-s3 -p 127.0.0.1:19000:9000 -e MINIO_ROOT_USER="$AWS_ACCESS_KEY_ID" -e MINIO_ROOT_PASSWORD="$AWS_SECRET_ACCESS_KEY" -v "$work/certs:/certs:ro" minio/minio:RELEASE.2025-04-22T22-12-26Z server /data --certs-dir /certs
+          docker run -d --user 0:0 --name forum-backup-s3 -p 127.0.0.1:19000:9000 -e MINIO_ROOT_USER="$AWS_ACCESS_KEY_ID" -e MINIO_ROOT_PASSWORD="$AWS_SECRET_ACCESS_KEY" -v "$work/certs:/certs:ro" quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z server /data --certs-dir /certs
           export CE_BACKUP_TEST_ENDPOINT=https://127.0.0.1:19000 CE_BACKUP_TEST_BUCKET=forum-backup-ci
           for i in $(seq 1 30); do if curl --cacert "$AWS_CA_BUNDLE" -fsS "$CE_BACKUP_TEST_ENDPOINT/minio/health/live" >/dev/null; then break; fi; sleep 2; done
           aws --endpoint-url "$CE_BACKUP_TEST_ENDPOINT" s3 mb "s3://$CE_BACKUP_TEST_BUCKET"

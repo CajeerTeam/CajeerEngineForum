@@ -79,7 +79,17 @@ function richEditor(field,initialFormat='plain'){
 
 function list(items,urlFn,selectable=false){const box=node('div',undefined,'category');if(!items.length)add(box,node('div','Пока ничего нет.','entry'));for(const t of items){const main=node('div');add(main,...(t.prefix?[node('span',t.prefix,'thread-prefix')]:[]),link(t.title,urlFn(t),'strong'),...(Number(t.unread_posts)>0?[link(`${t.unread_posts} новых`,threadUrl(t)+'?unread=1','unread-badge')]:[]),node('p',[Number(t.pinned)?'Закреплено':null,Number(t.locked)?'Закрыто':null,t.author,dateLabel(t.updated_at)].filter(Boolean).join(' · '),'meta'));add(box,add(node('div',undefined,'entry'),...(selectable?[selection('thread-selection',t.id,'Выбрать тему '+t.title)]:[]),main,node('span',t.posts===undefined?'':`${t.posts} сообщ.`, 'meta')))}return box}
 let page=Math.max(1,Number(new URLSearchParams(location.search).get('page'))||1);
-const go=url=>{location.href=url};const threadUrl=t=>`/forum/threads/${t.id}`;
+const go=url=>{
+ const target=new URL(url,location.href);
+ const hashOnly=target.origin===location.origin&&target.pathname===location.pathname&&target.search===location.search&&target.hash!==location.hash;
+ // Publishing into the current page can change only its fragment. Browsers
+ // do not reload for hash navigation; the just-published post would stay
+ // absent from the hydrated thread until a manual refresh.
+ if(hashOnly){
+  history.replaceState(history.state,'',target.href);
+  location.reload();
+ }else location.assign(target.href);
+};const threadUrl=t=>`/forum/threads/${t.id}`;
 function markScope(scope,id=null,refresh=()=>location.reload()){
  return button(scope==='all'?'Отметить весь форум прочитанным':'Отметить раздел и подразделы прочитанными',async()=>{
   if(!confirm('Отметить все доступные обсуждения в выбранной области прочитанными?'))return;

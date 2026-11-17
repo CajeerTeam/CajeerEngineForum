@@ -127,7 +127,7 @@ final readonly class ForumPageRenderer
             '<!--FORUM_NAME-->'=>self::e($name),'<!--FORUM_REGISTRATION-->'=>$registration?'true':'false',
             '<!--FORUM_TITLE-->'=>self::e($title.($title===$name?'':' — '.$name).($page>1?' · '.$page:'')),
             '<!--FORUM_HEADING-->'=>self::e($title),'<!--FORUM_DESCRIPTION-->'=>self::e($description),
-            '<meta name="robots" content="noindex, nofollow" data-forum-template>'=>$meta,'<!--FORUM_MAINTENANCE-->'=>$community['paused']?'<p role="status" class="panel">Публикация новых тем и ответов временно приостановлена.</p>':'','<!--FORUM_BODY-->'=>$body,'<!--FORUM_RENDERED-->'=>$canonical!==null||$path==='/forum/latest'||$path==='/forum/questions'?'true':'false','<!--FORUM_SCRIPT-->'=>$status===200&&$preview===null?'<script src="/forum-assets/forum.js?v=0.9.4" defer></script>':'',
+            '<meta name="robots" content="noindex, nofollow" data-forum-template>'=>$meta,'<!--FORUM_MAINTENANCE-->'=>$community['paused']?'<p role="status" class="panel">Публикация новых тем и ответов временно приостановлена.</p>':'','<!--FORUM_BODY-->'=>$body,'<!--FORUM_RENDERED-->'=>$canonical!==null||$path==='/forum/latest'||$path==='/forum/questions'?'true':'false','<!--FORUM_SCRIPT-->'=>$status===200&&$preview===null?'<script src="/forum-assets/forum.js?v=1.0.0-ci1" defer></script>':'',
         ]);
         return new Response($html,$status,['Content-Type'=>'text/html; charset=UTF-8','Cache-Control'=>'private, no-store','Vary'=>'Cookie, Authorization, X-API-Token','X-Robots-Tag'=>$robots]);
     }

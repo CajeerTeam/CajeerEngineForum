@@ -122,7 +122,12 @@ final readonly class InstallerService
 
         if (($options['source'] ?? '') === 'web-installer' && !SetupToken::verify($this->rootPath, (string)($options['setup_token'] ?? ''))) throw new \RuntimeException('Setup token invalid or expired');
         if (!is_file($this->rootPath . '/vendor/autoload.php')) throw new \RuntimeException('Используйте dist с production Composer dependencies.');
-        require_once $this->rootPath . '/vendor/autoload.php';
+        // An installer invoked from an already bootstrapped application has a
+        // Composer loader in memory. Loading a copied distribution's generated
+        // autoload_real.php again can redeclare its deterministic init class.
+        if (!class_exists(\Composer\Autoload\ClassLoader::class, false)) {
+            require_once $this->rootPath . '/vendor/autoload.php';
+        }
         if (version_compare(PHP_VERSION,'8.4.1','<')) throw new \RuntimeException('PHP 8.4.1+ required');
         if (!class_exists(\Symfony\Component\HttpFoundation\Request::class) || !class_exists(\Symfony\Component\Dotenv\Dotenv::class)) throw new \RuntimeException('Production Composer dependencies are incomplete.');
         if (!$this->adminAssetsReady() || !$this->forumAssetsReady()) throw new \RuntimeException('Admin assets повреждены или отсутствуют. Восстановите dist или выполните publish-admin-assets.mjs.');

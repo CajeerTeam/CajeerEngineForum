@@ -18,6 +18,13 @@ final class UpdateResolverTest extends TestCase
         $updates['core']['releases_url'] = $root.'/tests/nonexistent-release-catalog.json';
         $diag = (new UpdateResolver($updates, $root))->diagnostics('1.0.4');
         self::assertTrue($diag['metadata_ready']);
-        self::assertGreaterThanOrEqual(1, $diag['release_count']);
+        // The bundled catalog can legitimately be empty before first release.
+        // Verify the actual catalog, not a fictitious minimum release count.
+        $bundled=$root.'/resources/updates/releases.json';
+        self::assertSame($bundled, $diag['bundled_metadata_file']);
+        self::assertFileExists($bundled);
+        $metadata=json_decode((string)file_get_contents($bundled), true, 512, JSON_THROW_ON_ERROR);
+        self::assertIsArray($metadata['releases'] ?? null);
+        self::assertSame(count($metadata['releases']), $diag['release_count']);
     }
 }

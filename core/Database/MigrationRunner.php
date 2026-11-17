@@ -273,6 +273,15 @@ final readonly class MigrationRunner
             if (preg_match('/\AALTER\s+TABLE\s+(ce_[a-z0-9_]+)\s+ADD\s+COLUMN\s+IF\s+NOT\s+EXISTS\s+([a-z_][a-z0-9_]*)\s+(.+)\z/isD', $statement, $matches)) {
                 $this->addColumnIfMissing($matches[1], $matches[2], $matches[3]);
             } else {
+                // Historical CREATE TABLE files sometimes declare a charset but
+                // omit its collation. MySQL 8.x and MariaDB then choose different
+                // defaults, creating foreign keys incompatible with ce_users.id.
+                // Normalize at execution time; do not modify checksummed SQL files.
+                if (preg_match('/\ACREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?ce_[a-z0-9_]+\b/i', $statement)
+                    && preg_match('/\bDEFAULT\s+CHARSET\s*=\s*utf8mb4\b/i', $statement)
+                    && !preg_match('/\bCOLLATE\s*=/i', $statement)) {
+                    $statement = preg_replace('/\bDEFAULT\s+CHARSET\s*=\s*utf8mb4\b/i', 'DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci', $statement, 1);
+                }
                 $this->pdo->exec($statement);
             }
         }

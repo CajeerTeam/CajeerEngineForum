@@ -160,7 +160,9 @@ services:
     cap_drop: [ALL]
     cap_add: [CHOWN, DAC_OVERRIDE, SETUID, SETGID]
     security_opt: [no-new-privileges:true]
-    tmpfs: ['/tmp:mode=1777,size=64m']
+    tmpfs:
+      - /tmp:mode=1777,size=64m
+      - /var/cache/nginx:mode=0755,size=64m
     environment:
       CE_DOMAIN: ${CE_DOMAIN:?set domain}
       CE_HTTPS_PORT: ${CE_HTTPS_PORT:-443}
