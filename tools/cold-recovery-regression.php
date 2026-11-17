@@ -77,5 +77,29 @@ PY,$restored]);
     F::dir($work.'/.occupied.recovery'); F::write($work.'/.occupied.recovery/sentinel','keep');
     reject(fn()=>$recovery->run($bundle,$work.'/key',$work.'/occupied',$work.'/profile.json'),'unrelated workspace refused','unrelated files');
     check(file_get_contents($work.'/.occupied.recovery/sentinel')==='keep','unrelated workspace unchanged');
+    // Invoke the real, private recovery probe with a disposable PHP fixture.
+    // The trusted operator must preload its corrected FTS class for PostgreSQL
+    // 0.8.7–0.9.9, but never for a SQLite or current-version recovery.
+    $probeRoot=$work.'/trusted-probe-tool';
+    F::dir($probeRoot.'/tools'); F::dir($probeRoot.'/core/Forum/Service');
+    F::copy($tool.'/core/Forum/Service/ForumSearchMaintenance.php',$probeRoot.'/core/Forum/Service/ForumSearchMaintenance.php');
+    F::write($probeRoot.'/tools/recovery-probe.php',
+        '<?php echo json_encode(["ok"=>true,"preloaded"=>class_exists(\CajeerEngine\Forum\Service\ForumSearchMaintenance::class,false)]);');
+    $probeSite=$work.'/trusted-probe-site'; F::dir($probeSite);
+    F::write($probeSite.'/VERSION','1.3.0');
+    $identity=['edition'=>'forum','version'=>'1.3.0','upstream_version'=>'1.3.0','edition_version'=>'0.9.9'];
+    F::json($probeSite.'/release.json',$identity);
+    $method=new ReflectionMethod(ColdRecovery::class,'probe');
+    $instance=new ColdRecovery($probeRoot);
+    foreach (['0.8.7','0.9.9'] as $historical) {
+        $identity['edition_version']=$historical; F::json($probeSite.'/release.json',$identity);
+        $pgCheck=$method->invoke($instance,$probeSite,$work,$work.'/key','pgsql');
+        check(($pgCheck['preloaded']??null)===true,'historical PostgreSQL '.$historical.' cold probe loads trusted compatibility');
+    }
+    $sqliteCheck=$method->invoke($instance,$probeSite,$work,$work.'/key','sqlite');
+    check(($sqliteCheck['preloaded']??null)===false,'historical SQLite cold probe remains unmodified');
+    $identity['edition_version']='1.0.0'; F::json($probeSite.'/release.json',$identity);
+    $currentCheck=$method->invoke($instance,$probeSite,$work,$work.'/key','pgsql');
+    check(($currentCheck['preloaded']??null)===false,'current PostgreSQL cold probe uses current code');
     echo "Portable cold recovery regression passed\n";
 } finally { RecoveryBundle::cleanup($work); }

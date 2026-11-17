@@ -15,7 +15,8 @@ import zipfile
 
 from release_acceptance import (ROOT, HERE, Client, ADMIN, ADMIN_PASSWORD, env_for_test, run, unpack, free_port, http,
     install, seed, verify_data, seed_structure, verify_structure, verify_search_seo,
-    seed_media, verify_media, install_ecosystem_plugins, seed_ecosystem, verify_ecosystem, require)
+    seed_media, verify_media, install_ecosystem_plugins, seed_ecosystem, verify_ecosystem,
+    enable_legacy_pgsql_fts_compat, require)
 
 
 def main():
@@ -28,6 +29,11 @@ def main():
     with zipfile.ZipFile(artifact) as z: version=json.loads(z.read('cajeerengine/release.json'))['edition_version']
     with tempfile.TemporaryDirectory(prefix='forum-cold-dr-',dir='/tmp') as tmp:
         work=Path(tmp); source=unpack(artifact,work/'source',version); port=free_port()
+        # The authentic pre-1.0 PostgreSQL release uses the nonexistent pg_am.am
+        # catalog column. Preload the trusted corrected inspector only in these
+        # disposable historical PHP processes; never patch signed release files.
+        if args.driver == 'pgsql' and (0, 8, 7) <= tuple(map(int, version.split('-')[0].split('.'))) < (1, 0, 0):
+            enable_legacy_pgsql_fts_compat(work, env)
         if args.driver=='pgsql':
             require(os.environ.get('FORUM_TEST_RELEASE_DB')=='forum_test_release_dr' and os.environ.get('DB_HOST')=='127.0.0.1','Dedicated disposable database required')
         install(source,env,report,'dr-source',port,args.driver)
@@ -73,8 +79,8 @@ def main():
                     except urllib.error.HTTPError as exc: require(exc.code==503,'Recovered site escaped maintenance')
                     else: raise RuntimeError('Recovered site escaped maintenance')
             finally: proc.terminate(); proc.wait(timeout=10)
-        run(target,env_for_test(),report,'dr-open',['php','bin/cajeer','maintenance:off'])
-        with http(target,env_for_test(),report,'dr-restored',newport,version) as base:
+        run(target,env,report,'dr-open',['php','bin/cajeer','maintenance:off'])
+        with http(target,env,report,'dr-restored',newport,version) as base:
             verify_data(base,state); verify_structure(base,fixture); verify_search_seo(base,state,fixture); verify_ecosystem(base,state,ecosystem,version); verify_media(base,state,fixture,media,variants=False)
             client=Client(base); new_token=client.login(ADMIN,ADMIN_PASSWORD)[0]['data']['access_token']
             client.call('POST','/forum/threads/'+state[1]+'/posts',201,{'body':'New host publication'},token=new_token)

@@ -22,6 +22,23 @@ import production as p
 SITE={'domain':'deploy.example.invalid','db_host':'127.0.0.1','db_port':5432,'db_name':'cms','db_user':'cms','db_sslmode':'disable','admin_email':'admin@example.invalid'}
 
 class Safety(unittest.TestCase):
+    def test_soak_qualification_imports_sibling_modules(self):
+        # Production-host imports qualify.py by absolute path, rather than via
+        # its usual script directory. All of its sibling imports must resolve.
+        import importlib.util
+        import sys
+        location=Path(__file__).resolve().parents[1]/'tools/production-acceptance.py'
+        spec=importlib.util.spec_from_file_location('forum_production_acceptance',location)
+        module=importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        before=list(sys.path)
+        qualification=module.load_qualification_module()
+        self.assertEqual(sys.path,before)
+        self.assertTrue(callable(qualification.load))
+        self.assertTrue(callable(qualification.assert_load))
+        self.assertTrue(callable(qualification.QueueLatencyMonitor))
+        self.assertTrue(callable(qualification.run_chaos))
+
     def test_health_cache_is_scoped_to_anonymous_success(self):
         _, _, config = p.service_config(SITE)
         self.assertIn('fastcgi_cache_path ', config)

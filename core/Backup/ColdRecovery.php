@@ -99,7 +99,7 @@ final class ColdRecovery
             (new DatabaseBackup($site,$dest))->restoreFresh($stage.'/database.dump');
             $state['phase']='checking'; F::json($journal,$state);
             // No listeners/workers; fresh process runs restored code with only destination environment.
-            $checks=$this->probe($site,$work,$keyFile);
+            $checks=$this->probe($site,$work,$keyFile,$driver);
             $elapsed=max(0,time()-(int)$state['started_at']);
             $receipt=['ok'=>true,'operation'=>$state['operation'],'id'=>$m['id'],'bundle_sha256'=>$digest,'edition_version'=>$m['edition_version'],'database'=>$driver,'database_name'=>$settings['DB_DATABASE'],'restored_files'=>count($m['files']),'application_boot_tested'=>true,'checks'=>$checks,'snapshot_age_seconds'=>$age,'restore_seconds'=>$elapsed,'rto_seconds'=>$rto?:null,'rpo_seconds'=>$rpo?:null,'rto_met'=>$rto===0||$elapsed<=$rto,'rpo_met'=>true,'maintenance'=>true,'abandoned_databases'=>$state['abandoned_databases'],'verified_at'=>gmdate(DATE_ATOM)];
             F::json($site.'/storage/app/recovery-receipt.json',$receipt);
@@ -156,14 +156,28 @@ final class ColdRecovery
         if (!str_starts_with($path,'/')||realpath($parent)!==$parent||!preg_match('/^[A-Za-z0-9][A-Za-z0-9_.-]{0,100}$/D',$base)||!is_dir($parent)||fileowner($parent)!==posix_geteuid()||(fileperms($parent)&0022)!==0||str_starts_with($path,rtrim($this->root,'/').'/')||$path===$this->root) throw new \RuntimeException('Use a new destination under a private operator-owned directory outside the tool installation');
         return $path;
     }
-    private function probe(string $site,string $work,string $key): array
+    private function probe(string $site,string $work,string $key,string $driver): array
     {
         $script=$this->root.'/tools/recovery-probe.php';
         // Do not inherit .env overrides, old DB credentials, service tokens or proxy configuration.
         $env=['PATH'=>getenv('PATH')?:'/usr/bin:/bin','HOME'=>getenv('HOME')?:'/nonexistent','BACKUP_KEY_FILE'=>$key];
         if (getenv('BACKUP_SQLITE_PYTHON')) $env['BACKUP_SQLITE_PYTHON']=getenv('BACKUP_SQLITE_PYTHON');
         $out=$work.'/probe.json'; $err=$work.'/probe.log';
-        $process=proc_open(['flock','--exclusive','--nonblock',$work.'/child.lock',PHP_BINARY,$script,$site],[0=>['file','/dev/null','r'],1=>['file',$out,'w'],2=>['file',$err,'w']],$pipes,$site,$env,['bypass_shell'=>true]);
+        $command=['flock','--exclusive','--nonblock',$work.'/child.lock',PHP_BINARY];
+        $version=(new ForumVersion($site))->current();
+        if (version_compare($version,'0.8.7','>=') && version_compare($version,'1.0.0','<')
+            && $driver==='pgsql') {
+            // Pre-1.0 signed releases use pg_am.am instead of pg_am.amname.
+            // The recovery probe runs in a sanitized child environment and
+            // intentionally cannot inherit a caller-supplied PHP_INI_SCAN_DIR.
+            // Load the trusted current inspector via a CLI-only PHP option;
+            // neither the authenticated backup nor its signed code is changed.
+            $compat=$this->root.'/core/Forum/Service/ForumSearchMaintenance.php';
+            if (!is_file($compat) || is_link($compat)) throw new \RuntimeException('Trusted recovery compatibility source missing');
+            array_push($command,'-d','auto_prepend_file='.$compat);
+        }
+        array_push($command,$script,$site);
+        $process=proc_open($command,[0=>['file','/dev/null','r'],1=>['file',$out,'w'],2=>['file',$err,'w']],$pipes,$site,$env,['bypass_shell'=>true]);
         if (!is_resource($process)||proc_close($process)!==0) throw new \RuntimeException('Restored application probe failed; inspect private recovery workspace');
         $result=F::read($out); if (($result['ok']??false)!==true) throw new \RuntimeException('Restored application probe did not pass');
         return $result;

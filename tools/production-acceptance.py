@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 import socket
 import ssl
+import sys
 import tempfile
 import time
 from urllib.parse import quote
@@ -234,9 +235,7 @@ def run(client, version, email, password, report, soak_seconds=0):
     print('PASS mixed load',flush=True)
     if soak_seconds:
         # Reuse the bounded, paced runner; use the same real response assertions.
-        import importlib.util
-        spec=importlib.util.spec_from_file_location('qualification', Path(__file__).resolve().parents[1]/'deploy/container/qualify.py')
-        qualification=importlib.util.module_from_spec(spec); spec.loader.exec_module(qualification)
+        qualification=load_qualification_module()
         report['soak']=qualification.load(client, [(name,*route) for name,route in routes.items()], 8, soak_seconds, 10)
         qualification.assert_load(report['soak'],1000,0.001,5)
         print('PASS sustained mixed load',flush=True)
@@ -249,6 +248,23 @@ def run(client, version, email, password, report, soak_seconds=0):
     report['auth_rate_limit']=20
     passed('rate_limit')
     # No new login needed after exhausting auth quota; fixture is disposable.
+
+
+def load_qualification_module():
+    # qualify.py is intentionally invoked both as a standalone script and as a
+    # bounded soak-test module. Its sibling imports (qualification_telemetry,
+    # chaos) must resolve when imported by file path from tools/.
+    import importlib.util
+    directory=Path(__file__).resolve().parents[1]/'deploy/container'
+    spec=importlib.util.spec_from_file_location('forum_container_qualification',directory/'qualify.py')
+    require(spec is not None and spec.loader is not None,'Missing container qualification module')
+    module=importlib.util.module_from_spec(spec)
+    sys.path.insert(0,str(directory))
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        sys.path.pop(0)
+    return module
 
 
 def main():
