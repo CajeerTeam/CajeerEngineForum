@@ -48150,11 +48150,6 @@
             "additionalProperties": false
           }
         },
-        "required": [
-          "body",
-          "body_format",
-          "attachment_ids"
-        ],
         "additionalProperties": false
       },
       "ForumDraft": {

@@ -54,6 +54,89 @@ final readonly class OperationsMonitor
         $free=@disk_free_space($this->root.'/storage');$checks['disk']=$free!==false&&$free>=$this->minFree();
         return ['ok'=>!in_array(false,$checks,true),'status'=>in_array(false,$checks,true)?'not_ready':'ready','checks'=>$checks];
     }
+    /**
+     * Public HTTP health is a high-volume load-balancer endpoint. Rechecking
+     * every migration and forum table on each probe exhausts the application
+     * database under concurrent traffic. Reuse only a recent *healthy* schema
+     * report; test the live database and mandatory Redis on every response.
+     * Full operator diagnostics and readiness() remain uncached.
+     */
+    public function cachedReadiness(): array
+    {
+        if (OperationLock::maintenance($this->root)) return $this->readiness();
+
+        try {
+            $dir = $this->root.'/storage/cache';
+            \CajeerEngine\Update\OperationFiles::dir($dir, 0770);
+            $file = new JsonFile($dir.'/http-readiness.json');
+            $saved = $file->readObject();
+            $now = time();
+            if ($this->healthySample($saved, $now, 10) && $this->liveReadinessCheck()) {
+                return $saved['readiness'];
+            }
+            $h = @fopen($dir.'/http-readiness.lock', 'c+');
+            if ($h === false) return $this->readiness();
+            try {
+                if (!flock($h, LOCK_EX | LOCK_NB)) {
+                    // Another request is refreshing the expensive schema checks.
+                    // A bounded fallback is allowed only after fresh DB/Redis
+                    // probes, never during maintenance or on a failed sample.
+                    if ($this->healthySample($saved, $now, 30) && $this->liveReadinessCheck()) {
+                        return $saved['readiness'];
+                    }
+                    return $this->readiness();
+                }
+                $saved = $file->readObject();
+                if ($this->healthySample($saved, time(), 10) && $this->liveReadinessCheck()) {
+                    return $saved['readiness'];
+                }
+                $ready = $this->readiness();
+                if ($ready['ok']) {
+                    $file->writeObject(['sampled_at' => time(), 'readiness' => $ready]);
+                }
+                return $ready;
+            } finally {
+                flock($h, LOCK_UN);
+                fclose($h);
+            }
+        } catch (\Throwable) {
+            // A broken cache must never make an unhealthy system look ready.
+            return $this->readiness();
+        }
+    }
+
+    private function healthySample(array $saved, int $now, int $maxAge): bool
+    {
+        return (int)($saved['sampled_at'] ?? 0) >= $now - $maxAge
+            && is_array($saved['readiness'] ?? null)
+            && ($saved['readiness']['ok'] ?? false) === true;
+    }
+
+    private function liveReadinessCheck(): bool
+    {
+        $lease = null;
+        try {
+            $lease = OperationLock::acquire($this->root, false);
+            if (OperationLock::maintenance($this->root)) return false;
+            $this->assertDatabasePresent();
+            $db = new DatabaseManager($this->config);
+            if ($db->connection()->query('SELECT 1')->fetchColumn() === false) return false;
+            $requiredRedis = getenv('RATE_LIMIT_DRIVER') === 'redis'
+                || $this->config->string('queue.default') === 'redis';
+            if ($requiredRedis) {
+                $redis = \CajeerEngine\Cache\RedisConnection::open();
+                try { if (!$redis->ping()) return false; }
+                finally { $redis->close(); }
+            }
+            $free = @disk_free_space($this->root.'/storage');
+            return $free !== false && $free >= $this->minFree();
+        } catch (\Throwable) {
+            return false;
+        } finally {
+            OperationLock::release($lease);
+        }
+    }
+
     public function report(): array
     {
         $ready=$this->readiness();$checks=[];$alerts=[];

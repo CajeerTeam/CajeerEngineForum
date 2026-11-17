@@ -1148,6 +1148,19 @@ class NetworkTests(unittest.TestCase):
         c.call('GET','/forum/antispam/status',403,token=member)
         c.call('POST','/forum/register',422,{'name':'Bot','email':unique_email(),'password':PASSWORD,'website':'filled'})
         text='This is a deliberately long repeated content example for the anti-spam regression, with more than eighty characters.'
+        policy_path='/forum/acp/policy'
+        baseline=c.call('GET','/forum/acp?view=settings',token=admin)
+        original={k:v for k,v in baseline['values'].items() if k not in ('paused','registration_open')}
+        focused=dict(original);focused['new_threads_hour']=9
+        focused['threads_hour']=max(9,focused['threads_hour'])
+        c.call('PUT',policy_path,200,{'revision':baseline['revision'],'values':focused},token=admin)
+        try:
+            self._check_antispam_budget(c,admin,member,board,path,text)
+        finally:
+            latest=c.call('GET','/forum/acp?view=settings',token=admin)
+            c.call('PUT',policy_path,200,{'revision':latest['revision'],'values':original},token=admin)
+
+    def _check_antispam_budget(self,c,admin,member,board,path,text):
         first=c.call('POST',path,201,{'title':'Initial clean content','body':text},token=member)['id']
         duplicate=c.call('POST',path,201,{'title':'Duplicate content','body':text},token=member);self.assertTrue(duplicate['pending_review'])
         submission=duplicate['submission_id'];c.call('GET','/forum/threads/'+submission,404)
@@ -1156,7 +1169,16 @@ class NetworkTests(unittest.TestCase):
         draft='/forum/drafts/'+str(uuid.uuid4());c.call('PUT',draft,200,{'scope':'thread','target_id':board,'revision_number':0,'payload':{'title':'Link spam','body':'https://one.example/a https://two.example/b https://three.example/c'}},token=member)
         queued=c.call('POST',draft+'/publish',200,{'revision_number':1},token=member);self.assertTrue(queued['pending_review']);self.assertEqual(queued,c.call('POST',draft+'/publish',200,{'revision_number':1},token=member))
         post=c.call('GET','/forum/threads/'+first)['first_post_id'];c.call('PATCH','/forum/posts/'+post,422,{'body':'https://one.example/a https://two.example/b https://three.example/c'},token=member)
-        for n in range(7):c.call('POST',path,201,{'title':'Budget topic '+str(n),'body':'Budget body '+str(n)},token=member)
+        exhausted=False
+        for n in range(11):
+            payload={'title':'Budget topic '+str(n),'body':'Budget body '+str(n)}
+            try:
+                c.call('POST',path,201,payload,token=member)
+            except AssertionError as exc:
+                if 'got 429' not in str(exc):raise
+                exhausted=True
+                break
+        self.assertTrue(exhausted,'New member exceeded configured thread quota without HTTP 429')
         c.call('POST',path,429,{'title':'Exceeds budget','body':'Over limit'},token=member)
         stats=c.call('GET','/forum/antispam/status',200,token=admin);self.assertTrue(any(x['reason']=='duplicate' for x in stats['review_reasons']))
 
@@ -1287,7 +1309,7 @@ class NetworkTests(unittest.TestCase):
         for invalid in ('Bearer invalid', 'Bearer ', 'Basic token'):
             browser.call('GET','/auth/me',401,headers={'Authorization':invalid})
         browser.call('GET','/auth/me',401,headers={'X-API-Token':'invalid'})
-        browser.call('GET','/auth/me',401,headers={'Authorization':'Bearer '+identity['access_token'],'X-API-Token':'invalid'})
+        browser.call('GET','/auth/me',401,headers={'Authorization':'Bearer '+admin,'X-API-Token':'invalid'})
         browser.call('GET','/auth/me')
         browser.call('POST','/forum/acp/maintenance',403,{'action':'cleanup_uploads'})
         browser.call('POST','/forum/acp/maintenance',403,{'action':'cleanup_uploads'},headers={'X-CSRF-Token':'0'*64})

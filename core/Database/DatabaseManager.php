@@ -62,7 +62,7 @@ final class DatabaseManager
     }
 
     /** @template T @param callable(PDO):T $callback @return T */
-    public function transaction(callable $callback): mixed
+    public function transaction(callable $callback, bool $writeLock = true): mixed
     {
         $pdo = $this->connection();
         $started = !$pdo->inTransaction();
@@ -71,7 +71,16 @@ final class DatabaseManager
         $entered=false;
         $start=hrtime(true);$wall=microtime(true);$trace=\CajeerEngine\Observability\TraceScope::child();$previousTrace=\CajeerEngine\Observability\TraceScope::enter($trace);$outcome='failure';
         try {
-            if ($started) $pdo->beginTransaction();
+            if ($started) {
+                if ($writeLock && $this->driver() === 'sqlite') {
+                    // WAL readers may otherwise read first, then lose the upgrade
+                    // race to another writer (SQLITE_BUSY_SNAPSHOT). Serialize
+                    // writers before executing the mutation, without retries.
+                    $pdo->exec('BEGIN IMMEDIATE');
+                } else {
+                    $pdo->beginTransaction();
+                }
+            }
             else {
                 $savepoint='ce_sp_'.(++$this->savepointSequence);
                 $pdo->exec('SAVEPOINT '.$savepoint);
@@ -108,7 +117,7 @@ final class DatabaseManager
         return $this->transaction(function(PDO $pdo)use($callback,$driver){
             if($driver==='pgsql')$pdo->exec('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY');
             return $callback($pdo);
-        });
+        }, false);
     }
 
     /** @return array<string, mixed> */

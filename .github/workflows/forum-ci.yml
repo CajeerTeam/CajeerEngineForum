@@ -1037,7 +1037,9 @@ jobs:
           retention-days: 90
   certification:
     needs: [release-candidate, test, postgres, mysql-search, browser, release, production-host, container-runtime, container-upgrade, backup-s3, monitoring, staging]
-    if: always()
+    # A certificate is meaningful only if every upstream matrix completed.
+    # Failed predecessors remain visible through the forum-required aggregate.
+    if: ${{ always() && needs.staging.result == 'success' && needs.test.result == 'success' && needs.postgres.result == 'success' && needs['mysql-search'].result == 'success' && needs.browser.result == 'success' && needs.release.result == 'success' && needs['production-host'].result == 'success' && needs['container-runtime'].result == 'success' && needs['container-upgrade'].result == 'success' && needs['backup-s3'].result == 'success' && needs.monitoring.result == 'success' && needs['release-candidate'].result == 'success' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:

@@ -92,6 +92,18 @@ if (!is_file($autoload)) {
 require $autoload;
 
 if (is_file($root . '/.env')) {
+    // PHP-FPM/CLI-server can expose inherited environment only through getenv(),
+    // while Symfony Dotenv checks $_ENV/$_SERVER when deciding whether to replace
+    // existing values. Preserve operator-provisioned credentials and trust roots.
+    // Never import HTTP_* variables: request headers are not configuration.
+    foreach (getenv() as $name => $value) {
+        if (!is_string($name) || !preg_match('/^[A-Z][A-Z0-9_]*$/D', $name)
+            || str_starts_with($name, 'HTTP_') || str_starts_with($name, 'REDIRECT_')
+            || !is_string($value)) continue;
+        if (!array_key_exists($name, $_ENV) && !array_key_exists($name, $_SERVER)) {
+            $_ENV[$name] = $value;
+        }
+    }
     (new Dotenv())->usePutenv()->loadEnv($root . '/.env');
 }
 
