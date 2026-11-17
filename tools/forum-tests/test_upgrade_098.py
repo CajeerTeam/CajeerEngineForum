@@ -11,7 +11,7 @@ from release_acceptance import verify_release_sequence, chain_receipt
 
 class UpgradeChainRegression(unittest.TestCase):
     def test_supported_chronological_versions(self):
-        verify_release_sequence(['0.8.7','0.9.2','0.9.8','0.9.9'])
+        verify_release_sequence(['0.8.7','0.9.2','0.9.8','0.9.9','1.0.0'])
 
     def test_out_of_order_or_equal_versions_rejected(self):
         for versions in (['0.9.7','0.9.7'],['0.9.9','0.9.8'],

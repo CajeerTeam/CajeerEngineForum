@@ -1,4 +1,4 @@
-name: Forum 0.9.9 physical interrupted signed update
+name: Forum 1.0.0 physical interrupted signed update
 on:
   workflow_dispatch:
     inputs:
@@ -8,7 +8,7 @@ on:
         required: true
         options: [drained, activating]
 env:
-  FORUM_CHAOS_TARGET: ${{ github.ref == 'refs/tags/v1.0.0-rc.1' && '1.0.0-rc.1' || '0.9.9' }}
+  FORUM_CHAOS_TARGET: ${{ '1.0.0' }}
 permissions:
   contents: read
 concurrency:
@@ -61,7 +61,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: forum-099-physical-interrupted-update
+          name: forum-100-physical-interrupted-update
           path: ${{ runner.temp }}/forum-chaos/*.json
           if-no-files-found: warn
           retention-days: 90

@@ -28,7 +28,7 @@ def digest(path):
 
 def check(candidate, key, host_path, log_path, logdir, version, commit):
     require(re.fullmatch(r'[a-f0-9]{40}', commit) is not None, 'Invalid Git commit')
-    require(version in ('0.9.9', '1.0.0-rc.1'), 'Unexpected final candidate version')
+    require(version in ('0.9.9', '1.0.0-rc.1', '1.0.0'), 'Unexpected final candidate version')
     require(key.is_file() and not key.is_symlink(), 'Missing independent trusted key')
     package = candidate / f'cajeerengine-{version}-dist.zip'
     dist_sha = digest(package)

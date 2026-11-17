@@ -34,8 +34,8 @@ def verify_fixture(args):
         require(path.is_file() and not path.is_symlink(), 'Missing independent operator input: '+path.name)
     from update import read_site
     old,new=read_site(args.old_env),read_site(args.new_env)
-    require((old['CE_RELEASE_VERSION'],new['CE_RELEASE_VERSION']) in {('0.9.8','0.9.9'),('0.9.9','1.0.0-rc.1')},
-            'Chaos update requires authentic 0.9.8 -> 0.9.9 or 0.9.9 -> 1.0.0-rc.1 artifacts')
+    require((old['CE_RELEASE_VERSION'],new['CE_RELEASE_VERSION']) in {('0.9.8','0.9.9'),('0.9.9','1.0.0-rc.1'),('0.9.9','1.0.0'),('1.0.0-rc.1','1.0.0')},
+            'Chaos update requires authentic supported release history and verified stable target')
     require(old['CE_QUEUE_DRIVER']=='pgsql' and new['CE_QUEUE_DRIVER']=='pgsql',
             'Only PostgreSQL-backed queue updates are supported')
     return old,new

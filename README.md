@@ -1,6 +1,6 @@
 # CajeerEngine Forum Edition
 
-**Forum Edition 0.9.9 — Release Candidate & Final Audit**, built on CajeerEngine 1.3.0. Publication requires a passing `forum-required` gate and verified signed CI certification tied to the exact commit and release artifacts.
+**Forum Edition 1.0.0 — Release Candidate & Final Audit**, built on CajeerEngine 1.3.0. Publication requires a passing `forum-required` gate and verified signed CI certification tied to the exact commit and release artifacts.
 
 Self-hosted forum platform by CajeerTeam. PHP 8.4.1+, CajeerEngine kernel, Symfony Components, REST API, Apache-2.0.
 
@@ -69,3 +69,7 @@ CI: `.github/workflows/forum-ci.yml`; 0.9.1 added `release-candidate`, `certific
 Архитектура и исходные компоненты CajeerEngine сохранены. См. LICENSE, NOTICE и THIRD_PARTY_NOTICES.md. История upstream: [CHANGELOG](CHANGELOG.md), исходный release workflow хранится в `docs/upstream/` для справки.
 
 Forum migration: [phpBB 3.3 operator guide](docs/forum-migration.md).
+
+## 1.0.0 stable release process
+
+The supported deployments, signed-release verification, mandatory external physical certification and explicit recovery/rollback procedures are described in [production operations](docs/forum-1.0-production-operations.md), [upgrade guide](docs/forum-1.0-upgrade.md) and [compatibility matrix](docs/forum-1.0-compatibility.md). A source tree at version 1.0.0 is **not** proof that the stable release has passed physical production certification. Publication requires the independently witnessed and signed evidence.

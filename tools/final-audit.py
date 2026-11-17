@@ -46,7 +46,7 @@ def sha(path):
 
 
 def audit(directory, trusted_key, version, commit):
-    demand(version in ('0.9.9', '1.0.0-rc.1'), 'Unsupported final-audit edition')
+    demand(version in ('0.9.9', '1.0.0-rc.1', '1.0.0'), 'Unsupported final-audit edition')
     demand(re.fullmatch(r'[0-9a-f]{40}', commit) is not None, 'Invalid checkout commit')
     demand(trusted_key.is_file() and not trusted_key.is_symlink(), 'External trusted key required')
     report = read(directory / 'certification.json')

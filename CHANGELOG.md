@@ -1,3 +1,10 @@
+## [1.0.0] - 2026-11-17 — Production Certified Stable (release gates)
+
+- Stable tag `v1.0.0` has a separate fail-closed release-admission tool: genuine source/dist Ed25519 signatures, completed tagged CI and independent staging/DR audit, real PostgreSQL 10k/100k/1M+24h soak reports, both genuine SIGKILL upgrade-recovery checkpoints and a separately signed human operator GO bound to the exact input hashes.
+- The GitHub release publisher refuses to publish a stable release if any required evidence is missing, has changed, or does not match the candidate commit / dist SHA-256. Stable certificates are issued only from witnessed evidence; local source builds are not certified releases.
+- Updated signed upgrade acceptance and operator recovery playbooks; Core 1.3.0, database migration 0049 and application features are unchanged.
+- **Release status:** the actual production certificate, complete physical evidence, official signing keys, and public release are issued only after the dedicated infrastructure runs succeed. No synthetic evidence substitutes for certification.
+
 ## [0.9.9] - 2026-11-17 — Release Candidate & Final Audit
 
 - Freeze Forum feature development for the 1.0.0-rc.1 release branch; no new schema or feature changes.

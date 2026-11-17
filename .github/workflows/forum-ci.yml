@@ -6,7 +6,7 @@ on:
 permissions:
   contents: read
 env:
-  FORUM_CURRENT_VERSION: ${{ github.ref == 'refs/tags/v1.0.0-rc.1' && '1.0.0-rc.1' || '0.9.9' }}
+  FORUM_CURRENT_VERSION: ${{ github.ref == 'refs/tags/v1.0.0-rc.1' && '1.0.0-rc.1' || '1.0.0' }}
 concurrency:
   group: forum-ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -55,7 +55,7 @@ jobs:
           key="$RUNNER_TEMP/forum-ci-release.secret"
           pub="$dir/ci-release.pub"
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
-            [[ ( "$GITHUB_REF" == 'refs/tags/v0.9.9' || "$GITHUB_REF" == 'refs/tags/v1.0.0-rc.1' ) && "$GITHUB_REF" == "refs/tags/v$(php -r 'echo json_decode(file_get_contents("release.json"),true)["edition_version"];')" && -n "$RELEASE_SECRET_B64" && -n "$RELEASE_PUBLIC_B64" ]] || { echo 'Tagged release needs configured publisher signing key and trusted public key' >&2; exit 1; }
+            [[ ( "$GITHUB_REF" == 'refs/tags/v1.0.0' || "$GITHUB_REF" == 'refs/tags/v1.0.0-rc.1' ) && "$GITHUB_REF" == "refs/tags/v$(php -r 'echo json_decode(file_get_contents("release.json"),true)["edition_version"];')" && -n "$RELEASE_SECRET_B64" && -n "$RELEASE_PUBLIC_B64" ]] || { echo 'Tagged release needs configured publisher signing key and trusted public key' >&2; exit 1; }
             printf '%s\n' "$RELEASE_SECRET_B64" > "$key"
             printf '%s\n' "$RELEASE_PUBLIC_B64" > "$pub"
           else
@@ -140,7 +140,7 @@ jobs:
       - run: php tools/forum-observability-regression.php --database
       - run: php tools/forum-qualification-regression.php
       - run: python deploy/container/test_qualify.py
-      - name: Release 0.9.9 upgrade chain admission and fail-closed recovery regression
+      - name: Release 1.0.0 upgrade chain admission and fail-closed recovery regression
         run: |
           python tools/forum-tests/test_upgrade_098.py
           python deploy/container/test_update.py
@@ -176,7 +176,7 @@ jobs:
       - run: python tools/forum-tests/stable_search_seo_sql_regression.py
       - run: python tools/forum-tests/cache_sql_regression.py
       - run: python tools/forum-tests/performance_sql_regression.py
-      - name: Forum 0.9.9 database migration and query regression (SQLite)
+      - name: Forum 1.0.0 database migration and query regression (SQLite)
         run: python tools/forum-tests/database_optimization_sql_regression.py
       - run: php tools/forum-reliability-regression.php
       - run: python tools/forum-tests/reliability_sql_regression.py
@@ -193,6 +193,8 @@ jobs:
       - run: python tools/certification-regression.py
       - name: Final RC independent security and artifact audit regressions
         run: python tools/final-audit-regression.py
+      - name: Stable physical evidence and independent Ed25519 operator GO rejection regressions
+        run: python tools/stable-certification-regression.py
       - run: python tools/github-publish-regression.py
       - run: php tools/update-regression.php
       - run: php tools/update-policy-regression.php
@@ -287,7 +289,7 @@ jobs:
           CE_QUEUE_PG_USER: forum_ci
           CE_QUEUE_PG_PASSWORD: 'ForumCI-Disposable-123!'
         run: php tools/queue-regression.php --pgsql
-      - name: Physical 0.9.2 to 0.9.9 upgrade, FTS/ACL plans and streamed bulk marks (PostgreSQL)
+      - name: Physical populated upgrade, FTS/ACL plans and streamed bulk marks (PostgreSQL)
         run: php tools/forum-performance-pg-regression.php
       - run: php tools/forum-redis-regression.php
         env:
@@ -477,8 +479,7 @@ jobs:
       - name: Build authentic intermediate upgrades from immutable historical release tags
         run: |
           set -euo pipefail
-          history=(0.9.2 0.9.7 0.9.8)
-          if [ "$FORUM_CURRENT_VERSION" = 1.0.0-rc.1 ]; then history+=(0.9.9); fi
+          history=(0.9.2 0.9.7 0.9.8 0.9.9)
           for version in "${history[@]}"; do
             ref="refs/tags/v${version}"
             # No synthetic stand-in for missing release history.
@@ -489,9 +490,7 @@ jobs:
             test "$(php -r 'echo json_decode(file_get_contents($argv[1]),true,512,JSON_THROW_ON_ERROR)["edition_version"];' "$dir/release.json")" = "$version"
             (cd "$dir"; composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader; php tools/build-release.php --dist --target-dir="$RUNNER_TEMP/forum-intermediate-dist" --json)
           done
-          if [ "$FORUM_CURRENT_VERSION" = 1.0.0-rc.1 ]; then
-            echo "FORUM_RC_EXTRA_INTERMEDIATE=--intermediate $RUNNER_TEMP/forum-intermediate-dist/cajeerengine-0.9.9-dist.zip" >> "$GITHUB_ENV"
-          fi
+          # Historical artifacts are built from genuine immutable tags; no renamed ZIPs.
       - name: Clean install, live HTTP, identity and corrupt-ledger rejection
         env:
           FORUM_TEST_RELEASE_DB: forum_test_release_clean
@@ -502,7 +501,7 @@ jobs:
         run: |
           set -euo pipefail
           extra=()
-          if [ "$FORUM_CURRENT_VERSION" = 1.0.0-rc.1 ]; then extra=(--intermediate "$RUNNER_TEMP/forum-intermediate-dist/cajeerengine-0.9.9-dist.zip"); fi
+          extra=(--intermediate "$RUNNER_TEMP/forum-intermediate-dist/cajeerengine-0.9.9-dist.zip")
           python tools/forum-tests/release_acceptance.py --driver ${{ matrix.driver }} --artifact "$RUNNER_TEMP/forum-current/cajeerengine-${FORUM_CURRENT_VERSION}-dist.zip" --previous "$RUNNER_TEMP/forum-previous-dist/cajeerengine-${FORUM_BASELINE_VERSION}-dist.zip" --intermediate "$RUNNER_TEMP/forum-intermediate-dist/cajeerengine-0.9.2-dist.zip" --intermediate "$RUNNER_TEMP/forum-intermediate-dist/cajeerengine-0.9.7-dist.zip" --intermediate "$RUNNER_TEMP/forum-intermediate-dist/cajeerengine-0.9.8-dist.zip" "${extra[@]}" --report storage/tmp/forum-ci/release/upgrade
       - name: Cold recovery from authentic baseline after loss of source host and database
         env:
@@ -569,17 +568,15 @@ jobs:
         with:
           name: forum-signed-candidate
           path: ${{ runner.temp }}/forum-host
-      - name: Build authentic systemd upgrade baseline from tag v0.9.8
+      - name: Build authentic systemd upgrade baseline from tag v0.9.9
         run: |
           set -euo pipefail
-          ref=refs/tags/v0.9.8
-          if [ "$FORUM_CURRENT_VERSION" = 1.0.0-rc.1 ]; then ref=refs/tags/v0.9.9; fi
+          ref=refs/tags/v0.9.9
           git rev-parse --verify "${ref}^{commit}" >/dev/null
           dir="$RUNNER_TEMP/forum-systemd-old"
           mkdir -p "$dir"
           git archive "$ref" | tar -x -C "$dir"
-          expected=0.9.8
-          if [ "$FORUM_CURRENT_VERSION" = 1.0.0-rc.1 ]; then expected=0.9.9; fi
+          expected=0.9.9
           echo "FORUM_SYSTEMD_BASELINE=$expected" >> "$GITHUB_ENV"
           test "$(php -r 'echo json_decode(file_get_contents($argv[1]),true,512,JSON_THROW_ON_ERROR)["edition_version"];' "$dir/release.json")" = "$expected"
           (cd "$dir"; composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader; php tools/build-release.php --dist --target-dir="$RUNNER_TEMP/forum-host" --json)

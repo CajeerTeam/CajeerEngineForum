@@ -132,7 +132,7 @@ def main():
     p.add_argument('--small',type=Path,required=True)
     p.add_argument('--medium',type=Path,required=True)
     p.add_argument('--soak',type=Path,required=True)
-    p.add_argument('--version',default='0.9.9')
+    p.add_argument('--version',default='1.0.0')
     p.add_argument('--output',type=Path,required=True)
     a=p.parse_args()
     try: seal(a)

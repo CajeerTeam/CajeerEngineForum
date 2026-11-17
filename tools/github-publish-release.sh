@@ -20,6 +20,13 @@ report=json.load(open(sys.argv[1]))
 if report.get('signing')!='trusted-release-key':
     raise SystemExit('Cannot publish a branch/PR certification signed with an ephemeral CI key')
 PY_RELEASE
+# Stable release is never published from the short CI certificate alone.
+if [[ "$version" == 1.0.0 ]]; then
+  [[ -n ${STABLE_OPERATOR_TRUSTED_PUBLIC_KEY_FILE:-} && -f "$STABLE_OPERATOR_TRUSTED_PUBLIC_KEY_FILE" ]] || { echo 'Independent STABLE_OPERATOR_TRUSTED_PUBLIC_KEY_FILE is required for stable publication' >&2; exit 1; }
+  python3 "$root/tools/stable-certification.py" verify --directory "$dir" \
+    --trusted-public-key "$RELEASE_TRUSTED_PUBLIC_KEY_FILE" \
+    --operator-public-key "$STABLE_OPERATOR_TRUSTED_PUBLIC_KEY_FILE"
+fi
 python3 "$root/tools/verify-certified-run.py" "$dir/ci-jobs.json" "$repo" "$tag" "$(git -C "$root" rev-parse HEAD)"
 remote_commit=$(gh api "repos/$repo/commits/$tag" --jq '.sha')
 [[ "$remote_commit" == "$(git -C "$root" rev-parse HEAD)" ]] || { echo 'Remote release tag moved or points to the wrong commit' >&2; exit 1; }
@@ -35,6 +42,13 @@ for mode in source dist; do
   [[ -s "$manifest" ]]
   files+=("$manifest")
 done
+if [[ "$version" == 1.0.0 ]]; then
+  for name in stable-certification.json operator-approval.json operator-approval.json.sig \
+              10k.json 100k.json 1m-soak.json chaos-drained.json chaos-activating.json; do
+    [[ -s "$dir/$name" ]] || { echo "Missing stable evidence $name" >&2; exit 1; }
+    files+=("$dir/$name")
+  done
+fi
 index="$dir/cajeerengine-$version-artifacts.json"
 [[ -s "$index" ]]
 files+=("$index")
