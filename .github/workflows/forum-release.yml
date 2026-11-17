@@ -1,0 +1,149 @@
+name: Publish Forum Edition release
+
+on:
+  workflow_run:
+    workflows:
+      - Forum Edition CI
+    types:
+      - completed
+
+permissions:
+  actions: read
+  contents: write
+
+concurrency:
+  group: forum-edition-release
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish conventional GitHub release
+    if: >-
+      ${{ github.event.workflow_run.conclusion == 'success' &&
+          github.event.workflow_run.event == 'push' &&
+          github.event.workflow_run.head_branch == 'main' &&
+          github.event.workflow_run.head_repository.full_name == github.repository }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
+      RELEASE_RUN_ID: ${{ github.event.workflow_run.id }}
+    steps:
+      - name: Check out the exact passing commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_SHA }}
+          persist-credentials: false
+
+      - name: Validate release version and current main
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=$(python3 -c 'import json; r=json.load(open("release.json")); assert r["edition"] == "forum"; print(r["edition_version"])')
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Not a stable version: $version" >&2; exit 1; }
+          tag="v$version"
+          main_sha=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')
+          if [[ "$main_sha" != "$RELEASE_SHA" ]]; then
+            echo "The passing CI commit is no longer at the tip of main; not releasing an older commit."
+            echo "should_publish=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $tag already exists; no changes made."
+            echo "should_publish=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Never retarget or overwrite an existing tag.
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" >/dev/null 2>&1; then
+            echo "Tag $tag already exists; refusing to move or reuse it automatically." >&2
+            exit 1
+          fi
+          echo "should_publish=true" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Download packages built by the passing CI run
+        if: steps.version.outputs.should_publish == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: forum-certified-release
+          run-id: ${{ env.RELEASE_RUN_ID }}
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/forum-release
+
+      - name: Verify and publish normal source/dist release
+        if: steps.version.outputs.should_publish == 'true'
+        shell: bash
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          TAG: ${{ steps.version.outputs.tag }}
+          ARTIFACT_ROOT: ${{ runner.temp }}/forum-release
+        run: |
+          set -euo pipefail
+          files=()
+          for mode in source dist; do
+            filename="cajeerengine-${VERSION}-${mode}.zip"
+            mapfile -t matches < <(find "$ARTIFACT_ROOT" -type f -name "$filename")
+            [[ "${#matches[@]}" == 1 ]] || { echo "Expected one $filename in CI artifacts" >&2; exit 1; }
+            zip="${matches[0]}"
+            checksum="$zip.sha256"
+            [[ -s "$zip" && -s "$checksum" ]] || { echo "Missing archive/checksum: $filename" >&2; exit 1; }
+            (cd "$(dirname "$zip")" && sha256sum --strict --check "$(basename "$checksum")")
+            unzip -tqq "$zip"
+            files+=("$zip" "$checksum")
+          done
+
+          cat > "$RUNNER_TEMP/forum-release-notes.md" <<'NOTES'
+          ## CajeerEngineForum 1.0.0
+
+          Initial stable software release of the Forum Edition, built on CajeerEngine 1.3.0.
+
+          - Forum discussions, nested boards, ACL-aware moderation and search.
+          - Accounts, sessions, notifications, attachments and community tools.
+          - Administration, migrations, backups, deployment and recovery tooling.
+          - Source and distribution ZIP packages from the successful CI run, with SHA-256 checksums.
+
+          This is a conventional GitHub software release. The CI checks passed for the published commit.
+          It does **not** claim independent production certification, a completed 24-hour physical soak,
+          or external security accreditation. Assess and back up the target deployment before upgrading.
+
+          See README.md and docs/ for installation, migration and operational instructions.
+          NOTES
+
+          # A failure while uploading leaves a draft, not a partially public release.
+          gh release create "$TAG" "${files[@]}" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$RELEASE_SHA" \
+            --title "CajeerEngineForum $VERSION" \
+            --notes-file "$RUNNER_TEMP/forum-release-notes.md" \
+            --draft
+
+          python3 - "$GITHUB_REPOSITORY" "$TAG" "${files[@]}" <<'PY'
+          import hashlib
+          import json
+          from pathlib import Path
+          import subprocess
+          import sys
+
+          repo, tag, *filenames = sys.argv[1:]
+          release = json.loads(subprocess.check_output(
+              ["gh", "release", "view", tag, "--repo", repo, "--json", "isDraft,databaseId"]))
+          if not release["isDraft"]:
+              raise SystemExit("Release unexpectedly published before verification")
+          remote = json.loads(subprocess.check_output(
+              ["gh", "api", f"repos/{repo}/releases/{release['databaseId']}"]))
+          assets = {asset["name"]: asset for asset in remote["assets"]}
+          for filename in filenames:
+              path = Path(filename)
+              asset = assets.get(path.name)
+              if not asset or asset["size"] != path.stat().st_size or asset["state"] != "uploaded":
+                  raise SystemExit(f"Missing/incomplete uploaded asset: {path.name}")
+              digest = "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
+              if asset.get("digest") != digest:
+                  raise SystemExit(f"GitHub digest does not match: {path.name}")
+          PY
+
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --latest
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json url,tagName,isDraft
