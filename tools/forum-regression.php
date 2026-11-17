@@ -216,7 +216,7 @@ try {
     // Moderation deletion moves a thread into the recycle bin; it deliberately
     // preserves its posts until an administrator performs an explicit purge.
     $retained=$db->connection()->prepare('SELECT deleted_at,deletion_id FROM ce_forum_threads WHERE id=?');
-    $retained->execute([$t]);$trash=$retained->fetch(\PDO::FETCH_ASSOC);
+    $retained->execute([$t]);$trash=$retained->fetch(\PDO::FETCH_ASSOC);$retained->closeCursor();
     check(is_array($trash)&&$trash['deleted_at']!==null&&is_string($trash['deletion_id']),'soft-deleted discussion retained for recovery');
     $call('POST',"/forum/recycle-bin/thread/$t",['action'=>'purge','deletion_id'=>$trash['deletion_id']],$a);
     $remaining=$db->connection()->prepare('SELECT COUNT(*) FROM ce_forum_posts WHERE thread_id=?');$remaining->execute([$t]);

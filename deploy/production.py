@@ -254,7 +254,7 @@ WantedBy=timers.target
         fastcgi_param SERVER_PORT 443;
         fastcgi_param REMOTE_ADDR $remote_addr;
         fastcgi_param REDIRECT_STATUS 200;
-        fastcgi_param HTTP_AUTHORIZATION $http_authorization;
+        fastcgi_param HTTP_AUTHORIZATION $http_authorization if_not_empty;
         fastcgi_param SCRIPT_FILENAME {APP}/public/index.php;
         fastcgi_param SCRIPT_NAME /index.php;
         fastcgi_param DOCUMENT_ROOT {APP}/public;
