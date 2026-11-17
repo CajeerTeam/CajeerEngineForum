@@ -1595,8 +1595,16 @@ class BrowserTests(unittest.TestCase):
                     admin_page.get_by_role('link', name='Browser parent', exact=True).click()
                     expect(admin_page.get_by_role('link', name='Browser child', exact=True)).to_be_visible()
                     expect(admin_page.get_by_role('button', name='Создать тему', exact=True)).to_have_count(0)
-                    admin_page.get_by_role('link', name='Browser child', exact=True).click()
-                    expect(admin_page.get_by_role('button', name='Создать тему', exact=True)).to_be_visible()
+                    # Firefox sometimes resolves a freshly created tree link
+                    # before its navigation finishes. Resolve the actual href
+                    # and load the board explicitly, then assert its identity;
+                    # do not mistake the preceding parent page for the child.
+                    child_href = admin_page.get_by_role('link', name='Browser child', exact=True).get_attribute('href')
+                    self.assertRegex(child_href or '', r'^/forum/boards/[a-f0-9-]{36}$')
+                    admin_page.goto(self.base + child_href)
+                    expect(admin_page).to_have_url(self.base + child_href)
+                    expect(admin_page.locator('#app').get_by_role('heading', name='Browser child', exact=True)).to_be_visible()
+                    expect(admin_page.get_by_role('button', name='Создать тему', exact=True)).to_be_visible(timeout=15000)
                     expect(admin_page.get_by_role('navigation',name='Навигационная цепочка')).to_contain_text('Browser node category')
                     expect(admin_page.get_by_role('navigation',name='Навигационная цепочка')).to_contain_text('Browser parent')
                     child_url=admin_page.url
@@ -1666,6 +1674,12 @@ class BrowserTests(unittest.TestCase):
                         guest_page.goto(child_url)
                         expect(guest_page.get_by_role('heading',name='Browser child',exact=True)).to_have_count(0)
                     finally: guest.close()
+                except BaseException:
+                    # The member context has its own trace; preserve the actual
+                    # administrator page when a later browser-specific check fails.
+                    try: admin_page.screenshot(path=str(self.report / 'admin-failure.png'), full_page=True)
+                    except Exception: pass
+                    raise
                 finally:
                     admin_context.close()
                 self.assertEqual([], errors)

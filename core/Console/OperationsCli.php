@@ -91,9 +91,22 @@ final class OperationsCli
     }
     private static function maintenance(string $root,UpdateManager $m,string $c,array $o): array
     {
-        $lock=OperationLock::acquire($root,true);
-        try { if ($c==='maintenance:off' && is_file($root.'/storage/app/extensions/deployment.json')) throw new \RuntimeException('Recover extension deployment first'); return $c==='maintenance:on'?$m->enableMaintenance($o['message']??'Maintenance'):$m->disableMaintenance(); }
-        finally { OperationLock::release($lock); }
+        // Maintenance must drain in-flight HTTP, scheduler and queue leases.
+        // A nonblocking exclusive flock makes a healthy, busy installation
+        // intermittently reject maintenance:on/off. Bound the drain to avoid
+        // waiting forever for an orphaned or stalled process.
+        $deadline = microtime(true) + 60.0;
+        while (true) {
+            try { $lock = OperationLock::acquire($root, true); break; }
+            catch (\RuntimeException $e) {
+                if ($e->getMessage() !== 'Another operation is running; retry after drain' || microtime(true) >= $deadline) throw $e;
+                usleep(100000);
+            }
+        }
+        try {
+            if ($c==='maintenance:off' && is_file($root.'/storage/app/extensions/deployment.json')) throw new \RuntimeException('Recover extension deployment first');
+            return $c==='maintenance:on'?$m->enableMaintenance($o['message']??'Maintenance'):$m->disableMaintenance();
+        } finally { OperationLock::release($lock); }
     }
     private static function options(array $argv): array
     {
