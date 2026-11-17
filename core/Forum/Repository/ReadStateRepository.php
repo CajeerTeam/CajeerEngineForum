@@ -18,6 +18,23 @@ final readonly class ReadStateRepository extends Repository
         $this->query($sql,[$user,$thread,$sequence]);
     }
 
+    /** Upsert watermarks for a bounded, ACL-approved batch. The thread IDs
+     * have already been locked and authorized inside the calling transaction.
+     * Read the maximum committed sequence at write time to preserve monotonicity.
+     */
+    public function markThreads(string $user, array $threads): void
+    {
+        if ($threads === []) return;
+        if (count($threads) > 500) throw new \InvalidArgumentException('Read-state batch exceeds limit');
+        if (!$this->db->connection()->inTransaction()) throw new \LogicException('Bulk read state requires a transaction');
+        $ids = array_values(array_unique($threads));
+        $placeholders = implode(',', array_fill(0, count($ids), '?'));
+        $sql = 'INSERT INTO ce_forum_read_state(user_id,thread_id,read_sequence) '
+            .'SELECT ?,id,read_sequence FROM ce_forum_threads WHERE deleted_at IS NULL AND id IN ('.$placeholders.')'
+            .$this->upsert();
+        $this->query($sql, array_merge([$user], $ids));
+    }
+
     private function upsert(): string
     {
         return $this->db->driver()==='mysql'
@@ -48,25 +65,25 @@ final readonly class ReadStateRepository extends Repository
         if (!$this->db->connection()->inTransaction()) throw new \LogicException('Thread locks require a transaction');
         $locked=new \SplTempFileObject(1024*1024);
         $ids=[];
-        $flush=function()use(&$ids,$locked): void {
-            if(!$ids)return;
-            $sql='SELECT id,board_id FROM ce_forum_threads WHERE deleted_at IS NULL AND '.$this->boardFilter('id',$ids).' ORDER BY id';
-            if($this->db->driver()!=='sqlite')$sql.=' FOR UPDATE';
-            $cursor=$this->query($sql);
-            while(($row=$cursor->fetch(\PDO::FETCH_ASSOC))!==false)$locked->fwrite($row['id'].' '.$row['board_id']."\n");
-            $cursor->closeCursor();
-            $ids=[];
-        };
         $candidates->rewind();
         while(!$candidates->eof()){
             $id=trim($candidates->fgets());
             if($id==='')continue;
             $ids[]=$id;
-            if(count($ids)===500)$flush();
+            if(count($ids)===500){$this->writeLockedBatch($ids,$locked);$ids=[];}
         }
-        $flush();
+        if($ids)$this->writeLockedBatch($ids,$locked);
         $locked->rewind();
         return $locked;
+    }
+
+    private function writeLockedBatch(array $ids, \SplTempFileObject $locked): void
+    {
+        $sql='SELECT id,board_id FROM ce_forum_threads WHERE deleted_at IS NULL AND '.$this->boardFilter('id',$ids).' ORDER BY id';
+        if($this->db->driver()!=='sqlite')$sql.=' FOR UPDATE';
+        $cursor=$this->query($sql);
+        while(($row=$cursor->fetch(\PDO::FETCH_ASSOC))!==false)$locked->fwrite($row['id'].' '.$row['board_id']."\n");
+        $cursor->closeCursor();
     }
 
     /** Compute actual unread posts, not the difference between counters (which may contain holes). */

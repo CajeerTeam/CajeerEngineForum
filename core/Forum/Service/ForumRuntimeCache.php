@@ -30,7 +30,7 @@ final class ForumRuntimeCache
         if(!$this->db->tableExists('ce_forum_cache_generation'))return $load();
         try{$prefix=RedisConnection::namespace();$redis=$this->redis();}catch(\Throwable){$this->retryAfter=time()+5;$this->redis=null;return $load();}
         // Never catch and replay application exceptions or SQL failures. Only Redis operations degrade.
-        return $this->db->readSnapshot(function()use($prefix,$redis,$request,$view,$q,$path,$load,$seo,$variant){
+        return $this->db->readSnapshot(function()use($prefix,$redis,$view,$q,$path,$load,$seo,$variant){
             $generation=$this->db->connection()->query("SELECT name, generation FROM ce_forum_cache_generation_effective WHERE scope='public' ORDER BY name")->fetchAll(\PDO::FETCH_ASSOC);
             if(count($generation)!==21)return $load();
             $settings=$view==='page'?[getenv('APP_NAME'),($seo??new ForumSeoSettings($this->root,$this->db,true))->cacheIdentity(),getenv('FORUM_REGISTRATION')]:[getenv('FORUM_REGISTRATION')];

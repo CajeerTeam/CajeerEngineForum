@@ -6,7 +6,7 @@ ROOT=Path(__file__).resolve().parents[2]
 queries=json.loads(subprocess.check_output(['php','-r','require "core/Console/NativeCli.php"; echo json_encode(CajeerEngine\\Observability\\ForumMetrics::queries());'],cwd=ROOT))
 db=sqlite3.connect(':memory:');db.execute('PRAGMA foreign_keys=ON')
 files=sorted((ROOT/'migrations/sqlite').glob('*.sql'))
-assert files[-1].name=='0048_forum_observability_indexes.sql'
+assert any(f.name=='0048_forum_observability_indexes.sql' for f in files), 'Missing observability migration'
 for f in files: db.executescript(f.read_text())
 for name,sql in queries.items():
     assert db.execute(sql['count']).fetchone()==(0,),name
@@ -24,4 +24,4 @@ for queue,index in [('replicas','ce_forum_replica_state_due'),('moderation','ce_
     plan=db.execute('EXPLAIN QUERY PLAN '+queries[queue]['oldest']).fetchall()
     assert index in str(plan),(queue,plan)
 assert not db.execute('PRAGMA foreign_key_check').fetchall()
-print('PASS 0048 migration, all queue probes, 12000 rows capped, due time, dead letters, four index plans and FK integrity')
+print('PASS 0048 observability migration with subsequent migrations, all queue probes, 12000 rows capped, due time, dead letters, four index plans and FK integrity')

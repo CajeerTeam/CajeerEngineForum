@@ -1392,7 +1392,7 @@ class BrowserTests(unittest.TestCase):
                 page.locator('#app [name=theme]').select_option('light'); click('Сохранить настройки')
                 expect(page.locator('html')).to_have_attribute('data-theme','light')
                 page.goto(self.base+'/forum/members?q=Browser+member'); heading('Участники')
-                page.get_by_role('link',name='Browser member',exact=True).click()
+                page.locator('#app').get_by_role('link',name='Browser member',exact=True).first.click()
                 expect(page.locator('.profile-text')).to_have_text(XSS)
                 self.assertEqual(0,page.locator('.profile-text img,.profile-text script').count())
                 writer=Client(self.base); admin_token=writer.login(ADMIN,ADMIN_PASSWORD)[0]['data']['access_token']

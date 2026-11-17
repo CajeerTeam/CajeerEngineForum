@@ -75,7 +75,8 @@ final readonly class MigrationRunner
             else $this->pdo->beginTransaction();
             try {
                 if ($sql !== '') {
-                    $this->pdo->exec($sql);
+                    if ($driver === 'mysql') $this->executeMySqlMigration($sql);
+                    else $this->pdo->exec($sql);
                 }
                 $this->insertMigration($name, $checksum, $batch, (int) round((microtime(true) - $startedAt) * 1000), 'applied', null);
                 if ($this->pdo->inTransaction()) $this->pdo->commit();
@@ -257,6 +258,24 @@ final readonly class MigrationRunner
         $this->addColumnIfMissing('ce_migrations', 'execution_ms', 'INT NOT NULL DEFAULT 0');
         $this->addColumnIfMissing('ce_migrations', 'status', "VARCHAR(40) NOT NULL DEFAULT 'applied'");
         $this->addColumnIfMissing('ce_migrations', 'error', 'TEXT NULL');
+    }
+
+    /** MySQL 8.4 does not support ADD COLUMN IF NOT EXISTS; MariaDB does.
+     * Handle both with a schema lookup while preserving historical .sql bytes
+     * and therefore the checksums of already-applied migrations. Execute one
+     * statement at a time to avoid reliance on PDO multi-statement settings.
+     */
+    private function executeMySqlMigration(string $sql): void
+    {
+        foreach (preg_split('/;\s*(?:\r?\n|$)/', trim($sql)) ?: [] as $statement) {
+            $statement = trim($statement);
+            if ($statement === '') continue;
+            if (preg_match('/\AALTER\s+TABLE\s+(ce_[a-z0-9_]+)\s+ADD\s+COLUMN\s+IF\s+NOT\s+EXISTS\s+([a-z_][a-z0-9_]*)\s+(.+)\z/isD', $statement, $matches)) {
+                $this->addColumnIfMissing($matches[1], $matches[2], $matches[3]);
+            } else {
+                $this->pdo->exec($statement);
+            }
+        }
     }
 
     private function addColumnIfMissing(string $table, string $column, string $definition): void

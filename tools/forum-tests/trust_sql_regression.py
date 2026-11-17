@@ -67,12 +67,17 @@ db.execute('UPDATE ce_forum_threads SET deleted_at=?,deletion_id=? WHERE id=?',(
 assert db.execute(count,(a,)).fetchone()==(0,)
 db.execute('UPDATE ce_forum_threads SET deleted_at=NULL,deletion_id=NULL WHERE id=?',(t,))
 # Execute the actual notification visibility predicate for blocked vs moderation.
-feed=re.search(r'private const FEED="(.*?)";',notify).group(1)
-where=re.search(r"return ' FROM '\.self::FEED\.'(.*?)'\.\$this->boardFilter",notify).group(1).replace("\\'", "'")
+# Current production SQL applies recipient and delivery-state predicates inside
+# each UNION branch, before joining the visible post/thread ACL filter.
+feed_match=re.search(r'\$feed="(.*?)";',notify,re.S)
+where_match=re.search(r"return ' FROM '\.\$feed\.'(.*?)'\.\$this->boardFilter",notify,re.S)
+assert feed_match and where_match, 'Notification visibility query not found'
+feed=feed_match.group(1).replace('$predicate','recipient_id=? AND state=1')
+where=where_match.group(1).replace("\\'", "'")
 for kind in ('mention','moderation'):
     db.execute('INSERT INTO ce_forum_notifications(event_id,recipient_id,actor_id,post_id,kind,moderation_action,state) VALUES(?,?,?,?,?,?,1)',(str(uuid.uuid4()),b,a,p1,kind,'lock' if kind=='moderation' else None))
 visible='SELECT n.kind FROM '+feed+where+'1=1'
-assert db.execute(visible,(b,)).fetchall()==[('moderation',)]
+assert db.execute(visible,(b,b)).fetchall()==[('moderation',)]
 # Real activity SQL fragment filters both directions before pagination.
 fragment=re.search(r'\$sql\.="( AND NOT EXISTS \(SELECT 1 FROM ce_forum_user_blocks.*?)";',activity).group(1)
 query='SELECT p.id FROM ce_forum_live_posts p WHERE 1=1'+fragment
@@ -80,7 +85,7 @@ assert db.execute(query,(b,b)).fetchall()==[]
 assert len(db.execute(query,(c,c)).fetchall())==2
 # Removing the block restores historical public visibility, but not follow edges.
 db.execute('DELETE FROM ce_forum_user_blocks WHERE user_id=? AND blocked_id=?',(b,a))
-assert len(db.execute(visible,(b,)).fetchall())==2
+assert len(db.execute(visible,(b,b)).fetchall())==2
 assert db.execute(follows,(b,a)).fetchone() is None
 assert db.execute('PRAGMA foreign_key_check').fetchall()==[]
 print('PASS 0.5.5 → 0.5.6 migration, trust counts, directional follow, bilateral block and visibility')

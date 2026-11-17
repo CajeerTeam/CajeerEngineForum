@@ -95,6 +95,7 @@ final readonly class AttachmentService
     {
         return $this->tx->write(function()use($actor,$id){
             $a=$this->repo->find($id)??throw new ForumException('Вложение не найдено.',404);
+            $m=null;$c=null;
             if($a['post_id']!==null){$t=$this->threads->lockForPost($a['post_id'])??throw new ForumException('Вложение не найдено.',404);$p=$this->repo->post($a['post_id'])??throw new ForumException('Вложение не найдено.',404);$this->tx->permissions()->assertWrite($actor,$t['board_id'],$p['author_id']===$actor->userId&&(int)$t['locked']===0?'post:edit_own':'post:edit_any');$actor->assertEdit($p,$t);$this->boards->writable($t['board_id']);}
             elseif($a['message_id']!==null){$this->conversations->lockWrites();$this->tx->permissions()->requireCurrent($actor,'forum:write',true);$m=$this->repo->message($a['message_id'])??throw new ForumException('Вложение не найдено.',404);$c=$this->conversations->membership($m['conversation_id'],$actor->userId);$this->conversations->message($m['conversation_id'],$m['id'],(int)$c['joined_sequence']);if($m['author_id']!==$actor->userId)throw new ForumException('Недостаточно прав.',403);$this->tx->sanctions()->enforce($actor->userId,'conversation');foreach($this->conversations->participants($m['conversation_id']) as $participant){$target=$participant['user_id'];if($target!==$actor->userId&&$this->conversations->blocked($actor->userId,$target))throw new ForumException('Редактирование в этой переписке недоступно.',403);}}
             else{$this->tx->permissions()->requireCurrent($actor,'forum:write',true);if($a['owner_id']!==$actor->userId)throw new ForumException('Вложение не найдено.',404);}
@@ -102,7 +103,11 @@ final readonly class AttachmentService
             if($this->repo->held($id))throw new ForumException('Файл ожидает проверки. Сначала отмените заявку.',409);
             if($a['post_id']!==null||$a['message_id']!==null){
                 $kind=$a['post_id']!==null?'post':'message';
-                $content=$kind==='post'?$this->repo->postContent($a['post_id']):$this->conversations->message($m['conversation_id'],$m['id'],(int)$c['joined_sequence']);
+                if($kind==='post') $content=$this->repo->postContent($a['post_id']);
+                else {
+                    if ($m===null || $c===null) throw new \LogicException('Conversation authorization context missing');
+                    $content=$this->conversations->message($m['conversation_id'],$m['id'],(int)$c['joined_sequence']);
+                }
                 if(!$content)throw new ForumException('Сообщение не найдено.',404);
                 $this->tx->revisions()->advance($kind,$content,$content['body'],$content['body_format'],$actor->userId,null,'Remove attachment',true);
             }
