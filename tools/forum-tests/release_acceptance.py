@@ -672,7 +672,12 @@ def verify_identity(site, env, report, base):
     c.call('POST','/auth/email/verify',422,{'token':token,'password':PASSWORD})
     token=c.login(email)[0]['data']['access_token']
     c.call('GET','/auth/me',token=token)
+    # The ACP registration gate was legitimately changed above. Return the
+    # authoritative post-change revision for later backup/recovery comparison.
+    updated_policy=c.call('GET','/forum/acp?view=settings',token=admin)
+    require(updated_policy['values']['registration_enabled'], 'Registration policy reverted unexpectedly')
     print('PASS dist registration and verified email',flush=True)
+    return updated_policy
 
 
 def verify_watches(base,state):
@@ -1002,7 +1007,11 @@ def main():
                 verify_groups(base,state)
                 verify_discussions(base,state)
                 verify_navigation(base,state)
-                verify_identity(site,env,report,base)
+                identity_policy=verify_identity(site,env,report,base)
+                if ecosystem is not None:
+                    # Expected state must include the intentionally enabled
+                    # registration gate, not the pre-identity policy snapshot.
+                    ecosystem['policy']=identity_policy
                 verify_readiness(site,env,report,base)
                 verify_data_integrity(site,env,report,fixture)
                 verify_profiles(base,fixture)

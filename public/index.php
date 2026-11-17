@@ -107,6 +107,47 @@ if (is_file($root . '/.env')) {
     (new Dotenv())->usePutenv()->loadEnv($root . '/.env');
 }
 
+// An unauthenticated readiness probe must not rebuild the complete application
+// graph (signed extension registry, routes, services) for every load-balancer
+// request. The same HealthController and OperationsMonitor still validate live
+// database access, the migration ledger, mandatory Redis and operation leases.
+// Retain request correlation and the normal API security/identity headers.
+if ($installPath === '/api/v1/health' && ($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'GET') {
+    try {
+        $request = Request::createFromGlobals();
+        $trace = \CajeerEngine\Observability\TraceContext::start($request->headers->get('traceparent'));
+        foreach ($trace->fields() as $key => $value) $request->attributes->set($key, $value);
+        $response = (new \CajeerEngine\Http\Middleware\RequestIdMiddleware())->process(
+            $request,
+            fn(Request $r) => (new \CajeerEngine\Http\Middleware\SecurityHeadersMiddleware())->process(
+                $r,
+                fn(Request $r) => (new \CajeerEngine\Api\Controller\HealthController($root))->show($r)
+            )
+        );
+        $config = new \CajeerEngine\Runtime\ConfigRepository($root);
+        $response->headers->set('X-CajeerEngine-Version', $config->string('app.version', '1.3.0'));
+        $response->headers->set('X-CajeerEngine-Forum-Version', $config->string('app.edition_version'));
+        $response->headers->set('X-CajeerEngine-Database', $config->string('database.default', 'pgsql'));
+        $response->headers->set('traceparent', $trace->header());
+        $duration = (hrtime(true) - $started) / 1e9;
+        $response->headers->set('X-Runtime-Ms', (string) round($duration * 1000));
+        $handled = true;
+        try {
+            (new \CajeerEngine\Observability\Metrics($root))->observe('http', 'health', intdiv($response->getStatusCode(), 100).'xx', $duration);
+            (new \CajeerEngine\Observability\TraceExporter($root))->record($trace, 'http', 'health', microtime(true) - $duration, $duration, $response->getStatusCode() < 500);
+        } catch (Throwable) { /* Telemetry cannot mask health responses. */ }
+        $response->send();
+        exit;
+    } catch (Throwable) {
+        $handled = true;
+        http_response_code(503);
+        header('Content-Type: application/json; charset=utf-8');
+        header('Cache-Control: no-store');
+        echo '{"status":"unavailable"}';
+        exit;
+    }
+}
+
 try {
     $app = Application::boot($root);
     $response = $app->handle(Request::createFromGlobals());

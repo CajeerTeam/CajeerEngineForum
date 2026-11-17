@@ -21,6 +21,13 @@ final readonly class PermissionRepository extends Repository
             if (!$this->db->connection()->inTransaction()) throw new \LogicException('Forum lock requires a transaction');
             return $this->row('SELECT * FROM ce_users WHERE id=? FOR NO KEY UPDATE',[$id]);
         }
+        if ($this->db->driver()==='sqlite') {
+            if (!$this->db->connection()->inTransaction()) throw new \LogicException('Forum lock requires a transaction');
+            // DatabaseManager::transaction() holds BEGIN IMMEDIATE before any
+            // mutation. A dummy UPDATE id=id fires SQLite UPDATE triggers and
+            // invalidates the public Redis generation even for ACP draft edits.
+            return $this->row('SELECT * FROM ce_users WHERE id=?',[$id]);
+        }
         return $this->lock('ce_users','id=?',[$id]);
     }
     public function inspectUser(string $id): ?array { return $this->row('SELECT id,name,status FROM ce_users WHERE id=?',[$id]); }
