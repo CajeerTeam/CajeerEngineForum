@@ -157,6 +157,24 @@ def http(site, env, report, label, port, expected_version):
                     cwd=site, env=env, stdout=subprocess.PIPE,
                     stderr=subprocess.DEVNULL, text=True, timeout=15)
                 last_status['boot_diagnostic'] = probe.stdout.strip()[:120]
+                # Boot alone is insufficient: a 500 may originate in the HTTP
+                # pipeline, middleware or after-response metrics/event handling.
+                # Execute precisely the health request in a separate disposable
+                # CLI process, reporting only class and source location. Never
+                # emit exception messages, SQL, credentials or environment.
+                handle_probe = r'''require "vendor/autoload.php";
+(new Symfony\Component\Dotenv\Dotenv())->usePutenv()->loadEnv(".env");
+try { $app=CajeerEngine\Kernel\Application::boot(getcwd());
+$r=$app->handle(Symfony\Component\HttpFoundation\Request::create("/api/v1/health","GET"));
+echo "HTTP:".$r->getStatusCode(); }
+catch (Throwable $e) {
+$p=$e->getFile();$root=getcwd().DIRECTORY_SEPARATOR;
+$relative=str_starts_with($p,$root)?substr($p,strlen($root)):'external';
+if (!preg_match('~^(?:core|public|vendor)/[A-Za-z0-9_./-]+\.php$~D',$relative))$relative='external';
+echo json_encode(['exception'=>get_class($e),'file'=>$relative,'line'=>$e->getLine()]); }'''
+                diagnostic = subprocess.run(['php','-r',handle_probe],cwd=site,env=env,
+                    stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,text=True,timeout=15)
+                last_status['handle_diagnostic'] = diagnostic.stdout.strip()[:240]
                 runtime_log = site / 'storage/logs/runtime.jsonl'
                 if runtime_log.is_file():
                     recent = []

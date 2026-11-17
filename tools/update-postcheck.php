@@ -53,6 +53,19 @@ try {
     $response=$app->handle(Symfony\Component\HttpFoundation\Request::create('/api/v1/health','GET'));
     $payload=json_decode((string)$response->getContent(),true,512,JSON_THROW_ON_ERROR);
     $checks=$payload['checks']??null;
+    // During a Compose recovery the Redis DNS entry may become visible a
+    // moment after a healthy container is attached to the backend network.
+    // Retry only that mandatory dependency; never downgrade it to optional,
+    // bypass a rate limiter or accept a permanently degraded health report.
+    if (is_array($checks) && ($checks['redis_required']??null)===false) {
+        for ($attempt=0;$attempt<10;$attempt++) {
+            usleep(500000);
+            $response=$app->handle(Symfony\Component\HttpFoundation\Request::create('/api/v1/health','GET'));
+            $payload=json_decode((string)$response->getContent(),true,512,JSON_THROW_ON_ERROR);
+            $checks=$payload['checks']??null;
+            if (!is_array($checks)||($checks['redis_required']??null)===true) break;
+        }
+    }
     if (($payload['edition_version'] ?? null) !== $config->string('app.edition_version')) throw new RuntimeException('Forum release version mismatch');
     $expectedCode=$protected?503:200;
     if ($response->getStatusCode()!==$expectedCode||($payload['status']??null)!==($protected?'degraded':'ok')||!is_array($checks)) {

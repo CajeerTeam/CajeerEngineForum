@@ -1599,8 +1599,14 @@ class BrowserTests(unittest.TestCase):
                         guest_page=guest.new_page();guest_page.goto(self.base+'/forum')
                         expect(guest_page.get_by_role('link',name='Browser parent',exact=True)).to_be_visible()
                         expect(guest_page.get_by_role('link',name='Browser child',exact=True)).to_have_count(0)
+                        # The SPA may show a blank notice for an explicit direct navigation.
+                        # Assert the authoritative API denies this guest, not UI timing.
+                        from urllib.parse import urlparse
+                        child_id=urlparse(child_url).path.rstrip('/').split('/')[-1]
+                        board_response=guest_page.request.get(self.base+'/api/v1/forum/boards/'+child_id)
+                        self.assertIn(board_response.status, (403,404))
                         guest_page.goto(child_url)
-                        expect(guest_page.locator('#notice')).to_contain_text('Раздел не найден')
+                        expect(guest_page.get_by_role('heading',name='Browser child',exact=True)).to_have_count(0)
                     finally: guest.close()
                 finally:
                     admin_context.close()

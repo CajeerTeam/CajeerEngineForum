@@ -128,8 +128,21 @@ final class AutomatedBackup
         } else {
             // A stable installation must have the import ledger. Query it
             // directly; never infer safety from a cached schema probe.
-            $db=new DatabaseManager($this->config);
-            $row=$db->connection()->query("SELECT id FROM ce_forum_import_jobs WHERE state<>'complete' LIMIT 1")->fetchColumn();
+            // SQLite backup and import fences must inspect the *same* file. An
+            // unrelated process cwd, DB_DATABASE override or missing ledger
+            // must never silently validate a different empty SQLite database.
+            if ($driver==='sqlite') {
+                $file=(new DatabaseBackup($this->root,$this->config))->identity()['database'];
+                if (!is_file($file)||is_link($file)) throw new \RuntimeException('Configured SQLite backup database missing');
+                $db=new \PDO('sqlite:file:'.$file.'?mode=ro',null,null,[\PDO::ATTR_ERRMODE=>\PDO::ERRMODE_EXCEPTION]);
+                $db->exec('PRAGMA query_only=ON');
+                if (!$db->query("SELECT 1 FROM sqlite_master WHERE type='table' AND name='ce_forum_import_jobs'")->fetchColumn())
+                    throw new \RuntimeException('Forum import ledger missing; refuse to certify backup capture');
+                $row=$db->query("SELECT id FROM ce_forum_import_jobs WHERE state<>'complete' LIMIT 1")->fetchColumn();
+            } else {
+                $db=new DatabaseManager($this->config);
+                $row=$db->connection()->query("SELECT id FROM ce_forum_import_jobs WHERE state<>'complete' LIMIT 1")->fetchColumn();
+            }
             if ($row!==false) throw new \RuntimeException('An incomplete forum import exists; resume it or restore its verified backup');
         }
     }

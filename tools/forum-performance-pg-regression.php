@@ -132,7 +132,11 @@ verify((int)$p->query("SELECT read_sequence FROM ce_forum_posts WHERE id=".$p->q
 // temp file, locks are ordered, and updates are issued in bounded batches.
 $readRepo=new \CajeerEngine\Forum\Repository\ReadStateRepository($db);
 $candidates=$db->readSnapshot(fn()=> $readRepo->candidateThreads([$board]));
-verify($candidates instanceof SplTempFileObject && $candidates->getSize()>1024*1024,'mark-all snapshot spills past the 1 MiB memory bound');
+verify($candidates instanceof SplTempFileObject,'mark-all uses a bounded temporary stream');
+$candidates->fseek(0, SEEK_END);
+$snapshotBytes=$candidates->ftell();
+$candidates->rewind();
+verify($snapshotBytes>1024*1024,'mark-all snapshot spills past the 1 MiB memory bound');
 $lateTopic=Uuid::v4();
 $db->transaction(function()use($repo,$posts,$lateTopic,$board,$actor){
     $repo->insert($lateTopic,$board,$actor,'Topic after captured snapshot');
