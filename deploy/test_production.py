@@ -245,9 +245,9 @@ class Safety(unittest.TestCase):
             base=Path(folder);(base/'app').mkdir()
             for path in ('fpm','worker'):(base/path).touch()
             journal=base/'journal';journal.write_text(json.dumps({'edition':'forum',
-                'state':'ready','site':SITE,'version':'0.9.1','sha256':'a'*64}))
-            identity=json.dumps({'edition':'forum','edition_version':'0.9.1','upstream_version':'1.3.0'})
-            response={'status':'ok','edition_version':'0.9.1','version':'1.3.0','checks':{'database':True}}
+                'state':'ready','site':SITE,'version':'0.9.2','sha256':'a'*64}))
+            identity=json.dumps({'edition':'forum','edition_version':'0.9.2','upstream_version':'1.3.0'})
+            response={'status':'ok','edition_version':'0.9.2','version':'1.3.0','checks':{'database':True}}
             commands=[]
             def fake_run(*args, **kwargs):
                 commands.append(args)
@@ -258,15 +258,15 @@ class Safety(unittest.TestCase):
             def fake_app(*args, **kwargs):
                 if '--identity' in args:return identity
                 return json.dumps({'ok':True,'last_offsite':1234,'pending':0})
-            with patch.object(p,'GATE',base/'gate'),patch.object(p,'FPM_ALLOWED',base/'fpm'),patch.object(p,'WORKERS_ALLOWED',base/'worker'),patch.object(p,'APP',base/'app'),patch.object(p,'JOURNAL',journal),patch.object(p,'run',side_effect=fake_run),patch.object(p,'app_run',side_effect=fake_app),patch.object(p,'verify_installed') as verify,patch.object(p,'current_version',return_value='0.9.1'),patch.object(p,'health'):
+            with patch.object(p,'GATE',base/'gate'),patch.object(p,'FPM_ALLOWED',base/'fpm'),patch.object(p,'WORKERS_ALLOWED',base/'worker'),patch.object(p,'APP',base/'app'),patch.object(p,'JOURNAL',journal),patch.object(p,'run',side_effect=fake_run),patch.object(p,'app_run',side_effect=fake_app),patch.object(p,'verify_installed') as verify,patch.object(p,'current_version',return_value='0.9.2'),patch.object(p,'health'):
                 result=p.verify_host(SITE,require_backup=True)
                 self.assertTrue(result['ok'])
-                verify.assert_called_once_with('0.9.1','a'*64)
+                verify.assert_called_once_with('0.9.2','a'*64)
                 self.assertEqual(sum(c[0]=='curl' for c in commands),8)
                 (base/'gate').touch()
                 with self.assertRaisesRegex(RuntimeError,'gated'):p.verify_host(SITE)
                 (base/'gate').unlink()
-                journal.write_text(json.dumps({'edition':'forum','state':'deploying','site':SITE,'version':'0.9.1','sha256':'a'*64}))
+                journal.write_text(json.dumps({'edition':'forum','state':'deploying','site':SITE,'version':'0.9.2','sha256':'a'*64}))
                 with self.assertRaisesRegex(RuntimeError,'not committed'):p.verify_host(SITE)
 
     def test_forum_readiness_semantics(self):

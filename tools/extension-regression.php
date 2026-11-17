@@ -41,7 +41,7 @@ CODE;
     $forumManifest=F::read($forumPkg.'/cajeer.extension.json');$initial=$forumManifest;$initial['version']='1.0.0';F::json($forumPkg.'/cajeer.extension.json',$initial,0644);
     PackageTrust::sign($forumPkg,$work.'/secret.key');cli($site,['extension:package:install',$forumPkg,'--enable']);
     $epoch=$reg->findInstalled('cajeer/forum-topic-templates')['enabled_at'];
-    check($reg->targetCompatibility('0.8.0')['ok']&&!$reg->targetCompatibility('0.9.0')['ok'],'signed extension target preflight');
+    check($reg->targetCompatibility('0.8.0')['ok']&&!$reg->targetCompatibility('1.0.0')['ok'],'signed extension target preflight');
     sleep(1);F::json($forumPkg.'/cajeer.extension.json',$forumManifest,0644);PackageTrust::sign($forumPkg,$work.'/secret.key');
     $r=cli($site,['extension:package:upgrade',$forumPkg]);check($r['version']==='1.0.1'&&$reg->findInstalled('cajeer/forum-topic-templates')['enabled_at']===$epoch,'signed upgrade preserves subscriber activation epoch');
     $reg->enable('cajeer/forum-topic-templates');check($reg->findInstalled('cajeer/forum-topic-templates')['enabled_at']===$epoch,'idempotent enable preserves activation epoch');

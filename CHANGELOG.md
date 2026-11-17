@@ -1,4 +1,18 @@
-## Forum Edition 0.9.0 — Production Operations Stable
+## [0.9.2] - 2026-11-17 — Production Security Hardening
+
+### Security fixes (working runtime)
+- Strictly parse bearer/API-token credentials; invalid or ambiguous headers no longer fall back to cookies. Cookie CSRF checks remain mandatory for state-changing requests.
+- Atomic owner-only API token revocation prevents cross-account token-ID probes in personal token management.
+- Mask unclassified runtime errors in HTTP responses to prevent filesystem, network and credential detail disclosure (internal logger retains request correlation).
+- Validate HTTPS-only public webhook destinations at creation/update and again before outbound sending; reject private/loopback/metadata addresses and invalid DNS resolutions.
+- Reject client-chosen webhook secrets and generate 256-bit HMAC secrets; remove signing secrets from webhook update responses and retain one-time disclosure during provisioning.
+- Reject writable/symlinked extension publisher keys; retain signed package inventory checks and update signed Forum sample extensions to the tested 0.9.x compatibility range.
+- Reject raster uploads above 16 million pixels before derivative processing. Drop capabilities from PostgreSQL/Redis Compose services, while retaining the minimum entrypoint permissions to transition to unprivileged runtime users.
+- Add standalone hardening regression and negative real-HTTP integration scenarios; keep all release certification gates required.
+
+### Scope
+- Forum Edition version 0.9.2; CajeerEngine upstream 1.3.0 unchanged. No database schema migrations.
+- External penetration testing, production host deployment and full 24-hour soak certification are not claimed by this release.
 
 ## Forum Edition 0.9.1 — Release Certification Pipeline
 
@@ -8,6 +22,7 @@
 - Release publisher now requires an independent trusted Ed25519 public key, verifies the actual detached signatures and inventories, confirms the local release tag points to the certified commit and rechecks the complete successful remote GitHub Actions run before creating a non-overwriting draft. Reports and signed artifacts ship together.
 - Documented branch-protection, key provisioning and manual reproduction. No database migrations or application API changes; Engine remains 1.3.0. The release is not a substitute for 24-hour or external production certification.
 
+## Forum Edition 0.9.0 — Production Operations Stable
 
 - Added `deploy/container/operations.py`: a **read-only** admission check on the real, running Compose project. Verifies all required container health states, exact running app/gateway image tags, successful installer, authenticated release-volume checksums, database readiness and worker/scheduler watchdogs. Requires TLS validation (system trust or supplied CA), checks public readiness, edition version, rendered forum and ACP, and confirms protected routes remain hidden. Optional `--require-backup` enforces a recent, verified off-site backup and zero pending deliveries. Produces atomic private JSON evidence; exits nonzero on failed checks.
 - Compose update/rollback now requires the same operational admission check *after* gateway activation and *before* writing a committed/rolled-back journal state. On failure traffic is stopped and recovery remains operator-controlled; an HTTP 200 alone cannot commit an unhealthy release.

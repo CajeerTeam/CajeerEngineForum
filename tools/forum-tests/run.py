@@ -1255,6 +1255,79 @@ class NetworkTests(unittest.TestCase):
         c.call('POST','/forum/sanctions/'+sid+'/revoke',200,{'reason':'Restriction lifted'},token=admin)
         c.call('POST',path+'/messages',201,{'body':'Contact restored'},token=at)
 
+    def test_26_production_security_hardening(self):
+        # Deliberate adversarial requests against real HTTP, authentication, ACL and persistence.
+        c=Client(self.base)
+        admin=c.login(ADMIN,ADMIN_PASSWORD)[0]['data']['access_token']
+        stranger=Client(self.base)
+        _, _, foreign=self.activated(stranger)
+        session=stranger.call('GET','/auth/sessions',token=foreign)[0]['id']
+        # Even a privileged caller cannot revoke someone else's personal session through /api-tokens.
+        self.assertFalse(c.call('DELETE','/api-tokens/'+session,token=admin)['revoked'])
+        stranger.call('GET','/auth/me',token=foreign)
+        c.call('DELETE','/api-tokens/'+session,403,token=foreign)
+
+        browser=Client(self.base)
+        identity=browser.login(ADMIN,ADMIN_PASSWORD,browser=True)[0]['data']
+        csrf=identity['csrf_token']
+        browser.call('GET','/auth/me')
+        for invalid in ('Bearer invalid', 'Bearer ', 'Basic token'):
+            browser.call('GET','/auth/me',401,headers={'Authorization':invalid})
+        browser.call('GET','/auth/me',401,headers={'X-API-Token':'invalid'})
+        browser.call('GET','/auth/me',401,headers={'Authorization':'Bearer '+identity['access_token'],'X-API-Token':'invalid'})
+        browser.call('GET','/auth/me')
+        browser.call('POST','/forum/acp/maintenance',403,{'action':'cleanup_uploads'})
+        browser.call('POST','/forum/acp/maintenance',403,{'action':'cleanup_uploads'},headers={'X-CSRF-Token':'0'*64})
+
+        board=c.call('GET','/forum')['boards'][0]['id']
+        write=f'/forum/boards/{board}/threads'
+        entry={'title':'Security negative request','body':'No forged session can publish'}
+        browser.call('POST',write,403,entry)
+        browser.call('POST',write,403,entry,headers={'X-CSRF-Token':'x'*64})
+        new_thread=browser.call('POST',write,201,entry,headers={'X-CSRF-Token':csrf})['id']
+        self.assertEqual('No forged session can publish',c.call('GET','/forum/threads/'+new_thread)['posts'][0]['body'])
+
+        # Restrict SSRF both on new webhook registration and URL changes.
+        for url in ('http://8.8.8.8/hooks','https://127.0.0.1/','https://169.254.169.254/latest/meta-data/','https://10.0.0.1/', 'file:///etc/passwd', 'https://8.8.8.8:444/'): 
+            c.call('POST','/webhooks',422,{'url':url},token=admin)
+        c.call('POST','/webhooks',422,{'url':'https://8.8.8.8/hook','secret':'weak'},token=admin)
+        webhook=c.call('POST','/webhooks',201,{'url':'https://8.8.8.8/hook','events':['security.test']},token=admin)
+        self.assertRegex(webhook['secret'],r'^whsec_[a-f0-9]{64}$')
+        self.assertIn('secret',webhook)
+        self.assertEqual('https://8.8.8.8/hook',c.call('PATCH','/webhooks/'+webhook['id'],200,{'name':'Renamed'},token=admin)['url'])
+        self.assertNotIn('secret',c.call('PATCH','/webhooks/'+webhook['id'],200,{'name':'Renamed again'},token=admin))
+        c.call('PATCH','/webhooks/'+webhook['id'],422,{'url':'https://127.0.0.1/'},token=admin)
+        self.assertEqual('https://8.8.8.8/hook',next(x for x in c.call('GET','/webhooks',token=admin) if x['id']==webhook['id'])['url'])
+        with c.opener.open(urllib.request.Request(self.base+'/api/v1/webhooks/'+webhook['id'],
+                headers={'Authorization':'Bearer '+admin},method='DELETE'),timeout=20) as response:
+            self.assertEqual(204,response.status)
+            self.assertEqual(b'',response.read())
+
+        # Object ownership and live board ACL must be re-evaluated on every file read.
+        category=c.call('POST','/forum/categories',201,{'name':'Security sealed '+uuid.uuid4().hex[:8],'description':''},token=admin)['id']
+        private_board=c.call('POST','/forum/categories/'+category+'/boards',201,{'name':'Security sealed board','description':''},token=admin)['id']
+        attachment=c.upload_attachment('private.txt',b'never disclose this to guests\n',admin)['id']
+        thread=c.call('POST',f'/forum/boards/{private_board}/threads',201,{'title':'Classified security post','body':'Hidden','attachment_ids':[attachment]},token=admin)['id']
+        c.call('GET',f'/forum/threads/{thread}',200,token=foreign)
+        c.call('PUT',f'/forum/categories/{category}/permissions',200,{'visibility':'hidden','rules':[]},token=admin)
+        c.call('GET',f'/forum/threads/{thread}',404,token=foreign)
+        c.call('GET',f'/forum/attachments/{attachment}',404,token=foreign)
+        c.call('GET',f'/forum/attachments/{attachment}/download',404,token=foreign)
+        c.call('GET',f'/forum/attachments/{attachment}/download',404)
+        self.assertEqual(b'never disclose this to guests\n',c.download_attachment(attachment,admin))
+        c.call('GET','/forum/acp?view=access',403,token=foreign)
+        c.call('GET','/forum/acp?view=access',200,token=admin)
+
+        # Raw HTML must not be interpreted as active markup in server-rendered pages.
+        xss_marker='SECURITY_XSS_' + uuid.uuid4().hex
+        malicious=f'<img src=x onerror="alert(1234)"><script>{xss_marker}</script>'
+        rendered_thread=c.call('POST',write,201,{'title':'Security HTML escaping','body':malicious},token=admin)['id']
+        with urllib.request.urlopen(self.base+'/forum/threads/'+rendered_thread,timeout=20) as response:
+            html=response.read().decode('utf-8')
+        self.assertNotIn('<script>'+xss_marker+'</script>',html)
+        self.assertNotIn('onerror="alert(1234)"',html)
+        self.assertIn('&lt;script&gt;',html)
+
     def test_99_rate_limit(self):
         # Run last: exhaust the real IP auth bucket without guessing credentials.
         c = Client(self.base)

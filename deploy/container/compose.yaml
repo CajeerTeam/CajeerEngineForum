@@ -25,6 +25,9 @@ x-app-runtime: &app-runtime
 services:
   postgres:
     image: postgres:17-bookworm
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETUID, SETGID]
+    security_opt: [no-new-privileges:true]
     restart: unless-stopped
     environment:
       POSTGRES_USER: ce_cluster_admin
@@ -49,6 +52,9 @@ services:
     stop_grace_period: 60s
   redis:
     image: redis:7.4-alpine
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETUID, SETGID]
+    security_opt: [no-new-privileges:true]
     restart: unless-stopped
     entrypoint: [/bin/sh, /opt/forum/redis-start.sh]
     secrets: [redis_password]

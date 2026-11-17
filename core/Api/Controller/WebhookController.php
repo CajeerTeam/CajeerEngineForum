@@ -35,6 +35,7 @@ final readonly class WebhookController
         if ($item === null) {
             return $this->notFound();
         }
+        unset($item['secret']);
         return new JsonResponse(['data' => $item]);
     }
 

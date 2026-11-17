@@ -79,18 +79,24 @@ final readonly class AuthService
     {
         $authorization = (string) $request->headers->get('Authorization', '');
         $token = '';
-        if (preg_match('/^Bearer\s+(.+)$/i', $authorization, $m)) {
-            $token = trim($m[1]);
-        } elseif ($authorization !== '') { return null; }
-        if ($token === '') {
+        // Reject conflicting explicit credentials rather than choosing an attacker-controlled priority.
+        if ($request->headers->has('Authorization') && $request->headers->has('X-API-Token')) return null;
+        // Never downgrade a malformed/empty Authorization credential to an API token
+        // or browser cookie: ambiguous credentials must fail authentication.
+        if ($request->headers->has('Authorization')) {
+            if (!preg_match('/^Bearer[ \t]+(ce_[a-f0-9]{64})$/iD', $authorization, $m)) return null;
+            $token = $m[1];
+        }
+        $cookie = false;
+        if ($token === '' && $request->headers->has('X-API-Token')) {
             $token = (string) $request->headers->get('X-API-Token', '');
+            if (!preg_match('/^ce_[a-f0-9]{64}$/D', $token)) return null;
         }
         if ($token === '') {
             $token = (string) $request->cookies->get('ce_session', '');
             $cookie = true;
         }
-        if ($token === '') { return null; }
-        $cookie = $cookie ?? false;
+        if (!preg_match('/^ce_[a-f0-9]{64}$/D', $token)) return null;
 
         $record = $this->tokens->findValidPlainToken($token);
         if ($record === null) {

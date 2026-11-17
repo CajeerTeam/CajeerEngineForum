@@ -13,6 +13,22 @@ class ContainerTests(unittest.TestCase):
         self.assertEqual(set(s),{'postgres','redis','init','app','worker','scheduler','gateway'})
         self.assertEqual([n for n,v in s.items() if v.get('ports')],['gateway'])
         self.assertTrue(cfg['networks']['backend']['internal'])
+        for n, service in s.items():
+            self.assertNotIn('privileged',service,n)
+            self.assertNotIn('network_mode',service,n)
+            self.assertIn('ALL',service['cap_drop'],n)
+            self.assertIn('no-new-privileges:true',service['security_opt'],n)
+            for mount in service.get('volumes',[]):
+                self.assertNotIn('docker.sock',mount,n)
+        for n in ('postgres','redis'):
+            self.assertNotIn('frontend',s[n]['networks'],n)
+            self.assertEqual(['backend'],s[n]['networks'],n)
+            self.assertNotIn('ports',s[n],n)
+            self.assertNotIn('keys:/run/ce-keys:ro',s[n].get('volumes',[]))
+        for n in ('app','worker','scheduler','gateway'):
+            self.assertNotIn('db_password',s[n].get('secrets',[]))
+            self.assertNotIn('backup_key',s[n].get('secrets',[]))
+        self.assertEqual(s['gateway']['secrets'],['tls_certificate','tls_key'])
         for n in ('app','worker','scheduler'):
             self.assertTrue(s[n]['read_only']); self.assertEqual(s[n]['user'],'33:33')
             self.assertIn('release:/srv/forum:ro',s[n]['volumes'])
@@ -51,7 +67,7 @@ class ContainerTests(unittest.TestCase):
 
     def test_release_policy(self):
         script='''require "core/Release/ReleaseFilePolicy.php"; use CajeerEngine\\Release\\ReleaseFilePolicy as P;
-        foreach ([".dockerignore","deploy/container/Dockerfile","deploy/container/compose.yaml","deploy/container/bootstrap.php","deploy/container/smoke.py","deploy/container/test_container.py"] as $p) if(!P::allows($p,"source")) exit(1);
+        foreach ([".dockerignore","deploy/container/Dockerfile","deploy/container/compose.yaml","deploy/container/bootstrap.php","deploy/container/smoke.py","deploy/container/test_container.py","tools/forum-security-hardening-regression.php"] as $p) if(!P::allows($p,"source")) exit(1);
         foreach (["deploy/container/artifacts/release.zip","deploy/container/site.env","deploy/container/artifacts/release.pub","deploy/container/secrets/password"] as $p) if(P::allows($p,"source")) exit(2);
         if(!P::traverses("deploy/container","source")) exit(3);'''
         subprocess.run(['php','-r',script],cwd=ROOT,check=True)

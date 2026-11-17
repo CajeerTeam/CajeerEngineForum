@@ -37,7 +37,7 @@ final readonly class AttachmentService
         $mime=(new \finfo(FILEINFO_MIME_TYPE))->buffer($data);
         $allowed=['txt'=>['text/plain'],'csv'=>['text/plain','text/csv'],'pdf'=>['application/pdf'],'png'=>['image/png'],'jpg'=>['image/jpeg'],'jpeg'=>['image/jpeg'],'webp'=>['image/webp'],'zip'=>['application/zip']];
         if(!isset($allowed[$ext])||!in_array($mime,$allowed[$ext],true))throw new ForumException('Тип файла не поддерживается.',415);
-        if(in_array($ext,['png','jpg','jpeg','webp'],true)){$image=@getimagesizefromstring($data);if(!$image||$image['mime']!==$mime||$image[0]<1||$image[1]<1||$image[0]*$image[1]>40000000)throw new ForumException('Некорректное изображение.',422);}
+        if(in_array($ext,['png','jpg','jpeg','webp'],true)){$image=@getimagesizefromstring($data);if(!$image||$image['mime']!==$mime||$image[0]<1||$image[1]<1||$image[0]*$image[1]>16000000)throw new ForumException('Некорректное изображение.',422);}
         if($ext==='pdf'&&!str_starts_with($data,'%PDF-'))throw new ForumException('Некорректный PDF.',422);
         return ['filename'=>$filename,'mime'=>$mime,'size_bytes'=>$size,'sha256'=>hash('sha256',$data)];
     }

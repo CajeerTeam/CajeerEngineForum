@@ -33,11 +33,13 @@ final readonly class ErrorHandlerMiddleware implements MiddlewareInterface
         } catch (\InvalidArgumentException|\DomainException $e) {
             return $this->jsonError($request, 'validation_failed', $e->getMessage(), Response::HTTP_UNPROCESSABLE_ENTITY);
         } catch (\RuntimeException $e) {
-            $message = $e->getMessage();
-            if ($e instanceof \PDOException && \CajeerEngine\Database\DatabaseUnavailable::causedBy($e)) { return $this->unavailable($request); }
-            if ($e instanceof \PDOException) { return $this->jsonError($request, 'internal_error', 'Внутренняя ошибка базы данных.', 500); }
-            $status = str_contains($message, 'не найден') ? Response::HTTP_NOT_FOUND : Response::HTTP_BAD_REQUEST;
-            return $this->jsonError($request, $status === Response::HTTP_NOT_FOUND ? 'not_found' : 'runtime_error', $message, $status);
+            if ($e instanceof \PDOException && \CajeerEngine\Database\DatabaseUnavailable::causedBy($e)) return $this->unavailable($request);
+            if ($e instanceof \PDOException) return $this->jsonError($request,'internal_error','Внутренняя ошибка базы данных.',500);
+            // Do not echo arbitrary runtime exception messages: they can contain
+            // filesystem paths, remote responses, credentials or infrastructure details.
+            $missing=str_contains($e->getMessage(),'не найден');
+            $this->logger->error('HTTP runtime operation failed',['request_id'=>(string)$request->attributes->get('request_id',''),'exception'=>$e::class]);
+            return $this->jsonError($request,$missing?'not_found':'runtime_error',$missing?'Ресурс не найден.':'Операция отклонена.', $missing?404:400);
         } catch (\Throwable $e) {
             $requestId = (string) $request->attributes->get('request_id', '');
             $this->logger->error('Unhandled HTTP exception', [

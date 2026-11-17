@@ -115,6 +115,14 @@ final readonly class ApiTokenRepository
         $stmt->execute(['id' => $id]);
     }
 
+    /** Only the token owner may revoke a token through the personal token API. */
+    public function revokeOwned(string $tokenId, string $userId): bool
+    {
+        $stmt=$this->database->connection()->prepare('UPDATE ce_api_tokens SET revoked_at=CURRENT_TIMESTAMP WHERE id=:id AND user_id=:user AND revoked_at IS NULL');
+        $stmt->execute(['id'=>$tokenId,'user'=>$userId]);
+        return $stmt->rowCount()===1;
+    }
+
     public function revoke(string $id): bool
     {
         $stmt = $this->database->connection()->prepare('UPDATE ce_api_tokens SET revoked_at = CURRENT_TIMESTAMP WHERE id = :id AND revoked_at IS NULL');

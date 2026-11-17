@@ -46,7 +46,10 @@ final readonly class ApiTokenController
     /** @param array<string,mixed> $parameters */
     public function revoke(Request $request, array $parameters): JsonResponse
     {
-        $ok = $this->tokens->revoke((string) ($parameters['id'] ?? ''));
+        $identity=$request->attributes->get('auth');
+        $userId=is_array($identity) && is_string($identity['user_id']??null) ? $identity['user_id'] : '';
+        if ($userId==='') return new JsonResponse(['error'=>['code'=>'unauthenticated','message'=>'Требуется авторизация.']],401);
+        $ok = $this->tokens->revokeOwned((string) ($parameters['id'] ?? ''), $userId);
         return new JsonResponse(['data' => ['revoked' => $ok]]);
     }
 
