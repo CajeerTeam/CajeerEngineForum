@@ -29,11 +29,44 @@ final class ForumMigrationEngine
     }
     private function row(string $sql,array $params=[]): ?array {$s=$this->query($sql,$params);$r=$s->fetch(PDO::FETCH_ASSOC);$s->closeCursor();return $r===false?null:$r;}
     private static function uuid(): string {$b=random_bytes(16);$b[6]=chr((ord($b[6])&15)|64);$b[8]=chr((ord($b[8])&63)|128);return vsprintf('%s%s-%s-%s-%s-%s%s%s',str_split(bin2hex($b),4));}
-    public function plan(): array {return ['ok'=>true,'job'=>$this->source->identity(),'platform'=>$this->source->platform(),'version'=>$this->source->version(),'counts'=>$this->source->plan(),'policy'=>'hidden_readonly_until_manual_acl_review','unsupported'=>$this->source->unsupported()];}
+    private const EXTRA_PHASES=['profiles','reactions'];
+    /** Existing jobs have no pipeline_version and always finish with the original eleven phases. */
+    private function phaseNames(array $plan): array
+    {
+        if(!isset($plan['pipeline_version']))return ForumSource::PHASES;
+        if($plan['pipeline_version']!==2 || !($this->source instanceof EnrichedForumSource))
+            throw new \RuntimeException('Unsupported import pipeline; do not rewrite an in-progress job');
+        return array_merge(ForumSource::PHASES,self::EXTRA_PHASES);
+    }
+    /** Exact snapshot ledger including added phase high-water marks for new jobs. */
+    public function snapshotPlan(bool $extended=true): array
+    {
+        $plan=$this->source->plan();
+        if($extended && $this->source instanceof EnrichedForumSource){
+            $extra=$this->source->additionalPlan();
+            if($extra!==[]){
+                if(array_keys($extra)!==self::EXTRA_PHASES)throw new \RuntimeException('Unsupported additional source phases');
+                $plan['pipeline_version']=2;
+                foreach($extra as $kind=>$bounds)$plan[$kind]=$bounds;
+            }
+        }
+        return $plan;
+    }
+    public function matchesRecordedPlan(array $recorded): bool
+    {
+        return $this->snapshotPlan(isset($recorded['pipeline_version']))===$recorded;
+    }
+    public function plan(): array
+    {
+        $plan=$this->snapshotPlan();
+        return ['ok'=>true,'job'=>$this->source->identity(),'platform'=>$this->source->platform(),'version'=>$this->source->version(),
+            'pipeline_version'=>$plan['pipeline_version']??1,'counts'=>array_diff_key($plan,['pipeline_version'=>true]),
+            'policy'=>'hidden_readonly_until_manual_acl_review','unsupported'=>$this->source->unsupported()];
+    }
     public function exists(): bool {return $this->row('SELECT id FROM ce_forum_import_jobs WHERE id=?',[$this->source->identity()])!==null;}
     public function start(string $backup): array
     {
-        $this->resetBatch();$plan=$this->source->plan();$id=$this->source->identity();
+        $this->resetBatch();$plan=$this->snapshotPlan();$id=$this->source->identity();
         try{$this->db->transaction(function()use($plan,$id,$backup){
             // The filesystem lease only covers one node. Serialize start decisions in SQL too.
             if($this->db->driver()==='sqlite')$this->query('UPDATE ce_forum_tree_lock SET id=id WHERE id=1');
@@ -57,7 +90,7 @@ final class ForumMigrationEngine
     /** Validate the ledger while the imported tree is still quarantined. */
     private function verifyMappings(string $job): void
     {
-        foreach(['groups'=>['ce_forum_groups','role_id'],'users'=>['ce_users','id'],'forums'=>['ce_forum_boards','id'],'topics'=>['ce_forum_threads','id'],'posts'=>['ce_forum_posts','id'],'attachments'=>['ce_forum_attachments','id'],'polls'=>['ce_forum_polls','thread_id']] as $kind=>[$table,$column]){
+        foreach(['groups'=>['ce_forum_groups','role_id'],'users'=>['ce_users','id'],'forums'=>['ce_forum_boards','id'],'topics'=>['ce_forum_threads','id'],'posts'=>['ce_forum_posts','id'],'attachments'=>['ce_forum_attachments','id'],'polls'=>['ce_forum_polls','thread_id'],'profiles'=>['ce_forum_member_profiles','user_id'],'reactions'=>['ce_forum_posts','id']] as $kind=>[$table,$column]){
             // PostgreSQL uses UUID PKs; cast the small ledger key, not the indexed target column.
             $key=$this->db->driver()==='pgsql'?'CAST(m.target_id AS UUID)':'m.target_id';
             $n=(int)$this->query("SELECT COUNT(*) FROM ce_forum_import_map m LEFT JOIN $table t ON t.$column=$key WHERE m.job_id=? AND m.kind=? AND m.outcome='imported' AND t.$column IS NULL",[$job,$kind])->fetchColumn();
@@ -100,14 +133,19 @@ final class ForumMigrationEngine
             $job=$this->row('SELECT * FROM ce_forum_import_jobs WHERE id=?'.($this->db->driver()==='sqlite'?'':' FOR UPDATE'),[$id]);
             if(!$job)throw new \RuntimeException('Start the import first');if($job['state']==='complete')return;
             $plan=json_decode($job['plan_json'],true,512,JSON_THROW_ON_ERROR);
-            $phase=(int)$job['phase'];$kind=ForumSource::PHASES[$phase];$cursor=(int)$job['cursor_id'];$sub=(int)$job['subcursor_id'];
+            $phases=$this->phaseNames($plan);
+            $phase=(int)$job['phase'];$kind=$phases[$phase]??throw new \RuntimeException('Invalid import phase checkpoint');$cursor=(int)$job['cursor_id'];$sub=(int)$job['subcursor_id'];
             $category=$this->row('SELECT visibility FROM ce_forum_categories WHERE id=?',[$job['category_id']]);
             if(!$category||$category['visibility']!=='hidden'||$this->row('SELECT id FROM ce_forum_boards WHERE category_id=? AND (visibility<>? OR state<>?) LIMIT 1',[$job['category_id'],'hidden','readonly']))throw new \RuntimeException('Imported tree must remain hidden and readonly until completion');
-            $batch=$this->source->batch($kind,$cursor,$plan[$kind]['high'],$kind==='attachments'?1:($kind==='posts'?min($limit,20):$limit));
+            $isAdditional=in_array($kind,self::EXTRA_PHASES,true);
+            if($isAdditional){
+                if(!($this->source instanceof EnrichedForumSource))throw new \RuntimeException('Source does not support additional import phases');
+                $batch=$this->source->additionalBatch($kind,$cursor,$plan[$kind]['high'],$limit);
+            }else $batch=$this->source->batch($kind,$cursor,$plan[$kind]['high'],$kind==='attachments'?1:($kind==='posts'?min($limit,20):$limit));
             if($batch===[]){
-                if($phase+1===count(ForumSource::PHASES)){
-                    if($this->source->plan()!==$plan)throw new \RuntimeException('Source snapshot changed; restore backup and restart with an immutable snapshot');
-                    foreach(['groups','users','forums','topics','posts','attachments','polls','votes','watches','board_watches'] as $covered){
+                if($phase+1===count($phases)){
+                    if(!$this->matchesRecordedPlan($plan))throw new \RuntimeException('Source snapshot changed; restore backup and restart with an immutable snapshot');
+                    foreach(array_filter($phases,static fn(string $k):bool=>$k!=='finalize') as $covered){
                         $n=(int)$this->query('SELECT COUNT(*) FROM ce_forum_import_map WHERE job_id=? AND kind=?',[$id,$covered])->fetchColumn();
                         if($n!==$plan[$covered]['count'])throw new \RuntimeException('Source row count mismatch: '.$covered);
                     }
@@ -123,7 +161,7 @@ final class ForumMigrationEngine
               // Bound total relation work, not just the number of topics in a batch.
               $remaining=$limit;
               foreach($batch as $r){
-                $key=match($kind){'groups'=>'group_id','users'=>'user_id','forums'=>'left_id','topics','polls','votes','watches','finalize'=>'topic_id','board_watches'=>'forum_id','posts'=>'post_id','attachments'=>'attach_id'};
+                $key=match($kind){'groups'=>'group_id','users'=>'user_id','forums'=>'left_id','topics','polls','votes','watches','finalize'=>'topic_id','board_watches'=>'forum_id','posts'=>'post_id','attachments'=>'attach_id','profiles'=>'profile_id','reactions'=>'reaction_source_id'};
                 $next=(int)$r[$key];
                 if(in_array($kind,['watches','board_watches','votes'],true)){
                     $target=$this->mapped(match($kind){'watches'=>'topics','board_watches'=>'forums','votes'=>'polls'},$next);
@@ -155,6 +193,8 @@ final class ForumMigrationEngine
                         $this->query('DELETE FROM ce_forum_threads WHERE id=?',[$thread]);
                         $this->query("UPDATE ce_forum_import_map SET target_id=NULL,outcome='skipped',reason='no_importable_posts' WHERE job_id=? AND kind='topics' AND source_id=?",[$id,$next]);
                     }
+                }elseif($isAdditional){
+                    $this->importAdditional($kind,$r);
                 }else $this->import($kind,$r,$job['category_id']);
                 $cursor=$next;
                 if(in_array($kind,['watches','board_watches','votes'],true)&&$remaining<=0)break;
@@ -163,6 +203,42 @@ final class ForumMigrationEngine
             $this->query('UPDATE ce_forum_import_jobs SET phase=?,cursor_id=?,subcursor_id=?,updated_at=? WHERE id=?',[$phase,$cursor,$sub,time(),$id]);
         });}finally{$this->resetBatch();}
         $result=['ok'=>true,'job'=>$this->row('SELECT id,state,phase,cursor_id,subcursor_id FROM ce_forum_import_jobs WHERE id=?',[$id])];$this->resetBatch();return $result;
+    }
+    /** Target data, ledger and checkpoint are written in the caller's one SQL transaction. */
+    private function importAdditional(string $kind,array $r): void
+    {
+        if($kind==='profiles'){
+            $source=(int)$r['profile_id'];$user=$this->mapped('users',(int)$r['user_id']);
+            if($user===null){$this->mark($kind,$source,null,'user_not_imported');return;}
+            $values=[];
+            foreach(['bio'=>2000,'location'=>120,'website'=>500,'signature'=>500] as $column=>$max){
+                $text=trim(str_replace("\0",'',(string)($r[$column]??'')));
+                if(!preg_match('//u',$text)||mb_strlen($text,'UTF-8')>$max){$this->mark($kind,$source,null,'invalid_or_oversized_profile');return;}
+                $values[$column]=$text;
+            }
+            if($values['website']!=='' && (!filter_var($values['website'],FILTER_VALIDATE_URL)||!in_array(strtolower((string)parse_url($values['website'],PHP_URL_SCHEME)),['http','https'],true))){
+                $this->mark($kind,$source,null,'unsafe_profile_url');return;
+            }
+            if(implode('',$values)===''){$this->mark($kind,$source,null,'empty_profile');return;}
+            // Imported users retain private profile/activity preferences; no automatic publication.
+            $this->query('INSERT INTO ce_forum_member_profiles(user_id,bio,location,website,signature) VALUES(?,?,?,?,?)',[$user,$values['bio'],$values['location'],$values['website'],$values['signature']]);
+            $this->mark($kind,$source,$user);return;
+        }
+        if($kind==='reactions'){
+            $source=(int)$r['reaction_source_id'];
+            $post=$this->mapped('posts',(int)$r['post_id']);$user=$this->mapped('users',(int)$r['user_id']);
+            if($post===null||$user===null){$this->mark($kind,$source,null,'post_or_user_not_imported');return;}
+            // XF standard 1=Like, 2=Love. Unsupported emotive/negative/custom types are audited, not misrepresented.
+            $type=match((int)$r['source_type']){1=>'like',2=>'celebrate',default=>null};
+            if($type===null){$this->mark($kind,$source,null,'unsupported_reaction_type');return;}
+            if(($this->row('SELECT author_id FROM ce_forum_posts WHERE id=?',[$post])['author_id']??null)===$user){$this->mark($kind,$source,null,'self_reaction');return;}
+            if($this->row('SELECT post_id FROM ce_forum_reactions WHERE post_id=? AND user_id=?',[$post,$user])){
+                $this->mark($kind,$source,null,'duplicate_reaction');return;
+            }
+            $this->query('INSERT INTO ce_forum_reactions(post_id,user_id,reaction_type) VALUES(?,?,?)',[$post,$user,$type]);
+            $this->mark($kind,$source,$post);return;
+        }
+        throw new \RuntimeException('Unknown additional import phase');
     }
     private function import(string $kind,array $r,string $category): void
     {

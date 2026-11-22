@@ -20,7 +20,20 @@ INSERT INTO xf_poll VALUES(50,20,'thread','Pick',0,1);
 CREATE TABLE xf_poll_response(poll_response_id INTEGER PRIMARY KEY,poll_id INT,response TEXT);INSERT INTO xf_poll_response VALUES(60,50,'Yes'),(61,50,'No');
 CREATE TABLE xf_poll_vote(poll_response_id INT,user_id INT);INSERT INTO xf_poll_vote VALUES(60,1),(61,2),(61,0);
 CREATE TABLE xf_conversation_message(id INT);INSERT INTO xf_conversation_message VALUES(1);
-CREATE TABLE xf_reaction_content(id INT);
+CREATE TABLE xf_user_profile(user_id INTEGER PRIMARY KEY,about TEXT,location TEXT,website TEXT,signature TEXT);
+INSERT INTO xf_user_profile VALUES
+ (1,'Imported biography','Stockholm','https://example.test/member','signature plain'),
+ (2,'','', '', 'A real signature'),
+ (3,'Collision','', '', '');
+CREATE TABLE xf_reaction_content(reaction_content_id INTEGER PRIMARY KEY,content_type TEXT,content_id INT,reaction_user_id INT,reaction_id INT);
+INSERT INTO xf_reaction_content VALUES
+ (100,'post',30,2,1),
+ (101,'post',31,1,2),
+ (102,'post',30,1,1),
+ (103,'post',30,3,1),
+ (104,'post',31,2,5),
+ (105,'post',32,2,1),
+ (106,'thread',20,2,1);
 
 CREATE TABLE mybb_usergroups(gid INTEGER PRIMARY KEY,title TEXT,description TEXT);
 INSERT INTO mybb_usergroups VALUES(2,'Members',''),(4,'Administrators','');

@@ -6,7 +6,7 @@ on:
 permissions:
   contents: read
 env:
-  FORUM_CURRENT_VERSION: ${{ '1.1.0' }}
+  FORUM_CURRENT_VERSION: ${{ '1.1.1' }}
 concurrency:
   group: forum-ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -130,8 +130,11 @@ jobs:
       - run: python tools/forum-tests/theme_sql_regression.py
       - run: python tools/forum-tests/extension_sql_regression.py
       - run: python tools/forum-tests/migration_sql_regression.py
+      - run: python tools/forum-tests/migration_111_sql_regression.py
       - run: php tools/forum-migration-regression.php
       - run: php tools/forum-multi-migration-regression.php
+      - run: php tools/forum-migration-pipeline-regression.php
+      - run: php tools/forum-migration-upgrade-regression.php
       - run: php tools/forum-migration-reliability-regression.php --topics=1200
       - run: php tools/forum-extension-regression.php --database
       - run: php tools/forum-ecosystem-regression.php --database
@@ -162,7 +165,7 @@ jobs:
       - run: node tools/forum-sso-logout-browser-regression.mjs
       - run: php tools/oidc-global-logout-regression.php
       - run: python tools/oidc-global-logout-sqlite-regression.py
-      - name: Forum 1.1.0 signed release trust, deployed login and fail-closed acceptance
+      - name: Forum signed release trust, deployed login and fail-closed acceptance
         run: |
           php tools/forum-stable-110-regression.php
           python tools/forum-tests/stable_110_release_regression.py

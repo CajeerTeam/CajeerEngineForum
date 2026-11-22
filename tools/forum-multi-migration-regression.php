@@ -18,6 +18,10 @@ try{
   $open=fn()=>new PDO('sqlite:'.$tmp.'/source.sqlite');$source=$open();$adapter=new MultiForumSource($source,$prefix,$platform,$version,'same-label');
   $engine=new ForumMigrationEngine($db,$adapter,$tmp);$plan=$engine->plan();
   check($plan['platform']===$platform&&$plan['counts']['topics']['count']===3&&$plan['counts']['source_private_messages']===1&&!$engine->exists(),"$platform preflight and source counts");
+  if($platform==='xenforo'){
+   check($plan['pipeline_version']===2&&$plan['counts']['profiles']['count']===3&&$plan['counts']['reactions']['count']===6,'XF extended plan and immutable source counts');
+   check(count($adapter->additionalBatch('reactions',100,105,3))===3,'XF additional keyset and upper bound');
+  } else check($plan['pipeline_version']===1,"$platform legacy pipeline unchanged");
   $tree=$adapter->batch('forums',0,3,3);check((int)$tree[0]['forum_type']===0&&(int)$tree[1]['parent_id']===(int)$tree[0]['forum_id'],"$platform topological ordering");
   // SMF synthesizes category IDs above UINT32. Keyset bounds must be bound as
   // integers: SQLite compares computed UNION columns differently from strings.
@@ -41,6 +45,21 @@ try{
   check($pdo->query("SELECT COUNT(*) FROM ce_forum_posts WHERE thread_id='$thread'")->fetchColumn()==2&&$pdo->query("SELECT read_sequence FROM ce_forum_threads WHERE id='$thread'")->fetchColumn()==2,"$platform publication order");
   check($pdo->query("SELECT COUNT(*) FROM ce_forum_boards WHERE id='$board' AND visibility='hidden' AND state='readonly' AND seo_index=0")->fetchColumn()==1,"$platform quarantine");
   check($pdo->query("SELECT file_data FROM ce_forum_attachments WHERE id='$attachment'")->fetchColumn()===base64_encode('hello world!'),"$platform actual attachment bytes");
+  if($platform==='xenforo'){
+   check((int)$report['job']['phase']===13,'XF two extended phases completed after original phases');
+   $aliceProfile=$id('profiles',1);$bobProfile=$id('profiles',2);
+   check($aliceProfile===$user&&$bobProfile===$id('users',2)&&$id('profiles',3)===null,'XF profiles mapped only to newly imported users');
+   check($pdo->query("SELECT bio FROM ce_forum_member_profiles WHERE user_id='$user'")->fetchColumn()==='Imported biography','XF profile saved, not just mapped');
+   check($pdo->query("SELECT profile_visibility FROM ce_forum_member_preferences WHERE user_id='$user'")->fetchColumn()==='private','XF imported profile remains private');
+   check($id('reactions',100)===$post&&$id('reactions',101)===$id('posts',31),'XF standard reactions mapped');
+   $reactionRows=$pdo->query("SELECT reaction_type FROM ce_forum_reactions WHERE post_id='$post'")->fetchAll(PDO::FETCH_COLUMN);
+   check($reactionRows===['like'],'XF actual like row stored');
+   foreach([102=>'self_reaction',103=>'post_or_user_not_imported',104=>'unsupported_reaction_type',105=>'post_or_user_not_imported'] as $original=>$reason){
+    $entry=ForumMigrationEngine::mapping($db,$job,'reactions',$original)['mapping'];
+    check($entry['outcome']==='skipped'&&$entry['reason']===$reason,"XF rejected reaction $original ($reason)");
+   }
+   check($pdo->query("SELECT COUNT(*) FROM ce_forum_reactions WHERE post_id='".$id('posts',31)."'")->fetchColumn()==1,'XF love reaction stored on second post');
+  }else check((int)$report['job']['phase']===11,"$platform completed legacy phases without renumbering");
   check($report['relation_rows']===['watches'=>2,'board_watches'=>1,'votes'=>2],"$platform polls and subscriptions");
   check($pdo->query("SELECT COUNT(*) FROM ce_user_roles WHERE user_id='$user'")->fetchColumn()==3,"$platform group membership without privileges");
   $engine->step(1);check($pdo->query("SELECT COUNT(*) FROM ce_forum_posts WHERE thread_id='$thread'")->fetchColumn()==2,"$platform completed run idempotent");

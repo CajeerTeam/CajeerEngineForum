@@ -1,3 +1,13 @@
+## Version 1.1.1 — resumable additional XenForo import phases
+
+New XenForo import jobs record `pipeline_version=2` in `ce_forum_import_jobs.plan_json`. This changes **neither** the existing database layout nor the original indices in `ForumSource::PHASES`. New jobs process the original eleven phases, then `profiles`, then `reactions`; existing jobs whose plan has no pipeline marker continue and finish after the original eleven phases, including if resumed using 1.1.1. Never manually modify the phase or pipeline marker of a running job.
+
+XenForo 2.2/2.3 additional phases read `xf_user_profile` and `xf_reaction_content` from the same read-only source snapshot. Use `forum:import:plan` to check that required columns are present and review `profiles`/`reactions` counts **before** creating a backup or running the import. The adapter rejects an unsupported source layout. If tables come from a custom fork, restore a verified snapshot and use a compatible copy; do not disable preflight. MyBB, SMF and phpBB remain on the historical phase sequence; their additional data will be added in later releases.
+
+Imported profile fields are created only for newly imported users and remain **private**, with no automatic activation of account or public profile. Oversized or malformed fields, unsafe profile URLs and missing users are explicitly skipped. Only standard XenForo Like and Love reactions are currently mapped to target `like` and `celebrate`; custom, negative, self reactions and records referring to excluded users or messages are tracked as skipped with distinct reasons. Additional data, its ID map, and the job checkpoint are committed together; restarting a failed batch is idempotent. When `state=complete`, inspect `results` in `forum:import:status` and reconcile the skips before making a migrated community visible.
+
+This release does **not** yet migrate private conversations, all reaction semantics, profile images or profile custom fields. These are subsequent roadmap stages, and a production cutover requires staging validation with actual XenForo snapshots and the target PostgreSQL/MySQL storage.
+
 # Forum Migration Engine — phpBB 3.3 (0.7.5)
 
 The importer is an operator-only CLI, not the CMS Portable ZIP importer. It accepts a **frozen copy** of a phpBB 3.3 database in MySQL/MariaDB or a SQLite copy with the same tables. Keep the source DB and attachment directory immutable for the whole import. Do not point it at the live forum. Use a dedicated SELECT-only source database account; the adapter also sets read-only transaction mode. The SQLite source is opened with `query_only`. Source credentials are provided in environment variables, never saved to the target or passed on the command line.

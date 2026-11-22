@@ -9,9 +9,10 @@ use PDO;
  * The source connection is read-only; no legacy credentials or private payloads are selected.
  * Forum tree is the only buffered collection (bounded); all content uses keyset batches.
  */
-final class MultiForumSource implements ForumSource
+final class MultiForumSource implements EnrichedForumSource
 {
     private array $queries=[];
+    private ?array $additionalCounts=null;
     private array $tree=[];
     private array $relationQueries=[];
     private array $extraCounts=[];
@@ -37,7 +38,46 @@ final class MultiForumSource implements ForumSource
     public function platform(): string{return $this->type;}
     public function version(): string{return $this->sourceVersion;}
     public function identity(): string{return hash('sha256',$this->type."\0".$this->sourceVersion."\0".$this->prefix."\0".$this->snapshot);}
-    public function unsupported(): array{return ['source ACL translation','password hashes','private messages','bans and sanctions','anonymous poll votes','reactions and reputation','avatars and custom profile fields','remote media','source-specific BBCode rendering', 'source-specific poll visibility (imported closed)'];}
+    public function unsupported(): array
+    {
+        $items=['source ACL translation','password hashes','private messages','bans and sanctions','anonymous poll votes','avatars and custom profile fields','remote media','source-specific BBCode rendering','source-specific poll visibility (imported closed)'];
+        if($this->type==='xenforo')$items[]='nonstandard/negative XenForo reactions (explicitly skipped with reason)';
+        else $items[]='reactions and profile metadata (not yet supported for this platform)';
+        return $items;
+    }
+    /** XenForo 2.x: preflight exact required columns, then scan immutable source snapshots. */
+    private function additionalQuery(string $kind): string
+    {
+        return match($kind){
+            'profiles'=>'SELECT user_id AS profile_id, user_id, about AS bio, location, website, signature FROM '.$this->t('user_profile'),
+            'reactions'=>"SELECT reaction_content_id AS reaction_source_id, content_id AS post_id, reaction_user_id AS user_id, reaction_id AS source_type FROM ".$this->t('reaction_content')." WHERE content_type='post'",
+            default=>throw new \InvalidArgumentException('Unknown additional import phase'),
+        };
+    }
+    public function additionalPlan(): array
+    {
+        if($this->type!=='xenforo')return [];
+        if(!$this->pdo->inTransaction())throw new \RuntimeException('Source snapshot transaction ended');
+        if($this->additionalCounts!==null)return $this->additionalCounts;
+        $counts=[];
+        foreach(['profiles'=>'profile_id','reactions'=>'reaction_source_id'] as $kind=>$key){
+            $sql=$this->additionalQuery($kind);
+            $row=$this->q('SELECT COUNT(*) AS n,COALESCE(MAX('.$key.'),0) AS high FROM ('.$sql.') src')->fetch(PDO::FETCH_ASSOC);
+            if((int)$this->q('SELECT COUNT(*) FROM ('.$sql.') src WHERE '.$key.' IS NULL OR '.$key.'<=0')->fetchColumn()>0)
+                throw new \RuntimeException('Invalid extended source identity: '.$kind);
+            $counts[$kind]=['count'=>(int)$row['n'],'high'=>(int)$row['high']];
+            $this->additionalBatch($kind,0,$counts[$kind]['high'],1);
+        }
+        return $this->additionalCounts=$counts;
+    }
+    public function additionalBatch(string $phase,int $after,int $high,int $limit): array
+    {
+        if($this->type!=='xenforo')throw new \InvalidArgumentException('Additional phase not supported for source');
+        if($after<0||$high<0||$limit<1||$limit>500)throw new \InvalidArgumentException('Invalid additional batch bounds');
+        $key=match($phase){'profiles'=>'profile_id','reactions'=>'reaction_source_id',default=>throw new \InvalidArgumentException('Unknown additional phase')};
+        $sql=$this->additionalQuery($phase);
+        return $this->all('SELECT * FROM ('.$sql.") src WHERE $key>? AND $key<=? ORDER BY $key LIMIT $limit",[$after,$high]);
+    }
     private function t(string $table):string{return $this->prefix.$table;}
     private function q(string $sql,array $params=[]):\PDOStatement
     {

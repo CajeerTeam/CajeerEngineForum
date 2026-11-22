@@ -62,7 +62,7 @@ final class ForumMigrationCli
             if(!preg_match('/\A[0-9]{8}-[0-9]{6}-[a-f0-9]{16}\z/D',$backupId)||!is_file($root.'/storage/app/backups/production/'.$backupId.'/manifest.json')||is_file($root.'/storage/app/backups/production/'.$backupId.'/incomplete.json'))throw new \RuntimeException('Recovery set missing or incomplete; restore it before resuming');
         }
         if($report['job']['state']!=='complete'&&($opts['verify-backup']??'0')==='1')(new BackupManager($root,$config))->verify($report['job']['backup_id']);
-        if($report['job']['state']!=='complete' && $source->plan()!==$report['job']['plan'])throw new \RuntimeException('Source snapshot changed; restore backup before restarting');
+        if($report['job']['state']!=='complete' && !$engine->matchesRecordedPlan($report['job']['plan']))throw new \RuntimeException('Source snapshot changed; restore backup before restarting');
         $started=hrtime(true);$completed=0;
         for($i=0;$i<$steps&&$report['job']['state']!=='complete';$i++){
             $report=$engine->step($limit);$completed++;
