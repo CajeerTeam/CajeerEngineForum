@@ -9,6 +9,9 @@
   let policy, current = denied(), record = null, ready = false, active = new Map(), panel, manage, fields, status, opener;
   let refreshTask = null, storageError = false;
   const dynamic = boot.dataset.ceConsentDynamic === '1';
+  // The Forum renderer marks only an ACL-checked public SSR document. A client-side
+  // history rewrite cannot grant permission to count another forum route.
+  const approvedForumPath = boot.dataset.ceForumApprovedPath || null;
   const ru = !document.documentElement.lang || document.documentElement.lang.toLowerCase().startsWith('ru');
   const t = (r,e) => ru ? r : e;
   const google = (action, c) => {
@@ -62,12 +65,27 @@
   }
   // The Forum adapter is strictly public-only, even if a third-party theme
   // accidentally embeds the shared consent loader on a private Forum route.
-  const forumPublicPath = path => !/^\/forum(?:\/|$)/i.test(path) || /^\/forum(?:\/?$|\/(?:boards|threads)\/[a-f0-9-]{36}\/?$)/i.test(path);
+  const normalizedForumPath = path => path.replace(/\/+$/, '') || '/';
+  const forumPublicPath = path => {
+    const normalized = normalizedForumPath(path);
+    return !/^\/forum(?:\/|$)/i.test(normalized) ||
+      (approvedForumPath === normalized && /^\/forum(?:$|\/(?:boards|threads)\/[a-f0-9-]{36}$)/i.test(normalized));
+  };
   const trackingStatus = () => Object.fromEntries([...counters].map(([name,c])=>[name,{id:c.id,status:c.status,reason:c.reason||null}]));
   function publishTracking(){document.dispatchEvent(new CustomEvent('cajeer:tracking-status',{detail:trackingStatus()}));}
-  function locationData(value=location.origin+location.pathname) {
+  function locationData(value=location.href || (location.origin+location.pathname+(location.search||''))) {
     try {const url=new URL(value,location.origin);if(url.origin!==location.origin||url.username||url.password||!forumPublicPath(url.pathname)||/^\/(?:admin|api|preview|install|upgrade|assets|uploads|extensions)(?:\/|$)/i.test(url.pathname))return null;
-      const data={page_location:url.origin+url.pathname,page_referrer:''};
+      // Preserve only a bounded page number. Search terms, invite codes, OAuth
+      // parameters, drafts, fragments and all other query data never leave this site.
+      const publicPath = /^\/forum(?:\/|$)/i.test(url.pathname) ? normalizedForumPath(url.pathname) : url.pathname;
+      if (/^\/forum(?:\/|$)/i.test(url.pathname) &&
+          (normalizedForumPath(url.pathname) !== normalizedForumPath(location.pathname) || url.search !== location.search)) return null;
+      let publicPage = '';
+      if (/^\/forum\/(?:boards|threads)\/[a-f0-9-]{36}$/i.test(publicPath)) {
+        const q = url.searchParams.getAll('page');
+        if (q.length === 1 && /^[1-9][0-9]{0,4}$/.test(q[0]) && Number(q[0]) <= 10000 && q[0] !== '1') publicPage='?page='+q[0];
+      }
+      const data={page_location:url.origin+publicPath+publicPage,page_referrer:''};
       // Do not forward query strings, fragments, titles or external referrer paths explicitly.
       if(document.referrer){const r=new URL(document.referrer);if(['https:','http:'].includes(r.protocol))data.page_referrer=r.origin+(r.origin===location.origin&&!/^\/forum(?:\/|$)/i.test(url.pathname)?r.pathname:'/');}
       return data;
@@ -404,7 +422,17 @@
     })().finally(()=>{refreshTask=null;}); return refreshTask;
   }
   window.addEventListener('storage',e=>{if(e.key!==key&&e.key!==null)return;record=read();if(!valid(record))record=null;apply(record?{...record.categories}:denied());if(!record&&panel)openPanel(false);else closePanel();});
-  window.addEventListener('pageshow',e=>{if(e.persisted)refresh();});
+  window.addEventListener('pageshow',e=>{
+    if (!e.persisted) return;
+    // BFCache restores are real visits, unlike a visibility/focus refresh. Recheck
+    // the current consent before sending anything from the restored document.
+    refresh().then(()=>{
+      if (!trackingAllowed('metrika')) return;
+      for (const c of counters.values()) c.last=null;
+      view();
+    });
+  });
+  window.addEventListener('popstate',()=>{ if (trackingAllowed('metrika')) view(); });
   document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')refresh();});
   setInterval(()=>{if(record&&!valid(record)){record=null;apply(denied());if(panel)openPanel(false);}if(dynamic&&document.visibilityState==='visible')refresh();},60000);
   new MutationObserver(()=>activate()).observe(document.documentElement,{childList:true,subtree:true});

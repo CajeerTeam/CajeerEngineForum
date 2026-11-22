@@ -1,3 +1,12 @@
+## 1.2.3 — Visitor Tracking & Consent (2026-11-23)
+
+- Restrict forum tracking to explicitly enabled, anonymous, public and indexable server-rendered forum/board/thread pages. Bind a per-response approved path to the shared consent runtime so client-side URL changes cannot activate tracking on private routes, account pages, profiles, messages or ACP.
+- Correct GA4/Yandex/Matomo/Plausible page-view dispatch so the initial visit is recorded once after affirmative analytics consent, with no duplicate counter activation or duplicate events after policy refresh. Support legitimate navigation between pages of one public thread, browser back/forward and BFCache restoration without counting focus events as visits.
+- Limit externally shared page locations to the approved origin and path, optionally with one bounded numeric `page` parameter. Strip free-text search, sensitive parameters, fragments, credentials and arbitrary referrer paths.
+- Consent refusal, withdrawal and changed policy versions continue to fail closed; server-side activity counters remain independent of optional third-party visitors. The forum analytics switch and kernel tracking configuration remain disabled by default.
+- Add executable PHP checks of server gating, real Chromium/Firefox DOM regression of consent, provider requests and URL sanitization, CI wiring and an operator-facing staging checklist. No database migration; the inherited core remains CajeerEngine 2.1.0.
+- Actual GA4/Yandex provider acceptance and deployment remain external staging gates, not certified by local transport mocks.
+
 ## 1.2.2 — Forum Event Tracking (2026-11-22)
 
 - Implemented native anonymous, transaction-committed forum activity events for published threads and replies, registrations and actual reaction changes; unsuccessful and rolled-back mutations do not produce events.

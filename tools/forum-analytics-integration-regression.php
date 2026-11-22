@@ -70,6 +70,13 @@ namespace {
         $check(!ForumAnalyticsIntegration::eligible(true,true,false,false),'authenticated potentially private content excluded');
         $check(!ForumAnalyticsIntegration::eligible(true,true,true,true),'theme preview excluded');
         $check(ForumAnalyticsIntegration::eligible(true,true,true,false),'public guest content eligible');
+        $id='01234567-89ab-4cde-8fab-0123456789ab';
+        $check(ForumAnalyticsIntegration::publicPath('/forum'),'public forum root trackable');
+        $check(ForumAnalyticsIntegration::publicPath('/forum/threads/'.$id),'public thread eligible after ACL check');
+        $check(ForumAnalyticsIntegration::publicPath('/forum/boards/'.$id),'public board eligible after ACL check');
+        foreach(['/forum/members/'.$id,'/forum/conversations','/forum/account/security','/forum/acp','/forum/threads/bad'] as $private){
+            $check(!ForumAnalyticsIntegration::publicPath($private),'non-public path cannot be marked: '.$private);
+        }
         $adapter=new ForumAnalyticsIntegration($work);
         $req=Request::create('https://forum.test/forum','GET');
         $html='<!doctype html><html><head></head><body><h1>Public forum</h1></body></html>';
@@ -80,6 +87,10 @@ namespace {
         $tracking->update($cfg);
         $result=$adapter->decorate($html,$req);
         $check($result['active'] && substr_count($result['html'],'data-ce-consent-config=')===1,'live consent and counter engine inserted once');
+        $check(str_contains($result['html'],'data-ce-forum-approved-path="/forum"'),'server-authorized forum path included in consent runtime');
+        $check(!$adapter->decorate($html,Request::create('https://forum.test/forum/members/'.$id))['active'],'member profile never tracked');
+        $check(!$adapter->decorate($html,Request::create('https://forum.test/forum/conversations'))['active'],'private messages never tracked');
+        $check(!$adapter->decorate($html,Request::create('https://forum.test/forum','HEAD'))['active'],'HEAD does not initialize browser tracking');
         $check(str_contains($result['html'],'/assets/ce-consent/consent.js')&&!str_contains($result['html'],'src="https://mc.yandex.ru'),'optional provider remains inert until consent');
         $other=$adapter->decorate($html,Request::create('https://other.test/forum','GET'));
         $check(!$other['active'],'unapproved host excluded');

@@ -17,10 +17,10 @@
     "docs": "GitHub repository docs/",
     "updates": "GitHub Releases",
     "release_builder": "tools/build-release.php",
-    "source_artifact": "storage/releases/cajeerengine-1.2.2-source.zip",
-    "dist_artifact": "storage/releases/cajeerengine-1.2.2-dist.zip",
+    "source_artifact": "storage/releases/cajeerengine-1.2.3-source.zip",
+    "dist_artifact": "storage/releases/cajeerengine-1.2.3-dist.zip",
     "checksums": "storage/releases/*.sha256",
-    "artifact_index": "storage/releases/cajeerengine-1.2.2-artifacts.json",
+    "artifact_index": "storage/releases/cajeerengine-1.2.3-artifacts.json",
     "support_bundle": "storage/app/support",
     "backup": "storage/app/backups/production",
     "server_reports": "storage/app/reports",
@@ -36,6 +36,7 @@
     "engine_api_version": "1.1"
   },
   "product_changes": [
+    "Forum Edition 1.2.3: consent-aware public visitor tracking with server-approved SSR route markers, exact URL/path gating, page-number-only query sanitization, once-per-navigation GA4/Metrika dispatch, duplicate activation fix, back/forward and BFCache handling, denial/revocation fail-closed behavior, isolated Chromium/Firefox regressions and unchanged CajeerEngine 2.1.0 core. No new SQL migrations.",
     "Forum Edition 1.2.2: transactional anonymous activity-event recording for published threads/replies, registration and effective reaction changes; successful search and download counters; local 90-day retention, disabled-by-default policy gate and safe consent-gated client forwarding through the existing CajeerAnalytics runtime without identifiers, search terms, private data or duplicate external SDKs.",
     "Forum Edition 1.2.1: executable integration of public Forum SSR with the existing consent-gated core analytics runtime, operator-controlled and revisioned forum policy switch (off by default), HTTPS/exact-host validation, fail-closed private/preview exclusion, response-scoped CSP and revision-aware Redis cache invalidation; shared GA4, Yandex Metrica, GTM, Matomo, Plausible, Cloudflare and Analytics Hub settings retained without duplicating SDKs or sending private content.",
     "Forum Edition 1.2.0: read-only, fail-closed Invision v8 source-to-target acceptance with exhaustive phase ID reconciliation, exact skip approval, private recipient and source message checks, on-disk and target attachment SHA-256 verification, verified pre-import backup, and strict staging cutover runbook; existing XenForo v5 acceptance and historical checkpoints preserved. Actual real-data go-live requires independent operator staging approval.",
@@ -146,6 +147,6 @@
   },
   "stability": "production-stable-gated",
   "edition": "forum",
-  "edition_version": "1.2.2",
+  "edition_version": "1.2.3",
   "upstream_version": "2.1.0"
 }

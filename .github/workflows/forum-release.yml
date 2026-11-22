@@ -117,11 +117,13 @@ jobs:
           python3 tools/certification-evidence.py verify "$ARTIFACT_ROOT" --trusted-key "$pub"
 
           cat > "$RUNNER_TEMP/forum-release-notes.md" <<'NOTES'
-          ## CajeerEngineForum 1.2.2
+          ## CajeerEngineForum 1.2.3
 
-          Forum Edition Advanced Migration Stable (XenForo / Invision), based on CajeerEngine 2.1.0.
+          Forum Edition Visitor Tracking & Consent, based on CajeerEngine 2.1.0.
 
-          - Read-only Invision 4/5 v8 full-source acceptance, exact skip approval and verified backup gating.
+          - Consent-gated public forum pageviews with precise SSR-approved routes, safe URL minimization and duplicate suppression.
+          - Explicit analytics refusal and withdrawal, including browser back/forward and BFCache safety.
+          - Read-only Invision 4/5 v8 source acceptance and verified migration backup gates retained.
           - Existing XenForo 2.2/2.3 production acceptance and migration checkpoints retained.
           - Real-data source migration certification requires independent staging operator approval.
           - Verified release certificate bound to tested exact source and distribution archives.

@@ -130,7 +130,7 @@ final readonly class ForumPageRenderer
             '<meta name="robots" content="noindex, nofollow" data-forum-template>'=>$meta,'<!--FORUM_MAINTENANCE-->'=>$community['paused']?'<p role="status" class="panel">Публикация новых тем и ответов временно приостановлена.</p>':'','<!--FORUM_BODY-->'=>$body,'<!--FORUM_RENDERED-->'=>$canonical!==null||$path==='/forum/latest'||$path==='/forum/questions'?'true':'false','<!--FORUM_SCRIPT-->'=>$status===200&&$preview===null?'<script src="/forum-assets/forum.js?v='.rawurlencode((new ForumVersion($this->root))->current()).'" defer></script>':'',
         ]);
         $headers=['Content-Type'=>'text/html; charset=UTF-8','Cache-Control'=>'private, no-store','Vary'=>'Cookie, Authorization, X-API-Token','X-Robots-Tag'=>$robots];
-        if(ForumAnalyticsIntegration::eligible((bool)($community['analytics_enabled']??false),$index,$guest,$preview!==null)){
+        if(ForumAnalyticsIntegration::eligible((bool)($community['analytics_enabled']??false),$index,$guest,$preview!==null) && ForumAnalyticsIntegration::publicPath($path)){
             $tracking=(new ForumAnalyticsIntegration($this->root))->decorate($html,$request);
             $html=$tracking['html'];
             if($tracking['active'])$headers['X-Forum-Analytics-Public']='1';

@@ -18,17 +18,28 @@ final readonly class ForumAnalyticsIntegration
         return $forumEnabled && $indexable && $guest && !$preview;
     }
 
+    /** Only public forum listings and threads are tracked, never profiles or account routes. */
+    public static function publicPath(string $path): bool
+    {
+        return $path === '/forum' || (bool)preg_match('~^/forum/(?:boards|threads)/[a-f0-9-]{36}$~D', $path);
+    }
+
     /** @return array{html:string,active:bool} */
     public function decorate(string $html,Request $request): array
     {
         // Fail closed if the core configuration, public origin or a consent asset is unavailable.
-        if(!$request->isSecure() || !in_array($request->getMethod(),['GET','HEAD'],true))return ['html'=>$html,'active'=>false];
+        if(!$request->isSecure() || $request->getMethod()!=='GET' || !self::publicPath(rtrim($request->getPathInfo(),'/')?:'/'))return ['html'=>$html,'active'=>false];
         try {
             $tracking=(new TrackingConfig($this->root))->get();
             if(!$tracking['enabled']||!in_array(strtolower($request->getHost()),$tracking['hosts'],true))return ['html'=>$html,'active'=>false];
             $decorated=(new ConsentPolicy($this->root))->decorate($html);
             $active=$decorated!==$html && str_contains($decorated,'data-ce-consent-config=');
-            return ['html'=>$active?$decorated:$html,'active'=>$active];
+            if (!$active) return ['html'=>$html,'active'=>false];
+            // This browser document was authorized for exactly one public path.
+            // A later history.replaceState() must not authorize tracking an unrelated/private route.
+            $path=htmlspecialchars(rtrim($request->getPathInfo(),'/')?:'/',ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8');
+            $decorated=str_replace('data-ce-consent-dynamic="1"', 'data-ce-consent-dynamic="1" data-ce-forum-approved-path="'.$path.'"', $decorated);
+            return ['html'=>$decorated,'active'=>true];
         } catch (\Throwable) {
             return ['html'=>$html,'active'=>false];
         }
