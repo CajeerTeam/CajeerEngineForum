@@ -71,7 +71,7 @@ try {
     putenv('INTEGRATIONS_MAX_PAYLOAD_BYTES=1024');
     putenv('EXTENSIONS_ALLOW_UNSIGNED_IN_DEV=true');
     $config = new ConfigRepository($tmp);
-    verify($config->string('app.edition_version')==='1.0.2', 'Forum edition version propagated at runtime');
+    verify($config->string('app.edition_version') === (new \CajeerEngine\Forum\ForumVersion($root))->current(), 'Forum edition version propagated at runtime');
     $providers = new ProviderRegistry(); $provider = new TestIntegrationProvider(); $providers->register($provider);
     $center = new IntegrationCenter(new IntegrationStore($tmp),$providers,new SecretVault('base64:'.base64_encode(random_bytes(32))),$config);
     $first = $center->create(['provider'=>'test-integration','name'=>'Test','config'=>['url'=>'https://allowed.example/invoke']], 'operator');

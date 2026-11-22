@@ -1,3 +1,12 @@
+## [1.0.3] - 2026-11-22 — SkiF4er ID Login (Forum Edition)
+
+- Connect the real SkiF4er ID confidential OIDC login to the Forum login page. The button is displayed only when the existing OIDC controller reports an enabled provider; local login remains available.
+- Reuse the existing verified Authorization Code + PKCE S256 exchange, nonce/state checks, explicit linked `(issuer, sub)` identity, local session issuance, HttpOnly cookie, and server-side ACL. Do not trust OAuth data submitted by the browser.
+- Carry a forum-only return path through a MAC bound to the random OIDC browser transaction cookie. Reject cross-origin destinations, URL authority, percent-encoded paths, path traversal, fragments and ambiguous separators. Preserve admin OIDC login separately.
+- Return successful forum logins to the selected forum page. Return provider errors, replay, unlinked identities and insufficient MFA to a forum login screen with fixed, non-sensitive error messages; never expose tokens or internal exception details.
+- Add regression coverage for the production controller and return-cookie path; retain core 2.1.0 and existing Forum 1.0.2 migration history. No database schema changes in this release.
+- Live end-to-end login requires a registered HTTPS Keycloak client and a previously linked account. A networked staging/production OIDC handshake is not verified by these local tests.
+
 ## [1.0.2] - 2026-11-22 — Extension, Migration, API & Integration Stabilization
 
 - Serialize extension database migrations with the shared database migration lock; recheck checksums and commit migration ledger entries in the same transaction as migration changes. Reject implicit transaction commits rather than reporting a successful migration.

@@ -96,12 +96,13 @@ jobs:
           done
 
           cat > "$RUNNER_TEMP/forum-release-notes.md" <<'NOTES'
-          ## CajeerEngineForum 1.0.2
+          ## CajeerEngineForum 1.0.3
 
-          Stabilization release of Forum Edition, built on CajeerEngine 2.1.0.
+          Forum Edition SkiF4er ID Login, built on CajeerEngine 2.1.0.
 
-          - Concurrent extension migration protection and atomic extension asset publication.
-          - Stronger OpenAPI request validation and outbound integration restrictions.
+          - Verified SkiF4er ID login from the Forum UI and safe return to forum pages.
+          - Explicit account linking and protected, local browser sessions.
+          - 1.0.2 security and migration stabilizations retained.
           - Administration, migrations, backups, deployment and recovery tooling.
           - Source and distribution ZIP packages from the successful CI run, with SHA-256 checksums.
 

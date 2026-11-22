@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace CajeerEngine\Api\Controller;
 
 use CajeerEngine\Identity\OidcLogin;
+use CajeerEngine\Forum\Security\ForumOidcReturn;
 use CajeerEngine\Security\AuthService;
 use CajeerEngine\Runtime\ConfigRepository;
 use Symfony\Component\HttpFoundation\Cookie;
@@ -27,40 +28,80 @@ final readonly class OidcController
     {
         if ($this->login === null) return new JsonResponse(['error'=>['code'=>'oidc_disabled','message'=>'SkiF4er ID не настроен.']], 503);
         if (!$request->isSecure()) return new JsonResponse(['error'=>['code'=>'https_required','message'=>'OIDC требует HTTPS.']], 403);
+        // The return destination is optional; without it the admin login retains
+        // its original behaviour. Never persist arbitrary caller-controlled URLs.
+        $raw = $request->query->all()['return_to'] ?? null;
+        $target = $raw === null ? null : ForumOidcReturn::sanitize($raw);
+        if ($raw !== null && $target === null) {
+            return new JsonResponse(['error'=>['code'=>'invalid_return','message'=>'Недопустимый адрес возврата на форум.']], 422, ['Cache-Control'=>'no-store']);
+        }
         try {
             $login = $this->login->begin();
             $response = new RedirectResponse($login['url'], 302);
-            $response->headers->setCookie(Cookie::create('ce_oidc_tx', $login['browser'], new \DateTimeImmutable('+5 minutes'), '/auth/oidc', null, true, true, false, Cookie::SAMESITE_LAX));
+            $expiry = new \DateTimeImmutable('+5 minutes');
+            $response->headers->setCookie(Cookie::create('ce_oidc_tx', $login['browser'], $expiry, '/auth/oidc', null, true, true, false, Cookie::SAMESITE_LAX));
+            if ($target !== null) {
+                $response->headers->setCookie(Cookie::create('ce_oidc_return', ForumOidcReturn::sign($target, $login['browser']), $expiry, '/auth/oidc', null, true, true, false, Cookie::SAMESITE_LAX));
+            } else {
+                $response->headers->clearCookie('ce_oidc_return', '/auth/oidc', null, true, true, Cookie::SAMESITE_LAX);
+            }
             $response->headers->set('Cache-Control', 'no-store');
             $response->headers->set('Referrer-Policy', 'no-referrer');
             return $response;
         } catch (\Throwable) {
+            if ($target !== null) {
+                $response = new RedirectResponse('/forum/login?sso_error=provider_error', 303);
+                $response->headers->set('Cache-Control', 'no-store');
+                $response->headers->set('Referrer-Policy', 'no-referrer');
+                return $response;
+            }
             return new JsonResponse(['error'=>['code'=>'oidc_unavailable','message'=>'Не удалось начать авторизацию SkiF4er ID.']], 503);
         }
     }
 
     public function callback(Request $request): Response
     {
-        if ($this->login === null) return new RedirectResponse('/admin/#/login', 303);
-        $response = new RedirectResponse('/admin/#/login', 303);
-        $response->headers->clearCookie('ce_oidc_tx', '/auth/oidc', null, true, true, Cookie::SAMESITE_LAX);
-        $response->headers->set('Cache-Control', 'no-store');
-        $response->headers->set('Referrer-Policy', 'no-referrer');
-        if (!$request->isSecure() || $request->query->has('error')) return $response;
-        $code = $request->query->get('code'); $state = $request->query->get('state');
         $browser = $request->cookies->get('ce_oidc_tx');
-        if (!is_string($code) || !is_string($state) || !is_string($browser)) return $response;
+        $target = ForumOidcReturn::verify($request->cookies->get('ce_oidc_return'), $browser);
+        $fallback = $target !== null ? '/forum/login' : '/admin/#/login';
+        $response = new RedirectResponse($fallback, 303);
+        // Always clear transaction and return cookies, including provider denial,
+        // state mismatch and transport faults. Neither cookie is a login session.
+        $clean = static function (Response $result): Response {
+            $result->headers->clearCookie('ce_oidc_tx', '/auth/oidc', null, true, true, Cookie::SAMESITE_LAX);
+            $result->headers->clearCookie('ce_oidc_return', '/auth/oidc', null, true, true, Cookie::SAMESITE_LAX);
+            $result->headers->set('Cache-Control', 'no-store');
+            $result->headers->set('Referrer-Policy', 'no-referrer');
+            return $result;
+        };
+        if ($this->login === null || !$request->isSecure()) return $clean($response);
+        if ($request->query->has('error')) {
+            $denied = ($request->query->all()['error'] ?? null) === 'access_denied';
+            return $clean(new RedirectResponse($target !== null ? '/forum/login?sso_error='.($denied ? 'cancelled' : 'provider_error') : $fallback, 303));
+        }
+        $code = $request->query->all()['code'] ?? null;
+        $state = $request->query->all()['state'] ?? null;
+        if (!is_string($code) || !is_string($state) || !is_string($browser)) {
+            return $clean(new RedirectResponse($target !== null ? '/forum/login?sso_error=invalid_callback' : $fallback, 303));
+        }
         try {
             $session = $this->login->finish($code, $state, $browser, $request);
-            $response = new RedirectResponse((($session['linked'] ?? false) === true || ($session['step_up'] ?? false) === true) ? '/admin/#/identity' : '/admin/', 303);
+            if (($session['linked'] ?? false) === true || ($session['step_up'] ?? false) === true) {
+                $destination = $target !== null ? '/forum/account/security' : '/admin/#/identity';
+            } else {
+                $destination = $target ?? '/admin/';
+            }
+            $response = new RedirectResponse($destination, 303);
             if (($session['linked'] ?? false) !== true && ($session['step_up'] ?? false) !== true) {
                 $response->headers->setCookie(Cookie::create('ce_session', $session['access_token'], new \DateTimeImmutable((string)$session['expires_at']), '/api/v1', null, true, true, false, Cookie::SAMESITE_STRICT));
             }
-            $response->headers->clearCookie('ce_oidc_tx', '/auth/oidc', null, true, true, Cookie::SAMESITE_LAX);
-            $response->headers->set('Cache-Control', 'no-store');
-            $response->headers->set('Referrer-Policy', 'no-referrer');
-        } catch (\Throwable) { /* Fail closed and keep existing session unchanged. */ }
-        return $response;
+        } catch (\Throwable $error) {
+            // Deliberately avoid echoing provider/transport/internal errors to the browser.
+            $code = str_contains($error->getMessage(), 'not linked to a local account') ? 'not_linked'
+                : (str_contains($error->getMessage(), 'multi-factor authentication evidence') ? 'mfa_required' : 'login_failed');
+            $response = new RedirectResponse($target !== null ? '/forum/login?sso_error='.$code : $fallback, 303);
+        }
+        return $clean($response);
     }
 
     /** Authenticated, CSRF-protected browser POST; no logout on a GET or from a Bearer token. */

@@ -1,0 +1,21 @@
+// Exercise the actual Forum UI return-to and login link logic without browser dependencies.
+import fs from 'node:fs';
+import vm from 'node:vm';
+const source = fs.readFileSync(new URL('../public/forum-assets/forum.js', import.meta.url), 'utf8');
+const start = source.indexOf('function forumReturn(value){');
+const end = source.indexOf('\nasync function auth(', start);
+if (start < 0 || end < 0) throw new Error('Missing active Forum login return implementation');
+const line = source.split('\n').find(x => x.startsWith('const link=(text,url,cls)=>'));
+if (!line) throw new Error('Missing Forum navigation link implementation');
+const ctx = {URL, location: {origin:'https://forum.example', pathname:'/forum/threads/12345678-1234-1234-1234-123456789abc', search:'?page=2'}, node: (tag,text,cls) => ({tag,text,cls})};
+vm.runInNewContext(source.slice(start, end) + '\n' + line + '\nglobalThis.checkReturn=forumReturn;globalThis.checkLink=link;', ctx);
+let checked=0;
+const check=(value,expected,name)=>{if(value!==expected)throw new Error(`FAIL ${name}: ${value} !== ${expected}`); console.log('PASS '+name); checked++};
+check(ctx.checkReturn('/forum/threads/12345678-1234-1234-1234-123456789abc?page=2'),'/forum/threads/12345678-1234-1234-1234-123456789abc?page=2','retain same-origin forum page');
+for (const path of ['//evil.test','https://evil.test','/forumx','/admin','/forum/../admin','/forum//admin','/forum/%2fadmin','/forum\\foo','/forum/#fragment'])check(ctx.checkReturn(path),'/forum','reject untrusted return: '+path);
+const login=ctx.checkLink('Войти','/forum/login');
+check(login.href,'/forum/login?return_to='+encodeURIComponent(ctx.location.pathname+ctx.location.search),'guest thread login keeps page context');
+check(ctx.checkLink('Forum','/forum').href,'/forum','normal navigation unchanged');
+ctx.location.pathname='/forum/login';ctx.location.search='';
+check(ctx.checkLink('Войти','/forum/login').href,'/forum/login','login page does not recursively append return');
+console.log('Forum SkiF4er browser logic:', checked, 'PASS');
