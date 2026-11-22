@@ -59,7 +59,7 @@ final class ForumMigrationCli
         if($command==='forum:import:plan')return $engine->plan();
         if($platform==='xenforo')self::requireXenForoLedgerWidth($db);
         if($command==='forum:import:accept'){
-            if($platform!=='xenforo')throw new \InvalidArgumentException('Acceptance supports XenForo only');
+            if(!in_array($platform,['xenforo','invision'],true))throw new \InvalidArgumentException('Acceptance requires XenForo or Invision');
             if(!is_file($root.'/storage/app/maintenance.json')||OperationLock::active($root)
                 ||is_file($root.'/storage/app/extensions/deployment.json')
                 ||is_file($root.'/storage/app/backup-restore.json'))
@@ -69,7 +69,9 @@ final class ForumMigrationCli
             if(!preg_match('/\A[0-9]{8}-[0-9]{6}-[a-f0-9]{16}\z/D',$backupId))
                 throw new \RuntimeException('Import recovery backup identity is invalid');
             $recovery=(new BackupManager($root,$config))->verify($backupId);
-            $result=(new XenForoAcceptance($db,$source,$engine,$files,$avatarFiles))->check($opts['job'], $opts['expect-skips-sha256']??null);
+            $result=$platform==='xenforo'
+                ?(new XenForoAcceptance($db,$source,$engine,$files,$avatarFiles))->check($opts['job'], $opts['expect-skips-sha256']??null)
+                :(new InvisionAcceptance($db,$source,$engine,$files))->check($opts['job'], $opts['expect-skips-sha256']??null);
             return $result+['verified_backup'=>['id'=>$backupId,'manifest_sha256'=>$recovery['manifest_sha256']]];
         }
         if(!OperationLock::exclusiveHeld($root)||!is_file($root.'/storage/app/maintenance.json')||OperationLock::active($root)||is_file($root.'/storage/app/extensions/deployment.json')||is_file($root.'/storage/app/backup-restore.json'))throw new \RuntimeException('Enable maintenance and drain all application nodes before import');

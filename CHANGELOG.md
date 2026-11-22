@@ -1,3 +1,10 @@
+## Forum Edition 1.2.0 — Advanced Migration Stable (2026-11-22)
+
+- Implement read-only, source-backed Invision Community 4/5 v8 full import acceptance (`forum:import:accept --platform=invision`), rejecting missing mappings, altered source content, unsupported target or private-audience changes, and modified attachments.
+- Require an exact SHA-256 acknowledgement of all skipped source records, plus existing isolated maintenance mode and independently verified pre-import backup before positive acceptance.
+- Retain XenForo 2.2/2.3 v5 acceptance, fail-closed migration integrity checks, historical phase/checkpoint compatibility, and CajeerEngine 2.1.0 core; no new SQL migrations.
+- Add negative integration regressions, CI admission, operational cutover/restore instructions and explicit real-data staging release criteria. Real production XenForo/Invision data has not been provided or certified.
+
 ## Forum Edition 1.1.11 — Advanced Migration Hardening
 
 - Add index migration 0080 for fast `(job_id,kind,outcome,target_id)` ownership/recipient lookups across supported SQL drivers.

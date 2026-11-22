@@ -2,7 +2,7 @@
 /** End-to-end v8: real snapshot, real target DB, real importer, failure and resume. */
 declare(strict_types=1);
 use CajeerEngine\Database\{DatabaseManager,MigrationRunner};
-use CajeerEngine\Forum\Migration\{ForumMigrationEngine,InvisionSource};
+use CajeerEngine\Forum\Migration\{ForumMigrationEngine,InvisionSource,InvisionAcceptance};
 use CajeerEngine\Runtime\ConfigRepository;
 $root=dirname(__DIR__);
 spl_autoload_register(static function(string $class)use($root):void{
@@ -84,6 +84,24 @@ try{
     $body=$q->fetch(PDO::FETCH_ASSOC);
     $check($body['body_format']==='bbcode'&&str_contains($body['body'],'[b]hello[/b]')&&$map('inv_messages',72)===null,'private content converted and deleted thread omitted');
     $check((int)$target->query('PRAGMA foreign_key_check')->fetchColumn()===0,'target has no broken foreign keys');
+    // Read-only full-source acceptance must fail until the operator approves the exact skip ledger.
+    $acceptance=new InvisionAcceptance($db,$adapter,$engine);
+    $unapproved=$acceptance->check($job);
+    $check(!$unapproved['ok'] && in_array('unapproved_skipped_records',$unapproved['violations'],true),
+        'unapproved source omissions block acceptance');
+    $accepted=$acceptance->check($job,$unapproved['skip_sha256']);
+    $check($accepted['ok'] && $accepted['complete'] && $accepted['source_rows']['inv_messages']===3,
+        'full source and target reconciliation passes with reviewed skips: '.implode(', ',$accepted['violations']));
+    $target->prepare('UPDATE ce_forum_conversation_messages SET body=? WHERE id=?')->execute(['TAMPERED',$message]);
+    $tampered=$acceptance->check($job,$unapproved['skip_sha256']);
+    $check(!$tampered['ok'] && in_array('source_body_mismatch:inv_messages:70',$tampered['violations'],true),
+        'mutated private content cannot pass source acceptance');
+    $target->prepare('UPDATE ce_forum_conversation_messages SET body=? WHERE id=?')->execute([$body['body'],$message]);
+    $target->prepare('DELETE FROM ce_forum_conversation_participants WHERE conversation_id=? AND user_id=?')->execute([$chat,$bob]);
+    $tampered=$acceptance->check($job,$unapproved['skip_sha256']);
+    $check(!$tampered['ok'] && in_array('private_recipient_mismatch:60',$tampered['violations'],true),
+        'missing private participant cannot pass source acceptance');
+
     $src->rollBack();
     echo "Invision v8 community integration: $passed PASS\n";
 }finally{

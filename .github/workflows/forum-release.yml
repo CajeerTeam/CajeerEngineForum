@@ -117,10 +117,13 @@ jobs:
           python3 tools/certification-evidence.py verify "$ARTIFACT_ROOT" --trusted-key "$pub"
 
           cat > "$RUNNER_TEMP/forum-release-notes.md" <<'NOTES'
-          ## CajeerEngineForum 1.1.11
+          ## CajeerEngineForum 1.2.0
 
-          Forum Edition SkiF4er ID Stable, based on CajeerEngine 2.1.0.
+          Forum Edition Advanced Migration Stable (XenForo / Invision), based on CajeerEngine 2.1.0.
 
+          - Read-only Invision 4/5 v8 full-source acceptance, exact skip approval and verified backup gating.
+          - Existing XenForo 2.2/2.3 production acceptance and migration checkpoints retained.
+          - Real-data source migration certification requires independent staging operator approval.
           - Verified release certificate bound to tested exact source and distribution archives.
           - Independently pinned Ed25519 publisher key and protected production publication.
           - Live HTTPS Forum login, OIDC configuration, session and schema integrity admission checks.
