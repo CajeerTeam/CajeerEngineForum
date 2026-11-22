@@ -33,7 +33,7 @@ $check=static function (string $key, bool $passed, string $reason) use (&$result
 };
 try {
     $version=(new ForumVersion($root))->current();
-    $check('edition_version', $version==='1.0.9', 'Installed Forum Edition must be 1.0.9 (got '.$version.').');
+    $check('edition_version', $version==='1.1.0', 'Installed Forum Edition must be 1.1.0 (got '.$version.').');
     $config=new ConfigRepository($root);
     $database=new DatabaseManager($config);
     $pdo=$database->connection();
@@ -66,6 +66,16 @@ try {
         'ce_forum_posts','ce_forum_board_permissions','ce_forum_category_permissions','ce_forum_sanctions'] as $table) {
         $check('schema_'.$table, $database->tableExists($table), 'Required runtime table: '.$table);
     }
+    // Integrity checks must read deployed data, not infer success from table presence.
+    // Missing foreign keys on restored databases must not mask orphaned identities.
+    $orphanLinks=(int)$pdo->query('SELECT COUNT(*) FROM ce_oidc_identities i LEFT JOIN ce_users u ON u.id=i.user_id WHERE u.id IS NULL')->fetchColumn();
+    $check('oidc_link_owners',$orphanLinks===0,'External identities without a local owner: '.$orphanLinks);
+    $orphanSessions=(int)$pdo->query('SELECT COUNT(*) FROM ce_user_sessions s LEFT JOIN ce_users u ON u.id=s.user_id WHERE u.id IS NULL')->fetchColumn();
+    $check('session_owners',$orphanSessions===0,'Sessions without a local owner: '.$orphanSessions);
+    $badSso=(int)$pdo->query("SELECT COUNT(*) FROM ce_user_sessions WHERE provider='skif4er' AND (issuer IS NULL OR issuer <> 'https://id.skif4er.ru/realms/skif4er' OR (oidc_sid_hash IS NULL AND oidc_sub_hash IS NULL))")->fetchColumn();
+    $check('sso_session_provenance',$badSso===0,'SSO sessions with missing/wrong issuer or logout identity: '.$badSso);
+    $revocationDrift=(int)$pdo->query('SELECT COUNT(*) FROM ce_user_sessions s JOIN ce_api_tokens t ON t.id=s.token_id WHERE t.revoked_at IS NOT NULL AND s.revoked_at IS NULL')->fetchColumn();
+    $check('session_revocation_consistency',$revocationDrift===0,'Revoked tokens with still-active session registry entries: '.$revocationDrift);
     $stmt=$pdo->prepare('SELECT permissions FROM ce_roles WHERE handle = :handle');
     $stmt->execute(['handle'=>'forum-member']);
     $scopes=$stmt->fetchColumn();

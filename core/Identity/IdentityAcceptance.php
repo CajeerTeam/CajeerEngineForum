@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace CajeerEngine\Identity;
 
 use CajeerEngine\Database\DatabaseManager;
+use CajeerEngine\Forum\ForumVersion;
 use CajeerEngine\Integration\SecretVault;
 use CajeerEngine\Runtime\ConfigRepository;
 
@@ -73,8 +74,12 @@ final readonly class IdentityAcceptance
         }
         if ($probeSite) {
             try {
+                $this->verifyForumLogin();
+                $check('forum_login_page',true,'Live HTTPS Forum login page, release identity, private cache policy and frontend asset verified');
+            } catch (\Throwable $e) { $check('forum_login_page',false,$e->getMessage()); }
+            try {
                 $this->verifyDeployedSite($oidc,$strict,$version);
-                $check('deployed_site',true,'HTTPS served by installed release with matching Identity settings');
+                $check('deployed_site',true,'HTTPS served by installed engine AND Forum release with matching Identity settings');
             } catch (\Throwable $e) { $check('deployed_site',false,$e->getMessage()); }
         }
         $fail = array_keys(array_filter($checks,static fn(array $result):bool=>!$result['ok']));
@@ -93,15 +98,16 @@ final readonly class IdentityAcceptance
         }
         $ch=curl_init($base.'/api/v1/auth/oidc/status');
         if ($ch===false) throw new \RuntimeException('Unable to initialize live site probe.');
-        $body=''; $version=null;
+        $body=''; $version=null; $forumVersion=null;
         try {
             curl_setopt_array($ch,[
                 CURLOPT_FOLLOWLOCATION=>false,CURLOPT_CONNECTTIMEOUT=>4,CURLOPT_TIMEOUT=>8,
                 CURLOPT_SSL_VERIFYPEER=>true,CURLOPT_SSL_VERIFYHOST=>2,
                 CURLOPT_PROTOCOLS=>CURLPROTO_HTTPS,CURLOPT_PROXY=>'',
                 CURLOPT_HTTPHEADER=>['Accept: application/json','Cache-Control: no-cache'],
-                CURLOPT_HEADERFUNCTION=>static function ($ch,string $header) use (&$version):int {
+                CURLOPT_HEADERFUNCTION=>static function ($ch,string $header) use (&$version, &$forumVersion):int {
                     if (preg_match('/^X-CajeerEngine-Version:\s*([^\r\n]+)/i',$header,$match)) $version=trim($match[1]);
+                    if (preg_match('/^X-CajeerEngine-Forum-Version:\s*([^\r\n]+)/i',$header,$match)) $forumVersion=trim($match[1]);
                     return strlen($header);
                 },
                 CURLOPT_WRITEFUNCTION=>static function ($ch,string $chunk) use (&$body):int {
@@ -114,10 +120,64 @@ final readonly class IdentityAcceptance
             }
         } finally { curl_close($ch); }
         $decoded=json_decode($body,true);
-        if ($version!==$expectedVersion || !is_array($decoded) || !is_array($decoded['data']??null)
+        if ($version!==$expectedVersion || $forumVersion!==(new ForumVersion($this->config->rootPath()))->current() || !is_array($decoded) || !is_array($decoded['data']??null)
             || ($decoded['data']['enabled']??null)!==$oidcEnabled
             || ($decoded['data']['session_strict']??null)!==$strict) {
             throw new \RuntimeException('Running PHP workers differ from the installed Identity release configuration; reload all workers.');
         }
     }
+    /** Probe the actual public login page, not only a JSON status endpoint. Never follow redirects. */
+    private function verifyForumLogin(): void
+    {
+        if (!function_exists('curl_init')) throw new \RuntimeException('PHP cURL required for Forum HTTPS probe.');
+        $base = rtrim($this->config->string('app.url'), '/');
+        $parts = parse_url($base);
+        if (!is_array($parts) || ($parts['scheme'] ?? null) !== 'https' || empty($parts['host'])
+            || isset($parts['user']) || isset($parts['pass']) || isset($parts['query']) || isset($parts['fragment'])) {
+            throw new \RuntimeException('APP_URL must be an absolute HTTPS origin.');
+        }
+        $ch = curl_init($base.'/forum/login');
+        if ($ch === false) throw new \RuntimeException('Unable to initialize Forum login probe.');
+        $headers = [];
+        $body = '';
+        try {
+            curl_setopt_array($ch, [
+                CURLOPT_FOLLOWLOCATION=>false, CURLOPT_CONNECTTIMEOUT=>4, CURLOPT_TIMEOUT=>8,
+                CURLOPT_SSL_VERIFYPEER=>true, CURLOPT_SSL_VERIFYHOST=>2,
+                CURLOPT_PROTOCOLS=>CURLPROTO_HTTPS, CURLOPT_PROXY=>'',
+                CURLOPT_HTTPHEADER=>['Accept: text/html','Cache-Control: no-cache'],
+                CURLOPT_HEADERFUNCTION=>static function ($ch, string $line) use (&$headers): int {
+                    if (str_contains($line, ':')) {
+                        [$name,$value] = explode(':', $line, 2);
+                        $headers[strtolower(trim($name))] = trim($value);
+                    }
+                    return strlen($line);
+                },
+                CURLOPT_WRITEFUNCTION=>static function ($ch, string $chunk) use (&$body): int {
+                    if (strlen($body)+strlen($chunk) > 262144) return 0;
+                    $body .= $chunk;
+                    return strlen($chunk);
+                },
+            ]);
+            $ok = curl_exec($ch);
+            $status = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        } finally { curl_close($ch); }
+        if (!$ok || !self::forumLoginResponseValid($status, $headers, $body,
+            (new ForumVersion($this->config->rootPath()))->current())) {
+            throw new \RuntimeException('Forum login HTTPS probe failed or live workers serve another Forum release.');
+        }
+    }
+
+    /** Strict validation used by the live HTTPS probe and isolated regression tests. */
+    public static function forumLoginResponseValid(int $status, array $headers, string $body, string $version): bool
+    {
+        $cache = strtolower((string)($headers['cache-control'] ?? ''));
+        return $status === 200
+            && ($headers['x-cajeerengine-forum-version'] ?? null) === $version
+            && str_contains(strtolower((string)($headers['content-type'] ?? '')), 'text/html')
+            && str_contains($cache, 'no-store')
+            && str_contains($body, '<html')
+            && str_contains($body, '/forum-assets/forum.js?v='.$version);
+    }
+
 }

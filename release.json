@@ -17,10 +17,10 @@
     "docs": "GitHub repository docs/",
     "updates": "GitHub Releases",
     "release_builder": "tools/build-release.php",
-    "source_artifact": "storage/releases/cajeerengine-1.0.9-source.zip",
-    "dist_artifact": "storage/releases/cajeerengine-1.0.9-dist.zip",
+    "source_artifact": "storage/releases/cajeerengine-1.1.0-source.zip",
+    "dist_artifact": "storage/releases/cajeerengine-1.1.0-dist.zip",
     "checksums": "storage/releases/*.sha256",
-    "artifact_index": "storage/releases/cajeerengine-1.0.9-artifacts.json",
+    "artifact_index": "storage/releases/cajeerengine-1.1.0-artifacts.json",
     "support_bundle": "storage/app/support",
     "backup": "storage/app/backups/production",
     "server_reports": "storage/app/reports",
@@ -36,6 +36,7 @@
     "engine_api_version": "1.1"
   },
   "product_changes": [
+    "Forum Edition 1.1.0: signed production release admission tied to independently trusted Ed25519 key, exact CI/staging/DR artifact evidence, upgraded deployed Forum/OIDC readiness probes and durable regression gates; real go-live still requires an approved staging/IdP operator run.",
     "Forum Edition 1.0.9: fix real local TOTP enrollment and atomic single-use validation, deny SSO MFA local-password fallback on sensitive account actions, make interrupted MySQL DDL repair fail closed and reject migration checksum drift, and add in-place upgrade and live deployment acceptance tests.",
     "Forum Edition 1.0.8: enforce short-lived, browser-bound step-up for privileged Forum ACP, ACL, role/group and sanction mutations; require verified OIDC MFA for SkiF4er sessions while preserving local password/TOTP confirmation for local sessions; forum client retries only refused actions.",
     "Forum Edition 1.0.7: local logout and RP-initiated SkiF4er ID global logout from the forum, browser-bound state and safe return, verified back-channel revocation and real regression coverage.",
@@ -131,6 +132,6 @@
   },
   "stability": "production-stable-gated",
   "edition": "forum",
-  "edition_version": "1.0.9",
+  "edition_version": "1.1.0",
   "upstream_version": "2.1.0"
 }

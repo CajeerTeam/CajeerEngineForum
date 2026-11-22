@@ -30,7 +30,7 @@ def synthetic_complete(directory):
     for mode in ('source','dist'):
         file=directory/f'cajeerengine-{regression.VERSION}-{mode}.zip'
         with zipfile.ZipFile(file,'w') as z:
-            z.writestr('cajeerengine/release.json',json.dumps({'edition':'forum','edition_version':regression.VERSION,'upstream_version':'1.3.0'}))
+            z.writestr('cajeerengine/release.json',json.dumps({'edition':'forum','edition_version':regression.VERSION,'upstream_version':'2.1.0'}))
     dist=audit.sha(directory/f'cajeerengine-{regression.VERSION}-dist.zip')
     host=regression.a.read_report(directory/'production-acceptance.json') if hasattr(regression.a,'read_report') else json.loads((directory/'production-acceptance.json').read_text())
     host['artifact_sha256']=dist
@@ -100,7 +100,7 @@ class FinalAuditRegression(unittest.TestCase):
             d=Path(tmp);candidate=d/'candidate';candidate.mkdir()
             zipfile_path=candidate/f'cajeerengine-{regression.VERSION}-dist.zip'
             with zipfile.ZipFile(zipfile_path,'w') as z:
-                z.writestr('cajeerengine/release.json',json.dumps({'edition_version':regression.VERSION,'edition':'forum','upstream_version':'1.3.0'}))
+                z.writestr('cajeerengine/release.json',json.dumps({'edition_version':regression.VERSION,'edition':'forum','upstream_version':'2.1.0'}))
             key=d/'key.pub';key.write_text('dummy-key')
             host=d/'host.json';host.write_text(json.dumps({
                 'ok':True,'version':regression.VERSION,'profile':'nginx-tls-fpm-pgsql',

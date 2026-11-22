@@ -46,7 +46,7 @@ def sha(path):
 
 
 def audit(directory, trusted_key, version, commit):
-    demand(version in ('0.9.9', '1.0.0-rc.1', '1.0.0'), 'Unsupported final-audit edition')
+    demand(re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?', version) is not None, 'Unsupported final-audit edition')
     demand(re.fullmatch(r'[0-9a-f]{40}', commit) is not None, 'Invalid checkout commit')
     demand(trusted_key.is_file() and not trusted_key.is_symlink(), 'External trusted key required')
     report = read(directory / 'certification.json')
@@ -68,9 +68,12 @@ def audit(directory, trusted_key, version, commit):
         counts[name] += 1
     demand(counts == EXPECTED, 'Incomplete CI matrix')
     tagged = jobs.get('tagged_release') is True
+    production_branch = jobs.get('event') == 'push' and jobs.get('ref') == 'refs/heads/main'
     if tagged:
-        demand(jobs.get('event') == 'push' and jobs.get('ref') == 'refs/tags/v' + version and
-               report.get('signing') == 'trusted-release-key', 'Untrusted tagged certification')
+        demand(jobs.get('event') == 'push' and jobs.get('ref') == 'refs/tags/v' + version,
+               'Wrong tagged certification provenance')
+    if tagged or production_branch:
+        demand(report.get('signing') == 'trusted-release-key', 'Production candidate must use trusted release key')
     else:
         demand(report.get('signing') == 'ci-ephemeral', 'Untrusted branch certification')
     expected = set()
@@ -99,7 +102,7 @@ def audit(directory, trusted_key, version, commit):
         with zipfile.ZipFile(directory/filename) as archive:
             identity=json.loads(archive.read('cajeerengine/release.json'))
             demand(identity.get('edition')=='forum' and identity.get('edition_version')==version
-                   and identity.get('upstream_version')=='1.3.0', 'Wrong packaged forum identity')
+                   and identity.get('upstream_version')==(Path(__file__).resolve().parents[1]/'VERSION').read_text().strip(), 'Wrong packaged forum identity')
     stage = read(directory/'staging-acceptance.json')
     host = read(directory/'production-acceptance.json')
     demand(stage.get('schema')==1 and stage.get('ok') is True and stage.get('version') == version

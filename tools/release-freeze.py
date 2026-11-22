@@ -25,7 +25,9 @@ def check():
         raise ValueError('Forum/engine version identity mismatch')
     if release.get('channel') != ('rc' if '-' in current else 'stable'):
         raise ValueError('Incorrect release channel')
-    if current == '1.0.9':
+    if current == '1.1.0':
+        baseline = 'refs/tags/v1.0.9'
+    elif current == '1.0.9':
         baseline = 'refs/tags/v1.0.8'
     elif current == '1.0.8':
         baseline = 'refs/tags/v1.0.7'
@@ -51,8 +53,8 @@ def check():
     try:
         git('rev-parse', '--verify', baseline + '^{commit}')
     except (subprocess.CalledProcessError, OSError):
-        if tagged:
-            raise ValueError('Authentic historical baseline tag required: ' + baseline)
+        if tagged or (os.getenv('GITHUB_EVENT_NAME') == 'push' and os.getenv('GITHUB_REF') == 'refs/heads/main'):
+            raise ValueError('Publishing source requires an authentic historical baseline tag: ' + baseline)
         print('PASS development source identity; historical tag admission deferred:', baseline)
         return
     modified = git('diff', '--name-only', '--no-renames', baseline, 'HEAD', '--').splitlines()

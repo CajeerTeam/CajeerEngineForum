@@ -28,7 +28,7 @@ def digest(path):
 
 def check(candidate, key, host_path, log_path, logdir, version, commit):
     require(re.fullmatch(r'[a-f0-9]{40}', commit) is not None, 'Invalid Git commit')
-    require(version in ('0.9.9', '1.0.0-rc.1', '1.0.0'), 'Unexpected final candidate version')
+    require(re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?', version) is not None, 'Unexpected candidate version')
     require(key.is_file() and not key.is_symlink(), 'Missing independent trusted key')
     package = candidate / f'cajeerengine-{version}-dist.zip'
     dist_sha = digest(package)
@@ -36,7 +36,7 @@ def check(candidate, key, host_path, log_path, logdir, version, commit):
     with zipfile.ZipFile(package) as archive:
         release = json.loads(archive.read('cajeerengine/release.json'))
         require(release['edition_version'] == version and release['edition'] == 'forum'
-                and release['upstream_version'] == '1.3.0', 'Staging archive internal identity mismatch')
+                and release['upstream_version'] == (Path(__file__).resolve().parents[1] / 'VERSION').read_text().strip(), 'Staging archive internal identity mismatch')
     host = json.loads(host_path.read_text())
     require(host.get('ok') is True and host.get('version') == version
             and host.get('artifact_sha256') == dist_sha

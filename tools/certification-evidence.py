@@ -162,7 +162,7 @@ def seal(directory, version, commit, repo, run_id, attempt):
         'schema': 2, 'ok': True, 'version': version, 'commit': commit,
         'repository': repo, 'run_id': run_id, 'attempt': attempt,
         'scope': 'CI matrix + signed source/dist + audit + disposable host + final staging + filesystem/S3 HTTPS disaster recovery',
-        'signing': 'trusted-release-key' if jobs.get('tagged_release') else 'ci-ephemeral',
+        'signing': 'trusted-release-key' if (jobs.get('tagged_release') or (jobs.get('event') == 'push' and jobs.get('ref') == 'refs/heads/main')) else 'ci-ephemeral',
         'sha256': hashes,
         'ci_jobs': jobs['jobs'],
     }
@@ -174,7 +174,7 @@ def seal(directory, version, commit, repo, run_id, attempt):
 def verify(directory, version, commit, repo, run_id, attempt, trusted_key=None):
     hashes, jobs = validate(directory, version, commit, repo, run_id, attempt, trusted_key)
     report = read(directory / 'certification.json')
-    check(report.get('signing') == ('trusted-release-key' if jobs.get('tagged_release') else 'ci-ephemeral'), 'Wrong signing scope')
+    check(report.get('signing') == ('trusted-release-key' if (jobs.get('tagged_release') or (jobs.get('event') == 'push' and jobs.get('ref') == 'refs/heads/main')) else 'ci-ephemeral'), 'Wrong signing scope')
     check(report.get('schema') == 2 and report.get('ok') is True and report.get('version') == version
           and report.get('commit') == commit and report.get('repository') == repo
           and report.get('run_id') == run_id and report.get('attempt') == attempt

@@ -24,7 +24,8 @@ jobs:
           github.event.workflow_run.head_branch == 'main' &&
           github.event.workflow_run.head_repository.full_name == github.repository }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 20
+    environment: forum-production # Configure required independent reviewers in GitHub environment protection
     env:
       GH_TOKEN: ${{ github.token }}
       RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
@@ -64,6 +65,13 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
+      - uses: shivammathur/setup-php@v2
+        if: steps.version.outputs.should_publish == 'true'
+        with:
+          php-version: '8.4'
+          extensions: sodium, zip
+          coverage: none
+
       - name: Download packages built by the passing CI run
         if: steps.version.outputs.should_publish == 'true'
         uses: actions/download-artifact@v4
@@ -77,6 +85,7 @@ jobs:
         if: steps.version.outputs.should_publish == 'true'
         shell: bash
         env:
+          RELEASE_TRUSTED_PUBLIC_B64: ${{ vars.FORUM_RELEASE_TRUSTED_PUBLIC_KEY_B64 }}
           VERSION: ${{ steps.version.outputs.version }}
           TAG: ${{ steps.version.outputs.tag }}
           ARTIFACT_ROOT: ${{ runner.temp }}/forum-release
@@ -95,14 +104,27 @@ jobs:
             files+=("$zip" "$checksum")
           done
 
+          # Do not publish a release certified with a disposable CI signing key.
+          # Recheck the full signed, staged, migrated and recovered artifact using
+          # the repository's independently provisioned publisher trust anchor.
+          [[ -n "$RELEASE_TRUSTED_PUBLIC_B64" ]] || { echo 'Missing externally pinned publisher public key' >&2; exit 1; }
+          pub="$RUNNER_TEMP/forum-trusted-release.pub"
+          printf '%s\n' "$RELEASE_TRUSTED_PUBLIC_B64" > "$pub"
+          cmp -s "$pub" "$ARTIFACT_ROOT/ci-release.pub" || { echo 'CI used a different signing key' >&2; exit 1; }
+          php tools/verify-signed-release.php "$ARTIFACT_ROOT" "$pub"
+          python3 tools/final-audit.py --directory "$ARTIFACT_ROOT" \
+            --trusted-public-key "$pub" --version "$VERSION" --commit "$RELEASE_SHA"
+          python3 tools/certification-evidence.py verify "$ARTIFACT_ROOT" --trusted-key "$pub"
+
           cat > "$RUNNER_TEMP/forum-release-notes.md" <<'NOTES'
-          ## CajeerEngineForum 1.0.9
+          ## CajeerEngineForum 1.1.0
 
-          Forum Edition Security & Integration Acceptance, built on CajeerEngine 2.1.0.
+          Forum Edition SkiF4er ID Stable, based on CajeerEngine 2.1.0.
 
-          - Atomic single-use TOTP and repaired local MFA enrollment, sensitive operations reject SSO-to-local MFA fallback.
-          - Fail-closed MySQL DDL failure recovery and migration drift detection.
-          - Real database upgrade, browser-controller and IdP deployment readiness checks.
+          - Verified release certificate bound to tested exact source and distribution archives.
+          - Independently pinned Ed25519 publisher key and protected production publication.
+          - Live HTTPS Forum login, OIDC configuration, session and schema integrity admission checks.
+          - Preserves replay-protected TOTP, fail-closed migration repair and 1.0.9 security hardening.
           - Forum local sign-out and CSRF-checked RP-initiated SkiF4er ID sign-out with browser-bound completion state.
           - Verified server-side OIDC back-channel logout revoking the matching local browser sessions.
           - Existing linked SSO login, local login and safe return to forum pages.
@@ -111,9 +133,9 @@ jobs:
           - Administration, migrations, backups, deployment and recovery tooling.
           - Source and distribution ZIP packages from the successful CI run, with SHA-256 checksums.
 
-          This is a conventional GitHub software release. The CI checks passed for the published commit.
-          It does **not** claim independent production certification, a completed 24-hour physical soak,
-          or external security accreditation. Assess and back up the target deployment before upgrading.
+          CI, staging, recovery and archive signature evidence was revalidated before publication.
+          This does not prove an external IdP browser sign-in, a completed independent 24-hour soak,
+          or successful production deployment. Obtain operational approval and backup the target first.
 
           See README.md and docs/ for installation, migration and operational instructions.
           NOTES
