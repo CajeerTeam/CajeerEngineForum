@@ -1,3 +1,15 @@
+## [1.0.2] - 2026-11-22 — Extension, Migration, API & Integration Stabilization
+
+- Serialize extension database migrations with the shared database migration lock; recheck checksums and commit migration ledger entries in the same transaction as migration changes. Reject implicit transaction commits rather than reporting a successful migration.
+- For MySQL, persist a fail-closed in-flight checksum before executing potentially non-transactional DDL; an interrupted migration will not be silently retried.
+- Make development-only JSON extension migrations process-safe with an exclusive lock and durable in-flight marker; interrupted, non-transactional side effects now require explicit operator review instead of silent re-execution.
+- Stage and publish extension static assets with verified source paths, size/count limits and a reversible directory swap. Reject source symlinks and protect the previously active asset set when staging fails.
+- Return a bounded API validation error for malformed JSON instead of allowing JSON parsing errors to escape middleware.
+- Enforce OpenAPI request limits for strings, objects, arrays, unique items, and oneOf/allOf, plus duplicate route detection, in the running middleware path.
+- Apply server-side allowlists for outbound integration providers and destinations and bounded, configurable connection/payload budgets at create, update, rotation and execution time.
+- Add executable stabilization regressions without changing existing core/Forum database migrations or the upstream CajeerEngine version (2.1.0).
+- The supplied source archive identifies itself as Forum Edition 1.0.0, not 1.0.1. This patch does not claim a verified upgrade from an independently provided 1.0.1 artifact or independently certified production deployment.
+
 ## [1.0.0] - 2026-11-17 — Production Certified Stable (release gates)
 
 - Stable tag `v1.0.0` has a separate fail-closed release-admission tool: genuine source/dist Ed25519 signatures, completed tagged CI and independent staging/DR audit, real PostgreSQL 10k/100k/1M+24h soak reports, both genuine SIGKILL upgrade-recovery checkpoints and a separately signed human operator GO bound to the exact input hashes.

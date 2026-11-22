@@ -190,36 +190,67 @@ final class ExtensionRuntime
         $published = [];
         foreach ($items as $item) {
             if (empty($item['installed'])) continue;
-            if (empty($item['valid']) || !empty($item['missing'])) throw new \RuntimeException('Invalid installed extension: '.$item['name']);
+            if (empty($item['valid']) || !empty($item['missing'])) throw new \RuntimeException('Invalid installed extension: ' . $item['name']);
             $manifest = $this->manifestFromItem($item);
             $context = $this->context($manifest, $item);
             $paths = $context->paths();
             $source = $paths['assets'];
             $target = $paths['public_assets'];
             $files = [];
-            if (!$dryRun) $this->removeAssets($manifest->slug());
-            if (is_dir($source)) {
-                foreach ($this->files($source) as $file) {
-                    $relative = substr(str_replace('\\', '/', $file), strlen(rtrim(str_replace('\\', '/', $source), '/')) + 1);
-                    $files[] = $relative;
-                    if (!$dryRun) {
-                        $destination = $target . '/' . $relative;
-                        if (!is_dir(dirname($destination))) {
-                            @mkdir(dirname($destination), 0775, true);
-                        }
-                        \CajeerEngine\Update\OperationFiles::copy($file, \CajeerEngine\Update\OperationFiles::path($this->rootPath, $this->relativePath($destination)),0644);
-                    }
+            $totalBytes = 0;
+            foreach ($this->files($source) as $file) {
+                $relative = substr(str_replace('\\', '/', $file), strlen(rtrim(str_replace('\\', '/', $source), '/')) + 1);
+                if ($relative === 'manifest.json') throw new \RuntimeException('Reserved asset manifest filename');
+                $files[$relative] = $file;
+                $totalBytes += filesize($file) ?: 0;
+                if (count($files) > 4096 || $totalBytes > 128 * 1024 * 1024) {
+                    throw new \RuntimeException('Extension asset limit exceeded');
                 }
             }
-            if (!$dryRun && $files !== []) {
-                (new JsonFile($target . '/manifest.json'))->writeObject([
-                    'extension' => $manifest->name,
-                    'version' => $manifest->version,
-                    'files' => $files,
-                    'published_at' => (new \DateTimeImmutable())->format(DATE_ATOM),
-                ]);
+            if (!$dryRun) {
+                $base = $this->rootPath . '/public/extensions';
+                if (is_link($base)) throw new \RuntimeException('Unsafe public extensions root');
+                if (!is_dir($base) && !mkdir($base, 0755, true) && !is_dir($base)) {
+                    throw new \RuntimeException('Cannot create public extensions directory');
+                }
+                $lockPath = $base . '/.publish.lock';
+                if (is_link($lockPath)) throw new \RuntimeException('Unsafe asset publish lock');
+                $lock = fopen($lockPath, 'c+b');
+                if ($lock === false) throw new \RuntimeException('Cannot open asset publish lock');
+                $stage = $base . '/.stage-' . $manifest->slug() . '-' . bin2hex(random_bytes(8));
+                $backup = $base . '/.previous-' . $manifest->slug() . '-' . bin2hex(random_bytes(8));
+                $swapped = false;
+                try {
+                    if (!flock($lock, LOCK_EX)) throw new \RuntimeException('Cannot lock asset publisher');
+                    if (is_link($target) || (file_exists($target) && !is_dir($target))) {
+                        throw new \RuntimeException('Unsafe extension asset target');
+                    }
+                    if (!mkdir($stage, 0755)) throw new \RuntimeException('Cannot stage extension assets');
+                    foreach ($files as $relative => $file) {
+                        $destination = $stage . '/' . $relative;
+                        \CajeerEngine\Update\OperationFiles::copy($file, \CajeerEngine\Update\OperationFiles::path($stage, $relative), 0644);
+                    }
+                    (new JsonFile($stage . '/manifest.json'))->writeObject([
+                        'extension' => $manifest->name,
+                        'version' => $manifest->version,
+                        'files' => array_keys($files),
+                        'published_at' => gmdate(DATE_ATOM),
+                    ]);
+                    if (is_dir($target) && !rename($target, $backup)) {
+                        throw new \RuntimeException('Cannot preserve previous extension assets');
+                    }
+                    if (!rename($stage, $target)) throw new \RuntimeException('Cannot activate extension assets');
+                    $swapped = true;
+                    if (is_dir($backup)) $this->deleteAssetTree($backup);
+                } finally {
+                    if (!$swapped && is_dir($backup) && !file_exists($target)) rename($backup, $target);
+                    if (is_dir($stage)) $this->deleteAssetTree($stage);
+                    flock($lock, LOCK_UN);
+                    fclose($lock);
+                }
             }
-            $published[] = ['extension' => $manifest->name, 'source' => $source, 'target' => $target, 'files' => count($files), 'dry_run' => $dryRun];
+            $published[] = ['extension' => $manifest->name, 'source' => $source, 'target' => $target,
+                'files' => count($files), 'dry_run' => $dryRun];
         }
         return ['ok' => true, 'data' => $published, 'meta' => ['total' => count($published)]];
     }
@@ -438,13 +469,20 @@ final class ExtensionRuntime
     /** @return list<string> */
     private function files(string $directory): array
     {
-        if (!is_dir($directory)) {
-            return [];
-        }
+        if (is_link($directory)) throw new \RuntimeException('Symlink extension resource directory');
+        if (!is_dir($directory)) return [];
+        $base = realpath($directory);
+        if ($base === false) throw new \RuntimeException('Cannot resolve extension resource directory');
         $result = [];
         $iterator = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($directory, \FilesystemIterator::SKIP_DOTS));
         foreach ($iterator as $file) {
-            if ($file instanceof \SplFileInfo && $file->isFile()) {
+            if (!$file instanceof \SplFileInfo) continue;
+            if ($file->isLink()) throw new \RuntimeException('Symlink in extension resources');
+            if ($file->isFile()) {
+                $real = $file->getRealPath();
+                if ($real === false || !str_starts_with($real, $base . DIRECTORY_SEPARATOR)) {
+                    throw new \RuntimeException('Extension resource outside package');
+                }
                 $result[] = $file->getPathname();
             }
         }
@@ -471,16 +509,18 @@ final class ExtensionRuntime
 
     private function removeAssets(string $slug): void
     {
-        $path = $this->rootPath . '/public/extensions/' . $slug;
+        $this->deleteAssetTree($this->rootPath . '/public/extensions/' . $slug);
+    }
+
+    private function deleteAssetTree(string $path): void
+    {
         if (is_link($path)) throw new \RuntimeException('Symlink assets root');
-        if (!is_dir($path)) {
-            return;
-        }
+        if (!is_dir($path)) return;
         $iterator = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($path, \FilesystemIterator::SKIP_DOTS), \RecursiveIteratorIterator::CHILD_FIRST);
         foreach ($iterator as $file) {
-            if ($file instanceof \SplFileInfo) {
-                if ($file->isLink()) throw new \RuntimeException('Symlink assets entry');
-                if ($file->isDir() ? !rmdir($file->getPathname()) : !unlink($file->getPathname())) throw new \RuntimeException('Cannot remove asset');
+            if ($file->isLink()) throw new \RuntimeException('Symlink assets entry');
+            if ($file->isDir() ? !rmdir($file->getPathname()) : !unlink($file->getPathname())) {
+                throw new \RuntimeException('Cannot remove asset');
             }
         }
         if (!rmdir($path)) throw new \RuntimeException('Cannot remove assets directory');

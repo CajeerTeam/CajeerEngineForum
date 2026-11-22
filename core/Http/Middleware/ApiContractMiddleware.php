@@ -30,7 +30,11 @@ final readonly class ApiContractMiddleware implements MiddlewareInterface
         }
         $schema = $body['content']['application/json']['schema'] ?? null;
         if (!is_array($schema)) return $next($request);
-        $value = json_decode($content, false, 64, JSON_THROW_ON_ERROR);
+        try {
+            $value = json_decode($content, false, 64, JSON_THROW_ON_ERROR);
+        } catch (\JsonException) {
+            return $this->error($request, ['$: invalid JSON body']);
+        }
         $errors = $this->contract->validate($value, $schema);
         return $errors === [] ? $next($request) : $this->error($request, $errors);
     }

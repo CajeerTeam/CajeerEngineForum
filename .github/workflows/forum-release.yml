@@ -96,12 +96,12 @@ jobs:
           done
 
           cat > "$RUNNER_TEMP/forum-release-notes.md" <<'NOTES'
-          ## CajeerEngineForum 1.0.0
+          ## CajeerEngineForum 1.0.2
 
-          Initial stable software release of the Forum Edition, built on CajeerEngine 1.3.0.
+          Stabilization release of Forum Edition, built on CajeerEngine 2.1.0.
 
-          - Forum discussions, nested boards, ACL-aware moderation and search.
-          - Accounts, sessions, notifications, attachments and community tools.
+          - Concurrent extension migration protection and atomic extension asset publication.
+          - Stronger OpenAPI request validation and outbound integration restrictions.
           - Administration, migrations, backups, deployment and recovery tooling.
           - Source and distribution ZIP packages from the successful CI run, with SHA-256 checksums.
 

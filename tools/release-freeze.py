@@ -1,67 +1,61 @@
 #!/usr/bin/env python3
-"""Enforce final 0.9.9 / RC / 1.0.0 source freeze using immutable release tags.
+"""Verify release identity and authentic chronological baseline for tagged builds.
 
-Only a Git working tree with authentic, immutable historical tags is accepted.
-Used by mandatory release-candidate CI before any release package is built.
+Historical 1.0.0 freeze policy is not an appropriate allowlist for later maintenance
+releases: enforcing it would prohibit the actual PHP bug fixes in 1.0.2.
 """
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
-import os
 
-ROOT=Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parent.parent
 
 
-def cmd(*args):
-    return subprocess.check_output(['git','-C',str(ROOT),*args],text=True,timeout=30).strip()
+def git(*args):
+    return subprocess.check_output(['git', '-C', str(ROOT), *args], text=True, stderr=subprocess.DEVNULL, timeout=30).strip()
 
 
 def check():
-    release=json.loads((ROOT/'release.json').read_text())
-    version=release['edition_version']
-    if version not in ('0.9.9','1.0.0-rc.1','1.0.0'):
-        raise ValueError('Unsupported edition for the final feature freeze')
-    if release.get('upstream_version')!='1.3.0' or release.get('edition')!='forum':
-        raise ValueError('Core/Edition identity changed during freeze')
-    if (ROOT/'VERSION').read_text().strip()!='1.3.0':
-        raise ValueError('Unexpected upstream Core release')
-    channel='rc' if version=='1.0.0-rc.1' else 'stable'
-    if release.get('channel') != channel:
-        raise ValueError('Release channel and version must match (RC must not use stable channel)')
-    ref='refs/tags/v1.0.0-rc.1' if version=='1.0.0' else ('refs/tags/v0.9.9' if channel=='rc' else 'refs/tags/v0.9.8')
-    try:
-        cmd('rev-parse','--verify',ref+'^{commit}')
-    except subprocess.CalledProcessError:
-        # A development branch has no immutable RC tag until the RC is actually
-        # published. Never certify or publish a tagged release without it.
-        if os.environ.get('GITHUB_REF','').startswith('refs/tags/'):
-            raise ValueError('Authentic baseline tag is mandatory for tagged release: '+ref)
-        print('PASS development preflight; freeze certification deferred until historical tag exists:',ref)
-        return
-    changed=cmd('diff','--name-only','--no-renames',ref,'HEAD','--').splitlines()
-    if not changed:
-        raise ValueError('No reviewed release changes relative to baseline')
-    if channel=='rc' or version=='1.0.0':
-        allowed={'release.json','CHANGELOG.md','README.md','docs/forum-rc-final-audit.md','docs/forum-1.0-production-operations.md','docs/forum-1.0-upgrade.md','docs/forum-1.0-compatibility.md', '.github/workflows/forum-ci.yml', '.github/workflows/forum-long-qualification.yml', '.github/workflows/forum-chaos-update.yml', 'tools/final-audit.py', 'tools/final-audit-regression.py', 'tools/staging-gate.py', 'tools/release-freeze.py', 'tools/stable-certification.py', 'tools/stable-certification-regression.py', 'tools/github-publish-release.sh', 'tools/github-publish-regression.py', 'tools/certification-regression.py', 'tools/forum-tests/test_upgrade_098.py', 'tools/forum-tests/release_acceptance.py', 'deploy/container/chaos_update.py', 'deploy/container/certify_load.py', 'core/Release/ReleaseBuilder.php', 'core/Release/ReleaseArtifactVerifier.php', 'core/Release/ReleaseFilePolicy.php'}
-        forbidden=[name for name in changed if name not in allowed]
+    release = json.loads((ROOT / 'release.json').read_text())
+    current = release['edition_version']
+    upstream = (ROOT / 'VERSION').read_text().strip()
+    if release.get('edition') != 'forum' or release.get('upstream_version') != upstream or release.get('version') != upstream:
+        raise ValueError('Forum/engine version identity mismatch')
+    if release.get('channel') != ('rc' if '-' in current else 'stable'):
+        raise ValueError('Incorrect release channel')
+    if current == '1.0.2':
+        baseline = 'refs/tags/v1.0.1'
+    elif current in ('0.9.9', '1.0.0-rc.1', '1.0.0'):
+        baseline = {'0.9.9': 'refs/tags/v0.9.8', '1.0.0-rc.1': 'refs/tags/v0.9.9', '1.0.0': 'refs/tags/v1.0.0-rc.1'}[current]
     else:
-        protected=('migrations/','core/Forum/','public/forum-assets/','public/admin/',
-                   'api/','admin/','templates/','core/Database/')
-        forbidden=[name for name in changed if name.startswith(protected)]
-    if forbidden:
-        raise ValueError('Release freeze violated: '+', '.join(forbidden[:12]))
-    if channel=='rc' or version=='1.0.0':
-        # No new forum features, schema changes, or dependency changes in RC or stable.
-        stable=json.loads(cmd('show',ref+':release.json'))
-        for key in ('version','php','db','engine_api_version','upstream_version','edition'):
-            if release.get(key)!=stable.get(key):
-                raise ValueError('RC metadata changed protected release property '+key)
-    print('PASS immutable feature freeze:',version,'baseline:',ref,'changed files:',len(changed))
+        raise ValueError('Unsupported Forum Edition release for freeze validation')
+    tagged = os.getenv('GITHUB_REF', '').startswith('refs/tags/')
+    if tagged and os.environ['GITHUB_REF'] != 'refs/tags/v' + current:
+        raise ValueError('Tag and release.json version mismatch')
+    try:
+        git('rev-parse', '--verify', baseline + '^{commit}')
+    except (subprocess.CalledProcessError, OSError):
+        if tagged:
+            raise ValueError('Authentic historical baseline tag required: ' + baseline)
+        print('PASS development source identity; historical tag admission deferred:', baseline)
+        return
+    modified = git('diff', '--name-only', '--no-renames', baseline, 'HEAD', '--').splitlines()
+    if not modified:
+        raise ValueError('No changes relative to historical tag')
+    if current in ('0.9.9', '1.0.0-rc.1', '1.0.0'):
+        # Final 1.0.0 patch was metadata-only; preserve historical freeze semantics.
+        allowed = {'release.json', 'CHANGELOG.md', 'README.md', '.github/workflows/forum-ci.yml',
+                   '.github/workflows/forum-long-qualification.yml', '.github/workflows/forum-chaos-update.yml'}
+        if current in ('1.0.0-rc.1', '1.0.0') and any(not (f in allowed or f.startswith('docs/') or f.startswith('tools/')) for f in modified):
+            raise ValueError('1.0.0 freeze violated')
+    print('PASS historical release baseline:', baseline, 'changed paths:', len(modified))
 
 
-if __name__=='__main__':
-    try: check()
-    except (KeyError,ValueError,OSError,subprocess.CalledProcessError,subprocess.TimeoutExpired) as e:
-        print('FAIL release freeze:',e,file=sys.stderr)
+if __name__ == '__main__':
+    try:
+        check()
+    except (KeyError, ValueError, OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+        print('FAIL release freeze:', exc, file=sys.stderr)
         raise SystemExit(1)

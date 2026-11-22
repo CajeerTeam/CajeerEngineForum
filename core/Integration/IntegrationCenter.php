@@ -15,7 +15,7 @@ final readonly class IntegrationCenter
 
     public function overview(): array
     {
-        return ['providers'=>$this->providers->descriptors(), 'enabled'=>$this->config->bool('integrations.enabled',true),
+        return ['providers'=>array_values(array_filter($this->providers->descriptors(), fn (array $provider): bool => $this->providerAllowed($provider['id']))), 'enabled'=>$this->config->bool('integrations.enabled',true),
             'items'=>$this->store->transaction(fn (array $items): array => array_values(array_map($this->publicItem(...), $items)))];
     }
 
@@ -44,16 +44,30 @@ final readonly class IntegrationCenter
 
     private function context(array $item): string { return 'integration:v1:'.$item['id'].':'.$item['provider']; }
 
+    private function providerAllowed(string $id): bool
+    {
+        $allowed = $this->config->get('integrations.allowed_providers', []);
+        if (!is_array($allowed)) throw new \RuntimeException('Invalid integration provider policy');
+        return $allowed === [] || in_array($id, $allowed, true);
+    }
+
+    private function requireProvider(string $id): void
+    {
+        if (!$this->providerAllowed($id)) throw new \InvalidArgumentException('Integration provider disabled by server policy.');
+    }
+
     private function policy(array $config): void
     {
         $hosts = $this->config->get('integrations.allowed_hosts',[]);
+        if (!is_array($hosts)) throw new \RuntimeException('Invalid integration host policy');
         $host = strtolower((string)parse_url($config['url'] ?? '',PHP_URL_HOST));
-        if ($hosts !== [] && !in_array($host,array_map('strtolower',$hosts),true)) throw new \InvalidArgumentException('Integration host is not allowed.');
+        if ($host === '' || ($hosts !== [] && !in_array($host, $hosts, true))) throw new \InvalidArgumentException('Integration host is not allowed.');
     }
 
     public function create(array $input, string $actor): array
     {
         $provider = $this->providers->get((string)($input['provider'] ?? ''));
+        $this->requireProvider($provider->id());
         $config = $provider->configuration($input['config'] ?? []);
         $this->policy($config);
         $secret = $input['secret'] ?? '';
@@ -74,6 +88,7 @@ final readonly class IntegrationCenter
     {
         return $this->store->transaction(function (array &$items) use ($id,$input,$actor): array {
             $item = $this->lookup($items,$id);
+            $this->requireProvider($item['provider']);
             $this->revision($item,$input['revision'] ?? null);
             if (array_key_exists('name',$input)) $item['name']=$this->name($input['name']);
             if (array_key_exists('enabled',$input)) {
@@ -99,6 +114,7 @@ final readonly class IntegrationCenter
     {
         return $this->store->transaction(function (array &$items) use ($id,$revision,$secret,$actor): array {
             $item=$this->lookup($items,$id); $this->revision($item,$revision);
+            $this->requireProvider($item['provider']);
             $this->providers->get($item['provider'])->validateSecret($secret);
             if ($secret==='') unset($item['credential']); else $item['credential']=$this->vault->seal($this->context($item),$secret);
             $item['revision']++; $item['updated_at']=gmdate(DATE_ATOM); $item['updated_by']=$actor; $item['last_run']=null;
@@ -119,6 +135,7 @@ final readonly class IntegrationCenter
         if (!preg_match('/^[a-zA-Z0-9][a-zA-Z0-9_.:-]{0,199}$/D',$event) || strlen(json_encode($payload,JSON_THROW_ON_ERROR))>$this->config->int('integrations.max_payload_bytes',65536)) throw new \InvalidArgumentException('Invalid integration event or payload size.');
         $item=$this->store->transaction(fn (array $items): array => $this->lookup($items,$id));
         $this->revision($item,$revision);
+        $this->requireProvider($item['provider']);
         if (!$test && !$item['enabled']) throw new \InvalidArgumentException('Integration is disabled.');
         $this->policy($item['config']);
         $provider=$this->providers->get($item['provider']);
