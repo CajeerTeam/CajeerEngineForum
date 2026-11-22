@@ -21,7 +21,12 @@ CREATE TABLE xf_poll(poll_id INTEGER PRIMARY KEY,content_id INT,content_type TEX
 INSERT INTO xf_poll VALUES(50,20,'thread','Pick',0,1);
 CREATE TABLE xf_poll_response(poll_response_id INTEGER PRIMARY KEY,poll_id INT,response TEXT);INSERT INTO xf_poll_response VALUES(60,50,'Yes'),(61,50,'No');
 CREATE TABLE xf_poll_vote(poll_response_id INT,user_id INT);INSERT INTO xf_poll_vote VALUES(60,1),(61,2),(61,0);
-CREATE TABLE xf_conversation_message(id INT);INSERT INTO xf_conversation_message VALUES(1);
+CREATE TABLE xf_conversation_master(conversation_id INTEGER PRIMARY KEY,title TEXT,user_id INT,start_date INT);
+INSERT INTO xf_conversation_master VALUES(90,'A private conversation',1,1600000000);
+CREATE TABLE xf_conversation_recipient(conversation_id INT,user_id INT,recipient_state TEXT,PRIMARY KEY(conversation_id,user_id));
+INSERT INTO xf_conversation_recipient VALUES(90,1,'active'),(90,2,'active'),(90,3,'deleted');
+CREATE TABLE xf_conversation_message(message_id INTEGER PRIMARY KEY,conversation_id INT,user_id INT,message TEXT,message_date INT);
+INSERT INTO xf_conversation_message VALUES(70,90,1,'Private XenForo [b]message[/b]',1600000000);
 CREATE TABLE xf_user_profile(user_id INTEGER PRIMARY KEY,about TEXT,location TEXT,website TEXT,signature TEXT);
 INSERT INTO xf_user_profile VALUES
  (1,'Imported biography','Stockholm','https://example.test/member','signature plain'),

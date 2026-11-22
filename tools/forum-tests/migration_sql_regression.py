@@ -34,7 +34,7 @@ with tempfile.TemporaryDirectory() as tmp:
     db.execute(sql('INSERT INTO ce_forum_posts'),(post,thread,user,'Migration needle',1,1,date,None))
     db.execute(sql('INSERT INTO ce_forum_post_revisions'),(post,'Migration needle',user,1))
     db.execute(sql('UPDATE ce_forum_threads SET read_sequence='),(1,thread))
-    data=b'hello world!';db.execute(sql('INSERT INTO ce_forum_attachments'),(attachment,user,post,'sample.txt','text/plain',len(data),hashlib.sha256(data).hexdigest(),base64.b64encode(data).decode(),1))
+    data=b'hello world!';db.execute(sql('INSERT INTO ce_forum_attachments(id,owner_id,post_id'),(attachment,user,post,'sample.txt','text/plain',len(data),hashlib.sha256(data).hexdigest(),base64.b64encode(data).decode(),1))
     db.execute(sql('INSERT INTO ce_forum_polls'),(thread,'Choose',1,0,2))
     db.execute(sql('INSERT INTO ce_forum_poll_options'),(thread,1,'Yes'));db.execute(sql('INSERT INTO ce_forum_poll_options'),(thread,2,'No'))
     db.execute(sql('INSERT INTO ce_forum_poll_votes'),(thread,user,1))

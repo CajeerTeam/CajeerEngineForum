@@ -28,7 +28,10 @@ final class LegacyForumUrl
             if(is_string($query['topic']??null)&&preg_match('/\A([1-9][0-9]{0,18})(?:\.(?:[0-9]+|msg([1-9][0-9]{0,18})))?\z/D',$query['topic'],$m))$result=isset($m[2])?['posts',$numeric($m[2])]:['topics',$numeric($m[1])];
             elseif(is_string($query['board']??null)&&preg_match('/\A([1-9][0-9]{0,18})(?:\.[0-9]+)?\z/D',$query['board'],$m))$result=['forums',$numeric($m[1])];
         }elseif($platform==='xenforo'){
-            if(preg_match('~\A(threads|forums|posts)/(?:[^/]{1,240}\.)?([1-9][0-9]{0,18})(?:/page-[1-9][0-9]{0,8})?/?\z~D',$path,$m))$result=[$m[1]==='threads'?'topics':$m[1],$numeric($m[2])];
+            // The public legacy endpoint intentionally never redirects private conversations.
+            if($path==='goto/post' && isset($query['id']))$result=['posts',$numeric($query['id'])];
+            elseif(preg_match('~\Athreads/(?:[^/]{1,240}\.)?[1-9][0-9]{0,18}/post-([1-9][0-9]{0,18})/?\z~D',$path,$post))$result=['posts',$numeric($post[1])];
+            elseif(preg_match('~\A(threads|forums|posts)/(?:[^/]{1,240}\.)?([1-9][0-9]{0,18})(?:/page-[1-9][0-9]{0,8})?/?\z~D',$path,$m))$result=[$m[1]==='threads'?'topics':$m[1],$numeric($m[2])];
         }
         if($result===null||$result[1]===null)throw new ForumException('Страница не найдена.',404);
         return $result;

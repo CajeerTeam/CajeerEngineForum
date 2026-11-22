@@ -40,13 +40,13 @@ try{
     $target->exec("INSERT INTO ce_users(id,email,name,password_hash) VALUES('existing','existing@example.test','Existing','hash')");
     $open=static fn()=>new PDO('sqlite:'.$tmp.'/source.sqlite');
     $source=$open();$adapter=new MultiForumSource($source,'xf_','xenforo','2.3.0','community-test');
-    $engine=new ForumMigrationEngine($db,$adapter,null,$avatars);
+    $engine=new ForumMigrationEngine($db,$adapter,null,$avatars,4);
     $plan=$engine->snapshotPlan();
     $check($plan['pipeline_version']===4&&$plan['avatars']['count']===3&&$plan['follows']['count']===3,'community phases freeze real source counts');
     $phases=(new ReflectionClass($engine))->getMethod('phaseNames')->invoke($engine,$plan);
     $check(count($phases)===16&&array_slice($phases,-3)===['avatars','follows','content_links'],'new jobs append two community phases before content linking');
     $check(count((new ReflectionClass($engine))->getMethod('phaseNames')->invoke($engine,$engine->snapshotPlan(true,3)))===14,'v3 checkpoint sequence preserved');
-    try{(new ForumMigrationEngine($db,$adapter))->start('should-not-create-backup');throw new LogicException('Missing avatar root accepted');}
+    try{(new ForumMigrationEngine($db,$adapter,null,null,4))->start('should-not-create-backup');throw new LogicException('Missing avatar root accepted');}
     catch(RuntimeException $e){$check(str_contains($e->getMessage(),'avatar'),'avatar snapshot is mandatory before any target changes');}
     $job=$engine->start('test-backup')['job']['id'];
     for($i=0;$i<160;$i++){
@@ -60,7 +60,7 @@ try{
     $target->exec('DROP TRIGGER reject_avatar');
     $source->rollBack();unset($engine,$source,$adapter);
     $source=$open();$adapter=new MultiForumSource($source,'xf_','xenforo','2.3.0','community-test');
-    $engine=new ForumMigrationEngine($db,$adapter,null,$avatars);
+    $engine=new ForumMigrationEngine($db,$adapter,null,$avatars,4);
     $check($engine->matchesRecordedPlan($plan),'unchanged source and community schema allow restart');
     for($i=0;$i<120;$i++)if($engine->step(10)['job']['state']==='complete')break;
     $check($engine->status()['job']['state']==='complete','real v4 migration reaches completed state');
@@ -89,7 +89,7 @@ try{
     $source->rollBack();unset($engine,$source,$adapter);
     $mutator=$open();$mutator->exec('ALTER TABLE xf_user_follow ADD COLUMN unexpected_extension INTEGER');unset($mutator);
     $source=$open();$adapter=new MultiForumSource($source,'xf_','xenforo','2.3.0','community-test');
-    $engine=new ForumMigrationEngine($db,$adapter,null,$avatars);
+    $engine=new ForumMigrationEngine($db,$adapter,null,$avatars,4);
     $check(!$engine->matchesRecordedPlan($plan),'changed follow-table schema invalidates frozen job fingerprint');
     echo "XenForo 1.1.4 community real integration: $count PASS\n";
 }finally{

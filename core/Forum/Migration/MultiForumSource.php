@@ -45,8 +45,8 @@ final class MultiForumSource implements EnrichedForumSource
     public function identity(): string{return hash('sha256',$this->type."\0".$this->sourceVersion."\0".$this->prefix."\0".$this->snapshot.($this->origin===null?'':"\0".$this->origin));}
     public function unsupported(): array
     {
-        $items=['source ACL translation','password hashes','private messages','bans and sanctions','anonymous poll votes','custom profile fields and covers','remote media','unsupported add-on BBCode (retained as inert text)','source-specific poll visibility (imported closed)'];
-        if($this->type==='xenforo'){$items[]='nonstandard/negative XenForo reactions (explicitly skipped with reason)';$items[]='remote or unstaged XenForo attachments and avatars (require immutable local file copy)';}
+        $items=['source ACL translation','password hashes','bans and sanctions','anonymous poll votes','custom profile fields and covers','remote media','unsupported add-on BBCode (retained as inert text)','source-specific poll visibility (imported closed)'];
+        if($this->type==='xenforo'){$items[]='deleted private-message recipients and unavailable private conversations (excluded from import)';$items[]='nonstandard/negative XenForo reactions (explicitly skipped with reason)';$items[]='remote or unstaged XenForo attachments and avatars (require immutable local file copy)';}
         else $items[]='reactions and profile metadata (not yet supported for this platform)';
         return $items;
     }
@@ -138,6 +138,76 @@ final class MultiForumSource implements EnrichedForumSource
         if($this->type!=='xenforo'||$user<1||$after<0||$limit<1||$limit>500)
             throw new \InvalidArgumentException('Invalid follow cursor');
         return $this->q('SELECT DISTINCT follow_user_id FROM '.$this->t('user_follow')." WHERE user_id=? AND follow_user_id>? ORDER BY follow_user_id LIMIT $limit",[$user,$after])->fetchAll(PDO::FETCH_COLUMN);
+    }
+    /** Private XenForo records are read from the same repeatable-read source snapshot.
+     * No serialized recipient blobs, passwords, or private file bytes are logged.
+     */
+    public function mediaFingerprint(): string
+    {
+        if($this->type!=='xenforo'||!$this->pdo->inTransaction())throw new \RuntimeException('XenForo media preflight requires source snapshot');
+        $required=[
+            'conversation_master'=>['conversation_id','user_id','title','start_date'],
+            'conversation_message'=>['message_id','conversation_id','user_id','message','message_date'],
+            'conversation_recipient'=>['conversation_id','user_id','recipient_state'],
+        ];
+        $columns=[];
+        foreach($required as $table=>$need){
+            $found=$this->communityColumns($table);
+            if(array_diff($need,$found)!==[])throw new \RuntimeException('XenForo source preflight: '.$this->t($table).' missing '.implode(',',array_diff($need,$found)));
+            $columns[$table]=$found;
+        }
+        return hash('sha256',json_encode($columns,JSON_THROW_ON_ERROR));
+    }
+    private function mediaQuery(string $phase): string
+    {
+        $t=fn(string $name)=>$this->t($name);
+        return match($phase){
+            'conversations'=>'SELECT conversation_id AS conversation_source_id,user_id AS owner_source_id,title,start_date FROM '.$t('conversation_master'),
+            'conversation_messages','conversation_content'=>'SELECT message_id AS message_source_id,conversation_id,user_id AS author_source_id,CASE WHEN LENGTH(message)<=1048576 THEN message ELSE NULL END AS body,message_date FROM '.$t('conversation_message'),
+            'conversation_attachments'=>"SELECT a.attachment_id AS attach_id,a.content_id AS message_source_id,a.unassociated AS is_orphan,d.user_id AS poster_id,d.data_id AS data_id,".$this->xenForoSchema->attachmentKeySql()." AS storage_key,d.filename AS real_filename,d.file_size AS filesize,a.attach_date AS filetime FROM ".$t('attachment')." a LEFT JOIN ".$t('attachment_data')." d ON d.data_id=a.data_id WHERE a.content_type='conversation_message'",
+            default=>throw new \InvalidArgumentException('Unknown private media phase'),
+        };
+    }
+    public function mediaPlan(): array
+    {
+        $this->mediaFingerprint();
+        $counts=[];
+        foreach(['conversations'=>'conversation_source_id','conversation_messages'=>'message_source_id','conversation_attachments'=>'attach_id','conversation_content'=>'message_source_id'] as $phase=>$key){
+            $sql=$this->mediaQuery($phase);
+            $row=$this->q('SELECT COUNT(*) AS n,COALESCE(MAX('.$key.'),0) AS high FROM ('.$sql.') src')->fetch(PDO::FETCH_ASSOC);
+            if((int)$this->q('SELECT COUNT(*) FROM ('.$sql.') src WHERE '.$key.' IS NULL OR '.$key.'<=0')->fetchColumn()>0)
+                throw new \RuntimeException('Invalid XenForo media source ID: '.$phase);
+            $counts[$phase]=['count'=>(int)$row['n'],'high'=>(int)$row['high']];
+        }
+        // Fail on non-unique source IDs rather than skipping records silently.
+        foreach(['conversation_master'=>'conversation_id','conversation_message'=>'message_id','conversation_recipient'=>'conversation_id,user_id'] as $table=>$key){
+            if((int)$this->q('SELECT COUNT(*) FROM (SELECT '.$key.',COUNT(*) AS n FROM '.$this->t($table).' GROUP BY '.$key.' HAVING COUNT(*)>1) duplicate_ids')->fetchColumn()>0)
+                throw new \RuntimeException('Duplicate XenForo private source identifiers: '.$table);
+        }
+        return $counts;
+    }
+    public function mediaBatch(string $phase,int $after,int $high,int $limit): array
+    {
+        if($this->type!=='xenforo'||!$this->pdo->inTransaction()||$after<0||$high<0||$limit<1||$limit>500)
+            throw new \InvalidArgumentException('Invalid XenForo private media batch');
+        $key=match($phase){'conversations'=>'conversation_source_id','conversation_messages','conversation_content'=>'message_source_id','conversation_attachments'=>'attach_id',default=>throw new \InvalidArgumentException('Unknown private media phase')};
+        $rows=$this->all('SELECT * FROM ('.$this->mediaQuery($phase).") src WHERE $key>? AND $key<=? ORDER BY $key LIMIT $limit",[$after,$high]);
+        if($phase==='conversation_attachments')foreach($rows as &$row){
+            $id=(int)$row['data_id'];$key=(string)$row['storage_key'];
+            $row['physical_filename']=$id>0&&preg_match('/\A[a-f0-9]{32}\z/iD',$key)?intdiv($id,1000).'/'.$id.'-'.$key.'.data':'';
+        }unset($row);
+        return $rows;
+    }
+    /** Explicit active recipients only: deleted/ignored mailboxes must never be revived. */
+    public function mediaRecipients(int $conversation): array
+    {
+        if($this->type!=='xenforo'||$conversation<=0||!$this->pdo->inTransaction())throw new \InvalidArgumentException('Invalid XenForo conversation');
+        return $this->all('SELECT user_id,recipient_state FROM '.$this->t('conversation_recipient').' WHERE conversation_id=? ORDER BY user_id LIMIT 21',[$conversation]);
+    }
+    public function mediaHasMessages(int $conversation): bool
+    {
+        if($this->type!=='xenforo'||$conversation<=0||!$this->pdo->inTransaction())throw new \InvalidArgumentException('Invalid XenForo conversation');
+        return $this->q('SELECT message_id FROM '.$this->t('conversation_message').' WHERE conversation_id=? LIMIT 1',[$conversation])->fetchColumn()!==false;
     }
     private function t(string $table):string{return $this->prefix.$table;}
     private function q(string $sql,array $params=[]):\PDOStatement

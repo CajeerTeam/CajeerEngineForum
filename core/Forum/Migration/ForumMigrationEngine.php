@@ -12,11 +12,11 @@ use PDO;
 /** Operator-only, bounded transactional import. Mapping and checkpoint commit with data. */
 final class ForumMigrationEngine
 {
-    public function __construct(private DatabaseManager $db, private ForumSource $source, private ?string $files=null, ?string $avatarFiles=null,int $newPipelineVersion=4)
+    public function __construct(private DatabaseManager $db, private ForumSource $source, private ?string $files=null, ?string $avatarFiles=null,int $newPipelineVersion=5)
     {
         if($avatarFiles!==null && (!is_dir($avatarFiles)||($root=realpath($avatarFiles))===false))throw new \InvalidArgumentException('XenForo avatar snapshot directory not found');
         $this->avatarFiles=$avatarFiles===null?null:$root;
-        if(!in_array($newPipelineVersion,[2,3,4],true))throw new \InvalidArgumentException('Invalid new job pipeline version');
+        if(!in_array($newPipelineVersion,[2,3,4,5],true))throw new \InvalidArgumentException('Invalid new job pipeline version');
         $this->newPipelineVersion=$source instanceof MultiForumSource && $source->platform()==='xenforo'?$newPipelineVersion:min(3,$newPipelineVersion);
     }
     private array $mappingCache=[];
@@ -42,14 +42,15 @@ final class ForumMigrationEngine
     private const EXTRA_PHASES=['profiles','reactions'];
     private const COMMUNITY_PHASES=['avatars','follows'];
     private const CONTENT_PHASE='content_links';
+    private const MEDIA_PHASES=['conversations','conversation_messages','conversation_attachments','conversation_content'];
     /** Existing jobs have no pipeline_version and always finish with the original eleven phases. */
     private function phaseNames(array $plan): array
     {
         if(!isset($plan['pipeline_version']))return ForumSource::PHASES;
-        if(!in_array($plan['pipeline_version'],[2,3,4],true) || !($this->source instanceof EnrichedForumSource))
+        if(!in_array($plan['pipeline_version'],[2,3,4,5],true) || !($this->source instanceof EnrichedForumSource))
             throw new \RuntimeException('Unsupported import pipeline; do not rewrite an in-progress job');
         $phases=array_merge(ForumSource::PHASES,self::EXTRA_PHASES);
-        if($plan['pipeline_version']===4){
+        if($plan['pipeline_version']>=4){
             if(!($this->source instanceof MultiForumSource)||$this->source->platform()!=='xenforo')
                 throw new \RuntimeException('Community phases require a XenForo source');
             foreach(self::COMMUNITY_PHASES as $community){
@@ -62,6 +63,14 @@ final class ForumMigrationEngine
                 throw new \RuntimeException('Invalid XenForo content phase ledger');
             $phases[]=self::CONTENT_PHASE;
         }
+        if($plan['pipeline_version']===5){
+            if(!($this->source instanceof MultiForumSource)||$this->source->platform()!=='xenforo')throw new \RuntimeException('Private media phases require XenForo');
+            foreach(self::MEDIA_PHASES as $kind){
+                if(!isset($plan[$kind]['count'],$plan[$kind]['high']))throw new \RuntimeException('Incomplete XenForo media ledger');
+                $phases[]=$kind;
+            }
+            if(!isset($plan['source_media_schema_sha256']))throw new \RuntimeException('Missing XenForo media fingerprint');
+        }
         return $phases;
     }
     /** Exact snapshot ledger including added phase high-water marks for new jobs. */
@@ -73,10 +82,10 @@ final class ForumMigrationEngine
             $extra=$this->source->additionalPlan();
             if($extra!==[]){
                 if(array_keys($extra)!==self::EXTRA_PHASES)throw new \RuntimeException('Unsupported additional source phases');
-                if(!in_array($pipelineVersion,[2,3,4],true))throw new \InvalidArgumentException('Invalid pipeline version');
+                if(!in_array($pipelineVersion,[2,3,4,5],true))throw new \InvalidArgumentException('Invalid pipeline version');
                 $plan['pipeline_version']=$pipelineVersion;
                 foreach($extra as $kind=>$bounds)$plan[$kind]=$bounds;
-                if($pipelineVersion===4){
+                if($pipelineVersion>=4){
                     if(!($this->source instanceof MultiForumSource)||$this->source->platform()!=='xenforo')
                         throw new \RuntimeException('Community phases require XenForo');
                     $plan['source_community_schema_sha256']=$this->source->communityFingerprint();
@@ -84,6 +93,11 @@ final class ForumMigrationEngine
                 }
                 if($pipelineVersion>=3 && $this->source->platform()==='xenforo')
                     $plan[self::CONTENT_PHASE]=$plan['posts'];
+                if($pipelineVersion===5){
+                    if(!($this->source instanceof MultiForumSource)||$this->source->platform()!=='xenforo')throw new \RuntimeException('Media pipeline requires XenForo');
+                    $plan['source_media_schema_sha256']=$this->source->mediaFingerprint();
+                    foreach($this->source->mediaPlan() as $kind=>$bounds)$plan[$kind]=$bounds;
+                }
             }
         }
         return $plan;
@@ -110,8 +124,10 @@ final class ForumMigrationEngine
     public function start(string $backup): array
     {
         $this->resetBatch();$plan=$this->snapshotPlan();$id=$this->source->identity();
-        if(($plan['pipeline_version']??1)===4 && ($plan['avatars']['count']??0)>0 && $this->avatarFiles===null)
+        if(($plan['pipeline_version']??1)>=4 && ($plan['avatars']['count']??0)>0 && $this->avatarFiles===null)
             throw new \RuntimeException('XenForo source has avatars: supply --avatar-files as an immutable data/avatars snapshot');
+        if(($plan['pipeline_version']??1)===5 && (($plan['attachments']['count']??0)>0 || ($plan['conversation_attachments']['count']??0)>0) && $this->files===null)
+            throw new \RuntimeException('XenForo attachments require --files immutable internal_data/attachments snapshot');
         try{$this->db->transaction(function()use($plan,$id,$backup){
             // The filesystem lease only covers one node. Serialize start decisions in SQL too.
             if($this->db->driver()==='sqlite')$this->query('UPDATE ce_forum_tree_lock SET id=id WHERE id=1');
@@ -135,7 +151,7 @@ final class ForumMigrationEngine
     /** Validate the ledger while the imported tree is still quarantined. */
     private function verifyMappings(string $job): void
     {
-        foreach(['groups'=>['ce_forum_groups','role_id'],'users'=>['ce_users','id'],'forums'=>['ce_forum_boards','id'],'topics'=>['ce_forum_threads','id'],'posts'=>['ce_forum_posts','id'],'attachments'=>['ce_forum_attachments','id'],'polls'=>['ce_forum_polls','thread_id'],'profiles'=>['ce_forum_member_profiles','user_id'],'reactions'=>['ce_forum_posts','id'],'avatars'=>['ce_forum_profile_images','user_id'],'follows'=>['ce_users','id'],'content_links'=>['ce_forum_posts','id']] as $kind=>[$table,$column]){
+        foreach(['groups'=>['ce_forum_groups','role_id'],'users'=>['ce_users','id'],'forums'=>['ce_forum_boards','id'],'topics'=>['ce_forum_threads','id'],'posts'=>['ce_forum_posts','id'],'attachments'=>['ce_forum_attachments','id'],'polls'=>['ce_forum_polls','thread_id'],'profiles'=>['ce_forum_member_profiles','user_id'],'reactions'=>['ce_forum_posts','id'],'avatars'=>['ce_forum_profile_images','user_id'],'follows'=>['ce_users','id'],'content_links'=>['ce_forum_posts','id'],'conversations'=>['ce_forum_conversations','id'],'conversation_messages'=>['ce_forum_conversation_messages','id'],'conversation_attachments'=>['ce_forum_attachments','id'],'conversation_content'=>['ce_forum_conversation_messages','id']] as $kind=>[$table,$column]){
             // PostgreSQL uses UUID PKs; cast the small ledger key, not the indexed target column.
             $key=$this->db->driver()==='pgsql'?'CAST(m.target_id AS UUID)':'m.target_id';
             $n=(int)$this->query("SELECT COUNT(*) FROM ce_forum_import_map m LEFT JOIN $table t ON t.$column=$key WHERE m.job_id=? AND m.kind=? AND m.outcome='imported' AND t.$column IS NULL",[$job,$kind])->fetchColumn();
@@ -184,15 +200,19 @@ final class ForumMigrationEngine
             $plan=json_decode($job['plan_json'],true,512,JSON_THROW_ON_ERROR);
             $phases=$this->phaseNames($plan);
             $this->contentPipeline=($plan['pipeline_version']??0)>=3 && $this->source->platform()==='xenforo';
-            $this->communityPipeline=($plan['pipeline_version']??0)===4 && $this->source->platform()==='xenforo';
+            $this->communityPipeline=($plan['pipeline_version']??0)>=4 && $this->source->platform()==='xenforo';
             if($this->communityPipeline && ($plan['avatars']['count']??0)>0 && $this->avatarFiles===null)
                 throw new \RuntimeException('XenForo avatar snapshot directory required to resume this import');
             $phase=(int)$job['phase'];$kind=$phases[$phase]??throw new \RuntimeException('Invalid import phase checkpoint');$cursor=(int)$job['cursor_id'];$sub=(int)$job['subcursor_id'];
             $category=$this->row('SELECT visibility FROM ce_forum_categories WHERE id=?',[$job['category_id']]);
             if(!$category||$category['visibility']!=='hidden'||$this->row('SELECT id FROM ce_forum_boards WHERE category_id=? AND (visibility<>? OR state<>?) LIMIT 1',[$job['category_id'],'hidden','readonly']))throw new \RuntimeException('Imported tree must remain hidden and readonly until completion');
+            $isMedia=in_array($kind,self::MEDIA_PHASES,true);
             $isAdditional=in_array($kind,self::EXTRA_PHASES,true);
             $isCommunity=in_array($kind,self::COMMUNITY_PHASES,true);
-            if($kind===self::CONTENT_PHASE){
+            if($isMedia){
+                if(!($this->source instanceof MultiForumSource)||$this->source->platform()!=='xenforo')throw new \RuntimeException('XenForo media phase requires source');
+                $batch=$this->source->mediaBatch($kind,$cursor,$plan[$kind]['high'],in_array($kind,['conversation_attachments','conversation_content'],true)?min($limit,$kind==='conversation_attachments'?1:20):$limit);
+            }elseif($kind===self::CONTENT_PHASE){
                 $batch=$this->source->batch('posts',$cursor,$plan[self::CONTENT_PHASE]['high'],min($limit,20));
             }elseif($isCommunity){
                 if(!($this->source instanceof MultiForumSource))throw new \RuntimeException('Community phase requires XenForo source');
@@ -220,7 +240,7 @@ final class ForumMigrationEngine
               // Bound total relation work, not just the number of topics in a batch.
               $remaining=$limit;
               foreach($batch as $r){
-                $key=match($kind){'groups'=>'group_id','users'=>'user_id','forums'=>'left_id','topics','polls','votes','watches','finalize'=>'topic_id','board_watches'=>'forum_id','posts'=>'post_id','attachments'=>'attach_id','profiles'=>'profile_id','reactions'=>'reaction_source_id','avatars'=>'avatar_id','follows'=>'follow_id','content_links'=>'post_id'};
+                $key=match($kind){'groups'=>'group_id','users'=>'user_id','forums'=>'left_id','topics','polls','votes','watches','finalize'=>'topic_id','board_watches'=>'forum_id','posts'=>'post_id','attachments'=>'attach_id','profiles'=>'profile_id','reactions'=>'reaction_source_id','avatars'=>'avatar_id','follows'=>'follow_id','content_links'=>'post_id','conversations'=>'conversation_source_id','conversation_messages','conversation_content'=>'message_source_id','conversation_attachments'=>'attach_id'};
                 $next=(int)$r[$key];
                 if(in_array($kind,['watches','board_watches','votes','follows'],true)){
                     $target=$this->mapped(match($kind){'watches'=>'topics','board_watches'=>'forums','votes'=>'polls','follows'=>'users'},$next);
@@ -257,6 +277,13 @@ final class ForumMigrationEngine
                         $this->query('DELETE FROM ce_forum_threads WHERE id=?',[$thread]);
                         $this->query("UPDATE ce_forum_import_map SET target_id=NULL,outcome='skipped',reason='no_importable_posts' WHERE job_id=? AND kind='topics' AND source_id=?",[$id,$next]);
                     }
+                }elseif($isMedia){
+                    match($kind){
+                        'conversations'=>$this->importConversation($r),
+                        'conversation_messages'=>$this->importConversationMessage($r),
+                        'conversation_attachments'=>$this->importConversationAttachment($r),
+                        'conversation_content'=>$this->rewriteConversationMessage($r),
+                    };
                 }elseif($kind===self::CONTENT_PHASE){
                     $this->rewriteXenForoPost($r);
                 }elseif($kind==='avatars'){
@@ -336,6 +363,134 @@ final class ForumMigrationEngine
             $this->mark('avatars',$source,$user);return;
         }
         $this->mark('avatars',$source,null,$reason);
+    }
+
+    /** Imported private conversations remain unavailable during migration: their participants
+     * are freshly imported, disabled local accounts, and no imported credentials are used.
+     * Deleted source recipients are never restored. All participants and mapping commit together.
+     */
+    private function importConversation(array $row): void
+    {
+        $source=(int)$row['conversation_source_id'];
+        if(!($this->source instanceof MultiForumSource))throw new \LogicException('Expected XenForo snapshot');
+        $recipients=$this->source->mediaRecipients($source);
+        if(count($recipients)>20){$this->mark('conversations',$source,null,'recipient_limit_exceeded');return;}
+        if(!$this->source->mediaHasMessages($source)){$this->mark('conversations',$source,null,'empty_conversation');return;}
+        $members=[];
+        foreach($recipients as $recipient){
+            if((string)$recipient['recipient_state']!=='active')continue;
+            $user=$this->mapped('users',(int)$recipient['user_id']);
+            if($user===null){$this->mark('conversations',$source,null,'active_recipient_not_imported');return;}
+            $members[$user]=true;
+        }
+        if($members===[]){$this->mark('conversations',$source,null,'no_active_recipients');return;}
+        $owner=$this->mapped('users',(int)$row['owner_source_id']);
+        if($owner===null||!isset($members[$owner]))$owner=array_key_first($members);
+        $title=trim(str_replace("\0",'',(string)$row['title']));
+        if(!preg_match('//u',$title)||strlen($title)>720){$this->mark('conversations',$source,null,'invalid_title');return;}
+        $target=self::uuid();$when=max(0,(int)$row['start_date']);
+        $kind=count($members)>2?'group':'direct';
+        $this->query('INSERT INTO ce_forum_conversations(id,owner_id,title,kind,created_at,updated_at) VALUES(?,?,?,?,?,?)',
+            [$target,$owner,PhpbbText::short($title,180,'Imported conversation '.$source),$kind,$when,$when]);
+        foreach(array_keys($members) as $user)$this->query('INSERT INTO ce_forum_conversation_participants(conversation_id,user_id,joined_sequence,read_sequence,active) VALUES(?,?,1,0,1)',[$target,$user]);
+        $this->mark('conversations',$source,$target);
+    }
+    private function importConversationMessage(array $row): void
+    {
+        $source=(int)$row['message_source_id'];$conversation=$this->mapped('conversations',(int)$row['conversation_id']);
+        if($conversation===null){$this->mark('conversation_messages',$source,null,'conversation_not_imported');return;}
+        $body=$row['body'];
+        if(!is_string($body)||!preg_match('//u',$body)||strlen($body)>80000 || preg_match_all('/./us',$body)>20000){
+            $this->mark('conversation_messages',$source,null,'invalid_or_oversized_message');return;
+        }
+        $body=str_replace("\0",'',$body);
+        if(trim($body)==='')$body='[Empty imported message]';
+        $author=$this->mapped('users',(int)$row['author_source_id']);
+        $status=$this->row('SELECT last_sequence,updated_at FROM ce_forum_conversations WHERE id=?',[$conversation]);
+        if($status===null)throw new \RuntimeException('Imported conversation missing during message import');
+        $sequence=(int)$status['last_sequence']+1;
+        $date=max(0,(int)$row['message_date']);$id=self::uuid();
+        $this->query("INSERT INTO ce_forum_conversation_messages(id,conversation_id,author_id,message_sequence,body,body_format,created_at) VALUES(?,?,?,?,?,'plain',?)",[$id,$conversation,$author,$sequence,$body,$date]);
+        $this->query("INSERT INTO ce_forum_conversation_revisions(message_id,revision_number,body,body_format,editor_id,edit_reason,created_at) VALUES(?,1,?,'plain',?,'XenForo import',?)",[$id,$body,$author,$date]);
+        $this->query('UPDATE ce_forum_conversations SET last_sequence=?,updated_at=? WHERE id=?',[$sequence,max((int)$status['updated_at'],$date),$conversation]);
+        $this->mark('conversation_messages',$source,$id);
+    }
+    /** For private attachments the target message_id is set immediately, so the normal
+     * download route checks the conversation membership. Never create public post links.
+     */
+    private function importConversationAttachment(array $row): void
+    {
+        $source=(int)$row['attach_id'];
+        $message=$this->mapped('conversation_messages',(int)$row['message_source_id']);
+        $owner=$this->mapped('users',(int)$row['poster_id']);
+        if($message===null||$owner===null||(int)$row['is_orphan']!==0){
+            $this->mark('conversation_attachments',$source,null,'orphan_or_unimported_private_message');return;
+        }
+        $m=$this->row('SELECT author_id FROM ce_forum_conversation_messages WHERE id=?',[$message]);
+        if($m===null||$m['author_id']!==$owner){$this->mark('conversation_attachments',$source,null,'private_attachment_author_mismatch');return;}
+        $usage=$this->row('SELECT COUNT(*) AS n,COALESCE(SUM(size_bytes),0) AS bytes FROM ce_forum_attachments WHERE message_id=?',[$message]);
+        if((int)$usage['n']>=10){$this->mark('conversation_attachments',$source,null,'private_message_attachment_limit');return;}
+        [$bytes,$reason]=$this->loadFrozenAttachment($row);
+        if($bytes===null){$this->mark('conversation_attachments',$source,null,$reason);return;}
+        if((int)$usage['bytes']+strlen($bytes)>52428800){$this->mark('conversation_attachments',$source,null,'private_message_attachment_size_limit');return;}
+        try{$info=AttachmentService::validate((string)$row['real_filename'],$bytes);}
+        catch(ForumException){$this->mark('conversation_attachments',$source,null,'unsupported_private_attachment');return;}
+        $id=self::uuid();
+        $this->query('INSERT INTO ce_forum_attachments(id,owner_id,message_id,filename,mime,size_bytes,sha256,file_data,created_at,expires_at) VALUES(?,?,?,?,?,?,?,?,?,0)',
+            [$id,$owner,$message,$info['filename'],$info['mime'],$info['size_bytes'],$info['sha256'],base64_encode($bytes),max(0,(int)$row['filetime'])]);
+        if(in_array($info['mime'],['image/jpeg','image/png','image/webp'],true))
+            $this->query("INSERT INTO ce_forum_media_state(attachment_id,state,due_at) VALUES(?,'pending',0)",[$id]);
+        $this->mark('conversation_attachments',$source,$id);
+    }
+    /** Returns [bytes, skip reason]. Unsafe paths are never opened, and a source file
+     * changing during a read aborts the transaction rather than storing corrupt bytes.
+     */
+    private function loadFrozenAttachment(array $row): array
+    {
+        if($this->files===null)return [null,'attachment_directory_not_supplied'];
+        $root=realpath($this->files);$name=(string)($row['physical_filename']??'');
+        if(!$root||!preg_match('~\A[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*\z~D',$name)||in_array('..',explode('/',$name),true)||in_array('.',explode('/',$name),true))
+            return [null,'unsafe_private_file_path'];
+        $path=$root.DIRECTORY_SEPARATOR.str_replace('/',DIRECTORY_SEPARATOR,$name);
+        if(is_link($path)||!is_file($path)||realpath($path)!==$path)return [null,'private_file_missing_or_unsafe'];
+        $size=filesize($path);
+        if($size===false||$size<1||$size>26214400||$size!==(int)$row['filesize'])return [null,'private_file_size_mismatch'];
+        $bytes=file_get_contents($path,false,null,0,26214401);
+        if($bytes===false||strlen($bytes)!==$size)throw new \RuntimeException('Frozen XenForo private file changed during read');
+        return [$bytes,''];
+    }
+    /** Resolve private IDs only after all conversation, message and file mappings exist. */
+    private function rewriteConversationMessage(array $row): void
+    {
+        $source=(int)$row['message_source_id'];$id=$this->mapped('conversation_messages',$source);
+        if($id===null){$this->mark('conversation_content',$source,null,'message_not_imported');return;}
+        if(!is_string($row['body'])||!preg_match('//u',$row['body'])){
+            $this->mark('conversation_content',$source,null,'invalid_source_content');return;
+        }
+        $resolve=function(string $kind,int $old): ?string {
+            if($kind==='attachments'){
+                $target=$this->mapped('conversation_attachments',$old);
+                return $target!==null?'/api/v1/forum/attachments/'.$target.'/download':null;
+            }
+            if($kind==='conversations'){
+                $target=$this->mapped('conversations',$old);
+                return $target!==null?'/forum/conversations/'.$target:null;
+            }
+            if($kind==='users'){
+                $target=$this->mapped('users',$old);
+                return $target!==null?'/forum/members/'.$target:null;
+            }
+            // Do not turn old public attachments or private messages into unguarded URLs.
+            return null;
+        };
+        $origin=$this->source instanceof MultiForumSource?$this->source->contentOrigin():null;
+        $body=XenForoContent::convert($row['body'],$resolve,$origin);
+        if(strlen($body)>80000||preg_match_all('/./us',$body)>20000){
+            $this->mark('conversation_content',$source,null,'conversion_over_renderer_limit');return;
+        }
+        $this->query("UPDATE ce_forum_conversation_messages SET body=?,body_format='bbcode' WHERE id=?",[$body,$id]);
+        $this->query("UPDATE ce_forum_conversation_revisions SET body=?,body_format='bbcode' WHERE message_id=? AND revision_number=1",[$body,$id]);
+        $this->mark('conversation_content',$source,$id);
     }
 
     /** Target data, ledger and checkpoint are written in the caller's one SQL transaction. */

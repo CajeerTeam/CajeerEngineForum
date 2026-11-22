@@ -1,3 +1,12 @@
+## [1.1.5] - 2026-11-22 — XenForo Conversations & Media (Forum Edition)
+
+- Import real XenForo 2.2/2.3 private conversations, active participants and message history into the existing Forum conversation tables. Deleted participants stay excluded; unavailable members abort that conversation rather than exposing a partial private audience.
+- Import private message attachments from a verified immutable local `internal_data/attachments` snapshot, persist `message_id` and use existing membership-aware media ACL. Every invalid or missing file is reported in the import map.
+- Add final transactional conversion of private message BBCode, mentions and safe private conversation/attachment links after all ID mappings exist, preserving baseline revisions.
+- Version the import pipeline (v5, 20 phases) without changing checkpoints from legacy v1-v4 jobs; check XenForo conversation source schema and frozen row counts before import/resume.
+- Extend legacy URL resolution for public XenForo post links without introducing public private-conversation redirects.
+- Add executable v5 SQLite/PHP integration, rollback/resume, source-schema negative and privacy tests to required CI. Production acceptance requires an actual frozen 2.2/2.3 source snapshot and staging.
+
 ## [1.1.4] - 2026-11-22 — XenForo Community Data (Forum Edition)
 
 - Реальный XenForo 2.2/2.3 migration pipeline v4 (16 фаз): аватары из локальной копии `data/avatars`, подписки на участников, первичные группы и существующие профили, реакции, группы, подписки на темы/разделы. Новые данные, mapping и checkpoint фиксируются одной транзакцией.

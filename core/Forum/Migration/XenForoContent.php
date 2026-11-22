@@ -61,7 +61,8 @@ final class XenForoContent
             $path=$query;$query='';
         }
         // Recognized legacy routes are never redirected back to an old private board.
-        if(!preg_match('~\A(?:threads|forums|posts|members|attachments|goto)/~i',$path))return [false,null];
+        if(!preg_match('~\A(?:threads|forums|posts|members|attachments|goto|conversations)/~i',$path))return [false,null];
+        if(preg_match('~\Aconversations/(?:[^/]{1,240}\.)?([1-9][0-9]{0,18})/?\z~iD',$path,$m))return [true,$resolve('conversations',(int)$m[1])];
         if(preg_match('~\Athreads/(?:[^/]{1,240}\.)?[1-9][0-9]{0,18}/post-([1-9][0-9]{0,18})/?\z~iD',$path,$m))
             return [true,$resolve('posts',(int)$m[1])];
         if(preg_match('~\Apost-([1-9][0-9]{0,18})\z~iD',$fragment,$m)
@@ -123,7 +124,7 @@ final class XenForoContent
                 $href=html_entity_decode(trim($m[1]," \t\"'"),ENT_QUOTES|ENT_HTML5,'UTF-8');
                 // Links generated earlier in this pass already use strictly validated
                 // local target paths; keep them instead of treating them as source links.
-                if(preg_match('~\A/(?:forum/(?:threads|boards|members)/[a-f0-9-]{36}|api/v1/forum/attachments/[a-f0-9-]{36}/download)(?:\?page=[1-9][0-9]{0,5})?(?:\#post-[a-f0-9-]{36})?\z~D',$href))
+                if(preg_match('~\A/(?:forum/(?:threads|boards|members|conversations)/[a-f0-9-]{36}|api/v1/forum/attachments/[a-f0-9-]{36}/download)(?:\?page=[1-9][0-9]{0,5})?(?:\#post-[a-f0-9-]{36})?\z~D',$href))
                     return '[url='.$href.']'.$m[2].'[/url]';
                 [$local,$url]=self::legacyUrl($href,$resolve,$origin);
                 if($local)return $url===null?self::literal($m[2]):'[url='.$url.']'.$m[2].'[/url]';
@@ -146,7 +147,7 @@ final class XenForoContent
                     if(!$local)return $m[0];
                     return ($link===null?self::literal($url):'[url='.$link.']'.self::literal($url).'[/url]').$suffix;
                 },$block)??$block;
-                $block=preg_replace_callback('~(?<![=\w/])/(?:threads|forums|posts|members|attachments)/[A-Za-z0-9_.-]{1,240}(?:/[A-Za-z0-9_.-]{1,80})?/?~i',static function(array $m)use($resolve,$origin):string{
+                $block=preg_replace_callback('~(?<![=\w/])/(?:threads|forums|posts|members|attachments|conversations)/[A-Za-z0-9_.-]{1,240}(?:/[A-Za-z0-9_.-]{1,80})?/?~i',static function(array $m)use($resolve,$origin):string{
                     [$local,$link]=self::legacyUrl($m[0],$resolve,$origin);
                     if(!$local)return $m[0];
                     return $link===null?self::literal($m[0]):'[url='.$link.']'.self::literal($m[0]).'[/url]';

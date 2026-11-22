@@ -35,7 +35,7 @@ try{
  $loader=new ManifestLoader();$tpl=$loader->load($root.'/examples/extensions/forum-topic-templates');check((new CompatibilityChecker('1.1','0.7.7'))->isCompatible($tpl),'0.7.7 supports existing topic template package');
  $container=new ServiceContainer();$events=new EventDispatcher();$logger=new RuntimeLogger($tmp);require $tpl->path.'/src/ForumTopicTemplatesProvider.php';(new \CajeerExample\ForumTopicTemplatesProvider())->boot(new ExtensionContext($tmp,$tpl,[],$container,$config,$events,$logger,$platform));
  $announce=$loader->load($root.'/examples/extensions/forum-announcements');check((new CompatibilityChecker('1.1','0.7.7'))->isCompatible($announce),'0.7.7 supports existing announcement package');
- $open=fn()=>new PDO('sqlite:'.$tmp.'/source.sqlite');$source=$open();$adapter=new MultiForumSource($source,'xf_','xenforo','2.3.0','large');$engine=new ForumMigrationEngine($db,$adapter,$tmp);
+ $open=fn()=>new PDO('sqlite:'.$tmp.'/source.sqlite');$source=$open();$adapter=new MultiForumSource($source,'xf_','xenforo','2.3.0','large');$engine=new ForumMigrationEngine($db,$adapter,$tmp,null,4);
  $job=$engine->start('test-backup')['job']['id'];$ds=new DiscussionService($db,$tx,new BoardRepository($db),new ThreadRepository($db),new PostRepository($db),new MemberRepository($db));
  try{ForumMigrationEngine::assertNoRunning($db);throw new LogicException('incomplete import allowed');}catch(RuntimeException $e){check(str_contains($e->getMessage(),'incomplete forum import'),'maintenance exit and second job fence');}
  denied(fn()=>$ds->legacyLocation($job,'topics','20'),'incomplete job redirect denied');
@@ -49,7 +49,7 @@ try{
    $after=$engine->progress()['job'];check($before['cursor_id']===$after['cursor_id']&&$before['subcursor_id']===$after['subcursor_id'],'failed relation batch rolls back both cursors');
    $pdo->exec('DROP TRIGGER inject_import_failure');$injected=true;
    $engine->step(8);$partial=$engine->progress()['job'];check((int)$partial['subcursor_id']>0,'partial watcher checkpoint persisted');
-   $source->rollBack();unset($engine,$adapter,$source);$source=$open();$adapter=new MultiForumSource($source,'xf_','xenforo','2.3.0','large');$engine=new ForumMigrationEngine($db,$adapter,$tmp);$reopened=true;
+   $source->rollBack();unset($engine,$adapter,$source);$source=$open();$adapter=new MultiForumSource($source,'xf_','xenforo','2.3.0','large');$engine=new ForumMigrationEngine($db,$adapter,$tmp,null,4);$reopened=true;
   }}
   $r=$engine->step(100);if($r['job']['state']==='complete')break;
  }

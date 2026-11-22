@@ -16,7 +16,7 @@ try{
  $jobs=[];
  foreach(['xenforo'=>['xf_','2.3.0'],'mybb'=>['mybb_','1.8.39'],'smf'=>['smf_','2.1.6']] as $platform=>[$prefix,$version]){
   $open=fn()=>new PDO('sqlite:'.$tmp.'/source.sqlite');$source=$open();$adapter=new MultiForumSource($source,$prefix,$platform,$version,'same-label');
-  $engine=new ForumMigrationEngine($db,$adapter,$tmp);$plan=$engine->plan();
+  $engine=new ForumMigrationEngine($db,$adapter,$tmp,null,4);$plan=$engine->plan();
   check($plan['platform']===$platform&&$plan['counts']['topics']['count']===3&&$plan['counts']['source_private_messages']===1&&!$engine->exists(),"$platform preflight and source counts");
   if($platform==='xenforo'){
    check($plan['pipeline_version']===4&&$plan['counts']['profiles']['count']===3&&$plan['counts']['reactions']['count']===6&&$plan['counts']['follows']['count']===3&&$plan['counts']['avatars']['count']===0,'XF extended plan and immutable source counts');
@@ -35,7 +35,7 @@ try{
   $pdo->exec("CREATE TRIGGER reject_import BEFORE INSERT ON ce_forum_import_map BEGIN SELECT RAISE(ABORT,'injected'); END");
   try{$engine->step(1);throw new RuntimeException('Expected failure');}catch(PDOException){}
   check((int)$engine->status()['job']['cursor_id']===0,"$platform rollback checkpoint");$pdo->exec('DROP TRIGGER reject_import');$engine->step(1);
-  $source->rollBack();unset($engine,$adapter,$source);$source=$open();$adapter=new MultiForumSource($source,$prefix,$platform,$version,'same-label');$engine=new ForumMigrationEngine($db,$adapter,$tmp);
+  $source->rollBack();unset($engine,$adapter,$source);$source=$open();$adapter=new MultiForumSource($source,$prefix,$platform,$version,'same-label');$engine=new ForumMigrationEngine($db,$adapter,$tmp,null,4);
   for($i=0;$i<100;$i++){if($engine->step(1)['job']['state']==='complete')break;}
   $report=$engine->status();check($report['job']['state']==='complete'&&$report['job']['platform']===$platform,"$platform completed after resume");
   $id=fn($kind,$old)=>ForumMigrationEngine::mapping($db,$job,$kind,$old)['mapping']['target_id']??null;

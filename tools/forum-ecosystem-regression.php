@@ -49,9 +49,9 @@ try{
     $pdo->prepare('UPDATE ce_forum_community_settings SET payload=? WHERE id=1')->execute(['{"name":"partial"}']);check(!$gate->check()['checks']['community_policy'],'gate detects malformed stored policy');
     $pdo->prepare('UPDATE ce_forum_community_settings SET payload=? WHERE id=1')->execute([json_encode($values,JSON_THROW_ON_ERROR)]);$pdo->exec("UPDATE ce_roles SET permissions='[]' WHERE handle='forum-acp-settings'");check(!$gate->check()['checks']['delegation'],'gate detects damaged delegation');
     $pdo->prepare("UPDATE ce_roles SET permissions=? WHERE handle='forum-acp-settings'")->execute(['["forum:acp:settings"]']);
-    $source=new PDO('sqlite:'.$tmp.'/source.sqlite');$source->exec(file_get_contents($root.'/tools/forum-tests/multi_forum_fixture.sql'));$engine=new ForumMigrationEngine($db,new MultiForumSource($source,'xf_','xenforo','2.3.0','stable'));$job=$engine->start('test-backup')['job']['id'];
+    $source=new PDO('sqlite:'.$tmp.'/source.sqlite');$source->exec(file_get_contents($root.'/tools/forum-tests/multi_forum_fixture.sql'));$engine=new ForumMigrationEngine($db,new MultiForumSource($source,'xf_','xenforo','2.3.0','stable'),null,null,4);$job=$engine->start('test-backup')['job']['id'];
     check(!$gate->check()['checks']['migration_idle'],'unfinished import blocks release readiness');
-    rejects(fn()=>(new ForumMigrationEngine($db,new MultiForumSource($source,'xf_','xenforo','2.3.0','other')))->start('test-backup'),'second job serialized and refused');
+    rejects(fn()=>(new ForumMigrationEngine($db,new MultiForumSource($source,'xf_','xenforo','2.3.0','other'),null,null,4))->start('test-backup'),'second job serialized and refused');
     for($i=0;$i<100;$i++){if($engine->step(100)['job']['state']==='complete')break;}
     check($engine->progress()['job']['state']==='complete'&&$gate->check()['ok'],'real import completion restores ecosystem readiness');
     $report=(new ForumAdminService($db,$tx))->maintenance($actor,['action'=>'ecosystem_check']);check($report['ok'],'actual ACP diagnostic and audit');

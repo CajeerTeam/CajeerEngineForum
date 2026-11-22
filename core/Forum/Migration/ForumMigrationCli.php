@@ -61,6 +61,8 @@ final class ForumMigrationCli
             $planning=$engine->plan(); // Validate source schema before taking the backup.
             if($platform==='xenforo' && ($planning['counts']['avatars']['count']??0)>0 && $avatarFiles===null)
                 throw new \RuntimeException('XenForo avatar snapshot required: supply --avatar-files before capturing a recovery backup');
+            if($platform==='xenforo' && ($planning['pipeline_version']??1)===5 && (($planning['counts']['attachments']['count']??0)>0 || ($planning['counts']['conversation_attachments']['count']??0)>0) && $files===null)
+                throw new \RuntimeException('XenForo file snapshot required: supply --files=internal_data/attachments before capturing a recovery backup');
             $backup=(new BackupManager($root,$config))->capture();
             $engine->start($backup['id']);
         }
