@@ -60,7 +60,7 @@ final class NativeCli
         try {
             $config = new ConfigRepository($rootPath);
             $result = match ($command) {
-                'forum:import:plan','forum:import:run','forum:import:status','forum:import:map','forum:import:accept' => \CajeerEngine\Forum\Migration\ForumMigrationCli::run($rootPath,$config,$argv),
+                'forum:import:discover','forum:import:plan','forum:import:run','forum:import:status','forum:import:map','forum:import:accept' => \CajeerEngine\Forum\Migration\ForumMigrationCli::run($rootPath,$config,$argv),
                 'forum:search:reindex' => (new \CajeerEngine\Forum\Service\ForumSearchMaintenance(new DatabaseManager($config)))->rebuild(),
                 'forum:search:check' => (new \CajeerEngine\Forum\Service\ForumSearchMaintenance(new DatabaseManager($config)))->check(),
                 'forum:runtime:check' => \CajeerEngine\Forum\Service\ForumRuntimeCache::diagnostics(),

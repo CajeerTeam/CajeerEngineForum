@@ -1,3 +1,10 @@
+## [1.1.7] - 2026-11-22 — Invision Source Discovery (Forum Edition)
+
+- Add executable read-only `forum:import:discover --platform=invision` for frozen MySQL/MariaDB or SQLite Invision Community 4.x and 5.x snapshots. Detect real table prefixes and installed `core`/`forums` application versions.
+- Validate required member, group, forum, topic and post schema columns; count native entities, optional private/multimedia tables, detect invalid/duplicate IDs, orphan topics/posts, missing groups, missing authors and cyclic or missing forum parents.
+- Fail closed on unsupported versions, ambiguous prefixes and incompatible schema. Report attachment snapshot requirements, table layout fingerprint and source data warnings without reading credentials or message bodies or writing into the target DB.
+- Invision import execution remains disabled until the 1.1.8 core importer is implemented and tested on real source snapshots. Discovery is a preflight, not production acceptance.
+
 ## [1.1.6] - 2026-11-22 — XenForo Production Acceptance (Forum Edition)
 
 - Fix a production-blocking schema defect: XenForo private media phase names exceed the old 20-character `ce_forum_import_map.kind` limit on MySQL/PostgreSQL. New migration `0079` expands it to 32 characters; runtime import checks the installed schema before starting.

@@ -1,3 +1,7 @@
+## Version 1.1.7 — Invision Community source discovery
+
+Use `forum:import:discover --platform=invision` for a **read-only** scan of a frozen Invision Community 4.x/5.x forum database. It detects the installed version and prefix, validates tables, key relationships, forum hierarchy and local attachment snapshot availability. It does not execute an Invision import or modify the target database. See [Invision source discovery 1.1.7](forum-invision-discovery-1.1.7.md). Invision import support is scheduled for 1.1.8 and must not be enabled before source-to-target acceptance.
+
 ## Version 1.1.6 — XenForo production acceptance and schema repair
 
 Apply migration 0079 before a XenForo v5 import or resume on PostgreSQL/MySQL. This repairs the legacy `VARCHAR(20)` import-map kind column, which was too short for private media phase identifiers. `forum:import:accept` now performs a **real read-only source-to-target reconciliation** of a completed v5 job, including attachment hashes, private audiences, skip approval and hidden-tree integrity. See [XenForo production acceptance 1.1.6](forum-xenforo-production-acceptance-1.1.6.md) for the command, exact source options and required destructive staging/restore checks. Do not interpret passing fixture tests as completion of real-world acceptance.

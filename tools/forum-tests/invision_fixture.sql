@@ -1,0 +1,18 @@
+CREATE TABLE ips_core_applications (app_directory TEXT, app_version TEXT);
+INSERT INTO ips_core_applications VALUES ('core','4.7.24'),('forums','4.7.24');
+CREATE TABLE ips_core_members (member_id INTEGER,name TEXT,email TEXT,joined INTEGER,member_group_id INTEGER);
+INSERT INTO ips_core_members VALUES (1,'Alice','private-alice@example.com',1000,3),(2,'Bob','private-bob@example.com',1100,3);
+CREATE TABLE ips_core_groups (g_id INTEGER,g_title TEXT);
+INSERT INTO ips_core_groups VALUES(3,'Members');
+CREATE TABLE ips_forums_forums (id INTEGER,parent_id INTEGER,name TEXT,position INTEGER);
+INSERT INTO ips_forums_forums VALUES (10,0,'Top',1),(11,10,'General',2);
+CREATE TABLE ips_forums_topics (tid INTEGER,forum_id INTEGER,starter_id INTEGER,title TEXT,start_date INTEGER,approved INTEGER);
+INSERT INTO ips_forums_topics VALUES (20,11,1,'Welcome',17000000,1);
+CREATE TABLE ips_forums_posts (pid INTEGER,topic_id INTEGER,author_id INTEGER,post_date INTEGER,post TEXT,queued INTEGER);
+INSERT INTO ips_forums_posts VALUES (30,20,1,17000001,'secret body 30',0),(31,20,2,17000002,'secret body 31',0);
+CREATE TABLE ips_core_attachments (attach_id INTEGER,attach_file TEXT,attach_location TEXT);
+CREATE TABLE ips_core_file_storage (id INTEGER,method TEXT,configuration TEXT);
+INSERT INTO ips_core_file_storage VALUES (1,'FileSystem','{"password":"hidden"}');
+CREATE TABLE ips_core_message_topics (mt_id INTEGER);
+CREATE TABLE ips_core_message_posts (msg_id INTEGER);
+CREATE TABLE ips_core_follow (follow_id INTEGER);

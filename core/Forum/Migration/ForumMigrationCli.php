@@ -17,8 +17,9 @@ final class ForumMigrationCli
         if(PHP_SAPI!=='cli')throw new \RuntimeException('Operator CLI required');
         $command=$argv[1]??'';$opts=[];
         foreach(array_slice($argv,2) as $arg){if($arg==='--json')continue;if(!preg_match('/\A--([a-z-]+)=(.*)\z/sD',$arg,$m)||isset($opts[$m[1]]))throw new \InvalidArgumentException('Use --name=value options');$opts[$m[1]]=$m[2];}
-        $allowed=match($command){'forum:import:status'=>['job'],'forum:import:map'=>['job','kind','id'],'forum:import:plan'=>['snapshot','prefix','files','avatar-files','platform','source-version'],'forum:import:run'=>['snapshot','prefix','files','avatar-files','batch','steps','seconds','verify-backup','progress-only','confirm','platform','source-version'], 'forum:import:accept'=>['job','snapshot','prefix','files','avatar-files','platform','source-version','expect-skips-sha256'],default=>[]};
+        $allowed=match($command){'forum:import:status'=>['job'],'forum:import:map'=>['job','kind','id'],'forum:import:plan'=>['snapshot','prefix','files','avatar-files','platform','source-version'], 'forum:import:discover'=>['snapshot','prefix','files','platform','source-version'],'forum:import:run'=>['snapshot','prefix','files','avatar-files','batch','steps','seconds','verify-backup','progress-only','confirm','platform','source-version'], 'forum:import:accept'=>['job','snapshot','prefix','files','avatar-files','platform','source-version','expect-skips-sha256'],default=>[]};
         if(array_diff(array_keys($opts),$allowed))throw new \InvalidArgumentException('Unknown import option');
+        if($command==='forum:import:discover')return self::discoverInvision($opts);
         $db=new DatabaseManager($config);
         if($command==='forum:import:status')return ForumMigrationEngine::report($db,$opts['job']??'');
         if($command==='forum:import:map')return ForumMigrationEngine::mapping($db,$opts['job']??'',$opts['kind']??'',(int)($opts['id']??0));
@@ -95,6 +96,32 @@ final class ForumMigrationCli
         }
         return ($report['job']['state']==='complete'||($opts['progress-only']??'0')==='0'?$engine->status():$engine->progress())+['batches'=>$completed,'elapsed_seconds'=>round((hrtime(true)-$started)/1e9,3)];
     }
+    /** Real Invision 4.x/5.x source discovery, read-only and independent of the target DB. */
+    private static function discoverInvision(array $opts): array
+    {
+        if(($opts['platform']??'')!=='invision')
+            throw new \InvalidArgumentException('Use --platform=invision for Invision source discovery');
+        $snapshot=$opts['snapshot']??'';
+        if(!preg_match('/\A[A-Za-z0-9_.-]{1,100}\z/D',$snapshot))
+            throw new \InvalidArgumentException('Specify a unique immutable --snapshot label');
+        $dsn=getenv('FORUM_IMPORT_SOURCE_DSN')?:'';
+        if(!str_starts_with($dsn,'mysql:')&&!str_starts_with($dsn,'sqlite:'))
+            throw new \InvalidArgumentException('Source must be a MySQL/MariaDB or SQLite frozen snapshot');
+        if(str_starts_with($dsn,'sqlite:')&&(!is_file(substr($dsn,7))||!is_readable(substr($dsn,7))))
+            throw new \InvalidArgumentException('Source SQLite snapshot not readable');
+        $files=isset($opts['files'])?realpath($opts['files']):null;
+        if(isset($opts['files'])&&($files===false||!is_dir($files)||!is_readable($files)))
+            throw new \InvalidArgumentException('Invision uploads snapshot not readable');
+        try{
+            $pdo=new PDO($dsn,getenv('FORUM_IMPORT_SOURCE_USER')?:null,getenv('FORUM_IMPORT_SOURCE_PASSWORD')?:null,
+                [PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION,PDO::ATTR_DEFAULT_FETCH_MODE=>PDO::FETCH_ASSOC]);
+        }catch(\PDOException){throw new \RuntimeException('Cannot connect to frozen Invision source');}
+        // No target DB, no backup, no migration writes. The connection is placed in
+        // a read-only consistent transaction by InvisionSourceDiscovery before probing.
+        $discovery=new InvisionSourceDiscovery($pdo,$opts['prefix']??null,$opts['source-version']??null);
+        return $discovery->plan($files?:null)+['snapshot'=>$snapshot];
+    }
+
     /** Refuse production imports on MySQL/PostgreSQL until the v5 ledger upgrade is applied. */
     private static function requireXenForoLedgerWidth(DatabaseManager $db): void
     {
