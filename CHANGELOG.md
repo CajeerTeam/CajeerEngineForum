@@ -1,3 +1,11 @@
+## [1.1.2] - 2026-11-22 — XenForo Source Compatibility (Forum Edition)
+
+- XenForo 2.2/2.3 frozen snapshots are checked against the native table/column requirements before any target write or backup, with actionable fail-closed diagnostics for unsupported or incomplete schemas.
+- Real source layout determines file-key selection: XenForo 2.3 requires `file_key`; 2.2 supports legacy `file_hash` and mixed/upgraded layouts, with safe per-row fallback for empty keys. Attachment content is still validated against immutable local files and existing target limits.
+- New import jobs record a deterministic source-schema digest and chosen attachment key, refusing continuation when the schema changed; existing 1.1.1 jobs retain their original checkpoint and plan format.
+- Executable PHP unit and native PDO SQLite regressions cover missing source tables/columns, 2.2/2.3 compatibility, key selection, schema drift and old-job resume. CI now runs both suites.
+- Core CajeerEngine remains 2.1.0; no target database schema migration required. Live XenForo dumps and remote attachment stores still require operator staging validation.
+
 ## [1.1.1] - 2026-11-22 — Migration Engine Upgrade (Forum Edition)
 
 - Новые задания XenForo получают версионированную последовательность импорта: после базовых фаз выполняются `profiles` и `reactions`; старые задачи без `pipeline_version` сохраняют 11 исходных фаз и свои checkpoints.

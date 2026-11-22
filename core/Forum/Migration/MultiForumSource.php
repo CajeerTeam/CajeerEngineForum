@@ -16,7 +16,7 @@ final class MultiForumSource implements EnrichedForumSource
     private array $tree=[];
     private array $relationQueries=[];
     private array $extraCounts=[];
-    private string $keyColumn;
+    private ?XenForoSchema $xenForoSchema = null;
     private string $pollOptions;
     private string $pollBallots;
     private string $pollVoters;
@@ -41,7 +41,7 @@ final class MultiForumSource implements EnrichedForumSource
     public function unsupported(): array
     {
         $items=['source ACL translation','password hashes','private messages','bans and sanctions','anonymous poll votes','avatars and custom profile fields','remote media','source-specific BBCode rendering','source-specific poll visibility (imported closed)'];
-        if($this->type==='xenforo')$items[]='nonstandard/negative XenForo reactions (explicitly skipped with reason)';
+        if($this->type==='xenforo'){$items[]='nonstandard/negative XenForo reactions (explicitly skipped with reason)';$items[]='remote or unstaged XenForo attachments (require immutable local file copy)';}
         else $items[]='reactions and profile metadata (not yet supported for this platform)';
         return $items;
     }
@@ -94,9 +94,9 @@ final class MultiForumSource implements EnrichedForumSource
         $t=fn(string $n)=>$this->t($n);
         switch($this->type){
         case 'xenforo':
-            // XF 2.3 uses file_key; older snapshots may use file_hash. Detect actual column.
-            $this->keyColumn='file_hash';
-            try{$this->q('SELECT file_key FROM '.$t('attachment_data').' WHERE 1=0');$this->keyColumn='file_key';}catch(\PDOException){if(str_starts_with($this->sourceVersion,'2.3.'))throw new \RuntimeException('XenForo 2.3 attachment_data.file_key missing');}
+            // Validate every native query before any batch or target backup. 2.2 and 2.3
+            // may coexist with both hash and key fields after an upgrade.
+            $this->xenForoSchema = new XenForoSchema($this->pdo, $this->prefix, $this->sourceVersion);
             $this->queries=[
                 'groups'=>'SELECT user_group_id AS group_id,title AS group_name,\'\' AS group_desc FROM '.$t('user_group'),
                 'users'=>'SELECT user_id,0 AS user_type,username,email AS user_email,register_date AS user_regdate FROM '.$t('user'),
@@ -104,7 +104,7 @@ final class MultiForumSource implements EnrichedForumSource
                 'topics'=>"SELECT thread_id AS topic_id,node_id AS forum_id,user_id AS topic_poster,title AS topic_title,post_date AS topic_time,last_post_date AS topic_last_post_time,CASE WHEN discussion_type='redirect' THEN 2 WHEN discussion_open=0 THEN 1 ELSE 0 END AS topic_status,sticky AS topic_type,CASE WHEN discussion_state='visible' THEN 1 ELSE 0 END AS topic_visibility FROM ".$t('thread'),
                 'polls'=>"SELECT content_id AS topic_id,question AS poll_title,0 AS poll_start,close_date AS poll_length,CASE WHEN max_votes=0 THEN 20 ELSE max_votes END AS poll_max_options,0 AS poll_vote_change FROM ".$t('poll')." WHERE content_type='thread'",
                 'posts'=>"SELECT p.post_id,p.thread_id AS topic_id,t.node_id AS forum_id,p.user_id AS poster_id,CASE WHEN LENGTH(p.message)<=1048576 THEN p.message ELSE NULL END AS post_text,'' AS bbcode_uid,p.post_date AS post_time,p.last_edit_date AS post_edit_time,CASE WHEN p.message_state='visible' THEN 1 ELSE 0 END AS post_visibility FROM ".$t('post').' p LEFT JOIN '.$t('thread').' t ON t.thread_id=p.thread_id',
-                'attachments'=>"SELECT a.attachment_id AS attach_id,a.content_id AS post_msg_id,p.thread_id AS topic_id,CASE WHEN a.content_type='post' THEN 0 ELSE 1 END AS in_message,d.user_id AS poster_id,a.unassociated AS is_orphan,d.data_id AS data_id,d.".$this->keyColumn." AS storage_key,d.filename AS real_filename,d.file_size AS filesize,a.attach_date AS filetime FROM ".$t('attachment').' a LEFT JOIN '.$t('attachment_data').' d ON d.data_id=a.data_id LEFT JOIN '.$t('post')." p ON p.post_id=a.content_id AND a.content_type='post'",
+                'attachments'=>"SELECT a.attachment_id AS attach_id,a.content_id AS post_msg_id,p.thread_id AS topic_id,CASE WHEN a.content_type='post' THEN 0 ELSE 1 END AS in_message,d.user_id AS poster_id,a.unassociated AS is_orphan,d.data_id AS data_id,".$this->xenForoSchema->attachmentKeySql()." AS storage_key,d.filename AS real_filename,d.file_size AS filesize,a.attach_date AS filetime FROM ".$t('attachment').' a LEFT JOIN '.$t('attachment_data').' d ON d.data_id=a.data_id LEFT JOIN '.$t('post')." p ON p.post_id=a.content_id AND a.content_type='post'",
             ];
             $this->relationQueries=['watches'=>'SELECT thread_id AS object_id,user_id FROM '.$t('thread_watch'),'board_watches'=>'SELECT node_id AS object_id,user_id FROM '.$t('forum_watch')];
             $this->pollOptions='SELECT r.poll_response_id AS poll_option_id,r.response AS poll_option_text FROM '.$t('poll_response').' r JOIN '.$t('poll')." p ON p.poll_id=r.poll_id WHERE p.content_type='thread' AND p.content_id=? ORDER BY r.poll_response_id LIMIT 21";
@@ -165,7 +165,12 @@ final class MultiForumSource implements EnrichedForumSource
     {
         if(!$this->pdo->inTransaction())throw new \RuntimeException('Source snapshot transaction ended');
         if($this->planned!==null)return $this->planned;
-        $counts=['source_platform'=>$this->type,'source_tree_sha256'=>hash('sha256',json_encode($this->tree,JSON_THROW_ON_ERROR))];foreach(self::PHASES as $phase){
+        $counts=['source_platform'=>$this->type,'source_tree_sha256'=>hash('sha256',json_encode($this->tree,JSON_THROW_ON_ERROR))];
+        if($this->xenForoSchema!==null){
+            $counts['source_schema_sha256']=$this->xenForoSchema->fingerprint();
+            $counts['source_attachment_key']=$this->xenForoSchema->attachmentKeyColumn();
+        }
+        foreach(self::PHASES as $phase){
             if($phase==='forums'){$n=count($this->tree);$counts[$phase]=['count'=>$n,'high'=>$n];continue;}
             $key=self::KEYS[$phase];$row=$this->q('SELECT COUNT(*) AS n,COALESCE(MAX('.$key.'),0) AS high FROM ('.$this->queries[$phase].') src')->fetch(PDO::FETCH_ASSOC);
             $counts[$phase]=['count'=>(int)$row['n'],'high'=>(int)$row['high']];

@@ -6,7 +6,7 @@ on:
 permissions:
   contents: read
 env:
-  FORUM_CURRENT_VERSION: ${{ '1.1.1' }}
+  FORUM_CURRENT_VERSION: ${{ '1.1.2' }}
 concurrency:
   group: forum-ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -135,6 +135,8 @@ jobs:
       - run: php tools/forum-multi-migration-regression.php
       - run: php tools/forum-migration-pipeline-regression.php
       - run: php tools/forum-migration-upgrade-regression.php
+      - run: php tools/forum-xenforo-schema-unit.php
+      - run: php tools/forum-xenforo-schema-regression.php
       - run: php tools/forum-migration-reliability-regression.php --topics=1200
       - run: php tools/forum-extension-regression.php --database
       - run: php tools/forum-ecosystem-regression.php --database

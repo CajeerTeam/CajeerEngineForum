@@ -54,7 +54,14 @@ final class ForumMigrationEngine
     }
     public function matchesRecordedPlan(array $recorded): bool
     {
-        return $this->snapshotPlan(isset($recorded['pipeline_version']))===$recorded;
+        $current=$this->snapshotPlan(isset($recorded['pipeline_version']));
+        // 1.1.1 jobs were created before XenForo schema fingerprints existed.
+        // Preserve their exact eleven/thirteen-phase ledger on resume; new jobs
+        // verify the full recorded schema, including the 2.2/2.3 key choice.
+        foreach(['source_schema_sha256','source_attachment_key'] as $key){
+            if(!array_key_exists($key,$recorded))unset($current[$key]);
+        }
+        return $current===$recorded;
     }
     public function plan(): array
     {

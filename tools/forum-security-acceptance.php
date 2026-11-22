@@ -33,7 +33,7 @@ $check=static function (string $key, bool $passed, string $reason) use (&$result
 };
 try {
     $version=(new ForumVersion($root))->current();
-    $check('edition_version', $version==='1.1.1', 'Installed Forum Edition must be 1.1.1 (got '.$version.').');
+    $check('edition_version', $version==='1.1.2', 'Installed Forum Edition must be 1.1.2 (got '.$version.').');
     $config=new ConfigRepository($root);
     $database=new DatabaseManager($config);
     $pdo=$database->connection();
