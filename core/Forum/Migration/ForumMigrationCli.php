@@ -17,12 +17,12 @@ final class ForumMigrationCli
         if(PHP_SAPI!=='cli')throw new \RuntimeException('Operator CLI required');
         $command=$argv[1]??'';$opts=[];
         foreach(array_slice($argv,2) as $arg){if($arg==='--json')continue;if(!preg_match('/\A--([a-z-]+)=(.*)\z/sD',$arg,$m)||isset($opts[$m[1]]))throw new \InvalidArgumentException('Use --name=value options');$opts[$m[1]]=$m[2];}
-        $allowed=match($command){'forum:import:status'=>['job'],'forum:import:map'=>['job','kind','id'],'forum:import:plan'=>['snapshot','prefix','files','avatar-files','platform','source-version'],'forum:import:run'=>['snapshot','prefix','files','avatar-files','batch','steps','seconds','verify-backup','progress-only','confirm','platform','source-version'],default=>[]};
+        $allowed=match($command){'forum:import:status'=>['job'],'forum:import:map'=>['job','kind','id'],'forum:import:plan'=>['snapshot','prefix','files','avatar-files','platform','source-version'],'forum:import:run'=>['snapshot','prefix','files','avatar-files','batch','steps','seconds','verify-backup','progress-only','confirm','platform','source-version'], 'forum:import:accept'=>['job','snapshot','prefix','files','avatar-files','platform','source-version','expect-skips-sha256'],default=>[]};
         if(array_diff(array_keys($opts),$allowed))throw new \InvalidArgumentException('Unknown import option');
         $db=new DatabaseManager($config);
         if($command==='forum:import:status')return ForumMigrationEngine::report($db,$opts['job']??'');
         if($command==='forum:import:map')return ForumMigrationEngine::mapping($db,$opts['job']??'',$opts['kind']??'',(int)($opts['id']??0));
-        if(!in_array($command,['forum:import:plan','forum:import:run'],true))throw new \InvalidArgumentException('Unknown import command');
+        if(!in_array($command,['forum:import:plan','forum:import:run','forum:import:accept'],true))throw new \InvalidArgumentException('Unknown import command');
         $dsn=getenv('FORUM_IMPORT_SOURCE_DSN')?:'';
         $snapshot=$opts['snapshot']??'';$platform=$opts['platform']??'phpbb';
         $defaultPrefix=match($platform){'phpbb'=>'phpbb_','xenforo'=>'xf_','mybb'=>'mybb_','smf'=>'smf_',default=>throw new \InvalidArgumentException('Unknown platform')};
@@ -46,6 +46,21 @@ final class ForumMigrationCli
         $source=$platform==='phpbb'?new PhpbbSource($pdo,$prefix,$identity):new MultiForumSource($pdo,$prefix,$platform,$opts['source-version']??'', $identity,$origin);
         $engine=new ForumMigrationEngine($db,$source,$files,$avatarFiles);
         if($command==='forum:import:plan')return $engine->plan();
+        if($platform==='xenforo')self::requireXenForoLedgerWidth($db);
+        if($command==='forum:import:accept'){
+            if($platform!=='xenforo')throw new \InvalidArgumentException('Acceptance supports XenForo only');
+            if(!is_file($root.'/storage/app/maintenance.json')||OperationLock::active($root)
+                ||is_file($root.'/storage/app/extensions/deployment.json')
+                ||is_file($root.'/storage/app/backup-restore.json'))
+                throw new \RuntimeException('Acceptance requires isolated maintenance mode with no active deployment or recovery');
+            $job=ForumMigrationEngine::report($db,$opts['job']??'')['job'];
+            $backupId=(string)$job['backup_id'];
+            if(!preg_match('/\A[0-9]{8}-[0-9]{6}-[a-f0-9]{16}\z/D',$backupId))
+                throw new \RuntimeException('Import recovery backup identity is invalid');
+            $recovery=(new BackupManager($root,$config))->verify($backupId);
+            $result=(new XenForoAcceptance($db,$source,$engine,$files,$avatarFiles))->check($opts['job'], $opts['expect-skips-sha256']??null);
+            return $result+['verified_backup'=>['id'=>$backupId,'manifest_sha256'=>$recovery['manifest_sha256']]];
+        }
         if(!OperationLock::exclusiveHeld($root)||!is_file($root.'/storage/app/maintenance.json')||OperationLock::active($root)||is_file($root.'/storage/app/extensions/deployment.json')||is_file($root.'/storage/app/backup-restore.json'))throw new \RuntimeException('Enable maintenance and drain all application nodes before import');
         if(($opts['confirm']??'')!==('import-'.$platform))throw new \InvalidArgumentException('Use --confirm=import-'.$platform.' after reviewing the plan');
         $limit=filter_var($opts['batch']??'100',FILTER_VALIDATE_INT,['options'=>['min_range'=>1,'max_range'=>500]]);
@@ -79,5 +94,19 @@ final class ForumMigrationCli
             if($seconds>0&&(hrtime(true)-$started)/1e9>=$seconds)break;
         }
         return ($report['job']['state']==='complete'||($opts['progress-only']??'0')==='0'?$engine->status():$engine->progress())+['batches'=>$completed,'elapsed_seconds'=>round((hrtime(true)-$started)/1e9,3)];
+    }
+    /** Refuse production imports on MySQL/PostgreSQL until the v5 ledger upgrade is applied. */
+    private static function requireXenForoLedgerWidth(DatabaseManager $db): void
+    {
+        $driver=$db->driver();
+        if($driver==='sqlite')return; // SQLite VARCHAR(N) does not enforce N.
+        $query=match($driver){
+            'pgsql'=>"SELECT character_maximum_length FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='ce_forum_import_map' AND column_name='kind'",
+            'mysql'=>"SELECT character_maximum_length FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='ce_forum_import_map' AND column_name='kind'",
+            default=>throw new \RuntimeException('Unsupported target database driver'),
+        };
+        $width=$db->connection()->query($query)->fetchColumn();
+        if($width===false||(int)$width<24)
+            throw new \RuntimeException('XenForo private media ledger requires migration 0079: run php bin/cajeer migrate before importing');
     }
 }

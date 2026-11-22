@@ -98,6 +98,26 @@ try{
     catch(ForumException $e){$check(in_array($e->status,[401,403,404],true),'guest is denied access to migrated private attachment');}
     $engine->step(20);
     $check((int)$target->query('SELECT COUNT(*) FROM ce_forum_conversation_messages')->fetchColumn()===1,'repeated completed import is idempotent');
+    // Production acceptance uses the SAME frozen source + imported database, not fixture declarations.
+    $accept=new \CajeerEngine\Forum\Migration\XenForoAcceptance($db,$adapter,$engine,$files);
+    $unreviewed=$accept->check($job);
+    $check(!$unreviewed['ok'] && in_array('skipped_rows_not_approved',$unreviewed['blockers'],true),'unapproved skipped records block cutover');
+    $approved=$accept->check($job,$unreviewed['checks']['skip_sha256']);
+    $check($approved['ok'] && $approved['checks']['target_rows_examined']>0,'full source-to-target reconciliation accepts explicitly reviewed skips');
+    $breakHash=$target->prepare('UPDATE ce_forum_attachments SET sha256=? WHERE id=?');
+    $breakHash->execute([str_repeat('0',64),$attachment]);
+    $corrupted=$accept->check($job,$unreviewed['checks']['skip_sha256']);
+    $check(!$corrupted['ok'] && in_array('corrupt_attachment:conversation_attachments:43',$corrupted['blockers'],true),'bit-corrupt private attachment blocks cutover');
+    $breakHash->execute([hash('sha256','hello world!'),$attachment]);
+    $target->prepare('UPDATE ce_forum_conversation_messages SET body=? WHERE id=?')->execute(['Tampered source text',$message]);
+    $target->prepare('UPDATE ce_forum_conversation_revisions SET body=? WHERE message_id=? AND revision_number=1')->execute(['Tampered source text',$message]);
+    $tampered=$accept->check($job,$unreviewed['checks']['skip_sha256']);
+    $check(!$tampered['ok'] && in_array('source_content_mismatch:conversation_messages:70',$tampered['blockers'],true),'changed message body is detected even if baseline revision is also modified');
+    $target->prepare('UPDATE ce_forum_conversation_messages SET body=? WHERE id=?')->execute([$row['body'],$message]);
+    $target->prepare('UPDATE ce_forum_conversation_revisions SET body=? WHERE message_id=? AND revision_number=1')->execute([$row['body'],$message]);
+    $target->prepare('DELETE FROM ce_forum_conversation_participants WHERE conversation_id=? AND user_id=?')->execute([$conv,$bob]);
+    $privacy=$accept->check($job,$unreviewed['checks']['skip_sha256']);
+    $check(!$privacy['ok'] && in_array('private_audience_mismatch:90',$privacy['blockers'],true),'missing private recipient blocks cutover');
     $source->rollBack();unset($engine,$adapter,$source);
     $mutator=$open();$mutator->exec('ALTER TABLE xf_conversation_recipient ADD COLUMN unexpected_plugin_field INT');unset($mutator);
     $source=$open();$adapter=new MultiForumSource($source,'xf_','xenforo','2.3.0','private-v5','https://old.example');

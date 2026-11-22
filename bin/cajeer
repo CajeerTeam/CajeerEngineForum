@@ -156,7 +156,7 @@ if (in_array($argv[1]??'', ['extension:sign','extension:package:install','extens
 try {
     $activityLease = CajeerEngine\Update\OperationLock::acquire($root, in_array($argv[1]??'', ['queue:redis-migrate','routing:rebuild','static:export','import:run','import:diff','export:create','extension:install','extension:uninstall','extension:enable','extension:disable','extension:migrate','extension:assets','extension:config'],true));
     if ((CajeerEngine\Update\OperationLock::active($root)||is_file($root.'/storage/app/backup-restore.json')) && !in_array($argv[1]??'', ['list','--version'],true)) throw new RuntimeException('Recovery required; use operational CLI.');
-    if (CajeerEngine\Update\OperationLock::maintenance($root) && !in_array($argv[1] ?? '', ['list','--version','doctor','rc:doctor','system:report','stable:status','update:check','update:prepare','update','api:lint','release:verify','admin:assets','migrate:status','migrate:verify'], true)) {
+    if (CajeerEngine\Update\OperationLock::maintenance($root) && !in_array($argv[1] ?? '', ['list','--version','doctor','rc:doctor','system:report','stable:status','update:check','update:prepare','update','api:lint','release:verify','admin:assets','migrate:status','migrate:verify','forum:import:accept','forum:import:status','forum:import:map','forum:import:plan'], true)) {
         throw new RuntimeException('Maintenance active; CLI writes disabled.');
     }
 } catch (Throwable $e) { fwrite(STDERR, '[FAIL] '.$e->getMessage().PHP_EOL); exit(1); }

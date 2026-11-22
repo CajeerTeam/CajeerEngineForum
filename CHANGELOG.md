@@ -1,3 +1,10 @@
+## [1.1.6] - 2026-11-22 — XenForo Production Acceptance (Forum Edition)
+
+- Fix a production-blocking schema defect: XenForo private media phase names exceed the old 20-character `ce_forum_import_map.kind` limit on MySQL/PostgreSQL. New migration `0079` expands it to 32 characters; runtime import checks the installed schema before starting.
+- Add a real read-only `forum:import:accept` command that scans the complete XenForo 2.2/2.3 source snapshot and target mapping, verifies all supported phase counts and source IDs, enforces disabled imported accounts and hidden/readonly boards, checks original and imported attachment SHA-256, participant privacy and message revisions.
+- Fail closed on unexpected/changed omissions: a cutover approval must match the exact SHA-256 of the skipped-record ledger; no automatic promotion or publication of imported communities.
+- Add negative tests for damaged private files, unreviewed omissions, changed participants, preserved checkpoints and actual SQL migration constraints. Actual production acceptance still requires operator-provided real XenForo snapshots and staging databases.
+
 ## [1.1.5] - 2026-11-22 — XenForo Conversations & Media (Forum Edition)
 
 - Import real XenForo 2.2/2.3 private conversations, active participants and message history into the existing Forum conversation tables. Deleted participants stay excluded; unavailable members abort that conversation rather than exposing a partial private audience.

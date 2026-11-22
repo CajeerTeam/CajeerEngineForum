@@ -1,3 +1,7 @@
+## Version 1.1.6 — XenForo production acceptance and schema repair
+
+Apply migration 0079 before a XenForo v5 import or resume on PostgreSQL/MySQL. This repairs the legacy `VARCHAR(20)` import-map kind column, which was too short for private media phase identifiers. `forum:import:accept` now performs a **real read-only source-to-target reconciliation** of a completed v5 job, including attachment hashes, private audiences, skip approval and hidden-tree integrity. See [XenForo production acceptance 1.1.6](forum-xenforo-production-acceptance-1.1.6.md) for the command, exact source options and required destructive staging/restore checks. Do not interpret passing fixture tests as completion of real-world acceptance.
+
 ## Version 1.1.5 — XenForo conversations and media (pipeline v5)
 
 New XenForo import jobs use a 20-phase pipeline. After the v4 phases, the importer copies active private conversation recipients, messages, private attachment bytes, and finally rewrites safe local links/BBCode. Old v1-v4 jobs continue on their recorded sequence and do not change their checkpoints. It is unsafe to manually edit `plan_json` or reuse a snapshot label for different source data.
