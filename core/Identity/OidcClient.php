@@ -224,7 +224,7 @@ final class OidcClient
     }
 
     /** Pinned Keycloak RP-Initiated Logout endpoint with an exact registered HTTPS callback. */
-    public function endSessionUrl(string $postLogoutUrl): string
+    public function endSessionUrl(string $postLogoutUrl, ?string $state = null): string
     {
         $parts = parse_url($postLogoutUrl);
         $callback = parse_url($this->callbackUrl);
@@ -235,7 +235,12 @@ final class OidcClient
             || ($parts['path'] ?? '') !== '/auth/oidc/logout/complete') throw new \RuntimeException('Invalid post logout redirect URI.');
         $url = $this->configuration()['end_session_endpoint'] ?? null;
         if (!is_string($url)) throw new \RuntimeException('OIDC provider does not offer RP-initiated logout.');
-        return $url.'?'.http_build_query(['client_id'=>$this->clientId, 'post_logout_redirect_uri'=>$postLogoutUrl], '', '&', PHP_QUERY_RFC3986);
+        if ($state !== null && preg_match('/^[a-f0-9]{48}$/D', $state) !== 1) {
+            throw new \RuntimeException('Invalid RP logout state.');
+        }
+        $parameters = ['client_id'=>$this->clientId, 'post_logout_redirect_uri'=>$postLogoutUrl];
+        if ($state !== null) $parameters['state'] = $state;
+        return $url.'?'.http_build_query($parameters, '', '&', PHP_QUERY_RFC3986);
     }
 
     /**

@@ -90,7 +90,7 @@ final readonly class OidcLogin
     }
 
     /** Locally revoke the current OIDC session before returning the pinned Keycloak logout URL. */
-    public function globalLogout(Request $request, string $postLogoutUrl): string
+    public function globalLogout(Request $request, string $postLogoutUrl, ?string $state = null): string
     {
         $identity = $request->attributes->get('auth');
         if (!is_array($identity) || ($identity['cookie'] ?? false) !== true || ($identity['session'] ?? false) !== true
@@ -102,7 +102,7 @@ final readonly class OidcLogin
             throw new \RuntimeException('Global logout requires a SkiF4er ID browser session.');
         }
         // Resolve remote endpoint first. An unavailable provider must not silently produce a false global logout.
-        $url = $this->client->endSessionUrl($postLogoutUrl);
+        $url = $this->client->endSessionUrl($postLogoutUrl, $state);
         if (!$this->auth->logout($request)) throw new \RuntimeException('Local logout failed.');
         $this->audit->record('identity.oidc_global_logout_started', $identity['user_id'], ['provider'=>'skif4er']);
         return $url;

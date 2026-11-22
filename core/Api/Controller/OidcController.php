@@ -118,11 +118,20 @@ final readonly class OidcController
     {
         if ($this->login === null) return new JsonResponse(['error'=>['code'=>'oidc_disabled','message'=>'SkiF4er ID отключён.']], 503);
         if (!$request->isSecure()) return new JsonResponse(['error'=>['code'=>'https_required','message'=>'Требуется HTTPS.']], 403);
+        $destination = $request->query->all()['return_to'] ?? null;
+        if ($destination !== null && $destination !== '/forum/login') {
+            return new JsonResponse(['error'=>['code'=>'invalid_return','message'=>'Недопустимый адрес возврата.']], 422, ['Cache-Control'=>'no-store']);
+        }
         try {
+            // Bound the completion URL to this browser and one IdP logout exchange.
+            $state = bin2hex(random_bytes(24));
             $base = rtrim($this->config->string('app.url'), '/');
-            $url = $this->login->globalLogout($request, $base.'/auth/oidc/logout/complete');
+            $url = $this->login->globalLogout($request, $base.'/auth/oidc/logout/complete', $state);
             $response = new JsonResponse(['data'=>['authorization_url'=>$url, 'local_session_revoked'=>true]], 200, ['Cache-Control'=>'no-store']);
             $response->headers->clearCookie('ce_session', '/api/v1', null, true, true, Cookie::SAMESITE_STRICT);
+            $context = ($destination === '/forum/login' ? 'forum' : 'admin').'.'.$state;
+            $response->headers->setCookie(Cookie::create('ce_oidc_logout_state', $context, new \DateTimeImmutable('+5 minutes'), '/auth/oidc/logout/complete', null, true, true, false, Cookie::SAMESITE_LAX));
+            $response->headers->set('Referrer-Policy', 'no-referrer');
             return $response;
         } catch (\Throwable) {
             return new JsonResponse(['error'=>['code'=>'global_logout_failed','message'=>'Глобальный выход не выполнен. Проверьте подключение и активную сессию SkiF4er ID.']], 409, ['Cache-Control'=>'no-store']);
@@ -151,10 +160,22 @@ final readonly class OidcController
         }
     }
 
-    /** This callback has no side effects. It is safe even if the provider returns an error. */
+    /** Read-only completion. An unrelated browser cannot claim a completed IdP logout. */
     public function logoutComplete(Request $request): RedirectResponse
     {
-        $response = new RedirectResponse('/admin/#/login', 303);
+        $context = $request->cookies->get('ce_oidc_logout_state');
+        $state = $request->query->all()['state'] ?? null;
+        $destination = '/admin/#/login';
+        if (is_string($context) && preg_match('/^(forum|admin)\.([a-f0-9]{48})$/D', $context, $m) === 1
+            && is_string($state) && hash_equals($m[2], $state)) {
+            if ($m[1] === 'forum') {
+                $destination = $request->query->has('error')
+                    ? '/forum/login?logout=unconfirmed'
+                    : '/forum/login?logout=skif4er';
+            }
+        }
+        $response = new RedirectResponse($destination, 303);
+        $response->headers->clearCookie('ce_oidc_logout_state', '/auth/oidc/logout/complete', null, true, true, Cookie::SAMESITE_LAX);
         $response->headers->set('Cache-Control','no-store');
         $response->headers->set('Referrer-Policy','no-referrer');
         return $response;

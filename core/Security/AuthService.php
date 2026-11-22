@@ -301,7 +301,7 @@ final readonly class AuthService
             return false;
         }
         if ($this->sessions !== null && ($identity['session'] ?? false) && is_string($identity['user_id'] ?? null)) {
-            $this->sessions->revoke((string)$identity['token_id'], (string)$identity['user_id']);
+            if (!$this->sessions->revoke((string)$identity['token_id'], (string)$identity['user_id'])) return false;
         } else { $this->tokens->revoke((string)$identity['token_id']); }
         $this->audit->record('auth.logout', isset($identity['user_id']) ? (string) $identity['user_id'] : null, ['token_id' => $identity['token_id']], $request->getClientIp(), $request->headers->get('User-Agent'));
         return true;

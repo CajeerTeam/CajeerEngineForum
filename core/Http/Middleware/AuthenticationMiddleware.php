@@ -31,7 +31,7 @@ final readonly class AuthenticationMiddleware implements MiddlewareInterface
         }
         $identity = $this->auth->authenticateRequest($request);
         if ($identity === null) { return $this->error($request, 'unauthenticated', 401); }
-        if (($identity['suspended'] ?? false) && !in_array((string)$request->attributes->get('matched_route', ''), ['api.v1.auth.me','api.v1.auth.logout','api.v1.auth.privacy.export','api.v1.auth.privacy.clear_profile','api.v1.auth.privacy.erase','api.v1.forum.mySanctions','api.v1.forum.appealSanction'], true)) return $this->error($request, 'suspended', 403);
+        if (($identity['suspended'] ?? false) && !in_array((string)$request->attributes->get('matched_route', ''), ['api.v1.auth.me','api.v1.auth.logout','api.v1.auth.oidc.logout','api.v1.auth.sessions.index','api.v1.auth.sessions.revoke','api.v1.auth.sessions.revoke_others','api.v1.auth.sessions.revoke_all','api.v1.auth.sessions.rotate','api.v1.auth.privacy.export','api.v1.auth.privacy.clear_profile','api.v1.auth.privacy.erase','api.v1.forum.mySanctions','api.v1.forum.appealSanction'], true)) return $this->error($request, 'suspended', 403);
         if (!$this->auth->hasScopes($identity, $required)) { return $this->error($request, 'forbidden', 403); }
         if (($identity['cookie'] ?? false) && !in_array($request->getMethod(), ['GET','HEAD','OPTIONS'], true)
             && !hash_equals((string) $identity['csrf_token'], (string) $request->headers->get('X-CSRF-Token', ''))) {

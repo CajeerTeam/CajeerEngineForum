@@ -6,7 +6,7 @@ on:
 permissions:
   contents: read
 env:
-  FORUM_CURRENT_VERSION: ${{ '1.0.6' }}
+  FORUM_CURRENT_VERSION: ${{ '1.0.7' }}
 concurrency:
   group: forum-ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -55,7 +55,7 @@ jobs:
           key="$RUNNER_TEMP/forum-ci-release.secret"
           pub="$dir/ci-release.pub"
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
-            [[ "$GITHUB_REF" == 'refs/tags/v1.0.6' && "$GITHUB_REF" == "refs/tags/v$(php -r 'echo json_decode(file_get_contents("release.json"),true)["edition_version"];')" && -n "$RELEASE_SECRET_B64" && -n "$RELEASE_PUBLIC_B64" ]] || { echo 'Tagged release needs configured publisher signing key and trusted public key' >&2; exit 1; }
+            [[ "$GITHUB_REF" == 'refs/tags/v1.0.7' && "$GITHUB_REF" == "refs/tags/v$(php -r 'echo json_decode(file_get_contents("release.json"),true)["edition_version"];')" && -n "$RELEASE_SECRET_B64" && -n "$RELEASE_PUBLIC_B64" ]] || { echo 'Tagged release needs configured publisher signing key and trusted public key' >&2; exit 1; }
             printf '%s\n' "$RELEASE_SECRET_B64" > "$key"
             printf '%s\n' "$RELEASE_PUBLIC_B64" > "$pub"
           else
@@ -147,6 +147,11 @@ jobs:
       - run: php tools/unified-sessions-regression.php --require-db
       - run: php tools/identity-session-acceptance-integration.php --require-db
       - run: node tools/forum-unified-sessions-browser-regression.mjs
+      - run: php tools/forum-sso-logout-regression.php
+      - run: node tools/forum-sso-logout-browser-regression.mjs
+      - run: php tools/oidc-global-logout-regression.php
+      - run: python tools/oidc-global-logout-sqlite-regression.py
+      - run: php tools/oidc-global-logout-integration.php --require-db
       - run: php tools/oidc-regression.php
       - run: php tools/forum-regression.php
       - run: php tools/forum-identity-regression.php

@@ -96,11 +96,12 @@ jobs:
           done
 
           cat > "$RUNNER_TEMP/forum-release-notes.md" <<'NOTES'
-          ## CajeerEngineForum 1.0.6
+          ## CajeerEngineForum 1.0.7
 
-          Forum Edition SkiF4er ID Account Provisioning, built on CajeerEngine 2.1.0.
+          Forum Edition SSO Logout & Revocation, built on CajeerEngine 2.1.0.
 
-          - Verified SkiF4er ID registration with live forum policy, anti-spam and minimal forum-member rights.
+          - Forum local sign-out and CSRF-checked RP-initiated SkiF4er ID sign-out with browser-bound completion state.
+          - Verified server-side OIDC back-channel logout revoking the matching local browser sessions.
           - Existing linked SSO login, local login and safe return to forum pages.
           - Explicit account linking and protected, local browser sessions.
           - 1.0.2 security and migration stabilizations retained.
