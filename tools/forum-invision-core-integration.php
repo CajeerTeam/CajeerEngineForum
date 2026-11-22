@@ -42,7 +42,7 @@ try{
     (new MigrationRunner($target,$root.'/migrations'))->run('sqlite');
     $open=static fn():PDO=>new PDO('sqlite:'.$tmp.'/invision.sqlite');
     $source=$open();$adapter=new InvisionSource($source,null,null,'frozen-test-4');
-    $engine=new ForumMigrationEngine($db,$adapter);
+    $engine=new ForumMigrationEngine($db,$adapter,null,null,6);
     $plan=$engine->snapshotPlan();
     $check($plan['pipeline_version']===6&&$plan['groups']['count']===2&&$plan['posts']['count']===3,'v6 plan uses exact source totals');
     $phases=(new ReflectionClass($engine))->getMethod('phaseNames')->invoke($engine,$plan);
@@ -55,7 +55,7 @@ try{
     $check((int)$target->query('SELECT COUNT(*) FROM ce_forum_import_map')->fetchColumn()===0 && (int)$engine->progress()['job']['cursor_id']===0,'batch and checkpoint rolled back atomically');
     $target->exec('DROP TRIGGER invision_fail');$engine->step(2);
     $source->rollBack();unset($source,$adapter,$engine);
-    $source=$open();$adapter=new InvisionSource($source,null,'4.7.24','frozen-test-4');$engine=new ForumMigrationEngine($db,$adapter);
+    $source=$open();$adapter=new InvisionSource($source,null,'4.7.24','frozen-test-4');$engine=new ForumMigrationEngine($db,$adapter,null,null,6);
     $check($engine->matchesRecordedPlan($plan),'frozen source resumes with matching schema ledger');
     for($i=0;$i<80;$i++)if($engine->step(2)['job']['state']==='complete')break;
     $check($engine->status()['job']['state']==='complete','complete six-phase transactional core import');

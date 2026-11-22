@@ -16,8 +16,8 @@ final class ForumMigrationEngine
     {
         if($avatarFiles!==null && (!is_dir($avatarFiles)||($root=realpath($avatarFiles))===false))throw new \InvalidArgumentException('XenForo avatar snapshot directory not found');
         $this->avatarFiles=$avatarFiles===null?null:$root;
-        if(!in_array($newPipelineVersion,[2,3,4,5],true))throw new \InvalidArgumentException('Invalid new job pipeline version');
-        $this->newPipelineVersion=$source instanceof InvisionSource?6:($source instanceof MultiForumSource && $source->platform()==='xenforo'?$newPipelineVersion:min(3,$newPipelineVersion));
+        if(!in_array($newPipelineVersion,$source instanceof InvisionSource?[2,3,4,5,6,7]:[2,3,4,5],true))throw new \InvalidArgumentException('Invalid new job pipeline version');
+        $this->newPipelineVersion=$source instanceof InvisionSource?($newPipelineVersion===6?6:7):($source instanceof MultiForumSource && $source->platform()==='xenforo'?$newPipelineVersion:min(3,$newPipelineVersion));
     }
     private array $mappingCache=[];
     private array $statements=[];
@@ -43,13 +43,20 @@ final class ForumMigrationEngine
     private const COMMUNITY_PHASES=['avatars','follows'];
     private const CONTENT_PHASE='content_links';
     private const MEDIA_PHASES=['conversations','conversation_messages','conversation_attachments','conversation_content'];
+    private const INVISION_PHASES=['attachments','polls','invision_content'];
     /** Existing jobs have no pipeline_version and always finish with the original eleven phases. */
     private function phaseNames(array $plan): array
     {
         if(!isset($plan['pipeline_version']))return ForumSource::PHASES;
-        if($plan['pipeline_version']===6){
+        if(in_array($plan['pipeline_version'],[6,7],true)){
             if(!($this->source instanceof InvisionSource))throw new \RuntimeException('Invision pipeline requires Invision source');
             foreach(InvisionSource::CORE_PHASES as $kind)if(!isset($plan[$kind]['count'],$plan[$kind]['high']))throw new \RuntimeException('Incomplete Invision phase ledger');
+            if($plan['pipeline_version']===7){
+                foreach(self::INVISION_PHASES as $kind)if(!isset($plan[$kind]['count'],$plan[$kind]['high']))
+                    throw new \RuntimeException('Incomplete Invision v7 content ledger');
+                if($plan['invision_content']!==$plan['posts'])throw new \RuntimeException('Invision content bounds mismatch');
+                return array_merge(InvisionSource::CORE_PHASES,self::INVISION_PHASES);
+            }
             return InvisionSource::CORE_PHASES;
         }
         if(!in_array($plan['pipeline_version'],[2,3,4,5],true) || !($this->source instanceof EnrichedForumSource))
@@ -83,8 +90,8 @@ final class ForumMigrationEngine
     {
         $pipelineVersion??=$this->newPipelineVersion;
         if($this->source instanceof InvisionSource){
-            if($pipelineVersion!==6)throw new \RuntimeException('Invalid Invision pipeline version');
-            return $this->source->plan();
+            if(!in_array($pipelineVersion,[6,7],true))throw new \RuntimeException('Invalid Invision pipeline version');
+            return $this->source->plan($pipelineVersion);
         }
         $plan=$this->source->plan();
         if($extended && $this->source instanceof EnrichedForumSource){
@@ -137,6 +144,8 @@ final class ForumMigrationEngine
             throw new \RuntimeException('XenForo source has avatars: supply --avatar-files as an immutable data/avatars snapshot');
         if(($plan['pipeline_version']??1)===5 && (($plan['attachments']['count']??0)>0 || ($plan['conversation_attachments']['count']??0)>0) && $this->files===null)
             throw new \RuntimeException('XenForo attachments require --files immutable internal_data/attachments snapshot');
+        if(($plan['pipeline_version']??0)===7 && ($plan['attachments']['count']??0)>0 && $this->files===null)
+            throw new \RuntimeException('Invision attachments require --files immutable uploads snapshot');
         try{$this->db->transaction(function()use($plan,$id,$backup){
             // The filesystem lease only covers one node. Serialize start decisions in SQL too.
             if($this->db->driver()==='sqlite')$this->query('UPDATE ce_forum_tree_lock SET id=id WHERE id=1');
@@ -160,7 +169,7 @@ final class ForumMigrationEngine
     /** Validate the ledger while the imported tree is still quarantined. */
     private function verifyMappings(string $job): void
     {
-        foreach(['groups'=>['ce_forum_groups','role_id'],'users'=>['ce_users','id'],'forums'=>['ce_forum_boards','id'],'topics'=>['ce_forum_threads','id'],'posts'=>['ce_forum_posts','id'],'attachments'=>['ce_forum_attachments','id'],'polls'=>['ce_forum_polls','thread_id'],'profiles'=>['ce_forum_member_profiles','user_id'],'reactions'=>['ce_forum_posts','id'],'avatars'=>['ce_forum_profile_images','user_id'],'follows'=>['ce_users','id'],'content_links'=>['ce_forum_posts','id'],'conversations'=>['ce_forum_conversations','id'],'conversation_messages'=>['ce_forum_conversation_messages','id'],'conversation_attachments'=>['ce_forum_attachments','id'],'conversation_content'=>['ce_forum_conversation_messages','id']] as $kind=>[$table,$column]){
+        foreach(['groups'=>['ce_forum_groups','role_id'],'users'=>['ce_users','id'],'forums'=>['ce_forum_boards','id'],'topics'=>['ce_forum_threads','id'],'posts'=>['ce_forum_posts','id'],'attachments'=>['ce_forum_attachments','id'],'polls'=>['ce_forum_polls','thread_id'],'profiles'=>['ce_forum_member_profiles','user_id'],'reactions'=>['ce_forum_posts','id'],'avatars'=>['ce_forum_profile_images','user_id'],'follows'=>['ce_users','id'],'content_links'=>['ce_forum_posts','id'],'invision_content'=>['ce_forum_posts','id'],'conversations'=>['ce_forum_conversations','id'],'conversation_messages'=>['ce_forum_conversation_messages','id'],'conversation_attachments'=>['ce_forum_attachments','id'],'conversation_content'=>['ce_forum_conversation_messages','id']] as $kind=>[$table,$column]){
             // PostgreSQL uses UUID PKs; cast the small ledger key, not the indexed target column.
             $key=$this->db->driver()==='pgsql'?'CAST(m.target_id AS UUID)':'m.target_id';
             $n=(int)$this->query("SELECT COUNT(*) FROM ce_forum_import_map m LEFT JOIN $table t ON t.$column=$key WHERE m.job_id=? AND m.kind=? AND m.outcome='imported' AND t.$column IS NULL",[$job,$kind])->fetchColumn();
@@ -216,9 +225,13 @@ final class ForumMigrationEngine
             $category=$this->row('SELECT visibility FROM ce_forum_categories WHERE id=?',[$job['category_id']]);
             if(!$category||$category['visibility']!=='hidden'||$this->row('SELECT id FROM ce_forum_boards WHERE category_id=? AND (visibility<>? OR state<>?) LIMIT 1',[$job['category_id'],'hidden','readonly']))throw new \RuntimeException('Imported tree must remain hidden and readonly until completion');
             $isMedia=in_array($kind,self::MEDIA_PHASES,true);
+            $isInvisionContent=($plan['pipeline_version']??0)===7 && in_array($kind,self::INVISION_PHASES,true);
             $isAdditional=in_array($kind,self::EXTRA_PHASES,true);
             $isCommunity=in_array($kind,self::COMMUNITY_PHASES,true);
-            if($isMedia){
+            if($isInvisionContent){
+                if(!($this->source instanceof InvisionSource))throw new \RuntimeException('Invision media requires Invision source');
+                $batch=$this->source->contentBatch($kind,$cursor,$plan[$kind]['high'],$kind==='attachments'?1:min(20,$limit));
+            }elseif($isMedia){
                 if(!($this->source instanceof MultiForumSource)||$this->source->platform()!=='xenforo')throw new \RuntimeException('XenForo media phase requires source');
                 $batch=$this->source->mediaBatch($kind,$cursor,$plan[$kind]['high'],in_array($kind,['conversation_attachments','conversation_content'],true)?min($limit,$kind==='conversation_attachments'?1:20):$limit);
             }elseif($kind===self::CONTENT_PHASE){
@@ -249,8 +262,8 @@ final class ForumMigrationEngine
               // Bound total relation work, not just the number of topics in a batch.
               $remaining=$limit;
               foreach($batch as $r){
-                $key=match($kind){'groups'=>'group_id','users'=>'user_id','forums'=>'left_id','topics','polls','votes','watches','finalize'=>'topic_id','board_watches'=>'forum_id','posts'=>'post_id','attachments'=>'attach_id','profiles'=>'profile_id','reactions'=>'reaction_source_id','avatars'=>'avatar_id','follows'=>'follow_id','content_links'=>'post_id','conversations'=>'conversation_source_id','conversation_messages','conversation_content'=>'message_source_id','conversation_attachments'=>'attach_id'};
-                $next=(int)$r[$key];
+                $key=match($kind){'groups'=>'group_id','users'=>'user_id','forums'=>'left_id','topics','polls','votes','watches','finalize'=>'topic_id','board_watches'=>'forum_id','posts'=>'post_id','attachments'=>'attach_id','profiles'=>'profile_id','reactions'=>'reaction_source_id','avatars'=>'avatar_id','follows'=>'follow_id','content_links','invision_content'=>'post_id','conversations'=>'conversation_source_id','conversation_messages','conversation_content'=>'message_source_id','conversation_attachments'=>'attach_id'};
+                $next=(int)$r[$isInvisionContent && $kind==='polls'?'poll_id':$key];
                 if(in_array($kind,['watches','board_watches','votes','follows'],true)){
                     $target=$this->mapped(match($kind){'watches'=>'topics','board_watches'=>'forums','votes'=>'polls','follows'=>'users'},$next);
                     if($target!==null){
@@ -286,6 +299,12 @@ final class ForumMigrationEngine
                         $this->query('DELETE FROM ce_forum_threads WHERE id=?',[$thread]);
                         $this->query("UPDATE ce_forum_import_map SET target_id=NULL,outcome='skipped',reason='no_importable_posts' WHERE job_id=? AND kind='topics' AND source_id=?",[$id,$next]);
                     }
+                }elseif($isInvisionContent){
+                    match($kind){
+                        'attachments'=>$this->importInvisionAttachment($r),
+                        'polls'=>$this->importInvisionPoll($r),
+                        'invision_content'=>$this->rewriteInvisionPost($r),
+                    };
                 }elseif($isMedia){
                     match($kind){
                         'conversations'=>$this->importConversation($r),
@@ -311,6 +330,91 @@ final class ForumMigrationEngine
     /** Final pass resolves forward references after every imported post and attachment has an ID.
      * Each rewritten post, its baseline revision, ledger row and checkpoint commit together.
      */
+    /** Append-only v7 pass after all topic, post and attachment mappings exist. */
+    private function rewriteInvisionPost(array $row):void
+    {
+        $source=(int)$row['post_id'];$post=$this->mapped('posts',$source);
+        if($post===null){$this->mark('invision_content',$source,null,'post_not_imported');return;}
+        $resolve=function(string $kind,int $old):?string{
+            $id=$this->mapped($kind,$old);if($id===null)return null;
+            return match($kind){
+                'users'=>'/forum/members/'.$id,
+                'topics'=>'/forum/threads/'.$id,
+                'attachments'=>'/api/v1/forum/attachments/'.$id.'/download',
+                'posts'=>($p=$this->row('SELECT thread_id,ordinal FROM ce_forum_posts WHERE id=?',[$id]))!==null
+                    ?'/forum/threads/'.$p['thread_id'].'?page='.(1+intdiv(max(1,(int)$p['ordinal'])-1,25)).'#post-'.$id:null,
+                default=>null,
+            };
+        };
+        $body=is_string($row['post_text'])?InvisionContent::rich($row['post_text'],$resolve,$this->source instanceof InvisionSource?$this->source->contentOrigin():null):null;
+        if($body===null){$this->mark('invision_content',$source,null,'invalid_or_over_limit_html');return;}
+        if($body==='')$body='[Empty imported message]';
+        $this->query("UPDATE ce_forum_posts SET body=?,body_format='bbcode' WHERE id=?",[$body,$post]);
+        $this->query("UPDATE ce_forum_post_revisions SET body=?,body_format='bbcode' WHERE post_id=? AND revision_number=1",[$body,$post]);
+        $this->mark('invision_content',$source,$post);
+    }
+
+    /** Existing attachment ACL enforces post membership; source storage never becomes a public URL. */
+    private function importInvisionAttachment(array $r):void
+    {
+        $source=(int)$r['attach_id'];$oldPost=(int)($r['post_msg_id']??0);
+        if((int)($r['map_count']??0)!==1||$oldPost<=0){$this->mark('attachments',$source,null,'not_a_unique_forum_post_attachment');return;}
+        $post=$this->mapped('posts',$oldPost);$owner=$this->mapped('users',(int)$r['poster_id']);
+        if($post===null||$owner===null){$this->mark('attachments',$source,null,'post_or_owner_not_imported');return;}
+        $actual=$this->row('SELECT author_id FROM ce_forum_posts WHERE id=?',[$post]);
+        if($actual===null||$actual['author_id']!==$owner){$this->mark('attachments',$source,null,'post_author_mismatch');return;}
+        if($this->files===null)throw new \RuntimeException('Invision attachment snapshot is required');
+        $root=realpath($this->files);
+        $relative=(string)$r['physical_filename'];
+        $relative=preg_replace('~^<fileStore\\.core_Attachment>/~','',$relative)??'';
+        if(!$root || strlen($relative)>512 || !preg_match('~\\A[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*\\z~D',$relative)
+            || array_intersect(explode('/',$relative),['.','..'])){
+            $this->mark('attachments',$source,null,'unsupported_storage_path');return;
+        }
+        $path=$root.DIRECTORY_SEPARATOR.str_replace('/',DIRECTORY_SEPARATOR,$relative);
+        $real=realpath($path);
+        if($real===false||!str_starts_with($real,$root.DIRECTORY_SEPARATOR)||!is_file($real)||is_link($path)){
+            $this->mark('attachments',$source,null,'missing_or_unsafe_local_file');return;
+        }
+        $size=filesize($real);
+        if($size===false||$size<1||$size>26214400||$size!==(int)$r['filesize']){
+            $this->mark('attachments',$source,null,'file_size_mismatch_or_limit');return;
+        }
+        $usage=$this->row('SELECT COUNT(*) AS n,COALESCE(SUM(size_bytes),0) AS bytes FROM ce_forum_attachments WHERE post_id=?',[$post]);
+        if((int)$usage['n']>=10||(int)$usage['bytes']+$size>52428800){
+            $this->mark('attachments',$source,null,'post_attachment_limit');return;
+        }
+        $data=file_get_contents($real,false,null,0,26214401);
+        if($data===false||strlen($data)!==$size)throw new \RuntimeException('Frozen Invision file changed during read');
+        try{$m=AttachmentService::validate((string)$r['real_filename'],$data);}
+        catch(ForumException){$this->mark('attachments',$source,null,'unsupported_or_invalid_attachment');return;}
+        $id=self::uuid();
+        $this->query('INSERT INTO ce_forum_attachments(id,owner_id,post_id,filename,mime,size_bytes,sha256,file_data,created_at,expires_at) VALUES(?,?,?,?,?,?,?,?,?,0)',
+            [$id,$owner,$post,$m['filename'],$m['mime'],$m['size_bytes'],$m['sha256'],base64_encode($data),max(0,(int)$r['filetime'])]);
+        if(in_array($m['mime'],['image/jpeg','image/png','image/webp'],true))
+            $this->query("INSERT INTO ce_forum_media_state(attachment_id,state,due_at) VALUES(?,'pending',0)",[$id]);
+        $this->mark('attachments',$source,$id);
+    }
+
+    /** Import verifiable choices, never execute serialized IPS classes or guess voter data. */
+    private function importInvisionPoll(array $r):void
+    {
+        $source=(int)$r['poll_id'];$topic=(int)($r['topic_id']??0);$thread=$this->mapped('topics',$topic);
+        if($thread===null){$this->mark('polls',$source,null,'topic_not_imported');return;}
+        $choices=InvisionPoll::options((string)$r['choices']);
+        if($choices===null){$this->mark('polls',$source,null,'unsupported_poll_choices');return;}
+        $question=trim(html_entity_decode(strip_tags((string)$r['poll_question']),ENT_QUOTES|ENT_HTML5,'UTF-8'));
+        if($question===''||strlen($question)>180||!preg_match('//u',$question)){
+            $this->mark('polls',$source,null,'invalid_poll_question');return;
+        }
+        if($this->row('SELECT thread_id FROM ce_forum_polls WHERE thread_id=?',[$thread])){
+            $this->mark('polls',$source,null,'poll_already_exists');return;
+        }
+        $this->query("INSERT INTO ce_forum_polls(thread_id,question,max_choices,allow_change,visibility,closes_at,closed) VALUES(?,?,1,0,'always',NULL,1)",[$thread,$question]);
+        foreach($choices as $i=>$option)$this->query('INSERT INTO ce_forum_poll_options(thread_id,option_no,label) VALUES(?,?,?)',[$thread,$i+1,$option]);
+        $this->mark('polls',$source,$thread,'imported_closed_no_voter_history');
+    }
+
     private function rewriteXenForoPost(array $sourcePost): void
     {
         $sourceId=(int)$sourcePost['post_id'];

@@ -43,10 +43,10 @@ final class ForumMigrationCli
         $identity=$snapshot."\0".$dsn."\0".($files??'').($avatarFiles===null?'':"\0avatars:".$avatarFiles);
         // Canonical source origin is optional; required to remap absolute XenForo links.
         // It is included in the immutable job identity by MultiForumSource.
-        $origin=$platform==='xenforo'?(getenv('FORUM_IMPORT_SOURCE_ORIGIN')?:null):null;
+        $origin=in_array($platform,['xenforo','invision'],true)?(getenv('FORUM_IMPORT_SOURCE_ORIGIN')?:null):null;
         $source=match($platform){
             'phpbb'=>new PhpbbSource($pdo,$prefix,$identity),
-            'invision'=>new InvisionSource($pdo,$prefix,$opts['source-version']??null,$identity,$files),
+            'invision'=>new InvisionSource($pdo,$prefix,$opts['source-version']??null,$identity,$files,$origin),
             default=>new MultiForumSource($pdo,$prefix,$platform,$opts['source-version']??'', $identity,$origin),
         };
         $engine=new ForumMigrationEngine($db,$source,$files,$avatarFiles);
@@ -81,6 +81,8 @@ final class ForumMigrationCli
             $planning=$engine->plan(); // Validate source schema before taking the backup.
             if($platform==='xenforo' && ($planning['counts']['avatars']['count']??0)>0 && $avatarFiles===null)
                 throw new \RuntimeException('XenForo avatar snapshot required: supply --avatar-files before capturing a recovery backup');
+            if($platform==='invision' && ($planning['pipeline_version']??0)===7 && ($planning['counts']['attachments']['count']??0)>0 && $files===null)
+                throw new \RuntimeException('Invision local uploads snapshot required: supply --files before capturing a recovery backup');
             if($platform==='xenforo' && ($planning['pipeline_version']??1)===5 && (($planning['counts']['attachments']['count']??0)>0 || ($planning['counts']['conversation_attachments']['count']??0)>0) && $files===null)
                 throw new \RuntimeException('XenForo file snapshot required: supply --files=internal_data/attachments before capturing a recovery backup');
             $backup=(new BackupManager($root,$config))->capture();

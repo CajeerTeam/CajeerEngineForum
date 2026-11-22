@@ -17,10 +17,10 @@
     "docs": "GitHub repository docs/",
     "updates": "GitHub Releases",
     "release_builder": "tools/build-release.php",
-    "source_artifact": "storage/releases/cajeerengine-1.1.8-source.zip",
-    "dist_artifact": "storage/releases/cajeerengine-1.1.8-dist.zip",
+    "source_artifact": "storage/releases/cajeerengine-1.1.9-source.zip",
+    "dist_artifact": "storage/releases/cajeerengine-1.1.9-dist.zip",
     "checksums": "storage/releases/*.sha256",
-    "artifact_index": "storage/releases/cajeerengine-1.1.8-artifacts.json",
+    "artifact_index": "storage/releases/cajeerengine-1.1.9-artifacts.json",
     "support_bundle": "storage/app/support",
     "backup": "storage/app/backups/production",
     "server_reports": "storage/app/reports",
@@ -36,6 +36,7 @@
     "engine_api_version": "1.1"
   },
   "product_changes": [
+    "Forum Edition 1.1.9: real Invision content/media v7 pipeline, source attachment-to-post mapping, immutable local file SHA-256 validation and guarded download links, closed imported poll choices, safe HTML-to-BBCode content/quote/mention/internal-link remapping, transactional revisions and checkpoints; existing v6 jobs remain resumable.",
     "Forum Edition 1.1.8: executable Invision Community 4.x/5.x core import with read-only source detection, bounded keyset batches, parent-first categories and forums, disabled users, permissionless groups, topics, posts, transactional ID mapping/checkpoints, source schema pinning and fail-closed privacy checks; media and rich content remain deferred.",
     "Forum Edition 1.1.7: live read-only Invision Community 4.x/5.x snapshot discovery, version/prefix detection, required-column validation, bounded relational integrity scans, file storage readiness, snapshot schema fingerprint and fail-closed CLI preflight; core import remains disabled until 1.1.8.",
     "Forum Edition 1.1.6: real XenForo production acceptance CLI that verifies the completed v5 job against the frozen source IDs, target mappings, disabled users, quarantine rules, private audiences, revisions and file SHA-256; explicit approval of exact skipped-record digest, plus MySQL/PostgreSQL ledger-width migration required for private media kinds.",
@@ -140,6 +141,6 @@
   },
   "stability": "production-stable-gated",
   "edition": "forum",
-  "edition_version": "1.1.8",
+  "edition_version": "1.1.9",
   "upstream_version": "2.1.0"
 }

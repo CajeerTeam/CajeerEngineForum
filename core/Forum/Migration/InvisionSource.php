@@ -7,13 +7,18 @@ use PDO;
 
 /**
  * Consistent, read-only Invision Community 4/5 snapshot adapter.
- * Only the six core phases are imported in v6; media, polls, reactions and
- * personal conversations remain explicitly deferred until their own importers.
+ * Version 6 retains its original six core phases for in-progress imports.
+ * Version 7 adds actual post media, polls and rich content as append-only phases.
  */
 final class InvisionSource implements ForumSource
 {
     public const CORE_PHASES=['groups','users','forums','topics','posts','finalize'];
+    public const CONTENT_PHASES=['attachments','polls','invision_content'];
+    private ?string $sourceOrigin=null;
     private array $columns=[];
+    private ?string $pollTable=null;
+    private array $contentBounds=[];
+    private ?string $contentError=null;
     private array $tree=[];
     private array $ledger=[];
     private string $prefix;
@@ -21,8 +26,11 @@ final class InvisionSource implements ForumSource
     private string $fingerprint;
     private string $driver;
 
-    public function __construct(private readonly PDO $pdo,?string $prefix,?string $assertVersion,private readonly string $snapshot,?string $files=null)
+    public function __construct(private readonly PDO $pdo,?string $prefix,?string $assertVersion,private readonly string $snapshot,?string $files=null,?string $origin=null)
     {
+        if($origin!==null && !XenForoContent::validOrigin($origin))
+            throw new \InvalidArgumentException('Invalid Invision canonical source origin');
+        $this->sourceOrigin=$origin;
         $discovery=new InvisionSourceDiscovery($pdo,$prefix,$assertVersion);
         $report=$discovery->plan($files);
         foreach($report['blockers'] as $blocker){
@@ -34,7 +42,7 @@ final class InvisionSource implements ForumSource
         $this->version=$report['version'];
         $this->fingerprint=$report['schema_sha256'];
         $this->driver=$report['database_driver'];
-        foreach(['core_groups','core_members','forums_forums','forums_topics','forums_posts'] as $table)
+        foreach(['core_groups','core_members','forums_forums','forums_topics','forums_posts','core_attachments','core_attachments_map','core_polls','forums_polls'] as $table)
             $this->columns[$table]=$this->columnsOf($table);
         // These are mandatory for a reliable privacy-preserving import. A missing
         // publication flag must not be silently interpreted as public content.
@@ -51,6 +59,22 @@ final class InvisionSource implements ForumSource
         foreach(['groups'=>'core_groups','users'=>'core_members','topics'=>'forums_topics','posts'=>'forums_posts','finalize'=>'forums_topics'] as $phase=>$table)
             $this->ledger[$phase]=$counts[$table];
         $this->ledger['forums']=['count'=>count($this->tree),'high'=>count($this->tree)];
+        try{
+            $this->contentBounds['attachments']=$this->optionalBounds('core_attachments','attach_id');
+            // Both names occur in known IPS exports; accept only a verifiable layout.
+            foreach(['core_polls','forums_polls'] as $table){
+                $id=$table==='core_polls'?'pid':'poll_id';
+                if($this->optionalBounds($table,$id)['count']>0){
+                    if($this->pollTable!==null)throw new \RuntimeException('Ambiguous Invision poll tables');
+                    $this->pollTable=$table;
+                }
+            }
+            $this->contentBounds['polls']=$this->pollTable===null?['count'=>0,'high'=>0]:
+                $this->optionalBounds($this->pollTable,$this->pollTable==='core_polls'?'pid':'poll_id');
+            $this->contentBounds['invision_content']=$this->ledger['posts'];
+            if($this->contentBounds['attachments']['count']>0)$this->validateAttachmentSchema();
+            if($this->contentBounds['polls']['count']>0)$this->validatePollSchema();
+        }catch(\RuntimeException $e){$this->contentError=$e->getMessage();}
         // Keyset scans must have exact, stable keys. All names here are code-owned.
         foreach(['groups','users','topics','posts'] as $phase)
             $this->batch($phase,0,$this->ledger[$phase]['high'],1);
@@ -58,20 +82,30 @@ final class InvisionSource implements ForumSource
 
     public function platform(): string{return 'invision';}
     public function version(): string{return $this->version;}
-    public function identity(): string{return hash('sha256',"invision\0".$this->version."\0".$this->prefix."\0".$this->snapshot);}
+    public function contentOrigin(): ?string{return $this->sourceOrigin;}
+    public function identity(): string{return hash('sha256',"invision\0".$this->version."\0".$this->prefix."\0".$this->snapshot.($this->sourceOrigin===null?'':"\0origin:".$this->sourceOrigin));}
     public function unsupported(): array
     {
         return ['source credentials and ACL','existing account auto-merge','archived posts',
-            'attachments, images and storage methods (1.1.9)','HTML formatting and embedded media (1.1.9)',
-            'polls, votes, follows, reactions, profiles and private conversations (1.1.9/1.1.10)',
+            'remote or unavailable file storage, unsupported attachment layouts',
+            'legacy poll voters, follows, reactions, profiles and private conversations (1.1.10)',
             'member suspensions and moderation privileges'];
     }
-    public function plan(): array
+    public function plan(int $pipelineVersion=7): array
     {
         if(!$this->pdo->inTransaction())throw new \RuntimeException('Invision snapshot transaction ended');
-        return $this->ledger;
+        if($pipelineVersion===6)return $this->ledger;
+        if($pipelineVersion!==7)throw new \InvalidArgumentException('Unsupported Invision pipeline');
+        if($this->contentError!==null)throw new \RuntimeException($this->contentError);
+        return array_merge($this->ledger,['pipeline_version'=>7,
+            'source_content_schema_sha256'=>hash('sha256',json_encode([
+                'attachments'=>$this->columns['core_attachments'],
+                'attachment_map'=>$this->columns['core_attachments_map'],
+                'core_polls'=>$this->columns['core_polls'],
+                'forums_polls'=>$this->columns['forums_polls'],
+                'phase_bounds'=>$this->contentBounds],JSON_THROW_ON_ERROR))],$this->contentBounds);
     }
-    public function batch(string $phase,int $cursor,int $high,int $limit): array
+    public function batch(string $phase,int $cursor,int $high,int $limit,bool $raw=false): array
     {
         if(!$this->pdo->inTransaction())throw new \RuntimeException('Invision snapshot transaction ended');
         if(!in_array($phase,self::CORE_PHASES,true)||$cursor<0||$high<0||$limit<1||$limit>500)
@@ -94,7 +128,7 @@ final class InvisionSource implements ForumSource
         $key=match($phase){'groups'=>'group_id','users'=>'user_id','topics','finalize'=>'topic_id','posts'=>'post_id'};
         $stmt=$this->pdo->prepare('SELECT * FROM ('.$sql.") src WHERE $key>? AND $key<=? ORDER BY $key LIMIT ".$limit);
         $stmt->execute([$cursor,$high]);$rows=$stmt->fetchAll(PDO::FETCH_ASSOC);
-        if($phase==='posts'){
+        if($phase==='posts'&&!$raw){
             foreach($rows as &$row){
                 $raw=$row['post_text'];
                 $row['post_text']=$raw===null?null:InvisionContent::plain((string)$raw);
@@ -103,6 +137,65 @@ final class InvisionSource implements ForumSource
         }
         return $rows;
     }
+
+    /** Row bounded source phases for v7. Never acquire a target DB handle here. */
+    public function contentBatch(string $phase,int $cursor,int $high,int $limit):array
+    {
+        if(!$this->pdo->inTransaction())throw new \RuntimeException('Invision snapshot transaction ended');
+        if($cursor<0||$high<0||$limit<1||$limit>500)throw new \InvalidArgumentException('Invalid Invision media batch');
+        if($phase==='invision_content')return $this->batch('posts',$cursor,$high,min(20,$limit),true);
+        if(!in_array($phase,['attachments','polls'],true))throw new \InvalidArgumentException('Unknown Invision content phase');
+        if($phase==='attachments'){
+            if($this->contentBounds['attachments']['count']===0)return [];
+            $t=$this->prefix.'core_attachments';$m=$this->prefix.'core_attachments_map';
+            $cols=$this->columns['core_attachments'];
+            $mapped=in_array('attachment_id',$this->columns['core_attachments_map'],true)?'attachment_id':'attach_id';
+            $where="x.$mapped=a.attach_id AND x.location IN ('forums_Post','forums_Forums_Post','forums_Posts')";
+            $sql="SELECT a.attach_id, a.attach_member_id AS poster_id,a.attach_file AS real_filename,a.attach_location AS physical_filename,a.attach_filesize AS filesize,".
+                (in_array('attach_date',$cols,true)?'a.attach_date':'0')." AS filetime, ".
+                "(SELECT MIN(x.id1) FROM $m x WHERE $where) AS post_msg_id, ".
+                "(SELECT COUNT(*) FROM $m x WHERE $where) AS map_count FROM $t a WHERE a.attach_id>? AND a.attach_id<=? ORDER BY a.attach_id LIMIT $limit";
+            $q=$this->pdo->prepare($sql);
+        }else{
+            if($this->pollTable===null)return [];
+            if($this->pollTable==='core_polls'){
+                $sql='SELECT p.pid AS poll_id,t.tid AS topic_id,p.poll_question AS poll_question,p.choices AS choices FROM '.$this->prefix.'core_polls p LEFT JOIN '.$this->prefix.'forums_topics t ON t.poll_state=p.pid WHERE p.pid>? AND p.pid<=? ORDER BY p.pid LIMIT '.$limit;
+            }else{
+                $sql='SELECT poll_id,topic_id,question AS poll_question,choices FROM '.$this->prefix.'forums_polls WHERE poll_id>? AND poll_id<=? ORDER BY poll_id LIMIT '.$limit;
+            }
+            $q=$this->pdo->prepare($sql);
+        }
+        $q->execute([$cursor,$high]);return $q->fetchAll(PDO::FETCH_ASSOC);
+    }
+    private function optionalBounds(string $table,string $key):array
+    {
+        if(($this->columns[$table]??[])===[])return ['count'=>0,'high'=>0];
+        if(!in_array($key,$this->columns[$table],true)){
+            $existing=(int)$this->pdo->query('SELECT COUNT(*) FROM '.$this->prefix.$table)->fetchColumn();
+            if($existing>0)throw new \RuntimeException('Invision '.$table.' has unsupported primary key');
+            return ['count'=>0,'high'=>0];
+        }
+        $row=$this->pdo->query('SELECT COUNT(*) AS n,COALESCE(MAX('.$key.'),0) AS high FROM '.$this->prefix.$table)->fetch(PDO::FETCH_ASSOC);
+        return ['count'=>(int)$row['n'],'high'=>(int)$row['high']];
+    }
+    private function validateAttachmentSchema():void
+    {
+        $required=['attach_id','attach_member_id','attach_file','attach_location','attach_filesize'];
+        if(array_diff($required,$this->columns['core_attachments'])!==[])
+            throw new \RuntimeException('Invision attachment columns unsupported; require '.implode(',',$required));
+        $map=$this->columns['core_attachments_map'];
+        if(!in_array('id1',$map,true)||!in_array('location',$map,true)
+            ||!in_array('attachment_id',$map,true)&&!in_array('attach_id',$map,true))
+            throw new \RuntimeException('Invision post attachment map unavailable or incomplete');
+    }
+    private function validatePollSchema():void
+    {
+        $table=$this->pollTable;
+        $required=$table==='core_polls'?['pid','poll_question','choices']:['poll_id','topic_id','question','choices'];
+        if(array_diff($required,$this->columns[$table])!==[] || ($table==='core_polls' && !in_array('poll_state',$this->columns['forums_topics'],true)))
+            throw new \RuntimeException('Unsupported Invision poll schema');
+    }
+
     public function memberships(int $user): array
     {
         if($user<=0)return [];

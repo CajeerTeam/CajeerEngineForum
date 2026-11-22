@@ -1,3 +1,13 @@
+## [1.1.9] - 2026-11-22 — Invision Content & Media (Forum Edition)
+
+- Implemented Invision v7 migration phases: guarded local attachments, imported closed polls with validated choices, and final HTML-to-BBCode rewrite using resolved target IDs.
+- Actual file bytes are copied to the production attachment table with MIME validation and SHA-256, linked only to an imported published post and author; images enter the existing media processing queue.
+- Import links, quotes, image-download references and user mentions are resolved after ID mapping; HTML executable content is rejected and only the closed forum BBCode grammar is emitted.
+- Added bounded, transactional per-batch checkpointing, tested rollback and restart paths, explicit audit reasons for unsupported poll shapes, files and unavailable owners.
+- Original six-phase Invision pipeline v6 remains available to resume jobs created on 1.1.8; new jobs use the append-only nine-phase v7 pipeline.
+- Added PHP content unit, PHP/PDO end-to-end and real target SQLite schema regressions to CI.
+- **Scope:** source poll voter histories, remote file backends, IPS-specific interactive widgets, personal messages and community data remain unsupported; import snapshots must be validated on staging before production cutover.
+
 ## [1.1.8] - 2026-11-22 — Invision Core Import (Forum Edition)
 
 - Implemented executable read-only Invision Community 4.x/5.x core source adapter for groups, users, categories/forums, topics and posts.
