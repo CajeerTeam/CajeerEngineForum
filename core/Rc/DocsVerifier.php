@@ -54,11 +54,15 @@ final readonly class DocsVerifier
             : CheckResult::fail('docs', 'license.apache_2_0', 'LICENSE не похож на полный Apache License 2.0.');
 
         $changelog = $this->read('CHANGELOG.md');
-        $checks[] = str_contains($changelog, '1.3.0')
-            ? CheckResult::pass('docs', 'changelog.1.3.0', 'CHANGELOG содержит запись 1.3.0.')
-            : CheckResult::fail('docs', 'changelog.1.3.0', 'CHANGELOG не содержит запись 1.3.0.');
+        $checks[] = str_contains($changelog, '1.4.5')
+            ? CheckResult::pass('docs', 'changelog.1.4.5', 'CHANGELOG содержит запись 1.4.5.')
+            : CheckResult::fail('docs', 'changelog.1.4.5', 'CHANGELOG не содержит запись 1.4.5.');
 
-        return $checks;
+        $checks[] = str_contains($changelog, '1.4.8')
+            ? CheckResult::pass('docs', 'changelog.1.4.8', 'CHANGELOG содержит запись 1.4.8.')
+            : CheckResult::fail('docs', 'changelog.1.4.8', 'CHANGELOG не содержит запись 1.4.8.');
+
+        return array_merge($checks, (new OperationsDocsVerifier($this->rootPath))->verify());
     }
 
     private function read(string $file): string

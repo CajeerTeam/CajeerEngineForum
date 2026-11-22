@@ -19,7 +19,7 @@ final readonly class PublicController
         private PublicPageRenderer $renderer,
         private RedirectRepository $redirects,
         private PreviewTokenService $previewTokens,
-        private ?\CajeerEngine\Forum\ForumSeoSettings $forumSeo=null,
+        private ?\CajeerEngine\Forum\ForumSeoSettings $forumSeo = null,
     ) {
     }
 
@@ -34,7 +34,7 @@ final readonly class PublicController
     public function sitemapXml(Request $request, array $parameters = []): Response
     {
         $page=$request->query->get('page');
-        if($page!==null&&(!is_string($page)||!ctype_digit($page)||strlen($page)>7))return $this->publicError(404);
+        if($page!==null&&(!ctype_digit($page)||strlen($page)>7))return $this->publicError(404);
         try{$xml=$this->renderer->sitemapXml($this->baseUrl($request),$page===null?null:(int)$page);}catch(\InvalidArgumentException){return $this->publicError(404);}
         return new Response($xml,200,['Content-Type'=>'application/xml; charset=UTF-8']);
     }
@@ -42,10 +42,10 @@ final readonly class PublicController
     /** @param array<string, mixed> $parameters */
     public function robotsTxt(Request $request, array $parameters = []): Response
     {
-        $text=$this->renderer->robotsTxt($this->baseUrl($request));
-        $seo=$this->forumSeo?->forRequest();
-        if($seo?->sitemapEnabled())$text.='Sitemap: '.$seo->baseUrl()."/forum/sitemap.xml\n";
-        return new Response($text, 200, ['Content-Type' => 'text/plain; charset=UTF-8','Cache-Control'=>'no-store']);
+        $text = $this->renderer->robotsTxt($this->baseUrl($request));
+        $seo = $this->forumSeo?->forRequest();
+        if ($seo?->sitemapEnabled()) $text .= 'Sitemap: '.$seo->baseUrl()."/forum/sitemap.xml\n";
+        return new Response($text, 200, ['Content-Type' => 'text/plain; charset=UTF-8', 'Cache-Control'=>'no-store']);
     }
 
     /** @param array<string, mixed> $parameters */
@@ -98,6 +98,16 @@ final readonly class PublicController
 
     public function renderByPath(Request $request, array $parameters): Response
     {
+        // WordPress plain permalinks have query-only identity: never redirect arbitrary query strings.
+        if($request->getPathInfo()==='/'&&count($request->query->all())===1){
+            foreach(['p','page_id'] as $param){
+                $value=$request->query->get($param);
+                if(is_string($value)&&preg_match('/^[1-9][0-9]{0,15}$/D',$value)){
+                    $target=$this->redirects->legacyQueryTarget($param.':'.$value);
+                    if($target!==null)return new RedirectResponse($target,301,['Cache-Control'=>'public, max-age=300']);
+                }
+            }
+        }
         $result=(new PublicRouteResolver($this->renderer->routeIndex(),$this->redirects))->resolve($request->getPathInfo());
         if(isset($result['target'])){
             $target=$result['target'];
@@ -119,7 +129,7 @@ final readonly class PublicController
     {
         $page=$this->renderer->errorPage($status);
         $message=$status===410?'Страница удалена':'Страница не найдена';
-        $html=$page['html']??('<!doctype html><html lang="ru"><meta charset="utf-8"><title>'.$status.' '.$message.'</title><h1>'.$status.' — '.$message.'</h1><p><a href="/">Главная</a></p></html>');
+        $html=$page['html']??$this->renderer->decoratePrivacy('<!doctype html><html lang="ru"><meta charset="utf-8"><title>'.$status.' '.$message.'</title><h1>'.$status.' — '.$message.'</h1><p><a href="/">Главная</a></p></html>');
         return new Response($html,$status,['Content-Type'=>'text/html; charset=UTF-8','X-Robots-Tag'=>'noindex, nofollow','Cache-Control'=>'no-store']);
     }
 

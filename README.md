@@ -1,6 +1,6 @@
 # CajeerEngine Forum Edition
 
-**Forum Edition 1.0.0 — Release Candidate & Final Audit**, built on CajeerEngine 1.3.0. Publication requires a passing `forum-required` gate and verified signed CI certification tied to the exact commit and release artifacts.
+**Forum Edition 1.0.0 — Release Candidate & Final Audit**, built on CajeerEngine 2.1.0. Publication requires a passing `forum-required` gate and verified signed CI certification tied to the exact commit and release artifacts.
 
 Self-hosted forum platform by CajeerTeam. PHP 8.4.1+, CajeerEngine kernel, Symfony Components, REST API, Apache-2.0.
 
@@ -60,7 +60,7 @@ php tools/forum-regression.php
 node --check public/forum-assets/forum.js
 ```
 
-CI: `.github/workflows/forum-ci.yml`; 0.9.1 added `release-candidate`, `certification` and signed publication admission; 0.9.4 adds qualification telemetry and evidence validation regressions; 0.9.6 adds destructive off-site disaster-recovery acceptance; 0.9.7 adds operator TLS/backup/integrity gates; 0.9.8 adds genuine historical multi-hop upgrade certification and a real signed systemd upgrade; 0.9.9 adds a fail-closed final staging and independent certified-artifact audit gate. For signing-key requirements and full verification see [production certification](docs/production-certification.md). Полный интеграционный тест требует Composer vendor, PDO SQLite и mbstring. Исходники поставляются без vendor и секретов; это не сертифицированный production dist. Унаследованные утилиты релиза сохраняют формат ядра, но подписанные пакеты обычной CMS не могут применяться к Forum Edition. Для обновлений используйте только выпуски своего репозитория с `edition: forum` в manifest. Номер `VERSION` — версия ядра 1.3.0; независимая версия форума (`edition_version` в `release.json`) используется сборщиком релизов и updater. Для перехода с 0.1.0 примените изменённые файлы вручную; старый updater ещё сравнивает номера ядра.
+CI: `.github/workflows/forum-ci.yml`; 0.9.1 added `release-candidate`, `certification` and signed publication admission; 0.9.4 adds qualification telemetry and evidence validation regressions; 0.9.6 adds destructive off-site disaster-recovery acceptance; 0.9.7 adds operator TLS/backup/integrity gates; 0.9.8 adds genuine historical multi-hop upgrade certification and a real signed systemd upgrade; 0.9.9 adds a fail-closed final staging and independent certified-artifact audit gate. For signing-key requirements and full verification see [production certification](docs/production-certification.md). Полный интеграционный тест требует Composer vendor, PDO SQLite и mbstring. Исходники поставляются без vendor и секретов; это не сертифицированный production dist. Унаследованные утилиты релиза сохраняют формат ядра, но подписанные пакеты обычной CMS не могут применяться к Forum Edition. Для обновлений используйте только выпуски своего репозитория с `edition: forum` в manifest. Номер `VERSION` — версия ядра 2.1.0; независимая версия форума (`edition_version` в `release.json`) используется сборщиком релизов и updater. Для перехода с 0.1.0 примените изменённые файлы вручную; старый updater ещё сравнивает номера ядра.
 
 ## Roadmap
 
@@ -73,3 +73,7 @@ Forum migration: [phpBB 3.3 operator guide](docs/forum-migration.md).
 ## 1.0.0 stable release process
 
 The supported deployments, signed-release verification, mandatory external physical certification and explicit recovery/rollback procedures are described in [production operations](docs/forum-1.0-production-operations.md), [upgrade guide](docs/forum-1.0-upgrade.md) and [compatibility matrix](docs/forum-1.0-compatibility.md). A source tree at version 1.0.0 is **not** proof that the stable release has passed physical production certification. Publication requires the independently witnessed and signed evidence.
+
+## Core upgrade to CajeerEngine 2.1.0
+
+This source tree uses CajeerEngine 2.1.0 while retaining Forum Edition 1.0.0 and its independent signed release policy. See [upgrade notes](docs/forum-engine-2.1.0-upgrade.md). A source patch is not a signed distribution, and production deployment requires independent staging and integration verification.

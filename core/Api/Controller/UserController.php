@@ -40,8 +40,7 @@ final readonly class UserController
     /** @param array<string,mixed> $parameters */
     public function update(Request $request, array $parameters): JsonResponse
     {
-        try { $user = $this->users->update((string) ($parameters['id'] ?? ''), $this->json($request)); }
-        catch (\InvalidArgumentException $e) { return new JsonResponse(['error'=>['code'=>'user_update_rejected','message'=>$e->getMessage()]],422); }
+        $user = $this->users->update((string) ($parameters['id'] ?? ''), $this->json($request));
         return $user === null ? $this->notFound() : new JsonResponse(['data' => $user]);
     }
 

@@ -37,6 +37,13 @@ final readonly class ConnectionFactory
             throw new \RuntimeException('DB connection не настроен: ' . $driver);
         }
 
+        $charset = null;
+        if ($driver === 'mysql') {
+            $charset = (string) ($connection['charset'] ?? 'utf8mb4');
+            if (!preg_match('/^[a-zA-Z0-9_]{1,40}$/D', $charset)) {
+                throw new \InvalidArgumentException('Invalid MySQL charset');
+            }
+        }
         $dsn = (string) ($connection['dsn'] ?? '');
         if ($dsn === '') {
             $dsn = $this->dsn($driver, $connection);
@@ -47,20 +54,14 @@ final readonly class ConnectionFactory
             PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
             PDO::ATTR_STRINGIFY_FETCHES => false,
         ];
-        if ($driver === 'pgsql') {
-            $options[PDO::ATTR_EMULATE_PREPARES] = false;
-            // Only explicitly opted-in, read-only operational probes may reuse
-            // the authenticated connection in a long-lived PHP-FPM worker.
-            // Normal application transactions stay request-scoped.
-            if (($connection['persistent'] ?? false) === true) {
-                $options[PDO::ATTR_PERSISTENT] = true;
-            }
-        }
         if ($driver === 'mysql') {
             $options[PDO::ATTR_EMULATE_PREPARES] = false;
+            if (defined('PDO::MYSQL_ATTR_MULTI_STATEMENTS')) {
+                $options[PDO::MYSQL_ATTR_MULTI_STATEMENTS] = false;
+            }
             $options[PDO::ATTR_TIMEOUT] = self::bounded($connection,'connect_timeout',5,1,60);
             if (defined('PDO::MYSQL_ATTR_INIT_COMMAND')) {
-                $options[PDO::MYSQL_ATTR_INIT_COMMAND] = "SET NAMES " . (string) ($connection['charset'] ?? 'utf8mb4');
+                $options[PDO::MYSQL_ATTR_INIT_COMMAND] = "SET NAMES " . $charset;
             }
         }
 
@@ -72,17 +73,14 @@ final readonly class ConnectionFactory
             $pdo->exec('PRAGMA busy_timeout = '.self::bounded($connection,'busy_timeout_ms',5000,0,60000));
             // WAL is opt-in: do not change journal mode on every connection by default.
             if(($connection['wal']??false)===true){
-                $mode=$pdo->query('PRAGMA journal_mode')->fetchColumn();
-                if($mode!=='wal' && $mode!=='memory') $mode=$pdo->query('PRAGMA journal_mode = WAL')->fetchColumn();
+                $mode=$pdo->query('PRAGMA journal_mode = WAL')->fetchColumn();
                 if($mode!=='wal'&&$mode!=='memory')throw new \RuntimeException('Cannot enable SQLite WAL');
             }
         }elseif($driver==='pgsql'){
-            $pdo->exec("SET TIME ZONE 'UTC'");
             $pdo->exec('SET statement_timeout = '.self::bounded($connection,'statement_timeout_ms',30000,0,3600000));
             $pdo->exec('SET lock_timeout = '.self::bounded($connection,'lock_timeout_ms',5000,0,600000));
             $pdo->exec('SET idle_in_transaction_session_timeout = '.self::bounded($connection,'idle_transaction_timeout_ms',60000,0,3600000));
         }elseif($driver==='mysql'){
-            $pdo->exec("SET time_zone = '+00:00'");
             $pdo->exec('SET SESSION innodb_lock_wait_timeout = '.self::bounded($connection,'lock_timeout_seconds',5,1,600));
         }
         return $pdo;
@@ -141,6 +139,9 @@ final readonly class ConnectionFactory
         $dsn .= ';connect_timeout='.self::bounded($connection,'connect_timeout',5,1,60);
         $sslmode = (string) ($connection['sslmode'] ?? '');
         if ($sslmode !== '') {
+            if (!in_array($sslmode, ['disable', 'allow', 'prefer', 'require', 'verify-ca', 'verify-full'], true)) {
+                throw new \InvalidArgumentException('Invalid PostgreSQL sslmode');
+            }
             $dsn .= ';sslmode=' . $sslmode;
         }
         return $dsn;

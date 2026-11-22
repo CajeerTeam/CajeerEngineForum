@@ -7,6 +7,7 @@ namespace CajeerEngine\Api\Controller;
 use CajeerEngine\Runtime\ConfigRepository;
 use CajeerEngine\Update\UpdateManager;
 use CajeerEngine\Update\UpdateResolver;
+use CajeerEngine\Update\UpdateHistory;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 
@@ -20,7 +21,31 @@ final readonly class UpdateController
     public function diagnostics(Request $request, array $parameters): JsonResponse
     {
         $resolver = new UpdateResolver($this->config->get('updates', []), $this->config->rootPath());
-        return new JsonResponse(['data' => $resolver->diagnostics($this->config->string('app.edition_version', '1.3.0')) + ['wizard'=>$this->manager()->wizardState(),'staged'=>$this->manager()->staged(),'requests'=>$this->manager()->pending()]]);
+        return new JsonResponse(['data' => $resolver->diagnostics($this->config->string('app.edition_version', '1.0.0')) + ['wizard'=>$this->manager()->wizardState(),'staged'=>$this->manager()->staged(),'requests'=>$this->manager()->recentRequests(),'backups'=>array_slice((new \CajeerEngine\Backup\BackupManager($this->config->rootPath(), $this->config))->list()['backups'],0,20),'downloads'=>$this->manager()->downloaded(),'web_upgrade_enabled'=>$this->config->bool('updates.web_upgrade.enabled')]]);
+    }
+
+    /** Paginated persistent update audit (not just the 20 latest queue records). */
+    public function history(Request $request, array $parameters): JsonResponse
+    {
+        $before = $request->query->get('before');
+        $before = is_string($before) && $before !== '' ? $before : null;
+        try { $items = (new UpdateHistory($this->config->rootPath()))->recent(50, $before); }
+        catch (\InvalidArgumentException $e) { return new JsonResponse(['error'=>['code'=>'invalid_cursor','message'=>$e->getMessage()]],422); }
+        return new JsonResponse(['data'=>$items, 'meta'=>['next_cursor'=>count($items)===50 ? end($items)['id'] : null]], 200, ['Cache-Control'=>'no-store']);
+    }
+
+    public function notifications(Request $request, array $parameters): JsonResponse
+    {
+        $identity = $request->attributes->get('auth');
+        $actor = (string) ($identity['user_id'] ?? 'api-token');
+        return new JsonResponse(['data'=>(new UpdateHistory($this->config->rootPath()))->notifications($actor)], 200, ['Cache-Control'=>'no-store']);
+    }
+
+    public function readNotifications(Request $request, array $parameters): JsonResponse
+    {
+        $identity = $request->attributes->get('auth');
+        $actor = (string) ($identity['user_id'] ?? 'api-token');
+        return new JsonResponse(['data'=>(new UpdateHistory($this->config->rootPath()))->markRead($actor)], 200, ['Cache-Control'=>'no-store']);
     }
 
     /** @param array<string, mixed> $parameters */
@@ -40,6 +65,18 @@ final readonly class UpdateController
     {
         $result = $this->manager()->prepare($this->json($request));
         return new JsonResponse(['data' => $result], 201);
+    }
+
+    /** Queue download and signed staging through the one-shot operator, never PHP-FPM. */
+    public function download(Request $request, array $parameters): JsonResponse
+    {
+        return $this->requestOperation($request, 'download');
+    }
+
+    /** Queue a verified full backup with explicit administrator approval. */
+    public function backup(Request $request, array $parameters): JsonResponse
+    {
+        return $this->requestOperation($request, 'backup');
     }
 
     /** @param array<string, mixed> $parameters */
@@ -76,6 +113,10 @@ final readonly class UpdateController
     private function requestOperation(Request $request, string $action): JsonResponse
     {
         if (!$this->config->bool('updates.web_upgrade.enabled')) return new JsonResponse(['error'=>['code'=>'web_upgrade_disabled','message'=>'Enable UPDATE_WEB_UPGRADE_ENABLED or use CLI.']],403);
+        $health = \CajeerEngine\Update\UpdateOperator::health($this->config->rootPath(), $this->config);
+        if (!$health['ready']) {
+            return new JsonResponse(['error'=>['code'=>'operator_not_ready','message'=>'Update operator is not healthy; inspect its systemd timer and recovery state.', 'reason'=>$health['reason']]],409);
+        }
         $identity=$request->attributes->get('auth');
         try { $result=$this->manager()->request($action,$this->json($request),(string)($identity['user_id']??'api-token')); return new JsonResponse(['data'=>$result],202); }
         catch (\RuntimeException $e) { return new JsonResponse(['error'=>['code'=>'update_request_rejected','message'=>$e->getMessage()]],422); }

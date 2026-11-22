@@ -13,25 +13,15 @@ use CajeerEngine\Update\UpdateManager;
 /** Operational CLI remains available without Composer; never execute through HTTP. */
 final class OperationsCli
 {
-    public const COMMANDS=['backup:create','backup:automation:run','backup:automation:status','stable:backup','backup:list','backup:verify','backup:restore','backup:keygen','backup:export','backup:import','backup:drill','backup:recover','backup:fetch','backup:discover','release:keygen','release:sign','update:verify-signature','update:apply','update:rollback','update:stage','update:requests','update:run','update:status','update:history','maintenance:on','maintenance:off','maintenance:status','import:execute','import:requests'];
+    public const COMMANDS=['backup:create','stable:backup','backup:list','backup:verify','backup:restore','backup:keygen','backup:export','backup:import','backup:drill','release:keygen','release:sign','update:verify-signature','update:download','update:operator:once','update:apply','update:rollback','update:stage','update:requests','update:run','update:status','maintenance:on','maintenance:off','maintenance:status','import:execute','import:requests','keys:status','keys:rekey','keys:generate'];
     public static function handles(array $argv): bool { return in_array($argv[1]??'',self::COMMANDS,true)||(($argv[1]??'')==='update'&&in_array('--apply',$argv,true)); }
     public static function run(string $root,array $argv): int
     {
         try {
             $c=$argv[1]??''; $o=self::options($argv);
-            if (is_file($root.'/storage/app/extensions/deployment.json') && in_array($c,['backup:create','backup:automation:run','stable:backup','backup:restore','update:apply','update','update:rollback','update:run','import:execute','maintenance:off'],true)) throw new \RuntimeException('Recover extension deployment first');
+            if (is_file($root.'/storage/app/extensions/deployment.json') && in_array($c,['backup:create','stable:backup','backup:restore','update:apply','update','update:rollback','update:run','import:execute','maintenance:off'],true)) throw new \RuntimeException('Recover extension deployment first');
             $required=static fn($name)=>isset($o[$name])&&is_string($o[$name])&&$o[$name]!==''?$o[$name]:throw new \RuntimeException('Provide --'.$name.'=...');
-            if ($c==='backup:recover') {
-                if (!isset($o['yes'])) throw new \RuntimeException('Recovery creates a new installation and database; pass --yes');
-                $result=(new \CajeerEngine\Backup\ColdRecovery($root))->run($required('file'),$required('key'),$required('target'),$required('profile'),self::seconds($o,'rto-seconds'),self::seconds($o,'rpo-seconds'));
-            } elseif ($c==='backup:discover') {
-                $policy=\CajeerEngine\Backup\BackupPolicy::load($root,$required('policy'));
-                $limit=isset($o['limit'])?self::seconds($o,'limit'):100;
-                $result=(new \CajeerEngine\Backup\OffsiteBackup($root,$policy,true))->discover($limit,$o['cursor']??null);
-            } elseif ($c==='backup:fetch') {
-                $policy=\CajeerEngine\Backup\BackupPolicy::load($root,$required('policy'));
-                $result=(new \CajeerEngine\Backup\OffsiteBackup($root,$policy,true))->fetch($required('id'),$required('sha256'),$required('file'));
-            } elseif ($c==='release:keygen') $result=ReleaseSignature::generate(self::externalKey($root,$required('secret-key')),self::externalKey($root,$required('public-key')));
+            if ($c==='release:keygen') $result=ReleaseSignature::generate(self::externalKey($root,$required('secret-key')),self::externalKey($root,$required('public-key')));
             elseif ($c==='release:sign') {
                 $package=realpath($required('package'))?:throw new \RuntimeException('Package not found');
                 $zip=new \PharData($package); $manifest=json_decode($zip['cajeerengine/release-manifest.json']->getContent(),true,512,JSON_THROW_ON_ERROR);
@@ -39,16 +29,23 @@ final class OperationsCli
                 (new \CajeerEngine\Release\ReleaseArtifactVerifier())->verify($package,$manifest['mode'],$manifest['version']);
                 $result=ReleaseSignature::sign($package,self::externalKey($root,$required('secret-key')));
             }
+            elseif ($c==='keys:generate') {
+                $path=self::externalKey($root,$required('file'));
+                if (file_exists($path)||is_link($path)) throw new \RuntimeException('Key file must not already exist');
+                OperationFiles::write($path, 'base64:'.base64_encode(random_bytes(32)).PHP_EOL, 0600);
+                $result=['ok'=>true,'key_file'=>$path];
+            }
             elseif ($c==='backup:keygen') {
                 $path=self::externalKey($root,$required('key')); if (!str_starts_with($path,'/')||file_exists($path)||is_link($path)) throw new \RuntimeException('Provide a new absolute key path');
                 OperationFiles::write($path,base64_encode(random_bytes(32))."\n"); $result=['ok'=>true,'key_file'=>$path];
             } else {
                 self::loadEnv($root); $config=new ConfigRepository($root); $m=new UpdateManager($root,$config);
                 $result=match($c) {
+                    'keys:status','keys:rekey'=>(new \CajeerEngine\Security\KeyRotation(
+                        $root,\CajeerEngine\Integration\SecretVault::fromEnvironment(),\CajeerEngine\Integration\SecretVault::fromEnvironment('oidc')
+                    ))->run($c==='keys:rekey' && isset($o['yes']) && $o['yes']===true ? true : ($c==='keys:status' ? false : throw new \RuntimeException('Rekey changes live encrypted data; pass --yes after a verified backup'))),
                     'import:execute'=>(new \CajeerEngine\ImportExport\ImportExportService($root))->executeRequest($required('id')),
                     'import:requests'=>['ok'=>true,'requests'=>(new \CajeerEngine\ImportExport\ImportExportService($root))->requests()],
-                    'backup:automation:run'=>(new \CajeerEngine\Backup\AutomatedBackup($root,$config,\CajeerEngine\Backup\BackupPolicy::load($root,$required('policy'))))->run(isset($o['force'])),
-                    'backup:automation:status'=>\CajeerEngine\Backup\AutomatedBackup::status($root),
                     'backup:create','stable:backup'=> (new BackupManager($root,$config))->create(),
                     'backup:export'=>(new BackupManager($root,$config))->exportBundle($required('id'),$required('file')),
                     'backup:import'=>(new BackupManager($root,$config))->importBundle($required('file')),
@@ -57,20 +54,21 @@ final class OperationsCli
                     'backup:verify'=>(new BackupManager($root,$config))->verify($required('id')),
                     'backup:restore'=>isset($o['yes'])?(new BackupManager($root,$config))->restore($required('id')):throw new \RuntimeException('Restore replaces database and files; pass --yes'),
                     'update:verify-signature'=>$m->verifyPackage($required('package'),$o['sha256']??null,$o['signature']??null),
+                    'update:download'=>(new \CajeerEngine\Update\GitHubReleaseDownloader($root,$config))->download(isset($o['version']) ? $required('version') : null),
+                    'update:operator:once'=>(new \CajeerEngine\Update\UpdateOperator($root,$config))->runOnce(),
                     'update:apply','update'=>$m->apply(array_combine(array_map(static fn($k)=>str_replace('-','_',$k),array_keys($o)),array_values($o))),
                     'update:rollback'=>$m->rollback($o['backup']??null,isset($o['yes'])),
                     'update:stage'=>$m->publish($required('package'),$o['signature']??null),
                     'update:requests'=>['ok'=>true,'requests'=>$m->pending()],
                     'update:run'=>$m->runRequest($required('id')),
                     'update:status'=>$m->wizardState(),
-                    'update:history'=>$m->history(isset($o['limit'])?self::seconds($o,'limit'):20),
                     'maintenance:status'=>$m->maintenanceState()+['ok'=>true],
                     'maintenance:on','maintenance:off'=>self::maintenance($root,$m,$c,$o),
                     default=>throw new \RuntimeException('Unknown operation'),
                 };
             }
             echo json_encode($result,JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR)."\n";
-            return ($result['ok']??false)?(($result['rto_met']??true)?0:2):1;
+            return ($result['ok']??false)?0:1;
         } catch (\Throwable $e) { fwrite(STDERR,'[FAIL] '.$e->getMessage()."\n"); return 1; }
     }
     private static function seconds(array $options,string $name): int
@@ -91,22 +89,9 @@ final class OperationsCli
     }
     private static function maintenance(string $root,UpdateManager $m,string $c,array $o): array
     {
-        // Maintenance must drain in-flight HTTP, scheduler and queue leases.
-        // A nonblocking exclusive flock makes a healthy, busy installation
-        // intermittently reject maintenance:on/off. Bound the drain to avoid
-        // waiting forever for an orphaned or stalled process.
-        $deadline = microtime(true) + 60.0;
-        while (true) {
-            try { $lock = OperationLock::acquire($root, true); break; }
-            catch (\RuntimeException $e) {
-                if ($e->getMessage() !== 'Another operation is running; retry after drain' || microtime(true) >= $deadline) throw $e;
-                usleep(100000);
-            }
-        }
-        try {
-            if ($c==='maintenance:off' && is_file($root.'/storage/app/extensions/deployment.json')) throw new \RuntimeException('Recover extension deployment first');
-            return $c==='maintenance:on'?$m->enableMaintenance($o['message']??'Maintenance'):$m->disableMaintenance();
-        } finally { OperationLock::release($lock); }
+        $lock=OperationLock::acquire($root,true);
+        try { if ($c==='maintenance:off' && is_file($root.'/storage/app/extensions/deployment.json')) throw new \RuntimeException('Recover extension deployment first'); return $c==='maintenance:on'?$m->enableMaintenance($o['message']??'Maintenance'):$m->disableMaintenance(); }
+        finally { OperationLock::release($lock); }
     }
     private static function options(array $argv): array
     {

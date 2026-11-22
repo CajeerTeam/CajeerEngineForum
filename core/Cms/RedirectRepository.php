@@ -34,7 +34,7 @@ final class RedirectRepository
         $data = $this->file->readObject(['redirects' => []]);
         $items = is_array($data['redirects'] ?? null) ? $data['redirects'] : [];
         usort($items, static fn (array $a, array $b): int => strcmp((string) ($a['source_path'] ?? ''), (string) ($b['source_path'] ?? '')));
-        return array_values($items);
+        return $items;
     }
 
     /** @return array<string,mixed>|null */
@@ -64,6 +64,21 @@ final class RedirectRepository
             try{$this->assertNoLoop($r);}catch(\InvalidArgumentException){return null;}
         }
         $this->touch($r['id']);return $r;
+    }
+
+    /** Only exact WordPress plain permalink keys at the root are eligible. */
+    public function legacyQueryTarget(string $key): ?string
+    {
+        if(!preg_match('/^(?:p|page_id):[1-9][0-9]{0,15}$/D',$key))return null;
+        if(!$this->useDatabase()||!$this->database()->tableExists('ce_migration_seo_query_urls'))return null;
+        $q=$this->pdo()->prepare('SELECT target_path FROM ce_migration_seo_query_urls WHERE query_key=:key');
+        $q->execute(['key'=>$key]);$target=$q->fetchColumn();
+        if(!is_string($target))return null;
+        try{
+            $path=PublicPath::content($target);$route=(new RouteIndex($this->rootPath,$this->database()))->lookup($path);
+            if(($route['kind']??'')==='alias'){$path=PublicPath::content((string)$route['target']);$route=(new RouteIndex($this->rootPath,$this->database()))->lookup($path);}
+            return ($route['kind']??'')==='page'?$path:null;
+        }catch(\InvalidArgumentException){return null;}
     }
 
     private function assertNoLoop(array $r): void
@@ -243,7 +258,7 @@ final class RedirectRepository
         $this->file->writeObject([
             'version' => 1,
             'updated_at' => $this->now(),
-            'redirects' => array_values($items),
+            'redirects' => $items,
         ]);
     }
 
@@ -290,7 +305,7 @@ final class RedirectRepository
         return $path === '/' ? '/' : rtrim(preg_replace('#/+#', '/', $path) ?: $path, '/');
     }
 
-    private function boolParam(bool $value): int|bool
+    private function boolParam(bool $value): int
     {
         return $value ? 1 : 0;
     }

@@ -60,8 +60,18 @@ final class NativeCli
         try {
             $config = new ConfigRepository($rootPath);
             $result = match ($command) {
+                'forum:import:plan','forum:import:run','forum:import:status','forum:import:map' => \CajeerEngine\Forum\Migration\ForumMigrationCli::run($rootPath,$config,$argv),
+                'forum:search:reindex' => (new \CajeerEngine\Forum\Service\ForumSearchMaintenance(new DatabaseManager($config)))->rebuild(),
+                'forum:search:check' => (new \CajeerEngine\Forum\Service\ForumSearchMaintenance(new DatabaseManager($config)))->check(),
+                'forum:runtime:check' => \CajeerEngine\Forum\Service\ForumRuntimeCache::diagnostics(),
+                'forum:extensions:retry' => ['ok'=>(new \CajeerEngine\Forum\Service\ForumExtensionOutbox(new DatabaseManager($config)))->retry(self::argument($argv,2,'event_id'))],
+                'forum:extensions:check' => ['ok'=>true,'counts'=>(new \CajeerEngine\Forum\Service\ForumExtensionOutbox(new DatabaseManager($config)))->diagnostics(),'dead'=>(new \CajeerEngine\Forum\Service\ForumExtensionOutbox(new DatabaseManager($config)))->deadLetters()],
+                'forum:performance:check' => (new \CajeerEngine\Forum\Service\ForumPerformanceCheck(new DatabaseManager($config)))->check(self::has($argv,'analyze')),
+                'forum:ecosystem:check' => (new \CajeerEngine\Forum\Service\ForumEcosystemCheck(new DatabaseManager($config),$config))->check(self::option($argv,'target')?:null,self::has($argv,'deep')),
                 'list' => self::commands(),
                 'api:lint' => self::apiLint($rootPath),
+                'identity:acceptance','identity:sessions:status','identity:sessions:migrate' => throw new \RuntimeException('Use php bin/cajeer for Identity deployment operations.'),
+                'identity:link-user' => \CajeerEngine\Identity\OidcCli::link($rootPath, self::argument($argv,2,'user_uuid'), self::argument($argv,3,'oidc_sub'), self::has($argv,'yes')),
                 'rc:doctor' => (new ReleaseCandidateAuditor($rootPath))->run(),
                 'system:report' => (new SystemReport($rootPath))->toArray(),
                 'stable:status' => (new StableReleaseService($rootPath, $config))->status(),
@@ -107,14 +117,6 @@ final class NativeCli
                 'static:export' => (new \CajeerEngine\StaticExport\SiteExport($rootPath))->run(),
                 'cms:sitemap' => self::cmsSitemap($rootPath, $config, $argv),
                 'routing:rebuild' => (new \CajeerEngine\Public\RouteIndex($rootPath))->rebuild(),
-                'forum:import:plan','forum:import:run','forum:import:status','forum:import:map' => \CajeerEngine\Forum\Migration\ForumMigrationCli::run($rootPath,$config,$argv),
-                'forum:ecosystem:check' => (new \CajeerEngine\Forum\Service\ForumEcosystemCheck(new DatabaseManager($config),$config))->check(self::option($argv,'target')?:null,self::has($argv,'deep')),
-                'forum:performance:check' => (new \CajeerEngine\Forum\Service\ForumPerformanceCheck(new DatabaseManager($config)))->check(self::has($argv,'analyze')),
-                'forum:extensions:check' => ['ok'=>true,'counts'=>(new \CajeerEngine\Forum\Service\ForumExtensionOutbox(new DatabaseManager($config)))->diagnostics(),'dead'=>(new \CajeerEngine\Forum\Service\ForumExtensionOutbox(new DatabaseManager($config)))->deadLetters()],
-                'forum:extensions:retry' => ['ok'=>(new \CajeerEngine\Forum\Service\ForumExtensionOutbox(new DatabaseManager($config)))->retry(self::argument($argv,2,'event_id'))],
-                'forum:runtime:check' => \CajeerEngine\Forum\Service\ForumRuntimeCache::diagnostics(),
-                'forum:search:check' => (new \CajeerEngine\Forum\Service\ForumSearchMaintenance(new DatabaseManager($config)))->check(),
-                'forum:search:reindex' => (new \CajeerEngine\Forum\Service\ForumSearchMaintenance(new DatabaseManager($config)))->rebuild(),
                 'search:index' => (new \CajeerEngine\Search\SearchFactory($rootPath,$config))->make()->rebuild(),
                 'search:query' => (new \CajeerEngine\Search\SearchFactory($rootPath,$config))->make()->page(self::argument($argv,2,'query'),self::option($argv,'index'),(int)(self::option($argv,'limit')??20),(int)(self::option($argv,'offset')??0),self::option($argv,'type'),self::option($argv,'locale')),
                 'search:check' => (new \CajeerEngine\Search\SearchFactory($rootPath,$config))->make()->diagnostics(),
@@ -154,7 +156,6 @@ final class NativeCli
         return [
             'ok' => true,
             'mode' => 'native-no-vendor',
-            'commands' => array_merge(QueueCli::COMMANDS,['ops:check','ops:report','ops:metrics','ops:traces:flush','doctor','fix','fix:permissions','fix:env','fix:security','fix:admin-assets','fix:storage','nginx:config','scheduler:install','worker:install','post-install:report','backup:create','backup:automation:run','backup:automation:status','backup:list','backup:verify','backup:restore','backup:keygen','backup:export','backup:import','backup:drill','backup:recover','backup:fetch','backup:discover','release:keygen','release:sign','update:verify-signature','update:stage','update:requests','update:run','update:status','update:history','install','install:check','rc:doctor','api:lint','install:web-token','system:report','stable:status','stable:smoke-test','stable:lock','security:doctor','security:harden','migrate','migrate:status','migrate:repair','release:build','release:artifacts','release:checksums','release:verify','update','update:prepare','update:apply','update:check','update:rollback','maintenance:on','maintenance:off','maintenance:status','export:create','export:list','import:diff','import:run','import:execute','import:requests','admin:assets','cms:bootstrap','cms:sitemap','static:export','routing:rebuild','routing:check','search:index','search:query','search:check','forum:import:plan','forum:import:run','forum:import:status','forum:import:map','forum:ecosystem:check','forum:extensions:check','forum:extensions:retry','forum:runtime:check','forum:performance:check','forum:search:check','forum:search:reindex','media:list','media:check','media:migrate','media:variants','media:repair','media:recover','media:usage','media:s3-sync','media:gc','make:extension','extension:list','extension:doctor','extension:runtime','extension:runtime:boot','extension:install','extension:enable','extension:disable','extension:uninstall','extension:assets','extension:migrate','extension:event:dispatch','extension:sign','extension:package:install','extension:package:upgrade','extension:package:enable','extension:package:uninstall','extension:package:recover']),
             'message' => 'Symfony Console не найден, включён native fallback для эксплуатационных команд.',
         ];
     }
@@ -490,7 +491,7 @@ PHP_STUB;
     private static function extensionInstall(string $rootPath, ConfigRepository $config, array $argv): array
     {
         $target = self::option($argv, 'target') ?: ($argv[2] ?? '');
-        if (!is_string($target) || trim($target) === '') {
+        if (trim($target) === '') {
             throw new \RuntimeException('Укажите расширение: php bin/cajeer extension:install vendor/name --json');
         }
         $item = self::extensionRuntime($rootPath, $config)->install($target, self::has($argv, 'enable'), !self::has($argv, 'no-lifecycle'), !self::has($argv, 'no-assets'), !self::has($argv, 'no-migrations'));
@@ -501,7 +502,7 @@ PHP_STUB;
     private static function extensionEventDispatch(string $rootPath, ConfigRepository $config, array $argv): array
     {
         $event = self::option($argv, 'event') ?: ($argv[2] ?? '');
-        if (!is_string($event) || trim($event) === '') {
+        if (trim($event) === '') {
             throw new \RuntimeException('Укажите событие: php bin/cajeer extension:event:dispatch content.saved --json');
         }
         $payloadJson = self::option($argv, 'payload') ?: '{}';
@@ -653,8 +654,5 @@ PHP_STUB;
         }
     }
 
-    private static function version(string $rootPath): string
-    {
-        return trim((string) @file_get_contents($rootPath . '/VERSION')) ?: '1.3.0';
-    }
+
 }

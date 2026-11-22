@@ -38,11 +38,12 @@ final class CmsSearchEngine implements SearchEngineInterface
     private function databasePage(array $tokens,?string $type,?string $locale,int $limit,int $offset,array $meta): array
     {
         $this->routes->ensureSearch();
-        return $this->db->transaction(function(PDO $pdo)use($tokens,$type,$locale,$limit,$offset,$meta){
+        // Search projections and publication state are committed atomically by RouteIndex.
+        // A repeatable-read snapshot keeps counts, facets and results from the same
+        // generation without holding a shared lock on the writer serialization row.
+        // In particular, a slow search must not stall content publishing on PG/MySQL.
+        return $this->db->readSnapshot(function(PDO $pdo)use($tokens,$type,$locale,$limit,$offset,$meta){
             $driver=$pdo->getAttribute(PDO::ATTR_DRIVER_NAME);$pg=$driver==='pgsql';
-            // Shared lock freezes publication generation across result/count/facet queries.
-            if($driver==='pgsql'||$driver==='mysql')$pdo->query('SELECT generation FROM ce_public_route_state WHERE id=1 '.($pg?'FOR SHARE':'LOCK IN SHARE MODE'))->fetchColumn();
-            else $pdo->query('SELECT generation FROM ce_public_route_state WHERE id=1')->fetchColumn();
             $where=[];$params=[];$rank=[];$prefix='';$from='ce_cms_search s';
             if($pg){
                 $prefix="WITH query AS (SELECT plainto_tsquery('russian', :ru) || plainto_tsquery('english', :en) || plainto_tsquery('simple', :simple) AS term) ";
@@ -55,8 +56,19 @@ final class CmsSearchEngine implements SearchEngineInterface
             if($locale!==null&&$locale!==''){$where[]='s.locale=:locale';$params['locale']=$locale;}
             $base=' FROM '.$from.' WHERE '.implode(' AND ',$where);
             $run=static function(string $sql,array $bindings)use($pdo){$stmt=$pdo->prepare($sql);foreach($bindings as $k=>$v)$stmt->bindValue(':'.$k,$v,is_int($v)?PDO::PARAM_INT:PDO::PARAM_STR);$stmt->execute();return $stmt;};
-            $meta['total']=(int)$run($prefix.'SELECT COUNT(*)'.$base,$params)->fetchColumn();
-            foreach(['type'=>'content_type','locale'=>'locale'] as $key=>$column){$rows=$run($prefix.'SELECT s.'.$column.', COUNT(*)'.$base.' GROUP BY s.'.$column.' ORDER BY s.'.$column,$params)->fetchAll(PDO::FETCH_NUM);foreach($rows as [$value,$count])$meta['facets'][$key][$value]=(int)$count;}
+            // One grouped scan replaces three full matching-row scans (count,
+            // content types and locales). It runs in the same MVCC snapshot as
+            // the result page, including when OFFSET is beyond the last row.
+            $groups = $run($prefix.'SELECT s.content_type, s.locale, COUNT(*) AS matches'.$base
+                .' GROUP BY s.content_type, s.locale', $params)->fetchAll(PDO::FETCH_NUM);
+            foreach ($groups as [$contentType, $documentLocale, $count]) {
+                $n = (int)$count;
+                $meta['total'] += $n;
+                $meta['facets']['type'][$contentType] = ($meta['facets']['type'][$contentType] ?? 0) + $n;
+                $meta['facets']['locale'][$documentLocale] = ($meta['facets']['locale'][$documentLocale] ?? 0) + $n;
+            }
+            ksort($meta['facets']['type']);
+            ksort($meta['facets']['locale']);
             $bindings=$params+['lim'=>$limit,'off'=>$offset];if(!$pg)foreach($tokens as $i=>$token)$bindings['r'.$i]='%'.$token.'%';
             $rows=$run($prefix.'SELECT s.payload, '.$score.' AS score'.$base.' ORDER BY score DESC, s.document_id ASC LIMIT :lim OFFSET :off',$bindings)->fetchAll(PDO::FETCH_ASSOC);
             return ['data'=>array_map(static fn($row)=>SearchDocument::result(json_decode($row['payload'],true,flags:JSON_THROW_ON_ERROR),(float)$row['score']),$rows),'meta'=>$meta];

@@ -38,22 +38,6 @@ final class DatabaseBackup
             throw new \RuntimeException('Rehearse MySQL backup/restore on a disposable database, then explicitly set BACKUP_MYSQL_RESTORE_CONFIRMED=true');
         }
     }
-    public function estimatedBytes(): int
-    {
-        if ($this->driver==='sqlite') {
-            $path=$this->sqlitePath();
-            if (!is_file($path)) throw new \RuntimeException('SQLite database missing');
-            return (int)filesize($path)+(is_file($path.'-wal')?(int)filesize($path.'-wal'):0);
-        }
-        $tmp=tempnam(sys_get_temp_dir(),'ce-db-size-'); if ($tmp===false) throw new \RuntimeException('Cannot create DB size probe');
-        try {
-            if ($this->driver==='pgsql') self::run(['psql','--no-password','--tuples-only','--no-align','--dbname='.$this->name(),'--command=SELECT pg_database_size(current_database())'],$this->pgEnv(),$tmp);
-            else $this->mysql(['mysql','--batch','--skip-column-names','--database='.$this->name(),'--execute=SELECT COALESCE(SUM(data_length+index_length),0) FROM information_schema.tables WHERE table_schema=DATABASE()'],$tmp,null);
-            $value=trim((string)file_get_contents($tmp));
-            if (!ctype_digit($value)||strlen($value)>18) throw new \RuntimeException('Cannot estimate database size');
-            return (int)$value;
-        } finally { F::remove($tmp); }
-    }
     public function create(string $file): void
     {
         if ($this->driver==='sqlite') {
@@ -82,6 +66,8 @@ final class DatabaseBackup
             if (in_array('sqlite',\PDO::getAvailableDrivers(),true)) {
                 $pdo=new \PDO('sqlite:'.$file,null,null,[\PDO::ATTR_ERRMODE=>\PDO::ERRMODE_EXCEPTION]);
                 if ($pdo->query('PRAGMA integrity_check')->fetchColumn()!=='ok') throw new \RuntimeException('SQLite integrity check failed');
+                // SQLite integrity_check does not validate foreign-key relations.
+                if ($pdo->query('PRAGMA foreign_key_check')->fetch()!==false) throw new \RuntimeException('SQLite foreign key check failed');
             } else $this->sqlitePython('verify',$file);
         } elseif ($this->driver==='pgsql') self::run(['pg_restore','--list',$file],$this->pgEnv());
         else {
@@ -104,27 +90,18 @@ final class DatabaseBackup
             self::run(['pg_restore','--exit-on-error','--clean','--if-exists','--create','--no-password','--dbname=postgres',$file],$this->pgEnv());
         } else $this->mysql(['mysql','--binary-mode'],null,$file);
     }
-    /** Restore only to a newly allocated destination. Never clean/drop an existing database. */
-    public function restoreFresh(string $file): void
+    /** Verify the live target after a destructive restore, before clearing the restore journal. */
+    public function verifyRestored(): void
     {
-        $this->verify($file);
         if ($this->driver==='sqlite') {
-            $path=$this->sqlitePath();
-            foreach (['','-wal','-shm','-journal'] as $suffix) if (file_exists($path.$suffix)||is_link($path.$suffix)) throw new \RuntimeException('Fresh SQLite destination already exists');
-            F::copy($file,$path,0600);
-            $this->verify($path);
+            $this->verify($this->sqlitePath());
             return;
         }
-        if ($this->driver!=='pgsql'||!preg_match('/^ce_dr_[a-f0-9]{24}$/D',$this->name())) throw new \RuntimeException('Fresh restore requires a generated PostgreSQL database');
-        // Do not allow backup credential overrides to redirect a new-host restore.
-        $env=['PGHOST'=>(string)$this->connection['host'],'PGPORT'=>(string)$this->connection['port'],'PGUSER'=>(string)$this->connection['username'],'PGPASSWORD'=>(string)$this->connection['password'],'PGSSLMODE'=>(string)$this->connection['sslmode'],'PGCONNECT_TIMEOUT'=>'10','PATH'=>getenv('PATH')?:'/usr/bin:/bin','HOME'=>getenv('HOME')?:'/nonexistent'];
-        $probe=tempnam(sys_get_temp_dir(),'ce-dr-role-'); if ($probe===false) throw new \RuntimeException('Cannot create database probe');
-        try {
-            self::run(['psql','--no-password','--no-psqlrc','--tuples-only','--no-align','--dbname=postgres',"--command=SELECT CASE WHEN rolcreatedb AND NOT rolsuper AND current_setting('server_version_num')::int >= 170000 THEN 'ok' ELSE 'denied' END FROM pg_roles WHERE rolname=current_user"],$env,$probe,null,false);
-            if (trim((string)file_get_contents($probe))!=='ok') throw new \RuntimeException('Fresh recovery requires PostgreSQL 17+ and non-superuser CREATEDB role');
-        } finally { F::remove($probe); }
-        self::run(['createdb','--no-password','--maintenance-db=postgres','--template=template0',$this->name()],$env,null,null,false);
-        self::run(['pg_restore','--exit-on-error','--single-transaction','--no-owner','--no-privileges','--no-tablespaces','--no-password','--dbname='.$this->name(),$file],$env,null,null,false);
+        if ($this->driver==='pgsql') {
+            self::run(['psql','--no-password','--no-psqlrc','--set=ON_ERROR_STOP=1','--dbname='.$this->name(),'--command=SELECT 1'],$this->pgEnv());
+            return;
+        }
+        $this->mysql(['mysql','--batch','--skip-column-names','--database='.$this->name(),'--execute=SELECT 1'],null,null);
     }
     /** Restore the dump without touching the configured database. No application code is executed. */
     public function drill(string $file,string $workspace): array
@@ -198,8 +175,11 @@ with sqlite3.connect(pathlib.Path(source).resolve().as_uri() + '?mode=ro', uri=T
     if mode == 'backup':
         with sqlite3.connect(sys.argv[3], timeout=10) as out:
             db.backup(out)
-    elif db.execute('PRAGMA integrity_check').fetchall() != [('ok',)]:
-        raise RuntimeError('SQLite integrity check failed')
+    else:
+        if db.execute('PRAGMA integrity_check').fetchall() != [('ok',)]:
+            raise RuntimeError('SQLite integrity check failed')
+        if db.execute('PRAGMA foreign_key_check').fetchone() is not None:
+            raise RuntimeError('SQLite foreign key check failed')
 PYTHON;
         self::run([$python,'-I','-c',$script,$action,$file,$target??'']);
     }
@@ -233,15 +213,45 @@ PYTHON;
         try { array_splice($args,1,0,['--defaults-file='.$file]); self::run($args,[],$out,$in); }
         finally { F::remove($file); }
     }
-    public static function run(array $args, array $environment=[], ?string $output=null, ?string $input=null,bool $inherit=true): void
+    public static function run(array $args, array $environment=[], ?string $output=null, ?string $input=null, ?int $timeoutSeconds=null): void
     {
         if (!function_exists('proc_open')) throw new \RuntimeException('proc_open required');
+        $configured=getenv('BACKUP_COMMAND_TIMEOUT_SECONDS');
+        if ($timeoutSeconds===null) {
+            if ($configured!==false && (!ctype_digit($configured)|| (int)$configured<1 || (int)$configured>86400)) throw new \RuntimeException('Invalid BACKUP_COMMAND_TIMEOUT_SECONDS (1..86400)');
+            $timeoutSeconds=$configured===false?3600:(int)$configured;
+        }
+        if ($timeoutSeconds<1||$timeoutSeconds>86400) throw new \RuntimeException('Invalid database command timeout');
+        $name=basename((string)($args[0]??'command'));
         if (self::$processLock!==null) $args=array_merge(['flock','--exclusive','--nonblock',self::$processLock],$args);
         $err=tmpfile(); if ($err===false) throw new \RuntimeException('Cannot create process log');
         $stdout=$output!==null?['file',$output,'wb']:['file','/dev/null','w'];
-        $proc=proc_open($args,[0=>['file',$input??'/dev/null','rb'],1=>$stdout,2=>$err],$pipes,null,($inherit?array_merge(getenv(),$environment):$environment),['bypass_shell'=>true]);
+        // exec mode replaces flock with the command, so a timed-out database
+        // process cannot survive as an orphan and keep the child lease.
+        if (self::$processLock!==null) array_splice($args,1,0,['--no-fork']);
+        $proc=proc_open($args,[0=>['file',$input??'/dev/null','rb'],1=>$stdout,2=>$err],$pipes,null,array_merge(getenv(),$environment),['bypass_shell'=>true]);
         if (!is_resource($proc)) { fclose($err); throw new \RuntimeException('Cannot start database/validation command'); }
-        $exit=proc_close($proc); rewind($err); $detail=trim((string)stream_get_contents($err,4096)); fclose($err);
-        if ($exit!==0) throw new \RuntimeException(basename((string)$args[0]).' failed (exit '.$exit.'): '.$detail);
+        $start=microtime(true); $timedOut=false; $exit=null;
+        try {
+            while (true) {
+                $status=proc_get_status($proc);
+                if (!$status['running']) { $exit=$status['exitcode']; break; }
+                if (microtime(true)-$start>=$timeoutSeconds) {
+                    $timedOut=true;
+                    proc_terminate($proc);
+                    $until=microtime(true)+2;
+                    do { usleep(50000); $status=proc_get_status($proc); } while ($status['running']&&microtime(true)<$until);
+                    if ($status['running']) proc_terminate($proc,9);
+                    break;
+                }
+                usleep(100000);
+            }
+        } finally {
+            $closed=proc_close($proc);
+            rewind($err); $detail=trim((string)stream_get_contents($err,4096)); fclose($err);
+        }
+        if ($timedOut) throw new \RuntimeException($name.' timed out after '.$timeoutSeconds.' seconds; check the operation journal before retrying');
+        $exit=$exit===-1?$closed:$exit;
+        if ($exit!==0) throw new \RuntimeException($name.' failed (exit '.$exit.'): '.$detail);
     }
 }

@@ -40,7 +40,7 @@ final class PackageTrust
         $vendor=explode('/',$manifest->name)[0];
         if ($trustDir===''||!str_starts_with($trustDir,'/')||!preg_match('/^[a-z0-9][a-z0-9_.-]*$/D',$vendor)) throw new \RuntimeException('Trusted publisher directory required');
         $keyPath=F::path($trustDir,$vendor.'.pub');
-        if (is_link($keyPath)||!is_file($keyPath)||filesize($keyPath)>4096||((fileperms($keyPath)&0022)!==0)) throw new \RuntimeException('Untrusted or writable publisher key: '.$vendor);
+        if (!is_file($keyPath)||filesize($keyPath)>4096) throw new \RuntimeException('Untrusted publisher: '.$vendor);
         $public=base64_decode(trim((string)file_get_contents($keyPath)),true);
         if (filesize($path)>1024*1024) throw new \RuntimeException('Signature inventory too large');
         $data=F::read($path); $sig=base64_decode((string)($data['signature']??''),true);

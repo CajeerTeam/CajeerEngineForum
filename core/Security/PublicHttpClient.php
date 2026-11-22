@@ -4,8 +4,10 @@ declare(strict_types=1);
 namespace CajeerEngine\Security;
 
 /** Public-only outbound transport. DNS is validated and the selected address is pinned to the connection. */
-final class PublicHttpClient
+final class PublicHttpClient implements OutboundHttpTransport
 {
+    public function __construct(private readonly int $timeoutSeconds = 10) {}
+
     public static function isPublicIp(string $ip): bool
     {
         // Reject mapped/transition addresses and non-global networks, including CGNAT and link-local.
@@ -41,31 +43,47 @@ final class PublicHttpClient
         return [$host, $port, $addresses[0]];
     }
 
-    public function request(string $url, string $method, array $headers = [], string $body = '', int $maxBytes = 1048576): array
+    public function request(string $url, string $method, #[\SensitiveParameter] array $headers = [], #[\SensitiveParameter] string $body = '', int $maxBytes = 1048576): array
     {
+        [$status,$response] = $this->requestWithHeaders($url,$method,$headers,$body,$maxBytes);
+        return [$status,$response];
+    }
+
+    /** Same pinned transport, with final response headers for pagination metadata. */
+    public function requestWithHeaders(string $url,string $method,#[\SensitiveParameter] array $headers=[],#[\SensitiveParameter] string $body='',int $maxBytes=1048576):array
+    {
+        if (!in_array($method, ['GET', 'POST', 'PUT'], true) || ($method === 'GET' && $body !== '') || $maxBytes < 1 || $maxBytes > 8388608) {
+            throw new \InvalidArgumentException('Unsafe outbound HTTP method or response limit');
+        }
         if (!function_exists('curl_init')) { throw new \RuntimeException('Secure outbound HTTP requires ext-curl'); }
         [$host, $port, $ip] = self::target($url);
         $ch = curl_init($url);
         $response = '';
+        $responseHeaders = [];
         $headerLines = [];
         foreach ($headers as $name => $value) {
             if (!preg_match('/^[A-Za-z0-9-]+$/D', $name) || preg_match('/[\r\n]/', $value)) { throw new \InvalidArgumentException('Invalid outbound header'); }
             $headerLines[] = $name . ': ' . $value;
         }
         $options = [CURLOPT_CUSTOMREQUEST => $method, CURLOPT_HTTPHEADER => $headerLines, CURLOPT_FOLLOWLOCATION => false,
-            CURLOPT_PROTOCOLS => CURLPROTO_HTTP | CURLPROTO_HTTPS, CURLOPT_PROXY => '', CURLOPT_CONNECTTIMEOUT => 4, CURLOPT_TIMEOUT => 10,
+            CURLOPT_PROTOCOLS => CURLPROTO_HTTP | CURLPROTO_HTTPS, CURLOPT_PROXY => '', CURLOPT_CONNECTTIMEOUT => min(4, max(1, $this->timeoutSeconds)), CURLOPT_TIMEOUT => max(1, min(30, $this->timeoutSeconds)),
             CURLOPT_SSL_VERIFYPEER => true, CURLOPT_SSL_VERIFYHOST => 2,
+            CURLOPT_HEADERFUNCTION => static function ($ch,string $line) use (&$responseHeaders):int {
+                if (str_starts_with($line,'HTTP/')) $responseHeaders=[];
+                elseif (str_contains($line,':')) {[$name,$value]=explode(':',$line,2);$name=strtolower(trim($name));if(in_array($name,['x-wp-total','x-wp-totalpages','etag','retry-after','x-ratelimit-remaining','x-ratelimit-reset'],true))$responseHeaders[$name]=trim($value);}
+                return strlen($line);
+            },
             CURLOPT_WRITEFUNCTION => static function ($ch, string $chunk) use (&$response, $maxBytes): int {
                 if (strlen($response) + strlen($chunk) > $maxBytes) return 0;
                 $response .= $chunk; return strlen($chunk);
             }];
         if (!filter_var($host, FILTER_VALIDATE_IP)) { $options[CURLOPT_RESOLVE] = [$host . ':' . $port . ':' . (str_contains($ip, ':') ? '[' . $ip . ']' : $ip)]; }
-        if ($method === 'POST') { $options[CURLOPT_POSTFIELDS] = $body; }
+        if ($method === 'POST' || $method === 'PUT') { $options[CURLOPT_POSTFIELDS] = $body; }
         try {
             curl_setopt_array($ch, $options);
             if (curl_exec($ch) === false) { throw new \RuntimeException('Outbound request failed or response exceeds limit'); }
             $status = (int) curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
-            return [$status, $response];
+            return [$status, $response, $responseHeaders];
         } finally { curl_close($ch); }
     }
 }

@@ -244,6 +244,48 @@ final class UpdateManager
     {
         $out=[]; foreach (glob($this->requestDir().'/request-*.json')?:[] as $file) { $data=OperationFiles::read($file); if (($data['state']??null)==='pending') $out[]=$data; } return $out;
     }
+    /** Browser-safe, bounded status view; never return server paths or package bytes. */
+    public function recentRequests(int $limit = 20): array
+    {
+        $limit = max(1, min(50, $limit));
+        $items = [];
+        $dir = $this->requestDir();
+        foreach (new \DirectoryIterator($dir) as $entry) {
+            if ($entry->isDot()) continue;
+            $name = $entry->getFilename();
+            if (!str_starts_with($name, 'request-')) continue;
+            if (!preg_match('/^request-[a-f0-9]{32}\.json$/D', $name) || $entry->isLink() || !$entry->isFile()) {
+                throw new \RuntimeException('Unsafe update request journal');
+            }
+            $record = OperationFiles::read($entry->getPathname());
+            if (($record['id'] ?? '') !== substr($name, 8, 32)) throw new \RuntimeException('Request journal ID mismatch');
+            $items[] = array_intersect_key($record, array_flip([
+                'id', 'action', 'actor', 'state', 'version', 'requested_at', 'confirmed_at', 'started_at', 'finished_at', 'failure', 'sha256',
+            ]));
+        }
+        usort($items, static fn (array $a, array $b): int => strcmp((string) ($b['requested_at'] ?? ''), (string) ($a['requested_at'] ?? '')) ?: strcmp((string) ($b['id'] ?? ''), (string) ($a['id'] ?? '')));
+        return array_slice($items, 0, $limit);
+    }
+
+    /** Read the signed download receipt for UI; staging will independently verify it. */
+    public function downloaded(): array
+    {
+        $dir = $this->path('downloads');
+        if (!is_dir($dir) || is_link($dir)) return [];
+        $results = [];
+        foreach (new \DirectoryIterator($dir) as $entry) {
+            if ($entry->isDot() || !$entry->isDir() || $entry->isLink() ||
+                !preg_match('/^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$/D', $entry->getFilename())) continue;
+            $receiptPath = $entry->getPathname() . '/verified.json';
+            if (!is_file($receiptPath) || is_link($receiptPath)) continue;
+            $receipt = OperationFiles::read($receiptPath);
+            if (($receipt['format'] ?? '') !== 'cajeerengine.verified-release.v1' || ($receipt['version'] ?? null) !== $entry->getFilename() ||
+                !preg_match('/^[a-f0-9]{64}$/D', (string) ($receipt['sha256'] ?? ''))) continue;
+            $results[] = array_intersect_key($receipt, array_flip(['version', 'channel', 'sha256', 'size', 'downloaded_at', 'key_id']));
+        }
+        usort($results, static fn (array $a, array $b): int => version_compare((string) $b['version'], (string) $a['version']));
+        return array_slice($results, 0, 20);
+    }
     public function runRequest(string $id): array
     {
         $this->cliOnly(); if (!preg_match('/^[a-f0-9]{32}$/D',$id)) throw new \RuntimeException('Invalid request ID');

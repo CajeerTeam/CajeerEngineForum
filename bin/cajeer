@@ -99,6 +99,37 @@ $autoload = $root . '/vendor/autoload.php';
 require_once $root . '/core/Update/OperationFiles.php';
 require_once $root . '/core/Update/OperationLock.php';
 require_once $root . '/core/Console/OperationsCli.php';
+// Live, read-only GA preflight. A billable provider probe is opt-in only.
+if (($argv[1] ?? '') === 'ai:acceptance') {
+    if (is_file($autoload)) require_once $autoload; else require_once $root . '/core/Console/NativeCli.php';
+    \CajeerEngine\Console\OperationsCli::loadEnv($root);
+    try {
+        $allowed = ['--require-production', '--probe-provider'];
+        foreach (array_slice($argv, 2) as $arg) if (!in_array($arg, $allowed, true)) throw new \InvalidArgumentException('Unknown AI acceptance option.');
+        $result = (new \CajeerEngine\AI\AiGaAcceptance($root,
+            new \CajeerEngine\Runtime\ConfigRepository($root),
+            new \CajeerEngine\Database\DatabaseManager(new \CajeerEngine\Runtime\ConfigRepository($root))
+        ))->run(in_array('--require-production', $argv, true), in_array('--probe-provider', $argv, true));
+        echo json_encode($result, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR) . PHP_EOL;
+        exit($result['ok'] ? 0 : 1);
+    } catch (\Throwable) { fwrite(STDERR, "[FAIL] AI acceptance cannot run.\n"); exit(1); }
+}
+if (in_array($argv[1] ?? '', ['identity:acceptance','identity:sessions:status','identity:sessions:migrate'], true)) {
+    if (is_file($autoload)) require_once $autoload; else require_once $root . '/core/Console/NativeCli.php';
+    exit(\CajeerEngine\Identity\IdentityDeploymentCli::run($root, $argv));
+}
+if (($argv[1] ?? '') === 'identity:link-user') {
+    if (is_file($autoload)) require_once $autoload; else require_once $root . '/core/Console/NativeCli.php';
+    exit(\CajeerEngine\Identity\OidcCli::run($root, $argv));
+}
+if (in_array($argv[1]??'', ['migration:validate','migration:sync','migration:cutover','migration:sync-rollback'],true)) {
+    if (is_file($autoload)) require_once $autoload; else require_once $root.'/core/Console/NativeCli.php';
+    exit(\CajeerEngine\Migration\MigrationCutoverCli::run($root,$argv));
+}
+if (in_array($argv[1]??'', ['migration:dle-import','migration:wordpress-import','migration:activate-user','migration:media-import','migration:seo-import','migration:execute','migration:resume','migration:pause','migration:status','migration:rollback'],true)) {
+    if (is_file($autoload)) require_once $autoload; else require_once $root.'/core/Console/NativeCli.php';
+    exit(in_array($argv[1]??'', ['migration:execute','migration:resume','migration:pause','migration:status','migration:rollback'],true)?\CajeerEngine\Migration\MigrationExecutionCli::run($root,$argv):(($argv[1]??'')==='migration:seo-import'?\CajeerEngine\Migration\SeoCli::run($root,$argv):(($argv[1]??'')==='migration:media-import'?\CajeerEngine\Migration\MediaCli::run($root,$argv):\CajeerEngine\Migration\DleCli::run($root,$argv))));
+}
 if (in_array($argv[1]??'', ['ops:check','ops:report','ops:metrics','ops:traces:flush'],true)) {
     if (is_file($autoload)) require_once $autoload; else require_once $root.'/core/Console/NativeCli.php';
     CajeerEngine\Console\OperationsCli::loadEnv($root);
@@ -123,9 +154,9 @@ if (in_array($argv[1]??'', ['extension:sign','extension:package:install','extens
     exit(\CajeerEngine\Extension\ExtensionOperations::run($root,$argv));
 }
 try {
-    $activityLease = CajeerEngine\Update\OperationLock::acquire($root, in_array($argv[1]??'', ['forum:import:run','forum:search:reindex','queue:redis-migrate','routing:rebuild','static:export','import:run','import:diff','export:create','extension:install','extension:uninstall','extension:enable','extension:disable','extension:migrate','extension:assets','extension:config'],true));
+    $activityLease = CajeerEngine\Update\OperationLock::acquire($root, in_array($argv[1]??'', ['queue:redis-migrate','routing:rebuild','static:export','import:run','import:diff','export:create','extension:install','extension:uninstall','extension:enable','extension:disable','extension:migrate','extension:assets','extension:config'],true));
     if ((CajeerEngine\Update\OperationLock::active($root)||is_file($root.'/storage/app/backup-restore.json')) && !in_array($argv[1]??'', ['list','--version'],true)) throw new RuntimeException('Recovery required; use operational CLI.');
-    if (CajeerEngine\Update\OperationLock::maintenance($root) && !in_array($argv[1] ?? '', ['forum:ecosystem:check','forum:import:plan','forum:import:run','forum:import:status','forum:import:map','list','--version','doctor','rc:doctor','system:report','stable:status','update:check','update:prepare','update','api:lint','release:verify','admin:assets','migrate:status','migrate:verify'], true)) {
+    if (CajeerEngine\Update\OperationLock::maintenance($root) && !in_array($argv[1] ?? '', ['list','--version','doctor','rc:doctor','system:report','stable:status','update:check','update:prepare','update','api:lint','release:verify','admin:assets','migrate:status','migrate:verify'], true)) {
         throw new RuntimeException('Maintenance active; CLI writes disabled.');
     }
 } catch (Throwable $e) { fwrite(STDERR, '[FAIL] '.$e->getMessage().PHP_EOL); exit(1); }
@@ -148,7 +179,7 @@ if (in_array($argv[1]??'', ['extension:install','extension:uninstall','extension
     CajeerEngine\Console\OperationsCli::loadEnv($root);
     if (!in_array(getenv('APP_ENV'),['local','dev','testing'],true)) { fwrite(STDERR,"Use signed package operations in production.\n"); exit(1); }
 }
-if (in_array($argv[1]??'', ['forum:ecosystem:check','forum:import:plan','forum:import:run','forum:import:status','forum:import:map','search:index','search:query','search:check','forum:extensions:check','forum:extensions:retry','forum:runtime:check','forum:performance:check','forum:search:check','forum:search:reindex'],true)||!is_file($autoload)) {
+if (in_array($argv[1]??'', ['search:index','search:query','search:check'],true)||!is_file($autoload)) {
     require_once $root . '/core/Console/NativeCli.php';
     exit(CajeerEngine\Console\NativeCli::run($root, $argv));
 }
@@ -159,7 +190,7 @@ if (is_file($root . '/.env')) {
     (new Dotenv())->usePutenv()->loadEnv($root . '/.env');
 }
 
-$cli = new Application('CajeerEngine CLI', trim((string) @file_get_contents($root . '/VERSION')) ?: '1.3.0');
+$cli = new Application('CajeerEngine CLI', trim((string) @file_get_contents($root . '/VERSION')) ?: '1.3.6');
 
 /** @var list<Symfony\Component\Console\Command\Command> $commands */
 $commands = [

@@ -15,7 +15,7 @@ final class GitHubReleaseCatalog
         foreach ($payload as $release) {
             if (!is_array($release) || ($release['draft'] ?? true) !== false || !is_bool($release['prerelease'] ?? null)) continue;
             $tag = $release['tag_name'] ?? null;
-            if (!is_string($tag) || !preg_match('/^v?((?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)(?:-[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?)$/D', $tag, $match)) continue;
+            if (!is_string($tag) || !preg_match('/^v?((?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)(?:-(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*)?)$/D', $tag, $match)) continue;
             $version = $match[1];
             $prerelease = $release['prerelease'];
             // A prerelease flag or SemVer suffix must never enter the stable channel.
@@ -23,18 +23,18 @@ final class GitHubReleaseCatalog
             $published = $release['published_at'] ?? null;
             if (!is_string($published) || $published === '' || strtotime($published) === false) continue;
             if (!is_array($release['assets'] ?? null)) continue;
-            $assets = []; $duplicates=[];
+            $assets = [];
             foreach ($release['assets'] as $asset) {
                 if (!is_array($asset) || ($asset['state'] ?? null) !== 'uploaded' || !is_string($asset['name'] ?? null) || !is_int($asset['size'] ?? null) || $asset['size'] <= 0) continue;
                 $name = $asset['name'];
                 // Construct canonical links ourselves; never forward arbitrary API-provided URLs.
-                if (isset($assets[$name])) { $duplicates[$name]=true; continue; }
+                if (isset($assets[$name])) continue;
                 $assets[$name] = $asset;
             }
             $artifacts = [];
             foreach (['source', 'dist'] as $mode) {
                 $name = "cajeerengine-$version-$mode.zip";
-                if (!isset($assets[$name], $assets[$name.'.sha256'], $assets[$name.'.sig'])||isset($duplicates[$name])||isset($duplicates[$name.'.sha256'])||isset($duplicates[$name.'.sig'])) continue;
+                if (!isset($assets[$name], $assets[$name.'.sha256'], $assets[$name.'.sig'])) continue;
                 $artifact = [
                     'name' => $name,
                     'download_url' => GitHubEndpoints::assetUrl($tag, $name),
@@ -58,7 +58,6 @@ final class GitHubReleaseCatalog
                 'artifacts' => $artifacts,
             ];
         }
-        $counts=array_count_values(array_column($releases,'version'));
-        return ['releases' => array_values(array_filter($releases,static fn($r)=>$counts[$r['version']]===1))];
+        return ['releases' => $releases];
     }
 }

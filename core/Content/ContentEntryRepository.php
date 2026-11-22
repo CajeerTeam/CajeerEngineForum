@@ -157,6 +157,32 @@ final class ContentEntryRepository
         return $index->mutate(fn() => $this->createRaw($typeHandle, $payload, $importId), ['storage/app/content/' . basename($this->path($typeHandle))]);
     }
 
+    /** Only the migration executor calls this; no HTTP payload can set historical metadata. */
+    public function importDleEntry(string $typeHandle,array $payload,?string $targetId,?string $authorId,?string $sourceDate,?int $expectedRevision=null):array
+    {
+        return $this->importMigrationEntry($typeHandle,$payload,$targetId,$authorId,$sourceDate,$expectedRevision);
+    }
+
+    public function importMigrationEntry(string $typeHandle,array $payload,?string $targetId,?string $authorId,?string $sourceDate,?int $expectedRevision=null):array
+    {
+        if (!$this->useDatabase() || !$this->pdo()->inTransaction()) throw new \LogicException('Content import requires a database transaction.');
+        if($targetId!==null){
+            if($expectedRevision===null||$expectedRevision<1)throw new RevisionConflict('Migration update requires the approved target revision.');
+            // updateRaw performs CAS while the route writer owns its database transaction.
+            $payload['expected_revision']=$expectedRevision;
+        }
+        $entry=$targetId===null?$this->create($typeHandle,$payload):$this->update($typeHandle,$targetId,$payload,'migration_import');
+        if($entry===null||$entry['slug']!==$payload['slug'])throw new RevisionConflict('Migration target changed during import.');
+        $params=['id'=>$entry['id']];$sets=[];
+        if($authorId!==null){$sets[]='author_id=:author';$params['author']=$authorId;}
+        if($sourceDate!==null){
+            if($targetId===null){$sets[]='created_at=:created';$params['created']=$sourceDate;}
+            if($payload['status']==='published'){$sets[]='published_at=:published';$params['published']=$sourceDate;}
+        }
+        if($sets){$q=$this->pdo()->prepare('UPDATE ce_content_entries SET '.implode(', ',$sets).' WHERE id=:id');$q->execute($params);}
+        return $this->findById($typeHandle,$entry['id'])??throw new \RuntimeException('Imported content disappeared.');
+    }
+
     private function createRaw(string $typeHandle, array $payload, ?string $importId = null): array
     {
         if ($this->useDatabase()) {
@@ -197,20 +223,23 @@ final class ContentEntryRepository
     }
 
     /** @param array<string, mixed> $payload @return array<string, mixed>|null */
-    public function update(string $typeHandle, string $idOrSlug, array $payload): ?array
+    public function update(string $typeHandle, string $idOrSlug, array $payload, string $revisionReason = 'updated'): ?array
     {
+        if (!in_array($revisionReason, ['updated', 'migration_import', 'migration_media', 'migration_seo', 'ai_editor'], true)) {
+            throw new \InvalidArgumentException('Unsupported content revision reason.');
+        }
         $index = new \CajeerEngine\Public\RouteIndex($this->rootPath, $this->database());
-        return $index->mutate(fn() => $this->updateRaw($typeHandle, $idOrSlug, $payload), ['storage/app/content/' . basename($this->path($typeHandle))], entryLookup: fn() => $this->find($typeHandle, $idOrSlug));
+        return $index->mutate(fn() => $this->updateRaw($typeHandle, $idOrSlug, $payload, $revisionReason), ['storage/app/content/' . basename($this->path($typeHandle))], entryLookup: fn() => $this->find($typeHandle, $idOrSlug));
     }
 
-    private function updateRaw(string $typeHandle, string $idOrSlug, array $payload): ?array
+    private function updateRaw(string $typeHandle, string $idOrSlug, array $payload, string $revisionReason = 'updated'): ?array
     {
         if (array_key_exists('expected_revision',$payload)) {
             $current=$this->find($typeHandle,$idOrSlug);
             if($current!==null && (!is_int($payload['expected_revision']) || $payload['expected_revision']!==(int)$current['revision'])) throw new RevisionConflict('Revision conflict: reload the current entry before saving.');
         }
         if ($this->useDatabase()) {
-            return $this->updateInDatabase($typeHandle, $idOrSlug, $payload, 'updated');
+            return $this->updateInDatabase($typeHandle, $idOrSlug, $payload, $revisionReason);
         }
 
         $type = $this->contentType($typeHandle);
@@ -241,7 +270,7 @@ final class ContentEntryRepository
                 'deleted_at' => null,
             ]);
 
-            $updated['revisions'] = $this->appendRevision(is_array($entry['revisions'] ?? null) ? $entry['revisions'] : [], $this->revisionSnapshot($updated, 'updated'));
+            $updated['revisions'] = $this->appendRevision(is_array($entry['revisions'] ?? null) ? $entry['revisions'] : [], $this->revisionSnapshot($updated, $revisionReason));
             $items[$index] = $updated;
             $this->persist($typeHandle, $items);
             $this->audit->record('content.entry.updated', null, ['type' => $typeHandle, 'id' => $updated['id'], 'revision' => $updated['revision'], 'storage' => 'file']);
@@ -404,7 +433,7 @@ final class ContentEntryRepository
 
         $snapshot = null;
         foreach ($this->revisions($typeHandle, $idOrSlug) as $item) {
-            if (is_array($item) && (int) ($item['revision'] ?? 0) === $revision) {
+            if ((int) ($item['revision'] ?? 0) === $revision) {
                 $snapshot = $item;
                 break;
             }
@@ -511,7 +540,7 @@ final class ContentEntryRepository
         return $result;
     }
 
-    /** @return array<string, mixed> */
+    /** Assert typed media references before persisting an entry. */
     private function assertMediaReferences(array $type,array $data): void
     {
         $catalog=null;
@@ -549,7 +578,7 @@ final class ContentEntryRepository
             'version' => 1,
             'type' => $typeHandle,
             'updated_at' => $this->now(),
-            'entries' => array_values($items),
+            'entries' => $items,
         ]);
     }
 

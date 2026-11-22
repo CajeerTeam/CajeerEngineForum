@@ -67,7 +67,7 @@ final readonly class SystemReport
         $importExport = new ImportExportService($this->rootPath);
         $exports = $importExport->exports();
         $updates = new UpdateResolver($config->get('updates', []), $this->rootPath);
-        $updateDiagnostics = $updates->diagnostics($project->editionVersion());
+        $updateDiagnostics = $updates->diagnostics($project->version());
         $releasePlan = (new ReleaseBuilder($this->rootPath))->plan();
         $rcReadiness = (new ReleaseCandidateAuditor($this->rootPath))->summaryOnly();
         $stableStatus = (new StableReleaseService($this->rootPath, $config))->status();
@@ -77,7 +77,7 @@ final readonly class SystemReport
                 'name' => $project->title(),
                 'package' => $project->name(),
                 'version' => $project->version(),
-                'edition_version' => $project->editionVersion(),
+            'edition_version' => $project->editionVersion(),
                 'engine_api_version' => $project->engineApiVersion(),
                 'api_version' => $config->string('app.api_version', 'v1'),
             ],

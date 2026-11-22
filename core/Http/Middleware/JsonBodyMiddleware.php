@@ -22,8 +22,15 @@ final readonly class JsonBodyMiddleware implements MiddlewareInterface
         $contentType = (string) $request->headers->get('Content-Type', '');
         $path = rawurldecode($request->getPathInfo());
         if (!str_starts_with($path, '/api/')) { return $next($request); }
-        if ((in_array($path, ['/api/v1/media','/api/v1/import-export/upload','/api/v1/forum/attachments'], true)||preg_match('~^/api/v1/media/[a-f0-9-]{36}/replace$~D',$path)) && $request->getMethod() === 'POST' && str_starts_with(strtolower($contentType), 'multipart/form-data')) {
+        if ((in_array($path, ['/api/v1/media','/api/v1/import-export/upload','/api/v1/forum/attachments'], true)||preg_match('~^/api/v1/media/[a-f0-9-]{36}/replace$~D',$path)||preg_match('~^/api/v1/migration/projects/[a-f0-9]{32}/wxr$~D',$path)) && $request->getMethod() === 'POST' && str_starts_with(strtolower($contentType), 'multipart/form-data')) {
             return $next($request);
+        }
+        // Reject declared oversized bodies before buffering them in PHP memory.
+        // The post-read check still handles missing or forged Content-Length.
+        $declared = $request->headers->get('Content-Length');
+        if ($declared !== null && preg_match('/^[0-9]{1,19}$/D', $declared) === 1
+            && (float)$declared > 40 * 1024 * 1024) {
+            return new JsonResponse(['error' => ['code' => 'body_too_large', 'message' => 'Request body too large.']], 413);
         }
         $content = trim($request->getContent());
         if (strlen($content) > 40 * 1024 * 1024) { return new JsonResponse(['error' => ['code' => 'body_too_large', 'message' => 'Request body too large.']], 413); }

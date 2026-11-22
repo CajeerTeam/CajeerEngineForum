@@ -37,7 +37,7 @@ final readonly class AdminController
             'data' => [
                 'app' => [
                     'name' => $this->config->string('app.name', 'CajeerEngine'),
-                    'version' => $this->config->string('app.version', '1.3.0'),
+                    'version' => $this->config->string('app.version', '1.5.0'),
                     'edition_version' => $this->config->string('app.edition_version'),
                     'locale' => $this->config->string('app.locale', 'ru'),
                     'api_base' => '/api/v1',
@@ -62,6 +62,7 @@ final readonly class AdminController
                     'import_export_ui' => true,
                     'update_ui' => true,
                     'extensions' => true,
+                    'integrations' => true,
                 ],
                 'security' => [
                     'api_auth_required' => $this->config->bool('security.api_auth_required', false),
@@ -86,7 +87,7 @@ final readonly class AdminController
         return new JsonResponse([
             'data' => [
                 'cards' => [
-                    ['label' => 'Версия', 'value' => $this->config->string('app.version', '1.3.0'), 'status' => 'ok'],
+                    ['label' => 'Версия', 'value' => $this->config->string('app.version', '1.5.0'), 'status' => 'ok'],
                     ['label' => 'Типы контента', 'value' => count($this->contentTypes->all()), 'status' => 'ok'],
                     ['label' => 'Записи', 'value' => (int) ($entryCounts['entries'] ?? 0), 'status' => 'ok'],
                     ['label' => 'Опубликовано', 'value' => (int) ($entryCounts['published'] ?? 0), 'status' => 'ok'],
@@ -126,6 +127,12 @@ final readonly class AdminController
             ['key' => 'media', 'label' => 'Media', 'path' => '/admin/#/media', 'scope' => 'media:write'],
             ['key' => 'cms', 'label' => 'CMS', 'path' => '/admin/#/cms', 'scope' => 'content:write'],
             ['key' => 'users', 'label' => 'Пользователи и роли', 'path' => '/admin/#/users', 'scope' => 'users:read'],
+            ['key' => 'migration', 'label' => 'Migration Center', 'path' => '/admin/#/migration', 'scope' => 'migration:read'],
+            ['key' => 'analytics_hub', 'label' => 'Analytics Hub', 'path' => '/admin/#/analytics-hub', 'scope' => 'analytics:read'],
+            ['key' => 'analytics_events', 'label' => 'События', 'path' => '/admin/#/analytics-events', 'scope' => 'tracking:read'],
+            ['key' => 'tracking', 'label' => 'Счётчики', 'path' => '/admin/#/tracking', 'scope' => 'tracking:read'],
+            ['key' => 'privacy', 'label' => 'Приватность', 'path' => '/admin/#/privacy', 'scope' => 'privacy:read'],
+            ['key' => 'integrations', 'label' => 'Интеграции', 'path' => '/admin/#/integrations', 'scope' => 'integrations:read'],
             ['key' => 'extensions', 'label' => 'Расширения', 'path' => '/admin/#/extensions', 'scope' => 'extensions:read'],
             ['key' => 'updates', 'label' => 'Updates', 'path' => '/admin/#/updates', 'scope' => 'system:write'],
             ['key' => 'search', 'label' => 'Search', 'path' => '/admin/#/search', 'scope' => 'content:read'],
@@ -141,7 +148,12 @@ final readonly class AdminController
         return is_array($identity) ? $identity : null;
     }
 
-    /** @template T @param callable():T $callback @param T $default @return T */
+    /**
+     * @template T
+     * @param callable():T $callback
+     * @param T $default
+     * @return T
+     */
     private function safe(callable $callback, mixed $default): mixed
     {
         try {

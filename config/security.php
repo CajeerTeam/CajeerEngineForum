@@ -18,6 +18,7 @@ return [
     ],
     'sessions' => [
         'ttl_days' => (int) (getenv('SESSION_TTL_DAYS') ?: 14),
+        'idle_minutes' => (int) (getenv('SESSION_IDLE_MINUTES') ?: 720),
     ],
     'api_tokens' => [
         'prefix' => 'ce_',
@@ -26,10 +27,25 @@ return [
     'rate_limits' => [
         'global' => (int) (getenv('RATE_LIMIT_GLOBAL') ?: 120),
         'auth' => (int) (getenv('RATE_LIMIT_AUTH') ?: 20),
+        'analytics' => (int) (getenv('RATE_LIMIT_ANALYTICS') ?: 60),
         'forum_search' => (int) (getenv('RATE_LIMIT_FORUM_SEARCH') ?: 60),
         'window_seconds' => (int) (getenv('RATE_LIMIT_WINDOW_SECONDS') ?: 60),
     ],
     'scopes' => [
+        'migration:read',
+        'migration:write',
+        'migration:run',
+        'analytics:read',
+        'analytics:write',
+        'analytics:run',
+        'tracking:read',
+        'tracking:write',
+        'privacy:read',
+        'privacy:write',
+        'integrations:read',
+        'integrations:write',
+        'integrations:secrets',
+        'integrations:run',
         'forum:write',
         'forum:moderate',
         'content:read',

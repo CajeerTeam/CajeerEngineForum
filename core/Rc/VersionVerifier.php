@@ -21,9 +21,21 @@ final readonly class VersionVerifier
         $admin = $this->json('admin/package.json');
         $checks = [];
 
-        $checks[] = $version === '1.3.0'
-            ? CheckResult::pass('version', 'VERSION', 'VERSION содержит 1.3.0.')
-            : CheckResult::fail('version', 'VERSION', 'VERSION должен быть 1.3.0.', ['actual' => $version]);
+        $checks[] = preg_match('/^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-(?:0|[1-9]\d*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*)?$/D', $version) === 1
+            ? CheckResult::pass('version', 'VERSION', 'VERSION содержит корректный номер релиза.')
+            : CheckResult::fail('version', 'VERSION', 'VERSION должен содержать SemVer MAJOR.MINOR.PATCH с допустимым prerelease-суффиксом.', ['actual' => $version]);
+
+        // Prereleases are never stable, even when the download artifact is versioned correctly.
+        $channel = $release['channel'] ?? null;
+        $expectedChannel = str_contains($version, '-rc') ? 'rc'
+            : (str_contains($version, '-beta') ? 'beta'
+            : (str_contains($version, '-') ? 'dev' : 'stable'));
+        $checks[] = $channel === $expectedChannel
+            ? CheckResult::pass('version', 'release.channel', 'Release channel matches SemVer prerelease status.')
+            : CheckResult::fail('version', 'release.channel', 'Prerelease channel/version mismatch.', ['expected' => $expectedChannel, 'actual' => $channel]);
+        $checks[] = ($release['stability'] ?? null) === $expectedChannel
+            ? CheckResult::pass('version', 'release.stability', 'Release stability matches SemVer and channel.')
+            : CheckResult::fail('version', 'release.stability', 'Release stability contradicts SemVer/channel.', ['expected' => $expectedChannel, 'actual' => $release['stability'] ?? null]);
 
         $expected = [
             'release.json' => $release['version'] ?? null,
@@ -37,6 +49,32 @@ final readonly class VersionVerifier
             $checks[] = $actual === $version
                 ? CheckResult::pass('version', $file, $file . ' синхронизирован с VERSION.', ['version' => $actual])
                 : CheckResult::fail('version', $file, $file . ' не синхронизирован с VERSION.', ['expected' => $version, 'actual' => $actual]);
+        }
+
+        // Do not publish a correctly tagged archive with stale visible UI or download links.
+        $manifest = $this->json('public/admin/assets/admin-manifest.json');
+        $checks[] = ($manifest['version'] ?? null) === $version && ($manifest['ready'] ?? false) === true
+            ? CheckResult::pass('version', 'admin.manifest', 'Published admin assets declare the current version.')
+            : CheckResult::fail('version', 'admin.manifest', 'Published admin assets are stale.', ['expected' => $version, 'actual' => $manifest['version'] ?? null]);
+
+        foreach (['source', 'dist'] as $mode) {
+            $expectedArtifact = 'storage/releases/cajeerengine-' . $version . '-' . $mode . '.zip';
+            $key = $mode . '_artifact';
+            $actual = $release['distribution'][$key] ?? null;
+            $checks[] = $actual === $expectedArtifact
+                ? CheckResult::pass('version', 'release.' . $key, 'Release artifact path matches VERSION.')
+                : CheckResult::fail('version', 'release.' . $key, 'Release artifact path does not match VERSION.', ['expected' => $expectedArtifact, 'actual' => $actual]);
+        }
+        foreach (['admin/static/assets/admin-app.js', 'public/admin/assets/admin-app.js'] as $file) {
+            if ($dist && !is_file($this->rootPath . '/' . $file)) {
+                continue;
+            }
+            $content = @file_get_contents($this->rootPath . '/' . $file);
+            preg_match("/const ADMIN_VERSION\s*=\s*['\"]([^'\"]+)['\"]/", is_string($content) ? substr($content, 0, 512) : '', $matches);
+            $actual = $matches[1] ?? null;
+            $checks[] = $actual === $version
+                ? CheckResult::pass('version', $file, 'Static admin UI displays VERSION.')
+                : CheckResult::fail('version', $file, 'Static admin UI displays a stale version.', ['expected' => $version, 'actual' => $actual]);
         }
 
 

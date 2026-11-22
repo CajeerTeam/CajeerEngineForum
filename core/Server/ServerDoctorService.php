@@ -203,8 +203,8 @@ final readonly class ServerDoctorService
             $checks[] = $this->check('database', 'schema_ready', (bool) ($health['schema_ready'] ?? false), 'Database schema ready', 'FAIL', 'Запустите миграции.', ['fix_command' => 'php bin/cajeer migrate']);
             $runner = new MigrationRunner($database->connection(), $this->rootPath . '/migrations');
             $status = $runner->status($database->migrationDriver());
-            $checks[] = $this->check('migrations', 'pending', count($status['pending'] ?? []) === 0, 'No pending migrations', 'FAIL', 'Запустите php bin/cajeer migrate.', ['pending' => count($status['pending'] ?? []), 'fix_command' => 'php bin/cajeer migrate']);
-            $checks[] = $this->check('migrations', 'failed', count($status['failed'] ?? []) === 0, 'No failed migrations', 'FAIL', 'Проверьте ошибку и выполните migrate:repair.', ['failed' => count($status['failed'] ?? []), 'fix_command' => 'php bin/cajeer migrate:repair --run']);
+            $checks[] = $this->check('migrations', 'pending', count($status['pending']) === 0, 'No pending migrations', 'FAIL', 'Запустите php bin/cajeer migrate.', ['pending' => count($status['pending']), 'fix_command' => 'php bin/cajeer migrate']);
+            $checks[] = $this->check('migrations', 'failed', count($status['failed']) === 0, 'No failed migrations', 'FAIL', 'Проверьте ошибку и выполните migrate:repair.', ['failed' => count($status['failed']), 'fix_command' => 'php bin/cajeer migrate:repair --run']);
         } catch (\Throwable $e) {
             $checks[] = $this->check('database', 'exception', false, 'Database diagnostics', 'WARN', $e->getMessage(), ['fix_command' => 'php bin/cajeer install:check']);
         }
@@ -253,7 +253,7 @@ final readonly class ServerDoctorService
     private function updateChecks(ConfigRepository $config): array
     {
         try {
-            $version = $config->string('app.version', trim((string) @file_get_contents($this->rootPath . '/VERSION')) ?: '1.3.0');
+            $version = $config->string('app.version', trim((string) @file_get_contents($this->rootPath . '/VERSION')) ?: '1.5.0');
             $updates = (new UpdateResolver($config->get('updates', []), $this->rootPath))->diagnostics($version);
             return [
                 $this->check('updates', 'metadata_ready', (bool) ($updates['metadata_ready'] ?? false), 'Update metadata ready', 'WARN', 'Проверьте resources/updates/releases.json или GitHub Releases API.', ['diagnostics' => $updates, 'fix_command' => 'php bin/cajeer update:check']),

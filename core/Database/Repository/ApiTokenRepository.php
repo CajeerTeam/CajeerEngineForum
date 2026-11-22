@@ -16,12 +16,14 @@ final readonly class ApiTokenRepository
     /** @param list<string> $scopes @return array{plain_token:string,id:string,prefix:string,expires_at:?string} */
     public function create(?string $userId, string $name, array $scopes, ?\DateTimeImmutable $expiresAt = null): array
     {
-        if ($userId === null) return $this->issue($userId, $name, $scopes, $expiresAt);
-        $users = new UserRepository($this->database, new RoleRepository($this->database));
-        return $users->locked($userId, function () use ($users, $userId, $name, $scopes, $expiresAt) {
-            if ($users->isForumErased($userId)) throw new \InvalidArgumentException('Account closed');
-            return $this->issue($userId, $name, $scopes, $expiresAt);
-        });
+        if ($userId !== null) {
+            $users = new UserRepository($this->database, new RoleRepository($this->database));
+            return $users->locked($userId, function () use ($users, $userId, $name, $scopes, $expiresAt) {
+                if ($users->isForumErased($userId)) throw new \InvalidArgumentException('Account closed');
+                return $this->issue($userId, $name, $scopes, $expiresAt);
+            });
+        }
+        return $this->issue($userId, $name, $scopes, $expiresAt);
     }
 
     private function issue(?string $userId, string $name, array $scopes, ?\DateTimeImmutable $expiresAt): array
@@ -32,7 +34,7 @@ final readonly class ApiTokenRepository
         $prefix = substr($plain, 0, 10);
         $scopes = $this->normalizeScopes($scopes);
         $scopesJson = json_encode($scopes, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
-        $expires = $expiresAt?->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d H:i:s');
+        $expires = $expiresAt?->format('Y-m-d H:i:s');
         $driver = $this->database->driver();
         $sql = $driver === 'pgsql'
             ? 'INSERT INTO ce_api_tokens (id, user_id, name, token_hash, token_prefix, scopes, expires_at, created_at) VALUES (:id, :user_id, :name, :token_hash, :token_prefix, CAST(:scopes AS jsonb), :expires_at, CURRENT_TIMESTAMP)'
@@ -96,17 +98,10 @@ final readonly class ApiTokenRepository
         if (!empty($row['revoked_at'])) {
             return null;
         }
-        if (!empty($row['expires_at']) && (self::expiryTimestamp((string)$row['expires_at']) <= time())) {
+        if (!empty($row['expires_at']) && (strtotime((string) $row['expires_at']) === false || strtotime((string) $row['expires_at']) <= time())) {
             return null;
         }
         return $this->normalize($row);
-    }
-
-    public static function expiryTimestamp(string $value): int
-    {
-        if ($value === '') return 0;
-        try { return (new \DateTimeImmutable($value,new \DateTimeZone('UTC')))->getTimestamp(); }
-        catch (\Exception) { return 0; }
     }
 
     public function touch(string $id): void
@@ -115,19 +110,25 @@ final readonly class ApiTokenRepository
         $stmt->execute(['id' => $id]);
     }
 
-    /** Only the token owner may revoke a token through the personal token API. */
-    public function revokeOwned(string $tokenId, string $userId): bool
-    {
-        $stmt=$this->database->connection()->prepare('UPDATE ce_api_tokens SET revoked_at=CURRENT_TIMESTAMP WHERE id=:id AND user_id=:user AND revoked_at IS NULL');
-        $stmt->execute(['id'=>$tokenId,'user'=>$userId]);
-        return $stmt->rowCount()===1;
-    }
-
     public function revoke(string $id): bool
     {
         $stmt = $this->database->connection()->prepare('UPDATE ce_api_tokens SET revoked_at = CURRENT_TIMESTAMP WHERE id = :id AND revoked_at IS NULL');
         $stmt->execute(['id' => $id]);
         return $stmt->rowCount() > 0;
+    }
+
+    /** Revoke only a non-session API token belonging to the current caller.
+     * The owner constraint belongs in the UPDATE, not in a preceding SELECT.
+     */
+    public function revokeOwned(string $id, string $ownerId): bool
+    {
+        if ($id === '' || $ownerId === '') return false;
+        $stmt = $this->database->connection()->prepare(
+            "UPDATE ce_api_tokens SET revoked_at = CURRENT_TIMESTAMP
+             WHERE id = :id AND user_id = :owner AND name <> 'admin-session' AND revoked_at IS NULL"
+        );
+        $stmt->execute(['id' => $id, 'owner' => $ownerId]);
+        return $stmt->rowCount() === 1;
     }
 
     public function revokeForUser(string $userId): int

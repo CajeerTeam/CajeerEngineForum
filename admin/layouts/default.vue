@@ -1,5 +1,6 @@
 <script setup lang="ts">
 const auth = useAdminAuth()
+const adminVersion = useRuntimeConfig().public.adminVersion
 onMounted(() => auth.load())
 </script>
 
@@ -7,13 +8,23 @@ onMounted(() => auth.load())
   <main class="ce-admin-shell">
     <aside class="ce-admin-sidebar">
       <strong>CajeerEngine</strong>
-      <small>Admin UI 1.1.4</small>
+      <small>Admin UI {{ adminVersion }}</small>
       <nav>
         <NuxtLink to="/">Обзор</NuxtLink>
         <NuxtLink to="/content-types">Типы контента</NuxtLink>
         <NuxtLink to="/content">Контент</NuxtLink>
         <NuxtLink to="/media">Media</NuxtLink>
         <NuxtLink to="/users">Пользователи</NuxtLink>
+        <NuxtLink to="/identity">SkiF4er ID</NuxtLink>
+        <NuxtLink to="/ai">AI Assistant</NuxtLink>
+        <NuxtLink to="/migration-copilot">AI Migration Copilot</NuxtLink>
+        <NuxtLink to="/analytics-insights">AI External Analytics</NuxtLink>
+        <NuxtLink to="/seo">AI SEO Assistant</NuxtLink>
+        <NuxtLink to="/translations">AI Translation Studio</NuxtLink>
+        <NuxtLink to="/diagnostics">AI CMS Diagnostics</NuxtLink>
+        <NuxtLink to="/knowledge">AI Knowledge Base</NuxtLink>
+        <NuxtLink to="/knowledge-chat">AI Knowledge Chat / RAG</NuxtLink>
+        <NuxtLink to="/support">AI Support Center</NuxtLink>
         <NuxtLink to="/api-tokens">API tokens</NuxtLink>
         <NuxtLink to="/extensions">Расширения</NuxtLink>
         <NuxtLink to="/import-export">Import / Export</NuxtLink>
@@ -22,7 +33,7 @@ onMounted(() => auth.load())
         <NuxtLink to="/stable">Stable</NuxtLink>
       </nav>
       <footer>
-        <NuxtLink v-if="!auth.token.value" class="ce-login-link" to="/login">Войти</NuxtLink>
+        <NuxtLink v-if="!auth.identity.value" class="ce-login-link" to="/login">Войти</NuxtLink>
         <button v-else class="ce-logout" @click="auth.logout()">Выйти</button>
       </footer>
     </aside>

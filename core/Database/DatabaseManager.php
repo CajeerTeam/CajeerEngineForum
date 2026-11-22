@@ -40,9 +40,6 @@ final class DatabaseManager
         }
 
         $connectionConfig = $this->config->get('database', []);
-        // SQLite paths are installation-relative, not relative to the CLI/worker
-        // current directory. Backups, recovery and operator tools can run from
-        // another cwd; opening a second empty database would be unsafe.
         if (is_array($connectionConfig) && ($driver ?? $this->driver()) === 'sqlite') {
             $sqlite = $connectionConfig['connections']['sqlite']['database'] ?? null;
             if (is_string($sqlite) && $sqlite !== ':memory:' && $sqlite !== '' && !str_starts_with($sqlite, '/')) {
@@ -61,50 +58,46 @@ final class DatabaseManager
         return $pdo;
     }
 
-    /** @template T @param callable(PDO):T $callback @return T */
-    public function transaction(callable $callback, bool $writeLock = true): mixed
+    /**
+     * @template T
+     * @param callable(PDO):T $callback
+     * @return T
+     */
+    public function transaction(callable $callback): mixed
     {
         $pdo = $this->connection();
         $started = !$pdo->inTransaction();
 
         $savepoint = null;
-        $entered=false;
+        if ($started) $pdo->beginTransaction();
+        else {
+            $savepoint='ce_sp_'.(++$this->savepointSequence);
+            $pdo->exec('SAVEPOINT '.$savepoint);
+        }
+
         $start=hrtime(true);$wall=microtime(true);$trace=\CajeerEngine\Observability\TraceScope::child();$previousTrace=\CajeerEngine\Observability\TraceScope::enter($trace);$outcome='failure';
         try {
-            if ($started) {
-                if ($writeLock && $this->driver() === 'sqlite') {
-                    // WAL readers may otherwise read first, then lose the upgrade
-                    // race to another writer (SQLITE_BUSY_SNAPSHOT). Serialize
-                    // writers before executing the mutation, without retries.
-                    $pdo->exec('BEGIN IMMEDIATE');
-                } else {
-                    $pdo->beginTransaction();
-                }
-            }
-            else {
-                $savepoint='ce_sp_'.(++$this->savepointSequence);
-                $pdo->exec('SAVEPOINT '.$savepoint);
-            }
-            $entered=true;
             $result = $callback($pdo);
             if ($started) $pdo->commit();
             elseif($savepoint!==null) $pdo->exec('RELEASE SAVEPOINT '.$savepoint);
             $outcome='success';return $result;
         } catch (Throwable $e) {
-            // A dead connection can also fail rollback. Never mask the original
-            // error or replay a mutation whose COMMIT outcome is unknown.
-            try {
-                if ($entered && $pdo->inTransaction()) {
-                    if($started)$pdo->rollBack();
-                    elseif($savepoint!==null){$pdo->exec('ROLLBACK TO SAVEPOINT '.$savepoint);$pdo->exec('RELEASE SAVEPOINT '.$savepoint);}
-                }
-            } catch (Throwable) { $this->disconnect(); }
-            if ($e instanceof \PDOException && DatabaseUnavailable::causedBy($e)) {
-                $this->disconnect();
-                throw new DatabaseUnavailable('Database connection unavailable',0,$e);
-            }
+            self::rollbackTransaction($pdo, $savepoint);
             throw $e;
         }finally{\CajeerEngine\Observability\TraceScope::leave($previousTrace);$duration=(hrtime(true)-$start)/1e9;(new \CajeerEngine\Observability\Metrics($this->config->rootPath()))->buffered('database','transaction',$outcome,$duration);(new \CajeerEngine\Observability\TraceExporter($this->config->rootPath()))->record($trace,'database','transaction',$wall,$duration,$outcome==='success');}
+    }
+
+    private static function rollbackTransaction(PDO $pdo, ?string $savepoint): void
+    {
+        if (!$pdo->inTransaction()) {
+            return;
+        }
+        if ($savepoint === null) {
+            $pdo->rollBack();
+            return;
+        }
+        $pdo->exec('ROLLBACK TO SAVEPOINT ' . $savepoint);
+        $pdo->exec('RELEASE SAVEPOINT ' . $savepoint);
     }
 
     /** Consistent count + page without taking a publication writer lock. */
@@ -117,7 +110,7 @@ final class DatabaseManager
         return $this->transaction(function(PDO $pdo)use($callback,$driver){
             if($driver==='pgsql')$pdo->exec('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY');
             return $callback($pdo);
-        }, false);
+        });
     }
 
     /** @return array<string, mixed> */
@@ -141,17 +134,17 @@ final class DatabaseManager
                 'database' => $this->databaseName(),
                 'latency_ms' => round((microtime(true) - $startedAt) * 1000, 2),
                 'tables' => $tables,
-                'missing_tables' => array_values(array_keys(array_filter($tables, static fn (bool $exists): bool => !$exists))),
+                'missing_tables' => array_keys(array_filter($tables, static fn (bool $exists): bool => !$exists)),
                 'schema_ready' => !in_array(false, $tables, true) && !in_array(false, $contentColumns, true) && !in_array(false, $securityColumns, true),
                 'content_core' => [
                     'ready' => !in_array(false, $contentColumns, true),
                     'columns' => $contentColumns,
-                    'missing_columns' => array_values(array_keys(array_filter($contentColumns, static fn (bool $exists): bool => !$exists))),
+                    'missing_columns' => array_keys(array_filter($contentColumns, static fn (bool $exists): bool => !$exists)),
                 ],
                 'security_core' => [
                     'ready' => !in_array(false, $securityColumns, true),
                     'columns' => $securityColumns,
-                    'missing_columns' => array_values(array_keys(array_filter($securityColumns, static fn (bool $exists): bool => !$exists))),
+                    'missing_columns' => array_keys(array_filter($securityColumns, static fn (bool $exists): bool => !$exists)),
                 ],
                 'queue_core' => [
                     'ready' => $this->tableExistsOn($pdo, $driver, 'ce_jobs') && ($driver!=='pgsql'||($this->columnExistsOn($pdo,$driver,'ce_jobs','reservation_token')&&$this->columnExistsOn($pdo,$driver,'ce_jobs','lease_until'))),
@@ -169,7 +162,7 @@ final class DatabaseManager
                 'latency_ms' => round((microtime(true) - $startedAt) * 1000, 2),
                 'error' => [
                     'class' => $e::class,
-                    'message' => $e->getMessage(),
+                    'message' => 'Database health check failed.',
                 ],
             ];
         }
@@ -248,7 +241,6 @@ final class DatabaseManager
             'ce_users.password_changed_at' => ['ce_users', 'password_changed_at'],
             'ce_users.email_verified_at' => ['ce_users', 'email_verified_at'],
             'ce_users.two_factor_recovery_codes' => ['ce_users', 'two_factor_recovery_codes'],
-            'ce_users.two_factor_last_step' => ['ce_users','two_factor_last_step'],
             'ce_api_tokens.token_prefix' => ['ce_api_tokens', 'token_prefix'],
             'ce_api_tokens.revoked_at' => ['ce_api_tokens', 'revoked_at'],
         ];
@@ -284,6 +276,9 @@ final class DatabaseManager
             'ce_public_route_state',
             'ce_public_routes',
             'ce_cms_search',
+            'analytics_connections',
+            'analytics_reports',
+            'analytics_sync_runs',
             'ce_forum_categories','ce_forum_boards','ce_forum_threads','ce_forum_posts',
             'ce_forum_reactions','ce_forum_watches','ce_forum_reports','ce_identity_challenges',
             'ce_forum_category_permissions','ce_forum_board_permissions',

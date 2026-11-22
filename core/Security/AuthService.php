@@ -7,11 +7,16 @@ namespace CajeerEngine\Security;
 use CajeerEngine\Database\Repository\ApiTokenRepository;
 use CajeerEngine\Database\Repository\AuditLogRepository;
 use CajeerEngine\Database\Repository\UserRepository;
+use CajeerEngine\Database\Repository\UserSessionRepository;
+use CajeerEngine\Identity\OidcApiAuthenticator;
 use CajeerEngine\Runtime\ConfigRepository;
 use Symfony\Component\HttpFoundation\Request;
 
 final readonly class AuthService
 {
+    // Fixed Argon2id hash to equalize the expensive password-verification path
+    // when an email is not registered. No secret or usable account is involved.
+    private const UNKNOWN_USER_HASH = '$argon2id$v=19$m=65536,t=4,p=1$bHNHMzBqRmJ1elBCQUM4Wg$B5KAcMbRe1SzFwjsl0MEMkLkgiGAw/naNMTOuahzBXY';
     public function __construct(
         private ConfigRepository $config,
         private UserRepository $users,
@@ -19,59 +24,74 @@ final readonly class AuthService
         private AuditLogRepository $audit,
         private PasswordHasher $passwords,
         private TwoFactorTotp $totp,
+        private ?UserSessionRepository $sessions = null,
+        private ?OidcApiAuthenticator $oidcApi = null,
     ) {
     }
 
     /** @return array<string, mixed> */
-    public function login(string $email, string $password, ?string $twoFactorCode, Request $request): array
+    public function login(#[\SensitiveParameter] string $email, #[\SensitiveParameter] string $password, #[\SensitiveParameter] ?string $twoFactorCode, Request $request): array
     {
         $user = $this->users->findByEmailForAuth($email);
-        if ($user === null) {
-            $this->audit->record('auth.login_failed', null, ['reason'=>'invalid_credentials'], $request->getClientIp(), $request->headers->get('User-Agent'));
-            throw new \RuntimeException('Неверный email или пароль.');
+        $validPassword = $this->passwords->verify($password,
+            is_array($user) ? (string)$user['password_hash'] : self::UNKNOWN_USER_HASH);
+        $emailHash = hash('sha256', mb_strtolower(trim($email)));
+        if (!$validPassword || $user === null || ($user['status'] ?? 'active') !== 'active') {
+            $this->audit->record('auth.login_failed', is_array($user) ? (string)$user['id'] : null,
+                ['email_sha256' => $emailHash, 'reason' => $user !== null && !$validPassword ? 'invalid_credentials'
+                    : ($user === null ? 'invalid_credentials' : 'disabled_user')],
+                $request->getClientIp(), $request->headers->get('User-Agent'));
+            throw new \RuntimeException('Неверные учётные данные или код подтверждения.');
         }
-        $hit=(new RateLimiter($this->config->rootPath()))->hit('auth-account',(string)$user['id'],max(5,$this->config->int('security.rate_limits.auth',20)),60);
-        if (!$hit['allowed']) throw new \CajeerEngine\Forum\ForumException('Превышен лимит попыток входа.',429);
-        // Re-read credentials after locking, so a password reset cannot race session issuance.
-        try {
-            return $this->users->locked((string)$user['id'], function () use ($email, $password, $twoFactorCode, $request): array {
-                $user = $this->users->findByEmailForAuth($email);
-                if ($user === null || !$this->passwords->verify($password, (string)$user['password_hash'])) {
-                    throw new \RuntimeException('Неверный email или пароль.');
-                }
-                if (($user['status'] ?? 'active') !== 'active') {
-                    throw new \RuntimeException('Аккаунт не активирован или отключён.');
-                }
-                if (filter_var($user['two_factor_enabled'] ?? false, FILTER_VALIDATE_BOOLEAN)) {
-                    $secret = (string)($user['two_factor_secret'] ?? '');
-                    if ($secret === '' || $twoFactorCode === null || !$this->verifyTwoFactorCode((string)$user['id'], $secret, $twoFactorCode)) {
-                        throw new \RuntimeException('Требуется корректный 2FA-код.');
-                    }
-                }
-                $scopes = $this->users->permissionsForUser((string)$user['id']);
-                $ttlDays = max(1, $this->config->int('security.sessions.ttl_days', 14));
-                $token = $this->tokens->create((string)$user['id'], 'admin-session', $scopes, new \DateTimeImmutable('+' . $ttlDays . ' days'));
-                $this->users->markLogin((string)$user['id']);
-                $this->audit->record('auth.login_success', (string)$user['id'], ['email'=>$user['email'],'token_id'=>$token['id']], $request->getClientIp(), $request->headers->get('User-Agent'));
-                $suspended=$this->users->forumSuspended((string)$user['id']);
-                $publicUser=$this->publicUser($this->users->findById((string)$user['id']) ?? $user);
-                if($suspended)$publicUser['permissions']=[];
-                return [
-                    'access_token'=>$token['plain_token'],
-                    'token_type'=>'Bearer',
-                    'expires_at'=>$token['expires_at'] ?? null,
-                    'user'=>$publicUser,
-                    'scopes'=>$suspended?[]:$scopes,
-                    'suspended'=>$suspended,
-                ];
-            });
-        } catch (\PDOException|\CajeerEngine\Database\DatabaseUnavailable $e) {
-            throw $e;
-        } catch (\RuntimeException $e) {
-            // Record failures outside the rolled-back login transaction.
-            $this->audit->record('auth.login_failed',(string)$user['id'],['reason'=>'authentication_failed'],$request->getClientIp(),$request->headers->get('User-Agent'));
-            throw $e;
+
+        if ((bool) ($user['two_factor_enabled'] ?? false)) {
+            $secret = (string) ($user['two_factor_secret'] ?? '');
+            if ($secret === '' || $twoFactorCode === null || !$this->verifyTwoFactorCode((string) $user['id'], $secret, $twoFactorCode)) {
+                $this->audit->record('auth.login_failed', (string) $user['id'],
+                    ['email_sha256' => $emailHash, 'reason' => 'two_factor_failed'],
+                    $request->getClientIp(), $request->headers->get('User-Agent'));
+                throw new \RuntimeException('Неверные учётные данные или код подтверждения.');
+            }
         }
+
+        $suspended = $this->users->forumSuspended((string) $user['id']);
+        $scopes = $suspended ? [] : $this->users->permissionsForUser((string) $user['id']);
+        $ttlDays = max(1, $this->config->int('security.sessions.ttl_days', 14));
+        $token = $this->issueSession((string) $user['id'], $scopes, $ttlDays, 'local', $request);
+        $this->users->markLogin((string) $user['id']);
+        $this->audit->record('auth.login_success', (string) $user['id'], ['email_sha256' => $emailHash, 'token_id' => $token['id']], $request->getClientIp(), $request->headers->get('User-Agent'));
+
+        return [
+            'access_token' => $token['plain_token'],
+            'token_type' => 'Bearer',
+            'expires_at' => $token['expires_at'] ?? null,
+            'user' => $this->publicUser($this->users->findById((string) $user['id']) ?? $user),
+            'scopes' => $scopes,
+            'suspended' => $suspended,
+        ];
+    }
+
+    /** Create a normal local session only for an already-linked and active OIDC identity. */
+    public function loginExternal(string $userId, array $verifiedClaims, Request $request): array
+    {
+        $user = $this->users->findById($userId);
+        if ($user === null || ($user['status'] ?? '') !== 'active') throw new \RuntimeException('Account disabled or unavailable.');
+        if (($user['two_factor_enabled'] ?? false)) {
+            $amr = $verifiedClaims['amr'] ?? [];
+            if (!is_array($amr) || !array_is_list($amr) || count($amr) > 16
+                || count(array_filter($amr, 'is_string')) !== count($amr)
+                || !array_intersect(['mfa', 'otp', 'hwk', 'swk'], $amr)) {
+                throw new \RuntimeException('External multi-factor authentication evidence required.');
+            }
+        }
+        $suspended = $this->users->forumSuspended($userId);
+        $scopes = $suspended ? [] : $this->users->permissionsForUser($userId);
+        $ttlDays = max(1, $this->config->int('security.sessions.ttl_days', 14));
+        $token = $this->issueSession($userId, $scopes, $ttlDays, 'skif4er', $request, $verifiedClaims);
+        $this->users->markLogin($userId);
+        $this->audit->record('auth.oidc_login_success', $userId, ['provider'=>'skif4er', 'token_id'=>$token['id']], $request->getClientIp(), $request->headers->get('User-Agent'));
+        $public = $this->users->findById($userId) ?? $user;
+        return ['access_token'=>$token['plain_token'], 'token_type'=>'Bearer', 'expires_at'=>$token['expires_at'], 'user'=>$this->publicUser($public), 'scopes'=>$scopes, 'suspended'=>$suspended];
     }
 
     /** @return array<string, mixed>|null */
@@ -79,32 +99,51 @@ final readonly class AuthService
     {
         $authorization = (string) $request->headers->get('Authorization', '');
         $token = '';
-        // Reject conflicting explicit credentials rather than choosing an attacker-controlled priority.
-        if ($request->headers->has('Authorization') && $request->headers->has('X-API-Token')) return null;
-        // Never downgrade a malformed/empty Authorization credential to an API token
-        // or browser cookie: ambiguous credentials must fail authentication.
-        if ($request->headers->has('Authorization')) {
-            if (!preg_match('/^Bearer[ \t]+(ce_[a-f0-9]{64})$/iD', $authorization, $m)) return null;
-            $token = $m[1];
-        }
-        $cookie = false;
-        if ($token === '' && $request->headers->has('X-API-Token')) {
+        if (preg_match('/^Bearer\s+(.+)$/i', $authorization, $m)) {
+            $token = trim($m[1]);
+        } elseif ($authorization !== '') { return null; }
+        if ($token === '') {
             $token = (string) $request->headers->get('X-API-Token', '');
-            if (!preg_match('/^ce_[a-f0-9]{64}$/D', $token)) return null;
         }
         if ($token === '') {
             $token = (string) $request->cookies->get('ce_session', '');
             $cookie = true;
         }
-        if (!preg_match('/^ce_[a-f0-9]{64}$/D', $token)) return null;
+        if ($token === '') { return null; }
+        $cookie = $cookie ?? false;
+
+        // External JWTs never masquerade as local opaque API tokens or browser cookies.
+        if (!$cookie && preg_match('/^Bearer\s+/i', $authorization) === 1 && !str_starts_with($token, 'ce_')) {
+            $path = $request->getPathInfo();
+            if ($this->oidcApi === null || !str_starts_with($path, '/api/v1/')
+                || (str_starts_with($path, '/api/v1/auth/') && $path !== '/api/v1/auth/me')
+                || str_starts_with($path, '/api/v1/identity/')
+                || str_starts_with($path, '/api/v1/api-tokens')) return null;
+            $external = $this->oidcApi->authenticate($token);
+            if ($external === null) return null;
+            $uid = $external['user_id'];
+            $user = $this->users->findById($uid);
+            if ($user === null || ($user['status'] ?? null) !== 'active') return null;
+            $suspended = $this->users->forumSuspended((string)$uid);
+            $scopes = $suspended ? [] : self::intersectScopes($external['permissions'], $this->users->permissionsForUser($uid));
+            return [
+                'token_id'=>null, 'session'=>false, 'cookie'=>false, 'csrf_token'=>null,
+                'auth_source'=>'oidc_access', 'user'=>$this->publicUser($user),
+                'user_id'=>$uid, 'scopes'=>$scopes, 'suspended'=>$suspended,
+            ];
+        }
 
         $record = $this->tokens->findValidPlainToken($token);
         if ($record === null) {
             return null;
         }
-        $user = isset($record['user_id']) && $record['user_id'] !== null ? $this->users->findById((string) $record['user_id']) : null;
+        $user = isset($record['user_id']) ? $this->users->findById((string) $record['user_id']) : null;
         if ($user === null || ($user['status'] ?? '') !== 'active') { return null; }
         if ($cookie && $record['name'] !== 'admin-session') { return null; }
+        // Never accept an opaque browser session as an ordinary API token if the
+        // backing idle-timeout, provider and revocation registry is unavailable.
+        if ($record['name'] === 'admin-session' && ($this->sessions === null
+            || !$this->sessions->validate($record, $request, max(5, $this->config->int('security.sessions.idle_minutes', 720))))) { return null; }
         $scopes = $record['scopes'];
         if (is_string($scopes)) {
             $decoded = json_decode($scopes, true);
@@ -115,9 +154,18 @@ final readonly class AuthService
         }
         // A token is an upper bound, never a grant beyond current role permissions.
         $scopes = self::intersectScopes(is_array($scopes) ? $scopes : [], $this->users->permissionsForUser((string) $user['id']));
-        $suspended=$this->users->forumSuspended((string)$user['id']);
-        $publicUser=$this->publicUser($user);
-        if($suspended){$scopes=[];$publicUser['permissions']=[];}
+        // Optional operator-maintained ceiling for OIDC browser sessions. External realm/group
+        // role claims are intentionally NEVER used to grant local CMS permissions.
+        if ($record['name'] === 'admin-session' && ($this->sessions->find((string)$record['id'])['provider'] ?? null) === 'skif4er') {
+            $ceiling = getenv('SKIF4ER_ID_SESSION_MAX_PERMISSIONS');
+            if (is_string($ceiling) && trim($ceiling) !== '') {
+                $allowed = array_values(array_unique(array_filter(array_map('trim', explode(',', $ceiling)),
+                    static fn (string $permission): bool => preg_match('/^[a-z0-9*_.:-]{1,64}$/D', $permission) === 1)));
+                $scopes = self::intersectScopes($allowed, $scopes);
+            }
+        }
+        $suspended = $this->users->forumSuspended((string)$user['id']);
+        if ($suspended) $scopes = [];
         $this->tokens->touch((string) $record['id']);
         return [
             'token_id' => (string) $record['id'],
@@ -125,10 +173,89 @@ final readonly class AuthService
             'suspended' => $suspended,
             'cookie' => $cookie,
             'csrf_token' => $cookie ? self::csrfToken($token) : null,
-            'user' => $publicUser,
+            'user' => $this->publicUser($user),
             'user_id' => $record['user_id'] ?? null,
-            'scopes' => is_array($scopes) ? array_values($scopes) : [],
+            'scopes' => array_values($scopes),
         ];
+    }
+
+    /** @param list<string> $scopes @param array<string,mixed> $claims */
+    private function issueSession(string $userId, array $scopes, int $ttlDays, string $provider, Request $request, array $claims = []): array
+    {
+        if ($this->sessions === null) throw new \RuntimeException('Session registry unavailable.');
+        $ttlDays = min(30, max(1, $ttlDays));
+        $expiresAt = new \DateTimeImmutable('+' . $ttlDays . ' days', new \DateTimeZone('UTC'));
+        $token = $this->tokens->create($userId, 'admin-session', $scopes, $expiresAt);
+        try { $this->sessions->register($token['id'], $userId, $provider, $request, $token['expires_at'], $claims); }
+        catch (\Throwable $e) { $this->tokens->revoke($token['id']); throw $e; }
+        return $token;
+    }
+
+    /** Only a current same-origin browser session may enumerate or revoke sessions. */
+    public function sessionList(array $identity): array
+    {
+        $this->requireBrowserSession($identity);
+        return $this->requireSessions()->activeForUser((string)$identity['user_id'], (string)$identity['token_id'], max(5,$this->config->int('security.sessions.idle_minutes', 720)));
+    }
+
+    public function revokeSession(array $identity, string $sessionId): bool
+    {
+        $this->requireBrowserSession($identity);
+        if (!preg_match('/^[0-9a-fA-F-]{36}$/D', $sessionId)) return false;
+        $done = $this->requireSessions()->revoke($sessionId, (string)$identity['user_id']);
+        if ($done) $this->audit->record('auth.session_revoked', (string)$identity['user_id'], ['session_id'=>$sessionId]);
+        return $done;
+    }
+
+    public function revokeAllSessions(array $identity): int
+    {
+        $this->requireBrowserSession($identity);
+        $count = $this->requireSessions()->revokeOthers((string)$identity['user_id'], null);
+        $this->audit->record('auth.all_sessions_revoked', (string)$identity['user_id'], ['count'=>$count]);
+        return $count;
+    }
+
+    public function revokeOtherSessions(array $identity): int
+    {
+        $this->requireBrowserSession($identity);
+        $count = $this->requireSessions()->revokeOthers((string)$identity['user_id'], (string)$identity['token_id']);
+        $this->audit->record('auth.other_sessions_revoked', (string)$identity['user_id'], ['count'=>$count]);
+        return $count;
+    }
+
+    /** Atomically replace a browser cookie credential, preserving external/local provenance. */
+    public function rotateSession(array $identity, Request $request): array
+    {
+        $this->requireBrowserSession($identity);
+        $sessions = $this->requireSessions();
+        $oldId = (string)$identity['token_id']; $uid = (string)$identity['user_id'];
+        $old = $sessions->find($oldId);
+        if ($old === null || $old['revoked_at'] !== null) throw new \RuntimeException('Session is not active.');
+        $scopes = $this->users->permissionsForUser($uid);
+        // A failed transaction leaves the original session untouched.
+        $database = $sessions->database();
+        $token = $database->transaction(function (\PDO $pdo) use ($sessions, $old, $oldId, $uid, $scopes, $request): array {
+            $ttlDays = max(1, $this->config->int('security.sessions.ttl_days', 14));
+            $new = $this->issueSession($uid, $scopes, $ttlDays, (string)$old['provider'], $request, ['sid_hash'=>$old['oidc_sid_hash'], 'sub_hash'=>$old['oidc_sub_hash']]);
+            if (!$sessions->revoke($oldId, $uid)) throw new \RuntimeException('Session changed during rotation.');
+            return $new;
+        });
+        $this->audit->record('auth.session_rotated', $uid, ['old_token_id'=>$oldId, 'token_id'=>$token['id']]);
+        return ['access_token'=>$token['plain_token'], 'expires_at'=>$token['expires_at'], 'csrf_token'=>self::csrfToken($token['plain_token'])];
+    }
+
+    private function requireBrowserSession(array $identity): void
+    {
+        if (($identity['session'] ?? false) !== true || ($identity['cookie'] ?? false) !== true
+            || !is_string($identity['user_id'] ?? null) || !is_string($identity['token_id'] ?? null)) {
+            throw new \RuntimeException('An authenticated browser session is required.');
+        }
+    }
+
+    private function requireSessions(): UserSessionRepository
+    {
+        if ($this->sessions === null) throw new \RuntimeException('Session registry unavailable.');
+        return $this->sessions;
     }
 
     public static function csrfToken(string $token): string
@@ -173,32 +300,53 @@ final readonly class AuthService
         if (!is_array($identity) || !isset($identity['token_id'])) {
             return false;
         }
-        $this->tokens->revoke((string) $identity['token_id']);
+        if ($this->sessions !== null && ($identity['session'] ?? false) && is_string($identity['user_id'] ?? null)) {
+            $this->sessions->revoke((string)$identity['token_id'], (string)$identity['user_id']);
+        } else { $this->tokens->revoke((string)$identity['token_id']); }
         $this->audit->record('auth.logout', isset($identity['user_id']) ? (string) $identity['user_id'] : null, ['token_id' => $identity['token_id']], $request->getClientIp(), $request->headers->get('User-Agent'));
         return true;
     }
 
-    public function confirmSensitiveAction(array $identity, string $password, ?string $code): bool
+    public function confirmSensitiveAction(array $identity, #[\SensitiveParameter] string $password, #[\SensitiveParameter] ?string $code): bool
     {
-        if (!($identity['session'] ?? false) || empty($identity['user']['email']) || $password === '' || strlen($password)>1024) return false;
+        if (!($identity['session'] ?? false) || empty($identity['user']['email']) || $password === '') { return false; }
         $user = $this->users->findByEmailForAuth((string) $identity['user']['email']);
-        if ($user === null || $user['status'] !== 'active' || !$this->passwords->verify($password, (string)$user['password_hash'])) return false;
-        return !filter_var($user['two_factor_enabled'] ?? false,FILTER_VALIDATE_BOOLEAN)
-            || ($code !== null && $this->verifyTwoFactorCode((string)$user['id'],(string)$user['two_factor_secret'],$code));
+        if ($user === null || !$this->passwords->verify($password, (string) $user['password_hash'])) { return false; }
+        return !filter_var($user['two_factor_enabled'] ?? false, FILTER_VALIDATE_BOOLEAN)
+            || ($code !== null && $this->verifyTwoFactorCode((string) $user['id'], (string) $user['two_factor_secret'], $code));
+    }
+
+    /** @return array{secret:string,recovery_codes:list<string>} */
+    public function enableTwoFactor(string $userId): array
+    {
+        $secret = $this->totp->generateSecret();
+        $codes = $this->totp->recoveryCodes();
+        $this->users->enableTwoFactor($userId, $secret, $this->totp->hashRecoveryCodes($codes));
+        $this->tokens->revokeForUser($userId);
+        $this->audit->record('auth.2fa_enabled', $userId, []);
+        return ['secret' => $secret, 'recovery_codes' => $codes];
+    }
+
+    public function disableTwoFactor(string $userId): void
+    {
+        $this->users->disableTwoFactor($userId);
+        $this->tokens->revokeForUser($userId);
+        $this->audit->record('auth.2fa_disabled', $userId, []);
     }
 
     /** @return array<string, mixed> */
     private function publicUser(array $user): array
     {
-        unset($user['password_hash'], $user['two_factor_secret'], $user['two_factor_recovery_codes'], $user['two_factor_last_step']);
+        unset($user['password_hash'], $user['two_factor_secret'], $user['two_factor_recovery_codes']);
         $user['permissions'] = isset($user['id']) ? $this->users->permissionsForUser((string) $user['id']) : [];
         return $user;
     }
 
-    private function verifyTwoFactorCode(string $userId, string $secret, string $code): bool
+    private function verifyTwoFactorCode(string $userId, #[\SensitiveParameter] string $secret, #[\SensitiveParameter] string $code): bool
     {
-        $step = $this->totp->matchingStep($secret, $code);
-        if ($step !== null) return $this->users->acceptTotpStep($userId, $step);
+        if ($this->totp->verify($secret, $code)) {
+            return true;
+        }
         return $this->users->consumeRecoveryCode($userId, $code);
     }
 }

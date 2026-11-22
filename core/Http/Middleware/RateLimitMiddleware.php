@@ -19,26 +19,25 @@ final readonly class RateLimitMiddleware implements MiddlewareInterface
     public function process(Request $request, callable $next): Response
     {
         $path = rawurldecode($request->getPathInfo());
-        $bucket = ((str_starts_with($path, '/api/v1/auth/') && $path !== '/api/v1/auth/privacy/export') || $path === '/api/v1/forum/register') ? 'auth' : 'global';
-        $limit = $this->config->int('security.rate_limits.' . $bucket, $bucket === 'auth' ? 20 : 120);
+        $bucket = $path === '/api/v1/public/analytics/events' ? 'analytics' : ((str_starts_with($path, '/api/v1/auth/') || $path === '/api/v1/forum/register' || str_starts_with($path, '/api/v1/identity/') || str_starts_with($path, '/auth/oidc/')) ? 'auth' : 'global');
+        $limit = $this->config->int('security.rate_limits.' . $bucket, $bucket === 'auth' ? 20 : ($bucket === 'analytics' ? 60 : 120));
         $window = $this->config->int('security.rate_limits.window_seconds', 60);
         $identity = ($request->getClientIp() ?: 'unknown');
         $hit = $this->limiter->hit($bucket, $identity, $limit, $window);
-        // Search and author discovery consume both the existing global budget and a smaller shared budget.
-        if ($hit['allowed'] && ($path === '/api/v1/forum/search' || ($path === '/api/v1/forum/members' && ($request->query->all()['discovery']??null)==='1'))) {
-            $search = $this->limiter->hit('forum_search', $identity, $this->config->int('security.rate_limits.forum_search',60), $window);
-            if (!$search['allowed'] || $search['remaining'] < $hit['remaining']) $hit=$search;
-        }
 
+        if ($hit['allowed'] && ($path === '/api/v1/forum/search' || ($path === '/api/v1/forum/members' && ($request->query->all()['discovery'] ?? null) === '1'))) {
+            $search = $this->limiter->hit('forum_search', $identity, $this->config->int('security.rate_limits.forum_search', 60), $window);
+            if (!$search['allowed'] || $search['remaining'] < $hit['remaining']) $hit = $search;
+        }
         if (!$hit['allowed']) {
             $response = new JsonResponse([
                 'error' => [
-                    'code' => ($hit['unavailable']??false) ? 'rate_limit_unavailable' : 'rate_limit_exceeded',
-                    'message' => ($hit['unavailable']??false) ? 'Сервис временно недоступен.' : 'Превышен лимит запросов.',
+                    'code' => 'rate_limit_exceeded',
+                    'message' => 'Превышен лимит запросов.',
                     'retry_after' => $hit['retry_after'],
                     'request_id' => (string) $request->attributes->get('request_id', ''),
                 ],
-            ], ($hit['unavailable']??false) ? 503 : 429);
+            ], 429);
             $this->applyHeaders($response, $hit);
             return $response;
         }

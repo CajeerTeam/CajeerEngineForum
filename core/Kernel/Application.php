@@ -14,6 +14,21 @@ use CajeerEngine\Installer\InstallerService;
 use CajeerEngine\Api\Controller\AdminController;
 use CajeerEngine\Api\Controller\ApiTokenController;
 use CajeerEngine\Api\Controller\AuthController;
+use CajeerEngine\Api\Controller\OidcController;
+use CajeerEngine\Api\Controller\IdentityAdminController;
+use CajeerEngine\Api\Controller\AiController;
+use CajeerEngine\AI\AiChat;
+use CajeerEngine\AI\AiTools;
+use CajeerEngine\AI\AiKnowledgeChat;
+use CajeerEngine\AI\AiContentEditor;
+use CajeerEngine\AI\AiSeoAssistant;
+use CajeerEngine\AI\AiSettings;
+use CajeerEngine\AI\OpenAiClient;
+use CajeerEngine\Identity\IdentityCenter;
+use CajeerEngine\Identity\OidcClient;
+use CajeerEngine\Identity\OidcApiAuthenticator;
+use CajeerEngine\Identity\OidcStore;
+use CajeerEngine\Identity\OidcLogin;
 use CajeerEngine\Api\Controller\ContentEntryController;
 use CajeerEngine\Api\Controller\DatabaseController;
 use CajeerEngine\Api\Controller\ContentTypeController;
@@ -25,6 +40,11 @@ use CajeerEngine\Api\Controller\SchedulerController;
 use CajeerEngine\Api\Controller\SearchController;
 use CajeerEngine\Api\Controller\WebhookController;
 use CajeerEngine\Integration\WebhookDispatcher;
+use CajeerEngine\Integration\IntegrationCenter;
+use CajeerEngine\Integration\IntegrationStore;
+use CajeerEngine\Integration\SecretVault;
+use CajeerEngine\Integration\Provider\ProviderRegistry;
+use CajeerEngine\Api\Controller\IntegrationController;
 use CajeerEngine\Integration\WebhookRepository;
 use CajeerEngine\Api\Controller\ExtensionController;
 use CajeerEngine\Extension\ExtensionRegistry;
@@ -58,6 +78,7 @@ use CajeerEngine\Cms\PreviewTokenService;
 use CajeerEngine\Cms\RedirectRepository;
 use CajeerEngine\Cms\ThemeConfigRepository;
 use CajeerEngine\Database\Repository\ApiTokenRepository;
+use CajeerEngine\Database\Repository\UserSessionRepository;
 use CajeerEngine\Database\Repository\AuditLogRepository;
 use CajeerEngine\Database\Repository\RoleRepository;
 use CajeerEngine\Database\Repository\UserRepository;
@@ -80,6 +101,7 @@ use CajeerEngine\Runtime\RuntimeEvent;
 use CajeerEngine\Runtime\RuntimeLogger;
 use CajeerEngine\Runtime\ServiceContainer;
 use CajeerEngine\Security\AuthService;
+use CajeerEngine\Security\AuthenticationAssurance;
 use CajeerEngine\Security\PasswordHasher;
 use CajeerEngine\Security\RateLimiter;
 use CajeerEngine\Security\TwoFactorTotp;
@@ -118,11 +140,11 @@ final class Application
         $authService = $container->get(AuthService::class);
         $middleware = [
             new RequestIdMiddleware(),
-            new SecurityHeadersMiddleware(),
+            new SecurityHeadersMiddleware($rootPath),
             new ErrorHandlerMiddleware($config, $logger),
             new RateLimitMiddleware($config, $container->get(RateLimiter::class)),
             new JsonBodyMiddleware(),
-            new AuthenticationMiddleware($config, $authService, $router),
+            new AuthenticationMiddleware($authService, $router, $container->get(AuthenticationAssurance::class)),
             new \CajeerEngine\Http\Middleware\ApiContractMiddleware(new \CajeerEngine\Api\ApiContract($rootPath)),
         ];
         $pipeline = new MiddlewarePipeline($middleware);
@@ -154,7 +176,7 @@ final class Application
         $response->headers->set('traceparent',$trace->header());
         $response->headers->set('X-Runtime-Ms',(string)round($duration*1000));
         $this->container->get(RuntimeLogger::class)->info('HTTP request handled',$trace->fields()+['request_id'=>(string)$request->attributes->get('request_id',''),'method'=>$request->getMethod(),'route'=>$route,'status'=>$response->getStatusCode(),'duration_ms'=>round($duration*1000,3)]);
-        $response->headers->set('X-CajeerEngine-Version', $this->config->string('app.version', '1.3.0'));
+        $response->headers->set('X-CajeerEngine-Version', $this->config->string('app.version', '1.6.0'));
         $response->headers->set('X-CajeerEngine-Forum-Version', $this->config->string('app.edition_version'));
         $response->headers->set('X-CajeerEngine-Database', $this->config->string('database.default', 'pgsql'));
         $this->events->dispatch(new RuntimeEvent('kernel.request_handled', [
@@ -209,10 +231,38 @@ final class Application
         $container->set(RoleRepository::class, fn (ServiceContainer $c): RoleRepository => new RoleRepository($c->get(DatabaseManager::class)));
         $container->set(UserRepository::class, fn (ServiceContainer $c): UserRepository => new UserRepository($c->get(DatabaseManager::class), $c->get(RoleRepository::class), $c->get(PasswordHasher::class)));
         $container->set(ApiTokenRepository::class, fn (ServiceContainer $c): ApiTokenRepository => new ApiTokenRepository($c->get(DatabaseManager::class)));
+        $container->set(UserSessionRepository::class, fn (ServiceContainer $c): UserSessionRepository => new UserSessionRepository($c->get(DatabaseManager::class)));
         $container->set(AuditLogRepository::class, fn (ServiceContainer $c): AuditLogRepository => new AuditLogRepository($c->get(DatabaseManager::class)));
         $container->set(PasswordHasher::class, fn (ServiceContainer $c): PasswordHasher => new PasswordHasher($c->get(ConfigRepository::class)));
         $container->set(TwoFactorTotp::class, fn (): TwoFactorTotp => new TwoFactorTotp());
         $container->set(RateLimiter::class, fn (): RateLimiter => new RateLimiter($rootPath));
+        $container->set(AuthenticationAssurance::class, fn (ServiceContainer $c) => new AuthenticationAssurance(
+            $c->get(DatabaseManager::class), $c->get(UserRepository::class), $c->get(PasswordHasher::class),
+            $c->get(TwoFactorTotp::class), $c->get(AuditLogRepository::class)
+        ));
+        // Dedicated OAuth resource-server configuration. Defaults off; invalid settings fail closed.
+        $container->set(OidcApiAuthenticator::class, function (ServiceContainer $c): ?OidcApiAuthenticator {
+            if (!filter_var(getenv('SKIF4ER_ID_API_ENABLED') ?: 'false', FILTER_VALIDATE_BOOLEAN)) return null;
+            try {
+                if (!filter_var(getenv('SKIF4ER_ID_ENABLED') ?: 'false', FILTER_VALIDATE_BOOLEAN)) throw new \RuntimeException('Provider disabled.');
+                $clientId = trim((string)(getenv('SKIF4ER_ID_CLIENT_ID') ?: ''));
+                $clientSecret = (string)(getenv('SKIF4ER_ID_CLIENT_SECRET') ?: '');
+                $base = rtrim($c->get(ConfigRepository::class)->string('app.url'), '/');
+                $split = static fn (string $name): array => array_values(array_unique(array_filter(array_map('trim', explode(',', (string)(getenv($name) ?: ''))), static fn (string $s): bool => $s !== '')));
+                return new OidcApiAuthenticator(
+                    new OidcClient($clientId, $clientSecret, $base.'/auth/oidc/callback'),
+                    $c->get(DatabaseManager::class),
+                    trim((string)(getenv('SKIF4ER_ID_API_AUDIENCE') ?: '')),
+                    $split('SKIF4ER_ID_API_ALLOWED_CLIENTS'),
+                    trim((string)(getenv('SKIF4ER_ID_API_REQUIRED_SCOPE') ?: 'cajeer.api')),
+                    $split('SKIF4ER_ID_API_MAX_PERMISSIONS'),
+                    filter_var(getenv('SKIF4ER_ID_API_INTROSPECTION') ?: 'true', FILTER_VALIDATE_BOOLEAN),
+                );
+            } catch (\Throwable) {
+                $c->get(RuntimeLogger::class)->warning('OIDC API authentication disabled', ['code'=>'oidc_api_configuration_invalid']);
+                return null;
+            }
+        });
         $container->set(AuthService::class, fn (ServiceContainer $c): AuthService => new AuthService(
             $c->get(ConfigRepository::class),
             $c->get(UserRepository::class),
@@ -220,6 +270,8 @@ final class Application
             $c->get(AuditLogRepository::class),
             $c->get(PasswordHasher::class),
             $c->get(TwoFactorTotp::class),
+            $c->get(UserSessionRepository::class),
+            $c->get(OidcApiAuthenticator::class),
         ));
         $container->set(ContentTypeRepository::class, fn (ServiceContainer $c): ContentTypeRepository => new ContentTypeRepository($rootPath, $c->get(DatabaseManager::class)));
         $container->set(ContentEntryRepository::class, fn (ServiceContainer $c): ContentEntryRepository => new ContentEntryRepository($rootPath, $c->get(DatabaseManager::class)));
@@ -251,13 +303,44 @@ final class Application
         $container->set(ManagedQueueDriverInterface::class, fn (ServiceContainer $c): ManagedQueueDriverInterface => (new QueueFactory($rootPath, $c->get(ConfigRepository::class), $c->get(DatabaseManager::class)))->make());
         $container->set(SearchEngineInterface::class, fn (ServiceContainer $c): SearchEngineInterface => (new SearchFactory($rootPath, $c->get(ConfigRepository::class), $c->get(DatabaseManager::class)))->make());
         $container->set(SearchIndexer::class, fn (ServiceContainer $c): SearchIndexer => new SearchIndexer(
-            $c->get(ContentTypeRepository::class),
             $c->get(ContentEntryRepository::class),
             $c->get(SearchEngineInterface::class),
         ));
         $container->set(SearchService::class, fn (ServiceContainer $c): SearchService => new SearchService(
             $c->get(SearchEngineInterface::class),
             $c->get(SearchIndexer::class),
+        ));
+        $container->set(AiSettings::class, fn (): AiSettings => new AiSettings($rootPath));
+        $container->set(OpenAiClient::class, fn (): OpenAiClient => new OpenAiClient());
+        $container->set(\CajeerEngine\AI\AiCostControl::class, fn (ServiceContainer $c): \CajeerEngine\AI\AiCostControl => new \CajeerEngine\AI\AiCostControl(
+            $c->get(DatabaseManager::class), $c->get(AiSettings::class)
+        ));
+        $container->set(\CajeerEngine\AI\AiActions::class, fn (ServiceContainer $c): \CajeerEngine\AI\AiActions => new \CajeerEngine\AI\AiActions(
+            $c->get(DatabaseManager::class), $c->get(ContentTypeRepository::class), $c->get(ContentEntryRepository::class),
+            $c->get(\CajeerEngine\AI\AiSupportCenter::class), $c->get(AuditLogger::class)
+        ));
+        $container->set(AiTools::class, fn (ServiceContainer $c): AiTools => new AiTools(
+            $c->get(ContentTypeRepository::class), $c->get(ContentEntryRepository::class),
+            $c->get(AiSeoAssistant::class), $c->get(\CajeerEngine\AI\AiCmsDiagnostics::class),
+            $c->get(\CajeerEngine\AI\AiKnowledgeBase::class),
+            $c->get(\CajeerEngine\Analytics\Reporting\AnalyticsHub::class), $c->get(AuditLogger::class),
+            $c->get(\CajeerEngine\AI\AiActions::class), $c->get(\CajeerEngine\AI\AiSupportCenter::class), $c->get(\CajeerEngine\AI\AiExternalAnalytics::class)
+        ));
+        $container->set(\CajeerEngine\AI\AiExternalAnalytics::class, fn (ServiceContainer $c): \CajeerEngine\AI\AiExternalAnalytics => new \CajeerEngine\AI\AiExternalAnalytics(
+            $c->get(\CajeerEngine\Analytics\Reporting\AnalyticsHub::class), $c->get(DatabaseManager::class),
+            $c->get(AiSettings::class), $c->get(OpenAiClient::class)
+        ));
+        $container->set(AiChat::class, fn (ServiceContainer $c): AiChat => new AiChat(
+            $c->get(DatabaseManager::class), $c->get(AiSettings::class), $c->get(OpenAiClient::class), $c->get(AiTools::class)
+        ));
+        $container->set(ProviderRegistry::class, fn (): ProviderRegistry => ProviderRegistry::defaults());
+        $container->set(IntegrationCenter::class, fn (ServiceContainer $c): IntegrationCenter => new IntegrationCenter(
+            new IntegrationStore($rootPath), $c->get(ProviderRegistry::class),
+            SecretVault::fromEnvironment(), $c->get(ConfigRepository::class),
+        ));
+        $container->set(\CajeerEngine\Analytics\Reporting\AnalyticsHub::class, fn (ServiceContainer $c) => new \CajeerEngine\Analytics\Reporting\AnalyticsHub(
+            $c->get(DatabaseManager::class), SecretVault::fromEnvironment(),
+            $c->get(ManagedQueueDriverInterface::class), $c->get(ConfigRepository::class),
         ));
         $container->set(WebhookRepository::class, fn (): WebhookRepository => new WebhookRepository($rootPath));
         $container->set(SignedPayload::class, fn (): SignedPayload => new SignedPayload());
@@ -279,22 +362,33 @@ final class Application
         $container->set(ImportExportService::class, fn (): ImportExportService => new ImportExportService($rootPath));
         $container->set(ReleaseCandidateAuditor::class, fn (): ReleaseCandidateAuditor => new ReleaseCandidateAuditor($rootPath));
         $container->set(StableReleaseService::class, fn (ServiceContainer $c): StableReleaseService => new StableReleaseService($rootPath, $c->get(ConfigRepository::class)));
+        $container->set(\CajeerEngine\AI\AiBackgroundAutomation::class, fn (ServiceContainer $c): \CajeerEngine\AI\AiBackgroundAutomation => new \CajeerEngine\AI\AiBackgroundAutomation(
+            $c->get(DatabaseManager::class), $c->get(ManagedQueueDriverInterface::class), $c->get(AiChat::class)
+        ));
         $container->set(QueueWorker::class, fn (ServiceContainer $c): QueueWorker => new QueueWorker(
             $c->get(ManagedQueueDriverInterface::class),
             $c->get(SearchIndexer::class),
             $c->get(WebhookRepository::class),
             $c->get(WebhookDispatcher::class),
             $c->get(ExtensionRuntime::class)->platform(),
+            new \CajeerEngine\Analytics\ServerEvents($rootPath,$c->get(IntegrationCenter::class),$c->get(ManagedQueueDriverInterface::class)),
+            $c->get(\CajeerEngine\Analytics\Reporting\AnalyticsHub::class),
+            $c->get(\CajeerEngine\AI\AiTranslationStudio::class),
+            $c->get(\CajeerEngine\AI\AiSupportCenter::class),
+            $c->get(\CajeerEngine\AI\AiBackgroundAutomation::class),
             $c->get(DatabaseManager::class),
         ));
         $container->set(SchedulerRunner::class, fn (ServiceContainer $c): SchedulerRunner => new SchedulerRunner(
             $rootPath,
             $c->get(SearchIndexer::class),
             $c->get(WebhookRepository::class),
-            $c->get(WebhookDispatcher::class),
             $c->get(ManagedQueueDriverInterface::class),
             $c->get(ExtensionRuntime::class)->platform(),
             \CajeerEngine\Scheduler\TaskRunStore::fromConfig($rootPath,$c->get(ConfigRepository::class),$c->get(DatabaseManager::class)),
+            $c->get(\CajeerEngine\Analytics\Reporting\AnalyticsHub::class),
+            $c->get(\CajeerEngine\AI\AiBackgroundAutomation::class),
+            new \CajeerEngine\Update\AutomaticReleaseDiscovery($c->get(ConfigRepository::class)),
+            new \CajeerEngine\Update\UpdateNotificationPublisher($rootPath, $c->get(WebhookRepository::class)),
         ));
 
         $container->set('controller.health', fn (): HealthController => new HealthController($rootPath));
@@ -312,7 +406,37 @@ final class Application
             $c->get(DatabaseManager::class),
             $rootPath,
         ));
-        $container->set('controller.auth', fn (ServiceContainer $c): AuthController => new AuthController($c->get(AuthService::class)));
+        $container->set('controller.auth', fn (ServiceContainer $c): AuthController => new AuthController($c->get(AuthService::class), $c->get(AuthenticationAssurance::class)));
+        $container->set('controller.oidc', function (ServiceContainer $c): OidcController {
+            $cfg = $c->get(ConfigRepository::class);
+            $enabled = filter_var(getenv('SKIF4ER_ID_ENABLED') ?: 'false', FILTER_VALIDATE_BOOLEAN);
+            $clientId = trim((string)(getenv('SKIF4ER_ID_CLIENT_ID') ?: ''));
+            $secret = (string)(getenv('SKIF4ER_ID_CLIENT_SECRET') ?: '');
+            if (!$enabled) return new OidcController($cfg, null, $c->get(AuthService::class));
+            $base = rtrim($cfg->string('app.url'), '/');
+            try {
+                if (!extension_loaded('curl') || !extension_loaded('openssl') || !extension_loaded('sodium')) {
+                    throw new \RuntimeException('OIDC runtime extensions unavailable.');
+                }
+                $client = new OidcClient($clientId, $secret, $base . '/auth/oidc/callback');
+                $vault = SecretVault::fromEnvironment('oidc');
+                $vault->seal('oidc:startup-check', 'ok'); // Fail closed on missing/invalid protected key.
+                return new OidcController($cfg, new OidcLogin(
+                    $client, new OidcStore($c->get(DatabaseManager::class), $vault), $c->get(AuthService::class),
+                    $c->get(UserRepository::class), $c->get(RoleRepository::class), $c->get(PasswordHasher::class),
+                    $c->get(AuditLogRepository::class), filter_var(getenv('SKIF4ER_ID_AUTO_PROVISION') ?: 'false', FILTER_VALIDATE_BOOLEAN),
+                    $c->get(\CajeerEngine\Database\Repository\UserSessionRepository::class),
+                    $c->get(AuthenticationAssurance::class)
+                ), $c->get(AuthService::class));
+            } catch (\Throwable) {
+                $c->get(RuntimeLogger::class)->warning('Identity OIDC disabled', ['code'=>'oidc_configuration_invalid']);
+                // A misconfigured optional identity provider must never disable local login.
+                return new OidcController($cfg, null, $c->get(AuthService::class));
+            }
+        });
+        $container->set('controller.identityAdmin', fn (ServiceContainer $c): IdentityAdminController => new IdentityAdminController(
+            new IdentityCenter($c->get(DatabaseManager::class), $c->get(UserSessionRepository::class), $c->get(AuditLogRepository::class))
+        ));
         $container->set('controller.users', fn (ServiceContainer $c): UserController => new UserController($c->get(UserRepository::class), $c->get(PasswordHasher::class)));
         $container->set('controller.roles', fn (ServiceContainer $c): RoleController => new RoleController($c->get(RoleRepository::class)));
         $container->set('controller.api_tokens', fn (ServiceContainer $c): ApiTokenController => new ApiTokenController($c->get(ApiTokenRepository::class)));
@@ -335,7 +459,75 @@ final class Application
             $c->get(ExtensionRegistry::class),
         ));
 
-        $container->set('controller.search', fn (ServiceContainer $c): SearchController => new SearchController($c->get(SearchService::class)));
+        $container->set('controller.search', fn (ServiceContainer $c): SearchController => new SearchController($c->get(SearchService::class),new \CajeerEngine\Privacy\ConsentPolicy($rootPath)));
+        $container->set('controller.migration', fn (ServiceContainer $c) => new \CajeerEngine\Api\Controller\MigrationController(\CajeerEngine\Migration\MigrationFactory::create($rootPath,$c->get(DatabaseManager::class),$c->get(ContentTypeRepository::class),$c->get(ContentEntryRepository::class),$c->get(UserRepository::class)),$c->get(AuditLogger::class)));
+        $container->set(\CajeerEngine\AI\AiMigrationCopilot::class, fn (ServiceContainer $c): \CajeerEngine\AI\AiMigrationCopilot => new \CajeerEngine\AI\AiMigrationCopilot(
+            $rootPath, \CajeerEngine\Migration\MigrationFactory::create($rootPath,$c->get(DatabaseManager::class),$c->get(ContentTypeRepository::class),$c->get(ContentEntryRepository::class),$c->get(UserRepository::class)),
+            $c->get(DatabaseManager::class),$c->get(AiSettings::class),$c->get(OpenAiClient::class)
+        ));
+        $container->set(\CajeerEngine\AI\AiMigrationRemediation::class, fn (ServiceContainer $c): \CajeerEngine\AI\AiMigrationRemediation => new \CajeerEngine\AI\AiMigrationRemediation(
+            $rootPath,$c->get(DatabaseManager::class),
+            \CajeerEngine\Migration\MigrationFactory::create($rootPath,$c->get(DatabaseManager::class),$c->get(ContentTypeRepository::class),$c->get(ContentEntryRepository::class),$c->get(UserRepository::class)),
+            $c->get(AuditLogger::class)
+        ));
+        $container->set('controller.aiMigration', fn (ServiceContainer $c): \CajeerEngine\Api\Controller\AiMigrationController => new \CajeerEngine\Api\Controller\AiMigrationController(
+            $c->get(\CajeerEngine\AI\AiMigrationCopilot::class),$c->get(\CajeerEngine\AI\AiMigrationRemediation::class),$c->get(RateLimiter::class),$c->get(AuditLogger::class)
+        ));
+        $container->set('controller.analyticsHub', fn (ServiceContainer $c) => new \CajeerEngine\Api\Controller\AnalyticsHubController($c->get(\CajeerEngine\Analytics\Reporting\AnalyticsHub::class),$c->get(AuditLogger::class)));
+        $container->set('controller.analyticsEvents', fn (ServiceContainer $c): \CajeerEngine\Api\Controller\AnalyticsEventController => new \CajeerEngine\Api\Controller\AnalyticsEventController(new \CajeerEngine\Analytics\EventConfig($rootPath), new \CajeerEngine\Analytics\EventJournal($rootPath), $c->get(AuditLogger::class), new \CajeerEngine\Analytics\ServerEvents($rootPath,$c->get(IntegrationCenter::class),$c->get(ManagedQueueDriverInterface::class))));
+        $container->set('controller.tracking', fn (ServiceContainer $c): \CajeerEngine\Api\Controller\TrackingController => new \CajeerEngine\Api\Controller\TrackingController(new \CajeerEngine\Privacy\TrackingConfig($rootPath), $c->get(AuditLogger::class)));
+        $container->set('controller.consent', fn (ServiceContainer $c): \CajeerEngine\Api\Controller\ConsentController => new \CajeerEngine\Api\Controller\ConsentController(new \CajeerEngine\Privacy\ConsentPolicy($rootPath), $c->get(AuditLogger::class)));
+        $container->set(AiContentEditor::class, fn (ServiceContainer $c): AiContentEditor => new AiContentEditor(
+            $c->get(DatabaseManager::class), $c->get(AiSettings::class), $c->get(OpenAiClient::class),
+            new \CajeerEngine\Content\ContentEntryRepository($rootPath, $c->get(DatabaseManager::class)),
+            new \CajeerEngine\Content\ContentTypeRepository($rootPath, $c->get(DatabaseManager::class))
+        ));
+        $container->set(AiSeoAssistant::class, fn (ServiceContainer $c): AiSeoAssistant => new AiSeoAssistant(
+            $c->get(ContentEntryRepository::class), $c->get(ContentTypeRepository::class), new \CajeerEngine\Public\RouteIndex($rootPath, $c->get(DatabaseManager::class))
+        ));
+        $container->set(\CajeerEngine\AI\AiTranslationStudio::class, fn (ServiceContainer $c): \CajeerEngine\AI\AiTranslationStudio => new \CajeerEngine\AI\AiTranslationStudio(
+            $c->get(DatabaseManager::class), $c->get(AiSettings::class), $c->get(OpenAiClient::class),
+            $c->get(ContentEntryRepository::class), $c->get(ContentTypeRepository::class)
+        ));
+        $container->set(\CajeerEngine\AI\AiCmsDiagnostics::class, fn (ServiceContainer $c): \CajeerEngine\AI\AiCmsDiagnostics => new \CajeerEngine\AI\AiCmsDiagnostics(
+            $rootPath, new \CajeerEngine\Observability\OperationsMonitor($rootPath, $c->get(ConfigRepository::class)),
+            $c->get(DatabaseManager::class), $c->get(AiSettings::class), $c->get(OpenAiClient::class)
+        ));
+        $container->set(\CajeerEngine\AI\AiKnowledgeBase::class, fn (ServiceContainer $c): \CajeerEngine\AI\AiKnowledgeBase => new \CajeerEngine\AI\AiKnowledgeBase(
+            $c->get(DatabaseManager::class), $c->get(ContentEntryRepository::class), $c->get(ContentTypeRepository::class)
+        ));
+        $container->set(AiKnowledgeChat::class, fn (ServiceContainer $c): AiKnowledgeChat => new AiKnowledgeChat(
+            $c->get(DatabaseManager::class), $c->get(\CajeerEngine\AI\AiKnowledgeBase::class),
+            $c->get(AiSettings::class), $c->get(OpenAiClient::class)
+        ));
+        $container->set(\CajeerEngine\AI\AiSupportCenter::class, fn (ServiceContainer $c): \CajeerEngine\AI\AiSupportCenter => new \CajeerEngine\AI\AiSupportCenter(
+            $c->get(DatabaseManager::class), $c->get(\CajeerEngine\AI\AiKnowledgeBase::class), $c->get(AiSettings::class), $c->get(OpenAiClient::class)
+        ));
+        $container->set('controller.support', fn (ServiceContainer $c): \CajeerEngine\Api\Controller\SupportController => new \CajeerEngine\Api\Controller\SupportController(
+            $c->get(\CajeerEngine\AI\AiSupportCenter::class), $c->get(RateLimiter::class), $c->get(AuditLogger::class), $c->get(ManagedQueueDriverInterface::class)
+        ));
+        $container->set('controller.knowledge', fn (ServiceContainer $c): \CajeerEngine\Api\Controller\KnowledgeController => new \CajeerEngine\Api\Controller\KnowledgeController(
+            $c->get(\CajeerEngine\AI\AiKnowledgeBase::class), $c->get(AuditLogger::class), $c->get(RateLimiter::class),
+            $c->get(AiKnowledgeChat::class)
+        ));
+        $container->set(\CajeerEngine\AI\AiSeoContentInsights::class, fn (ServiceContainer $c): \CajeerEngine\AI\AiSeoContentInsights => new \CajeerEngine\AI\AiSeoContentInsights(
+            $c->get(\CajeerEngine\Analytics\Reporting\AnalyticsHub::class),$c->get(AiSeoAssistant::class),
+            new \CajeerEngine\Public\RouteIndex($rootPath,$c->get(DatabaseManager::class)), $c->get(ConfigRepository::class)
+        ));
+        $container->set('controller.aiAnalytics', fn (ServiceContainer $c): \CajeerEngine\Api\Controller\AiAnalyticsController => new \CajeerEngine\Api\Controller\AiAnalyticsController(
+            $c->get(\CajeerEngine\AI\AiExternalAnalytics::class), $c->get(RateLimiter::class), $c->get(AuditLogger::class),
+            $c->get(\CajeerEngine\AI\AiSeoContentInsights::class), $c->get(AiContentEditor::class)
+        ));
+        $container->set('controller.aiAutomations', fn (ServiceContainer $c): \CajeerEngine\Api\Controller\AiAutomationController => new \CajeerEngine\Api\Controller\AiAutomationController(
+            $c->get(\CajeerEngine\AI\AiBackgroundAutomation::class), $c->get(RateLimiter::class), $c->get(AuditLogger::class)
+        ));
+        $container->set('controller.ai', fn (ServiceContainer $c): AiController => new AiController(
+            $c->get(AiChat::class), $c->get(AiSettings::class), $c->get(AuditLogger::class), $c->get(RateLimiter::class),
+            $c->get(AiContentEditor::class), $c->get(AiSeoAssistant::class), $c->get(\CajeerEngine\AI\AiTranslationStudio::class), $c->get(ManagedQueueDriverInterface::class),
+            $c->get(\CajeerEngine\AI\AiCmsDiagnostics::class), $c->get(AiTools::class), $c->get(\CajeerEngine\AI\AiActions::class),
+            $c->get(\CajeerEngine\AI\AiCostControl::class)
+        ));
+        $container->set('controller.integrations', fn (ServiceContainer $c): IntegrationController => new IntegrationController($c->get(IntegrationCenter::class), $c->get(AuditLogger::class)));
         $container->set('controller.webhooks', fn (ServiceContainer $c): WebhookController => new WebhookController($c->get(WebhookRepository::class), $c->get(WebhookDispatcher::class)));
         $container->set('controller.extensions', fn (ServiceContainer $c): ExtensionController => new ExtensionController($c->get(ExtensionRegistry::class), $c->get(ExtensionRuntime::class)));
         $container->set('controller.installer', fn (ServiceContainer $c): InstallerController => new InstallerController($c->get(InstallerService::class)));
@@ -350,7 +542,7 @@ final class Application
             $c->get(PublicPageRenderer::class),
             $c->get(RedirectRepository::class),
             $c->get(PreviewTokenService::class),
-            new \CajeerEngine\Forum\ForumSeoSettings($rootPath,$c->get(DatabaseManager::class)),
+            new \CajeerEngine\Forum\ForumSeoSettings($rootPath, $c->get(DatabaseManager::class)),
         ));
         $container->set('controller.cms', fn (ServiceContainer $c): CmsController => new CmsController(
             $c->get(ThemeConfigRepository::class),
@@ -423,6 +615,8 @@ final class Application
 
         /** @var AuthController $auth */
         $auth = $container->get('controller.auth');
+        $oidc = $container->get('controller.oidc');
+        $identityAdmin = $container->get('controller.identityAdmin');
 
         /** @var UserController $users */
         $users = $container->get('controller.users');
@@ -439,6 +633,18 @@ final class Application
         /** @var PublicController $public */
         $public = $container->get('controller.public');
 
+        $ai = $container->get('controller.ai');
+        $aiAnalytics = $container->get('controller.aiAnalytics');
+        $aiAutomations = $container->get('controller.aiAutomations');
+        $knowledge = $container->get('controller.knowledge');
+        $support = $container->get('controller.support');
+        $integrations = $container->get('controller.integrations');
+        $consent = $container->get('controller.consent');
+        $tracking = $container->get('controller.tracking');
+        $analyticsHub = $container->get('controller.analyticsHub');
+        $analyticsEvents = $container->get('controller.analyticsEvents');
+        $migration = $container->get('controller.migration');
+        $aiMigration = $container->get('controller.aiMigration');
         $forumDb = $container->get(DatabaseManager::class);
         $forumTx = new \CajeerEngine\Forum\Service\ForumTransaction($forumDb, new \CajeerEngine\Database\Repository\AuditLogRepository($forumDb), $container->get(ExtensionRuntime::class)->platform());
         $forumThreads = new \CajeerEngine\Forum\Repository\ThreadRepository($forumDb);
@@ -454,7 +660,7 @@ final class Application
             $container->get('root_path'), $identityService, new \CajeerEngine\Forum\Service\ForumRuntimeCache($forumDb,$container->get('root_path')),
             $container->get(ExtensionRuntime::class)->platform()
         );
-        $controllers = compact('identity', 'forum', 'health', 'system', 'contentTypes', 'entries', 'runtime', 'search', 'queue', 'scheduler', 'webhooks', 'extensions', 'installer', 'importExport', 'updates', 'rc', 'stable', 'admin', 'media', 'public', 'cms', 'database', 'auth', 'users', 'roles', 'apiTokens', 'security');
+        $controllers = compact('identity', 'forum', 'aiAnalytics', 'aiAutomations', 'aiMigration', 'support', 'knowledge', 'ai', 'identityAdmin', 'oidc', 'migration', 'analyticsHub', 'tracking', 'analyticsEvents', 'consent', 'integrations', 'health', 'system', 'contentTypes', 'entries', 'runtime', 'search', 'queue', 'scheduler', 'webhooks', 'extensions', 'installer', 'importExport', 'updates', 'rc', 'stable', 'admin', 'media', 'public', 'cms', 'database', 'auth', 'users', 'roles', 'apiTokens', 'security');
         foreach (\CajeerEngine\Http\RouteRegistry::all() as [$method, $path, $name, $controller, $action, $scopes]) {
             $router->add([$method], $path, $name, [$controllers[$controller], $action], $scopes);
         }

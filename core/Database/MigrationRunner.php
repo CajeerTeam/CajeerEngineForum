@@ -16,13 +16,13 @@ final readonly class MigrationRunner
     /** @return array{applied:int,batch:int,migrations:list<array<string,mixed>>} */
     public function run(string $driver): array
     {
+        $driver = $this->assertDriver($driver);
         return MigrationLock::run($this->pdo, fn()=>$this->runLocked($driver));
     }
 
     private function runLocked(string $driver): array
     {
         $driver = $this->normalizeDriver($driver);
-        if ($driver !== $this->pdo->getAttribute(PDO::ATTR_DRIVER_NAME)) throw new \InvalidArgumentException('Migration driver does not match PDO connection');
         $this->ensureTable($driver);
         $dir = $this->migrationsPath . '/' . $driver;
         if (!is_dir($dir)) {
@@ -33,14 +33,20 @@ final readonly class MigrationRunner
         $applied = $this->applied();
         $count = 0;
         $executed = [];
-        $files=$this->files($dir);$knownFiles=[];
-        foreach($files as $file){$digest=hash_file('sha256',$file);if($digest===false)throw new \RuntimeException('Cannot hash migration');$knownFiles[basename($file)]=$digest;}
-        foreach($applied as $name=>$row){
-            if(!isset($knownFiles[$name]))throw new \RuntimeException('Applied migration file missing: '.$name);
-            if(($row['status']??'applied')!=='applied') {
-                if (($row['status']??'')!=='failed') throw new \RuntimeException('Unknown migration status: '.$name);
-                continue;
+        $files = $this->files($dir);
+        $knownFiles = [];
+        $contents = [];
+        foreach ($files as $file) {
+            $content = file_get_contents($file);
+            if ($content === false) {
+                throw new \RuntimeException('Cannot read migration: ' . basename($file));
             }
+            $contents[$file] = $content;
+            $knownFiles[basename($file)] = hash('sha256', $content);
+        }
+        foreach($applied as $name=>$row){
+            if(($row['status']??'applied')!=='applied')continue;
+            if(!isset($knownFiles[$name]))throw new \RuntimeException('Applied migration file missing: '.$name);
             if(($row['checksum']??'')!==''&&!hash_equals($row['checksum'],$knownFiles[$name]))throw new \RuntimeException('Applied migration checksum mismatch: '.$name);
         }
 
@@ -63,20 +69,16 @@ final readonly class MigrationRunner
                 }
 
                 if($driver==='mysql')throw new \RuntimeException('MySQL migration failed or was interrupted; inspect schema and restore backup before migrate:repair: '.$name);
-                // Keep the failed ledger row until transactional DDL and the
-                // applied status commit together (or the next failure is recorded).
+                $this->deleteFailedMigration($name);
             }
 
             $startedAt = microtime(true);
-            $contents = file_get_contents($file);
-            if ($contents === false || !hash_equals($checksum, hash('sha256',$contents))) throw new \RuntimeException('Migration changed during execution: '.$name);
-            $sql = trim($contents);
+            $sql = $contents[$file];
             if($driver==='mysql')$this->insertMigration($name,$checksum,$batch,0,'failed','MySQL DDL started; schema must be inspected if interrupted');
             else $this->pdo->beginTransaction();
             try {
                 if ($sql !== '') {
-                    if ($driver === 'mysql') $this->executeMySqlMigration($sql);
-                    else $this->pdo->exec($sql);
+                    MigrationSqlExecutor::execute($this->pdo, $driver, $sql);
                 }
                 $this->insertMigration($name, $checksum, $batch, (int) round((microtime(true) - $startedAt) * 1000), 'applied', null);
                 if ($this->pdo->inTransaction()) $this->pdo->commit();
@@ -94,40 +96,16 @@ final readonly class MigrationRunner
         return ['driver' => $driver, 'applied' => $count, 'batch' => $batch, 'migrations' => $executed];
     }
 
-    /** Read-only verification for readiness and update acceptance. Never creates or alters a ledger. */
-    public function verifyApplied(string $driver): array
-    {
-        $driver = $this->normalizeDriver($driver);
-        if ($driver !== $this->pdo->getAttribute(PDO::ATTR_DRIVER_NAME)) throw new \InvalidArgumentException('Migration driver does not match PDO connection');
-        $dir = $this->migrationsPath . '/' . $driver;
-        if (!is_dir($dir)) throw new \RuntimeException('Migration directory missing');
-        $files = $this->files($dir);
-        if ($files === []) throw new \RuntimeException('Migration directory empty');
-        $ledger = $this->applied();
-        $errors = [];
-        foreach ($files as $file) {
-            $name = basename($file);
-            $row = $ledger[$name] ?? null;
-            unset($ledger[$name]);
-            $checksum = hash_file('sha256', $file);
-            if ($row === null) $errors[$name] = 'pending';
-            elseif (($row['status'] ?? '') !== 'applied') $errors[$name] = 'failed';
-            elseif ($checksum === false || !hash_equals((string) ($row['checksum'] ?? ''), $checksum)) $errors[$name] = 'checksum';
-        }
-        foreach ($ledger as $name => $row) $errors[$name] = 'missing';
-        return ['ok' => $errors === [], 'errors' => $errors, 'expected' => count($files)];
-    }
-
-    /** @return array{driver:string,applied:list<array<string,mixed>>,pending:list<array<string,mixed>>,failed:list<array<string,mixed>>} */
+    /** @return array{driver:string,applied:list<array<string,mixed>>,pending:list<array<string,mixed>>,failed:list<array<string,mixed>>,integrity_errors:list<array<string,mixed>>} */
     public function status(string $driver): array
     {
+        $driver = $this->assertDriver($driver);
         return MigrationLock::run($this->pdo, fn()=>$this->statusLocked($driver));
     }
 
     private function statusLocked(string $driver): array
     {
         $driver = $this->normalizeDriver($driver);
-        if ($driver !== $this->pdo->getAttribute(PDO::ATTR_DRIVER_NAME)) throw new \InvalidArgumentException('Migration driver does not match PDO connection');
         $this->ensureTable($driver);
         $dir = $this->migrationsPath . '/' . $driver;
         if (!is_dir($dir)) {
@@ -138,38 +116,43 @@ final readonly class MigrationRunner
         $appliedRows = [];
         $pendingRows = [];
         $failedRows = [];
-        $seen = [];
+        $integrityErrors = [];
+        $seenFiles = [];
 
         foreach ($this->files($dir) as $file) {
             $name = basename($file);
+            $seenFiles[$name] = true;
             $checksum = hash_file('sha256', $file) ?: '';
             if (!isset($applied[$name])) {
                 $pendingRows[] = ['migration' => $name, 'checksum' => $checksum];
                 continue;
             }
 
-            $seen[$name] = true;
             $row = $applied[$name];
             $row['current_checksum'] = $checksum;
             $row['checksum_ok'] = ($row['checksum'] ?? '') === '' || ($row['checksum'] ?? '') === $checksum;
-            if (($row['status'] ?? 'applied') !== 'applied') {
+            if (!$row['checksum_ok'] && ($row['status'] ?? 'applied') === 'applied') {
+                $integrityErrors[] = ['migration' => $name, 'reason' => 'checksum_mismatch'];
+            }
+            if (($row['status'] ?? 'applied') === 'failed') {
                 $failedRows[] = $row;
             } else {
                 $appliedRows[] = $row;
             }
         }
 
-        foreach ($applied as $name=>$row) {
-            if (isset($seen[$name])) continue;
-            $row['checksum_ok'] = false;
-            $row['error'] = 'Migration file missing: '.$name;
-            $failedRows[] = $row;
+        foreach ($applied as $name => $row) {
+            if (!isset($seenFiles[$name]) && ($row['status'] ?? 'applied') === 'applied') {
+                $integrityErrors[] = ['migration' => $name, 'reason' => 'file_missing'];
+            }
         }
+
         return [
             'driver' => $driver,
-            'applied' => array_values($appliedRows),
-            'pending' => array_values($pendingRows),
-            'failed' => array_values($failedRows),
+            'integrity_errors' => $integrityErrors,
+            'applied' => $appliedRows,
+            'pending' => $pendingRows,
+            'failed' => $failedRows,
         ];
     }
 
@@ -177,19 +160,19 @@ final readonly class MigrationRunner
     /** @return array{driver:string,removed:int,removed_migrations:list<string>,rerun?:array<string,mixed>} */
     public function repairFailed(string $driver, bool $runAfterRepair = false): array
     {
-        return MigrationLock::run($this->pdo,fn()=>$this->repairLocked($driver,$runAfterRepair));
+        $driver = $this->assertDriver($driver);
+        return MigrationLock::run($this->pdo, fn()=>$this->repairLocked($driver,$runAfterRepair));
     }
 
     private function repairLocked(string $driver, bool $runAfterRepair): array
     {
         $driver = $this->normalizeDriver($driver);
-        if ($driver !== $this->pdo->getAttribute(PDO::ATTR_DRIVER_NAME)) throw new \InvalidArgumentException('Migration driver does not match PDO connection');
         $this->ensureTable($driver);
         $status = $this->statusLocked($driver);
         $removed = [];
         foreach ($status['failed'] as $row) {
             $migration = (string) ($row['migration'] ?? '');
-            if ($migration === '' || ($row['status'] ?? '') !== 'failed' || !is_file($this->migrationsPath.'/'.$driver.'/'.$migration)) {
+            if ($migration === '') {
                 continue;
             }
             $this->deleteFailedMigration($migration);
@@ -260,33 +243,6 @@ final readonly class MigrationRunner
         $this->addColumnIfMissing('ce_migrations', 'error', 'TEXT NULL');
     }
 
-    /** MySQL 8.4 does not support ADD COLUMN IF NOT EXISTS; MariaDB does.
-     * Handle both with a schema lookup while preserving historical .sql bytes
-     * and therefore the checksums of already-applied migrations. Execute one
-     * statement at a time to avoid reliance on PDO multi-statement settings.
-     */
-    private function executeMySqlMigration(string $sql): void
-    {
-        foreach (preg_split('/;\s*(?:\r?\n|$)/', trim($sql)) ?: [] as $statement) {
-            $statement = trim($statement);
-            if ($statement === '') continue;
-            if (preg_match('/\AALTER\s+TABLE\s+(ce_[a-z0-9_]+)\s+ADD\s+COLUMN\s+IF\s+NOT\s+EXISTS\s+([a-z_][a-z0-9_]*)\s+(.+)\z/isD', $statement, $matches)) {
-                $this->addColumnIfMissing($matches[1], $matches[2], $matches[3]);
-            } else {
-                // Historical CREATE TABLE files sometimes declare a charset but
-                // omit its collation. MySQL 8.x and MariaDB then choose different
-                // defaults, creating foreign keys incompatible with ce_users.id.
-                // Normalize at execution time; do not modify checksummed SQL files.
-                if (preg_match('/\ACREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?ce_[a-z0-9_]+\b/i', $statement)
-                    && preg_match('/\bDEFAULT\s+CHARSET\s*=\s*utf8mb4\b/i', $statement)
-                    && !preg_match('/\bCOLLATE\s*=/i', $statement)) {
-                    $statement = preg_replace('/\bDEFAULT\s+CHARSET\s*=\s*utf8mb4\b/i', 'DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci', $statement, 1);
-                }
-                $this->pdo->exec($statement);
-            }
-        }
-    }
-
     private function addColumnIfMissing(string $table, string $column, string $definition): void
     {
         $stmt = $this->pdo->prepare('SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = :table AND column_name = :column');
@@ -343,7 +299,17 @@ final readonly class MigrationRunner
     {
         $files = glob($dir . '/*.sql') ?: [];
         sort($files, SORT_STRING);
-        return array_values($files);
+        return $files;
+    }
+
+    private function assertDriver(string $driver): string
+    {
+        $normalized = $this->normalizeDriver($driver);
+        if (!in_array($normalized, ['pgsql', 'mysql', 'sqlite'], true)
+            || $normalized !== $this->pdo->getAttribute(PDO::ATTR_DRIVER_NAME)) {
+            throw new \InvalidArgumentException('Migration dialect does not match the PDO connection');
+        }
+        return $normalized;
     }
 
     private function normalizeDriver(string $driver): string
