@@ -6,7 +6,7 @@ on:
 permissions:
   contents: read
 env:
-  FORUM_CURRENT_VERSION: ${{ '1.2.1' }}
+  FORUM_CURRENT_VERSION: ${{ '1.2.2' }}
 concurrency:
   group: forum-ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -242,6 +242,9 @@ jobs:
       - run: python tools/forum-tests/search_sql_regression.py
       - run: python tools/forum-tests/advanced_search_sql_regression.py
       - run: php tools/forum-analytics-integration-regression.php
+      - run: php tools/forum-event-tracking-regression.php
+      - run: node tools/forum-tests/analytics_browser_regression.js
+      - run: python tools/forum-tests/analytics_events_sql_regression.py
       - run: php tools/forum-seo-unit-regression.php
       - run: python tools/forum-tests/seo_sql_regression.py
       - run: python tools/forum-tests/stable_search_seo_sql_regression.py

@@ -13,7 +13,7 @@ use CajeerEngine\Update\ReleaseSignature;
 
 $root = dirname(__DIR__);
 $version = (new ForumVersion($root))->current();
-if ($version !== '1.2.1') throw new RuntimeException('Wrong Forum Edition release.');
+if ($version !== '1.2.2') throw new RuntimeException('Wrong Forum Edition release.');
 $checks = 0;
 $expect = static function(bool $passed, string $what) use (&$checks): void {
     if (!$passed) throw new RuntimeException('FAIL '.$what);
@@ -27,7 +27,7 @@ $headers = [
 ];
 $html = '<!doctype html><html><script src="/forum-assets/forum.js?v='.$version.'"></script></html>';
 $valid = static fn(int $code, array $h, string $body, string $v): bool => IdentityAcceptance::forumLoginResponseValid($code, $h, $body, $v);
-$expect($valid(200, $headers, $html, $version), 'real 1.2.1 Forum login page and live version accepted');
+$expect($valid(200, $headers, $html, $version), 'real 1.2.2 Forum login page and live version accepted');
 $expect(!$valid(302, $headers, $html, $version), 'redirect is not a successful login page probe');
 $expect(!$valid(503, $headers, $html, $version), 'maintenance/error page refused');
 $expect(!$valid(200, $headers, $html, '1.0.9'), 'wrong installed Forum release refused');
@@ -35,7 +35,7 @@ $expect(!$valid(200, array_diff_key($headers, ['x-cajeerengine-forum-version'=>t
 $expect(!$valid(200, ['x-cajeerengine-forum-version'=>'1.0.9']+$headers, $html, $version), 'stale PHP worker release refused');
 $expect(!$valid(200, ['cache-control'=>'public,max-age=86400']+$headers, $html, $version), 'publicly cacheable login HTML refused');
 $expect(!$valid(200, ['content-type'=>'application/json']+$headers, $html, $version), 'JSON error returned as login page refused');
-$expect(!$valid(200, $headers, str_replace('1.2.1','1.1.0',$html), $version), 'stale frontend asset refused');
+$expect(!$valid(200, $headers, str_replace('1.2.2','1.1.0',$html), $version), 'stale frontend asset refused');
 $expect(!$valid(200, $headers, 'not an HTML page', $version), 'incorrect HTTP body refused');
 
 $tmp = sys_get_temp_dir().'/cajeer-forum-110-'.bin2hex(random_bytes(8));
@@ -43,7 +43,7 @@ if (!mkdir($tmp,0700)) throw new RuntimeException('Cannot create test directory'
 try {
     $secret=$tmp.'/publisher.secret'; $public=$tmp.'/publisher.pub';
     ReleaseSignature::generate($secret,$public);
-    $zip=$tmp.'/cajeerengine-1.2.1-dist.zip';
+    $zip=$tmp.'/cajeerengine-1.2.2-dist.zip';
     file_put_contents($zip, 'signed candidate bytes; not a fabricated production certification');
     $signed=ReleaseSignature::sign($zip,$secret);
     $verified=ReleaseSignature::verify($zip,$zip.'.sig',$public);
@@ -61,4 +61,4 @@ try {
     foreach (glob($tmp.'/*') ?: [] as $file) if (is_file($file)) unlink($file);
     rmdir($tmp);
 }
-echo "Forum Edition 1.2.1 acceptance/signature: {$checks} PASS\n";
+echo "Forum Edition 1.2.2 acceptance/signature: {$checks} PASS\n";

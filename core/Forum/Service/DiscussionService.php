@@ -14,6 +14,8 @@ final readonly class DiscussionService
 {
     public function __construct(private DatabaseManager $db, private ForumTransaction $tx, private BoardRepository $boards, private ThreadRepository $threads, private PostRepository $posts, private MemberRepository $members) {}
 
+    public function analyticsRead(string $name): void { $this->tx->analyticsRead($name); }
+
     public function seoSettings(string $root): \CajeerEngine\Forum\ForumSeoSettings { return new \CajeerEngine\Forum\ForumSeoSettings($root,$this->db,true); }
 
     public function legacyUrl(string $job,string $path,array $query): string

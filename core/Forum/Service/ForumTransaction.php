@@ -55,10 +55,20 @@ final readonly class ForumTransaction
 
     public function groups(): GroupService { return new GroupService($this,new \CajeerEngine\Forum\Repository\GroupRepository($this->db),new \CajeerEngine\Database\Repository\RoleRepository($this->db),new \CajeerEngine\Forum\Repository\BoardRepository($this->db)); }
 
+    /** Read-only requests may log a successful anonymous action without propagating failures. */
+    public function analyticsRead(string $name): void
+    { (new ForumAnalyticsEvents($this->db))->recordRead($name); }
+
     public function audit(string $event, ?string $actor, array $context): void
     {
         if (!$this->db->connection()->inTransaction()) throw new \LogicException('Forum audit requires a transaction');
         $this->audit->record($event, $actor, $context);
+        if(isset(ForumAnalyticsEvents::AUDIT_EVENTS[$event])||$event==='forum.reaction.set') {
+            // A SAVEPOINT keeps a broken/missing metrics sink from aborting
+            // the actual publication transaction on PostgreSQL and MySQL.
+            try { $this->db->transaction(fn()=> (new ForumAnalyticsEvents($this->db))->recordAudit($event,$context)); }
+            catch(\Throwable) { /* Optional telemetry must never block a publication. */ }
+        }
         $targets=$this->platform?->forumSubscribers($event,time())??[];
         if($targets!==[])(new ForumExtensionOutbox($this->db))->record($event,$actor,$context,$targets);
     }

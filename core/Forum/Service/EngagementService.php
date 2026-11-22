@@ -24,7 +24,7 @@ final readonly class EngagementService
             if($enabled)$this->tx->antiSpam()->action($actor->userId,'reaction');
             if (($change=$this->engagement->reaction($id,$actor->userId,$enabled,$type))!=='unchanged') {
                 if($change!=='changed')$this->tx->notifications()->reaction($actor->userId,$id,$enabled);
-                $this->tx->audit('forum.reaction.set',$actor->userId,['post_id'=>$id,'enabled'=>$enabled,'type'=>$enabled?$type:null]);
+                $this->tx->audit('forum.reaction.set',$actor->userId,['post_id'=>$id,'enabled'=>$enabled,'type'=>$enabled?$type:null,'change'=>$change]);
             }
             return ['enabled'=>$enabled,'type'=>$enabled?$type:null];
         });

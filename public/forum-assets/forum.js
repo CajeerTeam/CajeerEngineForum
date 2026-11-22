@@ -39,7 +39,29 @@ async function api(path,method='GET',body,assuranceRetry=false){
   }
   const error=Error(data.error?.message||`Ошибка ${res.status}`);error.status=res.status;error.code=data.error?.code;throw error;
  }
- return data.data;
+ const output=data.data;
+ forumTrackSuccess(path,method,body,output);
+ return output;
+}
+/** Client-side external events are optional and consent-gated by the core.
+ * Server activity metrics are generated independently from committed SQL events.
+ * No UUID, free-text, URL, private message, username or attachment name is sent. */
+function forumEmit(name){
+ if(!window.CajeerConsent?.allows('analytics')||typeof window.CajeerAnalytics?.emit!=='function')return false;
+ try{return window.CajeerAnalytics.emit(name,{})===true;}catch{return false;}
+}
+function forumTrackSuccess(path,method,body,data){
+ if(typeof path!=='string')return false;
+ let event=null;
+ if(method==='POST' && !data?.pending_review && /^\/forum\/boards\/[a-f0-9-]{36}\/threads$/.test(path)) event='forum_thread_created';
+ else if(method==='POST' && !data?.pending_review && /^\/forum\/threads\/[a-f0-9-]{36}\/posts$/.test(path)) event='forum_post_published';
+ else if(method==='POST' && path==='/forum/register')event='forum_registration_completed';
+ else if(method==='GET' && /^\/forum\/search\?/.test(path)){
+  const q=new URLSearchParams(path.split('?')[1]);
+  if((q.get('q')||'').trim().length>=2 && !q.has('discover') && (!q.has('page')||q.get('page')==='1'))event='forum_search_performed';
+ }
+ if(event===null)return false;
+ return forumEmit(event);
 }
 const f=(path,method,body)=>api(forum+path,method,body);
 const isAdmin=()=>me?.scopes?.includes('*');
@@ -653,7 +675,7 @@ function conversationNotificationPanel(d){if(!canWrite())return null;const p=pan
 const reactionLabels={like:'Нравится',helpful:'Полезно',celebrate:'Отлично'};
 const achievementLabels={first_post:'Первый шаг',active_member:'Активный участник',topic_author:'Автор обсуждений',helpful_member:'Полезный участник',veteran:'Ветеран сообщества'};
 function reactionSummary(p){return Object.entries(reactionLabels).map(([k,v])=>`${v}: ${Number(p.reactions?.[k]||0)}`).join(' · ')}
-function reactionControls(p,refresh){const wrap=node('div',undefined,'actions reaction-controls');for(const [type,label] of Object.entries(reactionLabels)){const b=button(label,async()=>{await f(`/posts/${p.id}/reaction`,'PUT',{enabled:p.my_reaction!==type,type});await refresh()});b.setAttribute('aria-pressed',String(p.my_reaction===type));add(wrap,b)}if(p.my_reaction)add(wrap,button('Убрать реакцию',async()=>{await f(`/posts/${p.id}/reaction`,'PUT',{enabled:false});await refresh()}));return wrap}
+function reactionControls(p,refresh){const wrap=node('div',undefined,'actions reaction-controls');for(const [type,label] of Object.entries(reactionLabels)){const b=button(label,async()=>{await f(`/posts/${p.id}/reaction`,'PUT',{enabled:p.my_reaction!==type,type});forumEmit(p.my_reaction===type?'forum_reaction_removed':p.my_reaction?'forum_reaction_changed':'forum_reaction_added');await refresh()});b.setAttribute('aria-pressed',String(p.my_reaction===type));add(wrap,b)}if(p.my_reaction)add(wrap,button('Убрать реакцию',async()=>{await f(`/posts/${p.id}/reaction`,'PUT',{enabled:false});forumEmit('forum_reaction_removed');await refresh()}));return wrap}
 function reputationPanel(s){const box=node('div',undefined,'reputation');add(box,node('h3','Репутация'),node('p',`${s.reputation} баллов · ${s.reactions} реакций · ${s.threads} тем · ${s.posts} сообщений`),node('p','Учитываются только общедоступные обсуждения.','meta'));const badges=node('div',undefined,'actions');for(const code of s.achievements||[])add(badges,node('span',achievementLabels[code]||code,'thread-tag'));add(box,badges);return box}
 async function relationshipControls(id){const d=await f('/members/'+id+'/relationship'),wrap=node('div',undefined,'actions');for(const [kind,yes,no] of [['follow','Подписаться на участника','Отписаться от участника'],['ignore','Игнорировать','Не игнорировать']])add(wrap,button(d[kind]?no:yes,async()=>{await f('/members/'+id+'/relationship','PUT',{kind,enabled:!d[kind]});await profile(id)}));return wrap}
 async function activityPage(){heading('Активность сообщества');const scope=new URLSearchParams(location.search).get('scope')||'all';const nav=node('div',undefined,'actions');add(nav,link('Вся активность','/forum/activity','button secondary'),link('Рейтинг','/forum/leaderboard','button secondary'));if(me)add(nav,link('Моя активность','/forum/activity?scope=mine','button secondary'),link('Мои подписки','/forum/activity?scope=following','button secondary'));if(canWrite())add(nav,link('Участники и игнорирование','/forum/member-relations','button secondary'));add(app,nav);const rows=await f('/activity?'+new URLSearchParams({scope,page:String(page)}));const box=panel();if(!rows.length)add(box,node('p','Нет доступной активности.'));for(const item of rows){const row=node('div',undefined,'entry'),main=node('div');add(main,link(item.author,'/forum/members/'+item.author_id),node('span',' · '+dateLabel(item.created_at),'meta'),node('p',Number(item.ordinal)===1?'Начал обсуждение':'Опубликовал сообщение'),link(item.title,`/forum/threads/${item.thread_id}?page=${Math.ceil(Number(item.ordinal)/25)}#post-${item.post_id}`));add(box,add(row,main))}add(app,box,paging(rows.length))}

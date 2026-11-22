@@ -85,7 +85,9 @@ final readonly class ForumController
         if (!is_string($mode) || ($term!=='' && mb_strlen($term)<2)) throw new ForumException('Введите минимум два символа.');
         \CajeerEngine\Forum\Validation\ForumSearchOptions::validateTerm($term,$mode,$options,$tag);
         $offset=$this->offset($r);if($offset>=2500)throw new ForumException('Уточните запрос: доступны первые 100 страниц.');
-        return $this->discussions->search($term,$offset,$this->reader($r),$tag,$mode,$options);
+        $results=$this->discussions->search($term,$offset,$this->reader($r),$tag,$mode,$options);
+        if($offset===0 && $term!=='')$this->discussions->analyticsRead('forum_search_performed');
+        return $results;
     }); }
     public function activity(Request $r): JsonResponse { return $this->respond(fn()=> $this->discussions->activity()->feed($this->reader($r),$r->query->all()['scope']??'all',$this->offset($r))); }
     public function leaderboard(Request $r): JsonResponse { return $this->respond(fn()=> $this->discussions->activity()->leaderboard($this->reader($r),$this->offset($r))); }
@@ -173,6 +175,8 @@ final readonly class ForumController
     {
         $headers=['Cache-Control'=>'private, no-store','Vary'=>'Cookie, Authorization, X-API-Token','X-Content-Type-Options'=>'nosniff'];
         try{$a=$this->discussions->attachments()->get($this->reader($r),$this->id($p),true);
+            // The file was authorized and checked for corruption; never log its ID or name.
+            $this->discussions->analyticsRead('forum_attachment_downloaded');
             return new Response($a['data'],200,$headers+['Content-Type'=>'application/octet-stream','Content-Length'=>(string)$a['size_bytes'],'Content-Disposition'=>"attachment; filename=\"download\"; filename*=UTF-8''".rawurlencode($a['filename']),'Content-Security-Policy'=>"default-src 'none'; sandbox"]);
         }catch(ForumException $e){return new JsonResponse(['error'=>['code'=>'forum_error','message'=>$e->getMessage()]],$e->status,$headers);}
     }

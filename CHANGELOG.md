@@ -1,3 +1,11 @@
+## 1.2.2 — Forum Event Tracking (2026-11-22)
+
+- Implemented native anonymous, transaction-committed forum activity events for published threads and replies, registrations and actual reaction changes; unsuccessful and rolled-back mutations do not produce events.
+- Successful first-page searches and verified file downloads create bounded first-party metrics without storing search terms, actor IDs, content, private IDs, files, IP addresses or URLs.
+- Wired consent-gated event routing to the core `CajeerAnalytics.emit` runtime where it is present on an eligible public forum page; no external provider receives data without consent and no analytics SDK is duplicated.
+- Added SQLite/PostgreSQL/MySQL migration 0081, schema health checks, 90-day bounded retention worker, executable PHP/JS/SQL regressions and versioned release gates.
+- Event totals are stored for future native aggregation and reporting. This release does not enable tracking on authenticated or private pages and does not claim production verification of external provider delivery.
+
 ## Forum Edition 1.2.1 — Forum Analytics Integration (2026-11-22)
 
 - Working SSR integration of public, anonymously accessible, indexable Forum pages with the existing CajeerEngine Consent Policy and counter runtime. No replacement tracker/SDK; optional analytics and external HTTP requests remain disabled until consent.
