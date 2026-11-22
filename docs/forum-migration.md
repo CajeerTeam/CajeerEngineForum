@@ -79,6 +79,7 @@ The first run captures and verifies a complete recovery backup through the exist
 
 ```sh
 php bin/cajeer forum:import:status --job=JOB_ID --json
+php bin/cajeer forum:import:verify --job=JOB_ID --deep=1 --json
 php bin/cajeer forum:import:map --job=JOB_ID --kind=topics --id=123 --json
 ```
 

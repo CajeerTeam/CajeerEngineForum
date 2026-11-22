@@ -1,3 +1,13 @@
+## Forum Edition 1.1.11 — Advanced Migration Hardening
+
+- Add index migration 0080 for fast `(job_id,kind,outcome,target_id)` ownership/recipient lookups across supported SQL drivers.
+- Add executable target integrity reconciliation to each completed import (quarantine, disabled accounts, archived tree, private recipients and authors, attachment ownership); the job cannot commit completion if the checks fail.
+- Add operator `forum:import:verify --job=... --deep=1`, which checks imported attachment bytes/size/SHA-256 incrementally with bounded per-file memory.
+- Require verification of the recovery backup before each resumable run. Reject missing Invision v8 attachment snapshots before taking the backup.
+- Correct Invision poll table discovery so unrelated optional community tables cannot be mistaken for polls.
+- Add real SQLite/PDO integration regressions and fail-closed negative tests. Pipeline versions and in-progress checkpoints remain unchanged.
+- Production acceptance on a representative XenForo/Invision snapshot and full CI are still required.
+
 ## [1.1.10] - 2026-11-22 — Invision Community Data (Forum Edition)
 
 - Added v8 transactional Invision 4.x/5.x community-data phases for private member profiles, supported forum-post reactions, topic/board/member follows, private conversation participants, messages and safe rich-content rewriting. All original v6/v7 jobs retain their phase numbering and recorded schema digests.

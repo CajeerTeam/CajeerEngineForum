@@ -156,7 +156,7 @@ if (in_array($argv[1]??'', ['extension:sign','extension:package:install','extens
 try {
     $activityLease = CajeerEngine\Update\OperationLock::acquire($root, in_array($argv[1]??'', ['queue:redis-migrate','routing:rebuild','static:export','import:run','import:diff','export:create','extension:install','extension:uninstall','extension:enable','extension:disable','extension:migrate','extension:assets','extension:config'],true));
     if ((CajeerEngine\Update\OperationLock::active($root)||is_file($root.'/storage/app/backup-restore.json')) && !in_array($argv[1]??'', ['list','--version'],true)) throw new RuntimeException('Recovery required; use operational CLI.');
-    if (CajeerEngine\Update\OperationLock::maintenance($root) && !in_array($argv[1] ?? '', ['list','--version','doctor','rc:doctor','system:report','stable:status','update:check','update:prepare','update','api:lint','release:verify','admin:assets','migrate:status','migrate:verify','forum:import:accept','forum:import:status','forum:import:map','forum:import:discover','forum:import:plan'], true)) {
+    if (CajeerEngine\Update\OperationLock::maintenance($root) && !in_array($argv[1] ?? '', ['list','--version','doctor','rc:doctor','system:report','stable:status','update:check','update:prepare','update','api:lint','release:verify','admin:assets','migrate:status','migrate:verify','forum:import:accept','forum:import:status','forum:import:map','forum:import:verify','forum:import:discover','forum:import:plan'], true)) {
         throw new RuntimeException('Maintenance active; CLI writes disabled.');
     }
 } catch (Throwable $e) { fwrite(STDERR, '[FAIL] '.$e->getMessage().PHP_EOL); exit(1); }
@@ -172,6 +172,30 @@ if (($argv[1] ?? '') === 'install:web-token') {
     require_once $root . '/core/Installer/SetupToken.php';
     try { echo CajeerEngine\Installer\SetupToken::issue($root) . PHP_EOL; exit(0); }
     catch (Throwable $e) { fwrite(STDERR, $e->getMessage() . PHP_EOL); exit(1); }
+}
+
+// Forum import commands run through one audited native dispatcher regardless of
+// Composer/Symfony availability. An exclusive lease protects every write batch.
+if (in_array($argv[1]??'', ['forum:import:discover','forum:import:plan','forum:import:run',
+        'forum:import:status','forum:import:map','forum:import:accept','forum:import:verify'],true)) {
+    if (is_file($autoload)) require_once $autoload;
+    else require_once $root.'/core/Console/NativeCli.php';
+    CajeerEngine\Console\OperationsCli::loadEnv($root);
+    $forumLease=null;
+    try {
+        if (($argv[1]??'')==='forum:import:run')
+            $forumLease=CajeerEngine\Update\OperationLock::acquire($root,true);
+        $config=new CajeerEngine\Runtime\ConfigRepository($root);
+        $result=CajeerEngine\Forum\Migration\ForumMigrationCli::run($root,$config,$argv);
+        $code=($result['ok']??false)?0:1;
+        echo json_encode($result,JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR).PHP_EOL;
+    }catch(Throwable $e){
+        fwrite(STDERR,'[FAIL] '.$e->getMessage().PHP_EOL);
+        $code=1;
+    }finally{
+        if($forumLease!==null)CajeerEngine\Update\OperationLock::release($forumLease);
+    }
+    exit($code);
 }
 
 if (in_array($argv[1]??'', ['extension:install','extension:uninstall','extension:migrate','extension:assets'],true)) {

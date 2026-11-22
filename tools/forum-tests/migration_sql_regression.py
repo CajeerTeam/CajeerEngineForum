@@ -5,7 +5,13 @@ from pathlib import Path
 ROOT=Path(__file__).resolve().parents[2]
 code=(ROOT/'core/Forum/Migration/ForumMigrationEngine.php').read_text()
 queries=[q for _,q in re.findall(r'''\$this->query\((['"])(.*?)\1''',code,re.S)]
-def sql(prefix): return next(q for q in queries if q.startswith(prefix))
+def sql(prefix):
+    matches = [q for q in queries if q.startswith(prefix)]
+    # Invision imports a different closed-poll shape. This legacy phpBB
+    # regression must select the original five-parameter SQL explicitly.
+    if prefix == 'INSERT INTO ce_forum_polls':
+        return next(q for q in matches if q.count('?') == 5)
+    return matches[0]
 def uid(): return str(uuid.uuid4())
 with tempfile.TemporaryDirectory() as tmp:
     db=sqlite3.connect(Path(tmp)/'target.sqlite');db.execute('PRAGMA foreign_keys=ON')

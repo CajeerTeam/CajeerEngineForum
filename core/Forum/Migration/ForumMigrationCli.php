@@ -17,12 +17,18 @@ final class ForumMigrationCli
         if(PHP_SAPI!=='cli')throw new \RuntimeException('Operator CLI required');
         $command=$argv[1]??'';$opts=[];
         foreach(array_slice($argv,2) as $arg){if($arg==='--json')continue;if(!preg_match('/\A--([a-z-]+)=(.*)\z/sD',$arg,$m)||isset($opts[$m[1]]))throw new \InvalidArgumentException('Use --name=value options');$opts[$m[1]]=$m[2];}
-        $allowed=match($command){'forum:import:status'=>['job'],'forum:import:map'=>['job','kind','id'],'forum:import:plan'=>['snapshot','prefix','files','avatar-files','platform','source-version'], 'forum:import:discover'=>['snapshot','prefix','files','platform','source-version'],'forum:import:run'=>['snapshot','prefix','files','avatar-files','batch','steps','seconds','verify-backup','progress-only','confirm','platform','source-version'], 'forum:import:accept'=>['job','snapshot','prefix','files','avatar-files','platform','source-version','expect-skips-sha256'],default=>[]};
+        $allowed=match($command){'forum:import:status'=>['job'],'forum:import:map'=>['job','kind','id'],'forum:import:verify'=>['job','deep'],'forum:import:plan'=>['snapshot','prefix','files','avatar-files','platform','source-version'], 'forum:import:discover'=>['snapshot','prefix','files','platform','source-version'],'forum:import:run'=>['snapshot','prefix','files','avatar-files','batch','steps','seconds','verify-backup','progress-only','confirm','platform','source-version'], 'forum:import:accept'=>['job','snapshot','prefix','files','avatar-files','platform','source-version','expect-skips-sha256'],default=>[]};
         if(array_diff(array_keys($opts),$allowed))throw new \InvalidArgumentException('Unknown import option');
         if($command==='forum:import:discover')return self::discoverInvision($opts);
         $db=new DatabaseManager($config);
         if($command==='forum:import:status')return ForumMigrationEngine::report($db,$opts['job']??'');
         if($command==='forum:import:map')return ForumMigrationEngine::mapping($db,$opts['job']??'',$opts['kind']??'',(int)($opts['id']??0));
+        if($command==='forum:import:verify'){
+            if(isset($opts['deep'])&&!in_array($opts['deep'],['0','1'],true))throw new \InvalidArgumentException('Use --deep=0 or 1');
+            if(($opts['deep']??'0')==='1' && (!is_file($root.'/storage/app/maintenance.json') || OperationLock::active($root)))
+                throw new \RuntimeException('Deep file verification requires isolated maintenance mode');
+            return ForumImportIntegrity::inspect($db,$opts['job']??'',($opts['deep']??'0')==='1');
+        }
         if(!in_array($command,['forum:import:plan','forum:import:run','forum:import:accept'],true))throw new \InvalidArgumentException('Unknown import command');
         $dsn=getenv('FORUM_IMPORT_SOURCE_DSN')?:'';
         $snapshot=$opts['snapshot']??'';$platform=$opts['platform']??'phpbb';
@@ -81,7 +87,7 @@ final class ForumMigrationCli
             $planning=$engine->plan(); // Validate source schema before taking the backup.
             if($platform==='xenforo' && ($planning['counts']['avatars']['count']??0)>0 && $avatarFiles===null)
                 throw new \RuntimeException('XenForo avatar snapshot required: supply --avatar-files before capturing a recovery backup');
-            if($platform==='invision' && ($planning['pipeline_version']??0)===7 && ($planning['counts']['attachments']['count']??0)>0 && $files===null)
+            if($platform==='invision' && ($planning['pipeline_version']??0)>=7 && ($planning['counts']['attachments']['count']??0)>0 && $files===null)
                 throw new \RuntimeException('Invision local uploads snapshot required: supply --files before capturing a recovery backup');
             if($platform==='xenforo' && ($planning['pipeline_version']??1)===5 && (($planning['counts']['attachments']['count']??0)>0 || ($planning['counts']['conversation_attachments']['count']??0)>0) && $files===null)
                 throw new \RuntimeException('XenForo file snapshot required: supply --files=internal_data/attachments before capturing a recovery backup');
@@ -93,7 +99,8 @@ final class ForumMigrationCli
             $backupId=$report['job']['backup_id'];
             if(!preg_match('/\A[0-9]{8}-[0-9]{6}-[a-f0-9]{16}\z/D',$backupId)||!is_file($root.'/storage/app/backups/production/'.$backupId.'/manifest.json')||is_file($root.'/storage/app/backups/production/'.$backupId.'/incomplete.json'))throw new \RuntimeException('Recovery set missing or incomplete; restore it before resuming');
         }
-        if($report['job']['state']!=='complete'&&($opts['verify-backup']??'0')==='1')(new BackupManager($root,$config))->verify($report['job']['backup_id']);
+        // Always verify recovery before touching a resumable import; do not trust manifest presence alone.
+        if($report['job']['state']!=='complete')(new BackupManager($root,$config))->verify($report['job']['backup_id']);
         if($report['job']['state']!=='complete' && !$engine->matchesRecordedPlan($report['job']['plan']))throw new \RuntimeException('Source snapshot changed; restore backup before restarting');
         $started=hrtime(true);$completed=0;
         for($i=0;$i<$steps&&$report['job']['state']!=='complete';$i++){

@@ -66,7 +66,7 @@ final class InvisionSource implements ForumSource
         try{
             $this->contentBounds['attachments']=$this->optionalBounds('core_attachments','attach_id');
             // Both names occur in known IPS exports; accept only a verifiable layout.
-            foreach(['core_polls','forums_polls','core_reputation_index','core_follow','core_message_topics','core_message_posts','core_message_topic_user_map','core_pfields_content'] as $table){
+            foreach(['core_polls','forums_polls'] as $table){
                 $id=$table==='core_polls'?'pid':'poll_id';
                 if($this->optionalBounds($table,$id)['count']>0){
                     if($this->pollTable!==null)throw new \RuntimeException('Ambiguous Invision poll tables');

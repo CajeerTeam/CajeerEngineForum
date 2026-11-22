@@ -152,7 +152,7 @@ final class ForumMigrationEngine
             throw new \RuntimeException('XenForo source has avatars: supply --avatar-files as an immutable data/avatars snapshot');
         if(($plan['pipeline_version']??1)===5 && (($plan['attachments']['count']??0)>0 || ($plan['conversation_attachments']['count']??0)>0) && $this->files===null)
             throw new \RuntimeException('XenForo attachments require --files immutable internal_data/attachments snapshot');
-        if(($plan['pipeline_version']??0)===7 && ($plan['attachments']['count']??0)>0 && $this->files===null)
+        if($this->source instanceof InvisionSource && ($plan['pipeline_version']??0)>=7 && ($plan['attachments']['count']??0)>0 && $this->files===null)
             throw new \RuntimeException('Invision attachments require --files immutable uploads snapshot');
         try{$this->db->transaction(function()use($plan,$id,$backup){
             // The filesystem lease only covers one node. Serialize start decisions in SQL too.
@@ -266,6 +266,7 @@ final class ForumMigrationEngine
                         if($n!==$plan[$covered]['count'])throw new \RuntimeException('Source row count mismatch: '.$covered);
                     }
                     $this->verifyMappings($id);
+                    ForumImportIntegrity::assertSafe($this->db,$id);
                     (new \CajeerEngine\Forum\Service\ForumThemeService($this->db))->snapshot();
                     if(!(new \CajeerEngine\Forum\Service\ForumSearchMaintenance($this->db))->check()['ok'])throw new \RuntimeException('Forum search index check failed; repair before completing import');
                     if(!(new \CajeerEngine\Forum\ForumIntegrityCheck($this->db))->check()['ok'])throw new \RuntimeException('Forum integrity check failed; inspect target before completing import');
