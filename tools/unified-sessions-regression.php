@@ -22,9 +22,9 @@ $pdo->exec("CREATE TABLE ce_roles(id TEXT PRIMARY KEY,handle TEXT UNIQUE,name TE
 $pdo->exec("CREATE TABLE ce_user_roles(user_id TEXT,role_id TEXT,PRIMARY KEY(user_id,role_id))");
 $pdo->exec("CREATE TABLE ce_api_tokens(id TEXT PRIMARY KEY,user_id TEXT REFERENCES ce_users(id),name TEXT,token_hash TEXT UNIQUE,token_prefix TEXT,scopes TEXT,last_used_at TEXT,expires_at TEXT,revoked_at TEXT,created_at TEXT DEFAULT CURRENT_TIMESTAMP)");
 $pdo->exec("CREATE TABLE ce_audit_log(id INTEGER PRIMARY KEY AUTOINCREMENT,event TEXT,actor_id TEXT,context TEXT,ip_address TEXT,user_agent TEXT,created_at TEXT DEFAULT CURRENT_TIMESTAMP)");
-$pdo->exec(file_get_contents($root.'/migrations/sqlite/0028_unified_sessions.sql'));
-$pdo->exec(file_get_contents($root.'/migrations/sqlite/0029_oidc_global_logout.sql'));
-$pdo->exec(file_get_contents($root.'/migrations/sqlite/0030_authentication_assurance.sql'));
+$pdo->exec(file_get_contents($root.'/migrations/sqlite/0063_engine_unified_sessions.sql'));
+$pdo->exec(file_get_contents($root.'/migrations/sqlite/0064_engine_oidc_global_logout.sql'));
+$pdo->exec(file_get_contents($root.'/migrations/sqlite/0065_engine_authentication_assurance.sql'));
 $roles=new RoleRepository($db);$roles->upsert('viewer','Viewer',['content:read']);
 $pw=new PasswordHasher($cfg);$users=new UserRepository($db,$roles,$pw);
 $userId=$users->create('session@example.test','Session Tester',$pw->hash('SecurePassword123!'),['viewer']);
@@ -56,6 +56,14 @@ $check($call('GET','/auth/sessions',cookie:$a['access_token'])->getStatusCode()=
 
 $items=$auth->sessionList($ia);
 $check(count($items)===2 && count(array_filter($items,fn($s)=>$s['provider']==='skif4er'))===1, 'local and external sessions visible together');
+$forumIdentity=new \CajeerEngine\Forum\Service\IdentityService($db,$users,$tokens,new AuditLogRepository($db),$pw,new TwoFactorTotp(),$auth,new \CajeerEngine\Forum\Security\IdentityMail());
+$check($forumIdentity->sessions($ia)===$items, 'Forum IdentityService reads exactly the shared core session registry');
+$bearer=$ia; $bearer['cookie']=false;
+try { $forumIdentity->sessions($bearer); throw new \RuntimeException('Bearer bypassed cookie-only sessions'); }
+catch (\RuntimeException $e) { if ($e->getMessage()==='Bearer bypassed cookie-only sessions') throw $e; }
+$check(true,'Forum session listing refuses bearer-only tokens');
+$check(!$forumIdentity->revokeSession($ia,$tokens->findValidPlainToken($c['access_token'])['id']), 'Forum cannot revoke another user browser session');
+
 $check(!str_contains(json_encode($items),'opaque-idp-session-id') && !str_contains(json_encode($items),$a['access_token']), 'no credential or raw OIDC sid in listing');
 $check($auth->revokeSession($ia,$tokens->findValidPlainToken($c['access_token'])['id'])===false, 'cross-user credential cannot be revoked');
 $check($auth->revokeOtherSessions($ia)===1, 'revoke all other owned sessions');

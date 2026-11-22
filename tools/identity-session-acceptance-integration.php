@@ -32,11 +32,10 @@ $pdo->exec('CREATE TABLE ce_users (id TEXT PRIMARY KEY, status TEXT NOT NULL)');
 $pdo->exec('CREATE TABLE ce_api_tokens (id TEXT PRIMARY KEY, user_id TEXT, name TEXT NOT NULL, revoked_at TEXT NULL, expires_at TEXT NULL, created_at TEXT NOT NULL, last_used_at TEXT NULL)');
 $pdo->exec('CREATE TABLE ce_oidc_identities (issuer TEXT, subject TEXT, user_id TEXT)');
 $pdo->exec('CREATE TABLE ce_oidc_transactions (state_hash TEXT PRIMARY KEY)');
-$pdo->exec('CREATE TABLE ce_oidc_logout_replay (jti_hash TEXT PRIMARY KEY)');
-foreach (['0028_unified_sessions.sql','0030_authentication_assurance.sql'] as $file) {
+foreach (['0063_engine_unified_sessions.sql','0064_engine_oidc_global_logout.sql','0065_engine_authentication_assurance.sql'] as $file) {
     $pdo->exec(file_get_contents($root.'/migrations/sqlite/'.$file));
 }
-$pdo->exec('ALTER TABLE ce_user_sessions ADD COLUMN oidc_sub_hash TEXT NULL');
+// Migration 0064 defines oidc_sub_hash in the production schema.
 $uid1='11111111-1111-4111-8111-111111111111';
 $uid2='22222222-2222-4222-8222-222222222222';
 $pdo->prepare('INSERT INTO ce_users VALUES (?,?)')->execute([$uid1,'active']);

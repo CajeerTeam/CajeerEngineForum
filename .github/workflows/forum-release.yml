@@ -96,7 +96,7 @@ jobs:
           done
 
           cat > "$RUNNER_TEMP/forum-release-notes.md" <<'NOTES'
-          ## CajeerEngineForum 1.0.5
+          ## CajeerEngineForum 1.0.6
 
           Forum Edition SkiF4er ID Account Provisioning, built on CajeerEngine 2.1.0.
 

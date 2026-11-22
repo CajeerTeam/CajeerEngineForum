@@ -7,7 +7,7 @@ c=sqlite3.connect(':memory:')
 c.execute('PRAGMA foreign_keys=ON')
 c.executescript('''CREATE TABLE ce_users(id TEXT PRIMARY KEY);
 CREATE TABLE ce_api_tokens(id TEXT PRIMARY KEY,user_id TEXT REFERENCES ce_users(id),name TEXT,revoked_at TEXT,expires_at TEXT);''')
-c.executescript((r/'migrations/sqlite/0028_unified_sessions.sql').read_text())
+c.executescript((r/'migrations/sqlite/0063_engine_unified_sessions.sql').read_text())
 a='12345678-1234-1234-1234-123456789abc';b='12345678-1234-1234-1234-123456789def'
 for uid in (a,b):c.execute('INSERT INTO ce_users VALUES (?)',(uid,))
 for tid,uid,name in [('a1',a,'admin-session'),('a2',a,'admin-session'),('b1',b,'admin-session'),('api',a,'integration')]:
@@ -15,7 +15,7 @@ for tid,uid,name in [('a1',a,'admin-session'),('a2',a,'admin-session'),('b1',b,'
 for tid,uid,provider in [('a1',a,'local'),('a2',a,'skif4er'),('b1',b,'local')]:
  c.execute('INSERT INTO ce_user_sessions (token_id,user_id,provider) VALUES (?,?,?)',(tid,uid,provider))
 assert c.execute('SELECT count(*) FROM ce_user_sessions').fetchone()[0]==3
-print('PASS actual SQLite 0028 migration and local/OIDC session metadata')
+print('PASS actual SQLite 0063 migration and local/OIDC session metadata')
 try: c.execute("INSERT INTO ce_user_sessions (token_id,user_id,provider) VALUES ('api',?,'invalid')",(a,));raise AssertionError('invalid provider accepted')
 except sqlite3.IntegrityError: pass
 try: c.execute("INSERT INTO ce_user_sessions (token_id,user_id,provider) VALUES ('a1',?,'local')",(b,));raise AssertionError('duplicate credential accepted')

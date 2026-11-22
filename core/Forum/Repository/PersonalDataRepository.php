@@ -47,7 +47,7 @@ final readonly class PersonalDataRepository extends Repository
             'submissions'=>['SELECT id,board_id,thread_id,payload,status,result_id,created_at,updated_at FROM ce_forum_review_submissions WHERE author_id=?','id'],
             'sanctions'=>['SELECT id,kind,board_id,reason,points,starts_at,ends_at,revoked_at,revoke_reason FROM ce_forum_sanctions WHERE user_id=?','id'],
             'appeals'=>['SELECT a.id,a.sanction_id,a.body,a.status,a.created_at,a.decided_at,a.decision FROM ce_forum_appeals a JOIN ce_forum_sanctions s ON s.id=a.sanction_id WHERE s.user_id=?','a.id'],
-            'sessions'=>['SELECT id,name,created_at,last_used_at,expires_at,revoked_at FROM ce_api_tokens WHERE user_id=?','id'],
+            'sessions'=>['SELECT t.id,t.name,s.provider,s.user_agent AS device,s.ip_hint AS network,t.created_at,COALESCE(s.last_seen_at,t.last_used_at) AS last_seen_at,t.expires_at,COALESCE(s.revoked_at,t.revoked_at) AS revoked_at FROM ce_api_tokens t LEFT JOIN ce_user_sessions s ON s.token_id=t.id AND s.user_id=t.user_id WHERE t.user_id=?','t.id'],
         ];
         if (!isset($queries[$section])) throw new ForumException('Неизвестный раздел экспорта.',422);
         [$sql,$order]=$queries[$section];

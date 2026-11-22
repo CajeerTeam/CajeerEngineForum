@@ -57,27 +57,21 @@ final readonly class IdentityService
         });
     }
 
+    /** Forum endpoints share the core's durable browser session registry (local / SkiF4er / legacy). */
     public function sessions(array $identity): array
     {
-        $id=$this->sessionUser($identity);
-        $rows=$this->sql("SELECT id,created_at,last_used_at,expires_at FROM ce_api_tokens WHERE user_id=:id AND name='admin-session' AND revoked_at IS NULL AND expires_at>CURRENT_TIMESTAMP ORDER BY created_at DESC",['id'=>$id])->fetchAll();
-        foreach ($rows as &$row) $row['current']=$row['id']===$identity['token_id'];
-        return $rows;
+        return $this->auth->sessionList($identity);
     }
-    public function revokeSession(array $identity,string $session): bool
+
+    public function revokeSession(array $identity, string $session): bool
     {
-        $id=$this->sessionUser($identity);
-        return $this->users->locked($id,function() use($id,$session) {
-            $n=$this->sql("UPDATE ce_api_tokens SET revoked_at=CURRENT_TIMESTAMP WHERE id=:token AND user_id=:id AND name='admin-session' AND revoked_at IS NULL",['token'=>$session,'id'=>$id])->rowCount();
-            if ($n) $this->audit->record('auth.session_revoked',$id,['token_id'=>$session]);
-            return $n>0;
-        });
+        return $this->auth->revokeSession($identity, $session);
     }
-    public function revokeSessions(array $identity,string $password,?string $code): void
+
+    public function revokeSessions(array $identity, string $password, ?string $code): void
     {
-        $this->sensitive($identity,$password,$code,function($id) {
-            $this->sql("UPDATE ce_api_tokens SET revoked_at=CURRENT_TIMESTAMP WHERE user_id=:id AND name='admin-session' AND revoked_at IS NULL",['id'=>$id]);
-            $this->audit->record('auth.sessions_revoked',$id,[]);
+        $this->sensitive($identity, $password, $code, function () use ($identity): void {
+            $this->auth->revokeAllSessions($identity);
         });
     }
 
