@@ -35,6 +35,12 @@ namespace CajeerEngine\Database {
 }
 namespace CajeerEngine\Database\Repository {
     final class UserRepository {
+        public static int $lastStep = -1;
+        public function acceptTotpStep(string $id, int $step): bool {
+            if ($step <= self::$lastStep) return false;
+            self::$lastStep = $step;
+            return true;
+        }
         public function findById(string $id):?array {return $id==='owner'?['id'=>'owner','email'=>'owner@forum.test','status'=>'active']:null;}
         public function findByEmailForAuth(string $email):?array {return $email==='owner@forum.test' ? ['id'=>'owner','password_hash'=>'verified','two_factor_enabled'=>true,'two_factor_secret'=>'totp-secret']:null;}
     }
@@ -43,7 +49,7 @@ namespace CajeerEngine\Database\Repository {
 namespace CajeerEngine\Security {
     final class AuthService {public static function intersectScopes(array $token,array $current):array {if(in_array('*',$token,true))return $current;if(in_array('*',$current,true))return $token;return array_values(array_intersect($token,$current));}}
     final class PasswordHasher { public function verify(string $password,string $hash):bool{return $hash==='verified' && $password==='correct-password';} }
-    final class TwoFactorTotp { public function verify(string $secret,string $code):bool{return $secret==='totp-secret' && $code==='123456';} }
+    final class TwoFactorTotp { public function matchingStep(string $secret,string $code):?int{return $secret==='totp-secret' && $code==='123456' ? 123456 : null;} }
 }
 namespace {
     require dirname(__DIR__).'/core/Http/RouteRegistry.php';
@@ -105,6 +111,8 @@ namespace {
         $assert($ok,'invalid password or TOTP rejected');
     }
     $assert($assurance->confirmLocal($identity,'correct-password','123456')['fresh'],'local password+MFA confirms same session');
+    try { $assurance->confirmLocal($identity,'correct-password','123456');$ok=false; } catch (\RuntimeException) { $ok=true; }
+    $assert($ok,'the same TOTP time step cannot reauthorize a second privileged operation');
     $assert(count($audit->records)===1,'reauthentication is audited');
     $db->session=['provider'=>'skif4er','assured_at'=>time(),'assurance_method'=>'local','assurance_mfa'=>1,'revoked_at'=>null];
     $assert(!$assurance->status($identity)['fresh'],'old local stamp cannot authorize SSO session');

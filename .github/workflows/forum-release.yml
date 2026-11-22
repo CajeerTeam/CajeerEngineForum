@@ -96,10 +96,13 @@ jobs:
           done
 
           cat > "$RUNNER_TEMP/forum-release-notes.md" <<'NOTES'
-          ## CajeerEngineForum 1.0.8
+          ## CajeerEngineForum 1.0.9
 
-          Forum Edition SSO Logout & Revocation, built on CajeerEngine 2.1.0.
+          Forum Edition Security & Integration Acceptance, built on CajeerEngine 2.1.0.
 
+          - Atomic single-use TOTP and repaired local MFA enrollment, sensitive operations reject SSO-to-local MFA fallback.
+          - Fail-closed MySQL DDL failure recovery and migration drift detection.
+          - Real database upgrade, browser-controller and IdP deployment readiness checks.
           - Forum local sign-out and CSRF-checked RP-initiated SkiF4er ID sign-out with browser-bound completion state.
           - Verified server-side OIDC back-channel logout revoking the matching local browser sessions.
           - Existing linked SSO login, local login and safe return to forum pages.

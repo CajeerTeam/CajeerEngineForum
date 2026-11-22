@@ -119,11 +119,13 @@ final readonly class AuthenticationAssurance
             throw new \RuntimeException('Local reauthentication rejected.');
         }
         $mfa = (bool)($user['two_factor_enabled'] ?? false);
-        if ($mfa && (!is_string($otp) || !preg_match('/^[0-9]{6}$/D', $otp)
-            || !$this->totp->verify((string)$user['two_factor_secret'], $otp))) {
-            throw new \RuntimeException('TOTP verification required.');
-        }
-        $this->db->transaction(function () use ($identity, $mfa): void {
+        $step = $mfa && is_string($otp)
+            ? $this->totp->matchingStep((string)$user['two_factor_secret'], $otp) : null;
+        if ($mfa && $step === null) throw new \RuntimeException('TOTP verification required.');
+        $this->db->transaction(function () use ($identity, $mfa, $step): void {
+            if ($mfa && !$this->users->acceptTotpStep((string)$identity['user_id'], $step)) {
+                throw new \RuntimeException('TOTP code was already used.');
+            }
             $this->stamp((string)$identity['token_id'], (string)$identity['user_id'], 'local', $mfa, null, true);
             $this->audit->record('auth.assurance_local', (string)$identity['user_id'], ['mfa'=>$mfa]);
         });

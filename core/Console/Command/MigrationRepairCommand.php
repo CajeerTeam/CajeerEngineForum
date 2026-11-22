@@ -12,7 +12,7 @@ use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 
-#[AsCommand(name: 'migrate:repair', description: 'Удалить failed-статусы миграций и опционально сразу повторить migrate.')]
+#[AsCommand(name: 'migrate:repair', description: 'Безопасно восстановить failed-статусы SQLite/PostgreSQL; MySQL DDL требует ручной проверки.')]
 final class MigrationRepairCommand extends BaseCommand
 {
     protected function configure(): void

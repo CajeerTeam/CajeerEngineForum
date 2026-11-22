@@ -145,9 +145,14 @@ final readonly class AuthController
     private function confirmedSensitive(array $identity, array $payload): bool
     {
         if (($identity['cookie'] ?? false) !== true || ($identity['session'] ?? false) !== true) return false;
+        // An SSO browser session must NEVER fall back to local password proof.
+        // If the registry is unavailable or reports an unknown provider, fail closed.
         try {
-            if ($this->assurance !== null && $this->assurance->status($identity)['fresh']) return true;
-        } catch (\Throwable) { /* A local password can still reauthenticate on an older session. */ }
+            if ($this->assurance === null) return false;
+            $status = $this->assurance->status($identity);
+            if ($status['fresh']) return true;
+            if (!in_array($status['provider'] ?? null, ['local', 'legacy'], true)) return false;
+        } catch (\Throwable) { return false; }
         return $this->auth->confirmSensitiveAction($identity, (string)($payload['password'] ?? ''),
             isset($payload['two_factor_code']) ? (string)$payload['two_factor_code'] : null);
     }

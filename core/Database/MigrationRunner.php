@@ -44,10 +44,13 @@ final readonly class MigrationRunner
             $contents[$file] = $content;
             $knownFiles[basename($file)] = hash('sha256', $content);
         }
-        foreach($applied as $name=>$row){
-            if(($row['status']??'applied')!=='applied')continue;
-            if(!isset($knownFiles[$name]))throw new \RuntimeException('Applied migration file missing: '.$name);
-            if(($row['checksum']??'')!==''&&!hash_equals($row['checksum'],$knownFiles[$name]))throw new \RuntimeException('Applied migration checksum mismatch: '.$name);
+        foreach ($applied as $name=>$row) {
+            // An interrupted migration is part of the upgrade history too.
+            // Never allow later migrations to run after its SQL file disappears.
+            if (!isset($knownFiles[$name])) throw new \RuntimeException('Recorded migration file missing: '.$name);
+            if (($row['checksum'] ?? '') !== '' && !hash_equals((string)$row['checksum'], $knownFiles[$name])) {
+                throw new \RuntimeException('Recorded migration checksum mismatch: '.$name);
+            }
         }
 
         foreach ($files as $file) {
@@ -68,7 +71,10 @@ final readonly class MigrationRunner
                     throw new \RuntimeException("Неизвестный статус миграции {$name}: {$status}");
                 }
 
-                if($driver==='mysql')throw new \RuntimeException('MySQL migration failed or was interrupted; inspect schema and restore backup before migrate:repair: '.$name);
+                if ($driver === 'mysql') throw new \RuntimeException('MySQL DDL may have partially committed: restore a verified backup before retrying '.$name);
+                if ($knownChecksum !== '' && !hash_equals($knownChecksum, $checksum)) {
+                    throw new \RuntimeException('Failed migration changed on disk; inspect and restore original migration: '.$name);
+                }
                 $this->deleteFailedMigration($name);
             }
 
@@ -135,6 +141,7 @@ final readonly class MigrationRunner
                 $integrityErrors[] = ['migration' => $name, 'reason' => 'checksum_mismatch'];
             }
             if (($row['status'] ?? 'applied') === 'failed') {
+                if (!$row['checksum_ok']) $integrityErrors[] = ['migration' => $name, 'reason' => 'failed_checksum_mismatch'];
                 $failedRows[] = $row;
             } else {
                 $appliedRows[] = $row;
@@ -142,8 +149,9 @@ final readonly class MigrationRunner
         }
 
         foreach ($applied as $name => $row) {
-            if (!isset($seenFiles[$name]) && ($row['status'] ?? 'applied') === 'applied') {
+            if (!isset($seenFiles[$name])) {
                 $integrityErrors[] = ['migration' => $name, 'reason' => 'file_missing'];
+                if (($row['status'] ?? 'applied') === 'failed') $failedRows[] = $row;
             }
         }
 
@@ -169,8 +177,19 @@ final readonly class MigrationRunner
         $driver = $this->normalizeDriver($driver);
         $this->ensureTable($driver);
         $status = $this->statusLocked($driver);
+        if ($status['integrity_errors'] !== []) {
+            throw new \RuntimeException('Cannot repair migrations with missing or modified applied SQL files.');
+        }
+        // MySQL/MariaDB DDL commits implicitly: removing a failed marker and
+        // retrying can run against partially migrated production data.
+        if ($driver === 'mysql' && $status['failed'] !== []) {
+            throw new \RuntimeException('MySQL failed migration requires verified backup restoration and manual schema inspection; migrate:repair is unsafe.');
+        }
         $removed = [];
         foreach ($status['failed'] as $row) {
+            if (($row['checksum'] ?? '') !== '' && !hash_equals((string)$row['checksum'], (string)($row['current_checksum'] ?? ''))) {
+                throw new \RuntimeException('Failed migration checksum changed: '.$row['migration']);
+            }
             $migration = (string) ($row['migration'] ?? '');
             if ($migration === '') {
                 continue;

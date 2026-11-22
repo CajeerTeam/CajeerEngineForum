@@ -25,7 +25,9 @@ final readonly class IdentitySessionMigration
         $stmt = $pdo->prepare('SELECT COUNT(*)'.$base." AND u.status = 'active' AND (t.expires_at IS NULL OR t.expires_at > CURRENT_TIMESTAMP) AND COALESCE(t.last_used_at, t.created_at) >= :cutoff");
         $stmt->execute(['cutoff'=>$this->cutoff()]);
         $eligible = (int)$stmt->fetchColumn();
-        $bad = (int)$pdo->query("SELECT COUNT(*) FROM ce_user_sessions s JOIN ce_api_tokens t ON t.id = s.token_id WHERE s.user_id <> t.user_id OR t.name <> 'admin-session'")->fetchColumn();
+        // LEFT JOIN also detects orphaned session rows on restored databases
+        // where foreign-key enforcement may have been disabled during import.
+        $bad = (int)$pdo->query("SELECT COUNT(*) FROM ce_user_sessions s LEFT JOIN ce_api_tokens t ON t.id = s.token_id WHERE t.id IS NULL OR t.user_id IS NULL OR s.user_id <> t.user_id OR t.name <> 'admin-session'")->fetchColumn();
         $providers = [];
         $stmt = $pdo->query('SELECT provider, COUNT(*) AS amount FROM ce_user_sessions GROUP BY provider');
         foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) $providers[(string)$row['provider']] = (int)$row['amount'];

@@ -346,9 +346,9 @@ final readonly class AuthService
 
     private function verifyTwoFactorCode(string $userId, #[\SensitiveParameter] string $secret, #[\SensitiveParameter] string $code): bool
     {
-        if ($this->totp->verify($secret, $code)) {
-            return true;
-        }
+        $step = $this->totp->matchingStep($secret, $code);
+        if ($step !== null && $this->users->acceptTotpStep($userId, $step)) return true;
+        // Recovery codes are single-use and consumed separately by UserRepository.
         return $this->users->consumeRecoveryCode($userId, $code);
     }
 }

@@ -159,6 +159,11 @@ final readonly class UserSessionRepository
         $sidHash = is_string($sid) ? hash('sha256', $sid) : null;
         return $this->database->transaction(function (PDO $pdo) use ($issuer, $sub, $subHash, $sidHash, $jtiHash, $claims): array {
             $pdo->prepare('DELETE FROM ce_oidc_logout_replay WHERE expires_at < :now')->execute(['now'=>time()]);
+            // Pin the event to this exact issuer; never let a malformed event
+            // from another realm reuse the same application replay namespace.
+            if ($issuer !== 'https://id.skif4er.ru/realms/skif4er') {
+                throw new \RuntimeException('Unexpected OIDC logout issuer.');
+            }
             $probe = $pdo->prepare('SELECT jti_hash FROM ce_oidc_logout_replay WHERE jti_hash = :jti');
             $probe->execute(['jti'=>$jtiHash]);
             if ($probe->fetchColumn() !== false) return ['already_processed'=>true, 'revoked_count'=>0];

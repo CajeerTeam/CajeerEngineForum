@@ -18,6 +18,8 @@ final class ForumIdentityTest extends TestCase
             self::assertSame($expected,$totp->code($secret,$time,8));
         }
         self::assertFalse($totp->verify($secret,'abcdef'));
+        self::assertSame(intdiv(time(),30), $totp->matchingStep($secret, $totp->code($secret)));
+        self::assertNull($totp->matchingStep($secret, 'abcdef'));
         $codes=$totp->recoveryCodes();
         self::assertCount(8,array_unique($codes));
         foreach ($totp->hashRecoveryCodes($codes) as $i=>$hash) {
@@ -36,7 +38,7 @@ final class ForumIdentityTest extends TestCase
     public function testIndependentReleaseIdentity(): void
     {
         $version=new ForumVersion(dirname(__DIR__,2));
-        self::assertSame('1.0.0',$version->current());
-        self::assertSame('1.3.0',$version->upstream());
+        self::assertSame('1.0.9',$version->current());
+        self::assertSame('2.1.0',$version->upstream());
     }
 }

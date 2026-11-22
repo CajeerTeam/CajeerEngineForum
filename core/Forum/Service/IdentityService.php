@@ -95,7 +95,7 @@ final readonly class IdentityService
             if ($step===null) throw new ForumException('Некорректный 2FA-код.',422);
             $codes=$this->totp->recoveryCodes();
             $this->users->enableTwoFactor($id,$row['secret'],$this->totp->hashRecoveryCodes($codes));
-            $this->users->acceptTotpStep($id,$step);
+            if (!$this->users->acceptTotpStep($id,$step)) throw new ForumException('Код 2FA уже использован.',422);
             $this->remove($id,'totp'); $this->tokens->revokeForUser($id);
             $this->audit->record('auth.2fa_enabled',$id,[]);
             return ['two_factor_enabled'=>true,'recovery_codes'=>$codes];

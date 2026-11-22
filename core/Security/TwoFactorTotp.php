@@ -43,17 +43,22 @@ final class TwoFactorTotp
 
     public function verify(#[\SensitiveParameter] string $secret, #[\SensitiveParameter] string $code, int $window = 1): bool
     {
-        $code = preg_replace('/\s+/', '', $code) ?? '';
-        if (!preg_match('/^\d{6}$/', $code)) {
-            return false;
+        return $this->matchingStep($secret, $code, $window) !== null;
+    }
+
+    /** Return the verified 30-second TOTP step for atomic replay protection.
+     * Do not use a boolean-only check when establishing or raising authentication assurance.
+     */
+    public function matchingStep(#[\SensitiveParameter] string $secret, #[\SensitiveParameter] string $code, int $window = 1): ?int
+    {
+        if ($window < 0 || $window > 2 || preg_match('/^[0-9]{6}$/D', $code) !== 1) return null;
+        if (preg_match('/^[A-Z2-7]{16,128}$/D', strtoupper($secret)) !== 1) return null;
+        $currentStep = intdiv(time(), 30);
+        for ($offset = -$window; $offset <= $window; $offset++) {
+            $step = $currentStep + $offset;
+            if ($step >= 0 && hash_equals($this->code($secret, $step * 30), $code)) return $step;
         }
-        $now = time();
-        for ($i = -$window; $i <= $window; $i++) {
-            if (hash_equals($this->code($secret, $now + ($i * 30)), $code)) {
-                return true;
-            }
-        }
-        return false;
+        return null;
     }
 
     /** @return list<string> */
@@ -74,7 +79,7 @@ final class TwoFactorTotp
 
     private function base32Decode(string $secret): string
     {
-        $secret = strtoupper(preg_replace('/[^A-Z2-7]/', '', $secret) ?? '');
+        $secret = preg_replace('/[^A-Z2-7]/', '', strtoupper($secret)) ?? '';
         $bits = '';
         foreach (str_split($secret) as $char) {
             $value = strpos(self::ALPHABET, $char);
