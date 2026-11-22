@@ -17,7 +17,7 @@ final readonly class ForumCommunitySettings
     {
         return ['name'=>getenv('APP_NAME')?:'CajeerEngine Forum Edition',
             'description'=>'Обсуждайте идеи, делитесь опытом и находите ответы вместе.',
-            'registration_enabled'=>self::operatorRegistration(), 'trust_days'=>7,'trust_posts'=>3,
+            'registration_enabled'=>self::operatorRegistration(), 'analytics_enabled'=>false, 'trust_days'=>7,'trust_posts'=>3,
             'threads_hour'=>AntiSpamService::setting('THREADS_HOUR',30),
             'new_threads_hour'=>AntiSpamService::setting('NEW_THREADS_HOUR',6),
             'replies_10min'=>AntiSpamService::setting('REPLIES_10MIN',60),
@@ -53,6 +53,8 @@ final readonly class ForumCommunitySettings
         $out=['name'=>V::text($input['name'],'name',100),'description'=>V::text($input['description'],'description',500,0)];
         if(!is_bool($input['registration_enabled']))throw new ForumException('Некорректный флаг регистрации.');
         $out['registration_enabled']=$input['registration_enabled'];
+        if(!is_bool($input['analytics_enabled']))throw new ForumException('Некорректный флаг аналитики форума.',422);
+        $out['analytics_enabled']=$input['analytics_enabled'];
         foreach(['trust_days'=>[1,365],'trust_posts'=>[1,1000],'threads_hour'=>[1,10000],'new_threads_hour'=>[1,10000],'replies_10min'=>[1,10000],'new_replies_10min'=>[1,10000],'attachment_mb'=>[1,25],'attachment_quota_mb'=>[1,2048],'pause_from'=>[0,4102444800],'pause_until'=>[0,4102444800]] as $key=>[$min,$max]){
             $n=$input[$key];if(!is_int($n)||$n<$min||$n>$max)throw new ForumException('Некорректное значение: '.$key,422);$out[$key]=$n;
         }

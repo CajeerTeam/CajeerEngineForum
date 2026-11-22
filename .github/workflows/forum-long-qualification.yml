@@ -1,8 +1,8 @@
-name: Forum 1.2.0 physical load and 24-hour soak certification
+name: Forum 1.2.1 physical load and 24-hour soak certification
 on:
   workflow_dispatch:
 env:
-  FORUM_LONG_VERSION: ${{ '1.2.0' }}
+  FORUM_LONG_VERSION: ${{ '1.2.1' }}
 permissions:
   contents: read
 concurrency:

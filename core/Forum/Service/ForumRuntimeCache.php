@@ -34,6 +34,12 @@ final class ForumRuntimeCache
             $generation=$this->db->connection()->query("SELECT name, generation FROM ce_forum_cache_generation_effective WHERE scope='public' ORDER BY name")->fetchAll(\PDO::FETCH_ASSOC);
             if(count($generation)!==21)return $load();
             $settings=$view==='page'?[getenv('APP_NAME'),($seo??new ForumSeoSettings($this->root,$this->db,true))->cacheIdentity(),getenv('FORUM_REGISTRATION')]:[getenv('FORUM_REGISTRATION')];
+            if($view==='page'){
+                try {$settings[]=(new \CajeerEngine\Privacy\ConsentPolicy($this->root))->publicConfig()['version'];}
+                catch(\Throwable){$settings[]='unavailable';}
+                try {$settings[]=\CajeerEngine\Privacy\ConsentAssets::version($this->root);}
+                catch(\Throwable){$settings[]='assets-unavailable';}
+            }
             $key=hash('sha256',json_encode(['v087',$generation,$view,$path,$variant,(string)($q['page']??1),$settings],JSON_THROW_ON_ERROR));
             $store=new RedisCacheStore($redis,$prefix.'cache:');$lock=$prefix.'lock:'.$key;$token=bin2hex(random_bytes(16));$owner=false;
             try{
@@ -54,7 +60,7 @@ final class ForumRuntimeCache
                 $response=$load();
                 $body=$response->getContent();
                 if($owner&&$response->getStatusCode()===200&&is_string($body)&&strlen($body)<=524288&&!$response->headers->has('Set-Cookie')){
-                    $headers=[];foreach(['Content-Type','Cache-Control','Vary','X-Robots-Tag'] as $h)if($response->headers->has($h))$headers[$h]=$response->headers->get($h);
+                    $headers=[];foreach(['Content-Type','Cache-Control','Vary','X-Robots-Tag','X-Forum-Analytics-Public'] as $h)if($response->headers->has($h))$headers[$h]=$response->headers->get($h);
                     try{$store->put($key,['body'=>$body,'headers'=>$headers],max(5,min(300,(int)(getenv('FORUM_CACHE_TTL_SECONDS')?:60))));}catch(\Throwable){$this->retryAfter=time()+5;$this->redis=null;}
                 }
                 $response->headers->set('X-Forum-Cache','MISS');return $response;

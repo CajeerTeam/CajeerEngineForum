@@ -4,7 +4,7 @@ declare(strict_types=1);
 namespace CajeerEngine\Forum;
 
 use CajeerEngine\Forum\Security\ForumAccessPolicy;
-use CajeerEngine\Forum\Service\DiscussionService;
+use CajeerEngine\Forum\Service\{DiscussionService,ForumAnalyticsIntegration};
 use CajeerEngine\Forum\Validation\ForumValidator;
 use Symfony\Component\HttpFoundation\{Request,Response,RedirectResponse};
 
@@ -129,7 +129,13 @@ final readonly class ForumPageRenderer
             '<!--FORUM_HEADING-->'=>self::e($title),'<!--FORUM_DESCRIPTION-->'=>self::e($description),
             '<meta name="robots" content="noindex, nofollow" data-forum-template>'=>$meta,'<!--FORUM_MAINTENANCE-->'=>$community['paused']?'<p role="status" class="panel">Публикация новых тем и ответов временно приостановлена.</p>':'','<!--FORUM_BODY-->'=>$body,'<!--FORUM_RENDERED-->'=>$canonical!==null||$path==='/forum/latest'||$path==='/forum/questions'?'true':'false','<!--FORUM_SCRIPT-->'=>$status===200&&$preview===null?'<script src="/forum-assets/forum.js?v='.rawurlencode((new ForumVersion($this->root))->current()).'" defer></script>':'',
         ]);
-        return new Response($html,$status,['Content-Type'=>'text/html; charset=UTF-8','Cache-Control'=>'private, no-store','Vary'=>'Cookie, Authorization, X-API-Token','X-Robots-Tag'=>$robots]);
+        $headers=['Content-Type'=>'text/html; charset=UTF-8','Cache-Control'=>'private, no-store','Vary'=>'Cookie, Authorization, X-API-Token','X-Robots-Tag'=>$robots];
+        if(ForumAnalyticsIntegration::eligible((bool)($community['analytics_enabled']??false),$index,$guest,$preview!==null)){
+            $tracking=(new ForumAnalyticsIntegration($this->root))->decorate($html,$request);
+            $html=$tracking['html'];
+            if($tracking['active'])$headers['X-Forum-Analytics-Public']='1';
+        }
+        return new Response($html,$status,$headers);
     }
 
     private function extensionPanels(string $slot): string

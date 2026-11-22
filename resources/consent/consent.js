@@ -39,7 +39,7 @@
   function trackingConfig() {
     const c=policy?.tracking;
     if(!c || c.enabled!==true || !Array.isArray(c.hosts) || !c.hosts.includes(location.hostname.toLowerCase()))return null;
-    if(!['http:','https:'].includes(location.protocol)||/^\/(?:admin|api|preview|install|upgrade|assets|uploads|extensions)(?:\/|$)/i.test(location.pathname))return null;
+    if(!['http:','https:'].includes(location.protocol)||!forumPublicPath(location.pathname)||/^\/(?:admin|api|preview|install|upgrade|assets|uploads|extensions)(?:\/|$)/i.test(location.pathname))return null;
     if(typeof c.metrika_id!=='string'||typeof c.ga4_id!=='string'||typeof c.gtm_id!=='string'||typeof c.ga4_debug!=='boolean')return null;
     if((c.metrika_id&&!/^[1-9][0-9]{0,11}$/.test(c.metrika_id))||(c.ga4_id&&!/^G-[A-Z0-9]{4,20}$/.test(c.ga4_id))||(c.gtm_id&&!/^GTM-[A-Z0-9]{4,20}$/.test(c.gtm_id))||(c.gtm_id&&(c.ga4_id||c.metrika_id)))return null;
     const alt={...c,matomo_id:c.matomo_id??'',matomo_url:c.matomo_url??'',plausible_id:c.plausible_id??'',plausible_url:c.plausible_url??'',cloudflare_token:c.cloudflare_token??''};
@@ -60,13 +60,16 @@
     for(const n of adEvents)if(alt[yandexGoals[n]]&&(!alt.metrika_id||!alt.ads_events.includes(n)))return null;
     return alt;
   }
+  // The Forum adapter is strictly public-only, even if a third-party theme
+  // accidentally embeds the shared consent loader on a private Forum route.
+  const forumPublicPath = path => !/^\/forum(?:\/|$)/i.test(path) || /^\/forum(?:\/?$|\/(?:boards|threads)\/[a-f0-9-]{36}\/?$)/i.test(path);
   const trackingStatus = () => Object.fromEntries([...counters].map(([name,c])=>[name,{id:c.id,status:c.status,reason:c.reason||null}]));
   function publishTracking(){document.dispatchEvent(new CustomEvent('cajeer:tracking-status',{detail:trackingStatus()}));}
   function locationData(value=location.origin+location.pathname) {
-    try {const url=new URL(value,location.origin);if(url.origin!==location.origin||url.username||url.password||/^\/(?:admin|api|preview|install|upgrade|assets|uploads|extensions)(?:\/|$)/i.test(url.pathname))return null;
+    try {const url=new URL(value,location.origin);if(url.origin!==location.origin||url.username||url.password||!forumPublicPath(url.pathname)||/^\/(?:admin|api|preview|install|upgrade|assets|uploads|extensions)(?:\/|$)/i.test(url.pathname))return null;
       const data={page_location:url.origin+url.pathname,page_referrer:''};
       // Do not forward query strings, fragments, titles or external referrer paths explicitly.
-      if(document.referrer){const r=new URL(document.referrer);if(['https:','http:'].includes(r.protocol))data.page_referrer=r.origin+(r.origin===location.origin?r.pathname:'/');}
+      if(document.referrer){const r=new URL(document.referrer);if(['https:','http:'].includes(r.protocol))data.page_referrer=r.origin+(r.origin===location.origin&&!/^\/forum(?:\/|$)/i.test(url.pathname)?r.pathname:'/');}
       return data;
     }catch{return null;}
   }

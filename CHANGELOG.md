@@ -1,3 +1,11 @@
+## Forum Edition 1.2.1 — Forum Analytics Integration (2026-11-22)
+
+- Working SSR integration of public, anonymously accessible, indexable Forum pages with the existing CajeerEngine Consent Policy and counter runtime. No replacement tracker/SDK; optional analytics and external HTTP requests remain disabled until consent.
+- Forum ACP community setting `analytics_enabled` (default false), revision-checked transactional update and audit; reuses core Tracking & Counters, Analytics Events, Analytics Hub and Privacy controls.
+- Fail-closed origin, HTTPS, route visibility and preview checks; closed discussion areas, authenticated/private pages, ACP, member settings and private messages cannot be instrumented by the forum bridge.
+- Conditional external-provider CSP on eligible rendered pages; internal render flag is removed before responding. Redis SSR cache keys incorporate the effective tracking/consent rules and runtime asset hash, avoiding stale consent after settings changes.
+- OpenAPI schema, CLI/API regression tests, source + compiled Forum ACP assets and signed release identity updated. Provider delivery and site-specific production acceptance remain separate operator checks; native event statistics are planned for later 1.2.x releases.
+
 ## Forum Edition 1.2.0 — Advanced Migration Stable (2026-11-22)
 
 - Implement read-only, source-backed Invision Community 4/5 v8 full import acceptance (`forum:import:accept --platform=invision`), rejecting missing mappings, altered source content, unsupported target or private-audience changes, and modified attachments.

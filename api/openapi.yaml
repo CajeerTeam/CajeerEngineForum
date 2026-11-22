@@ -66531,6 +66531,9 @@
                       "registration_enabled": {
                         "type": "boolean"
                       },
+                      "analytics_enabled": {
+                        "type": "boolean"
+                      },
                       "trust_days": {
                         "type": "integer",
                         "minimum": 1,
@@ -66586,6 +66589,7 @@
                       "name",
                       "description",
                       "registration_enabled",
+                      "analytics_enabled",
                       "trust_days",
                       "trust_posts",
                       "threads_hour",

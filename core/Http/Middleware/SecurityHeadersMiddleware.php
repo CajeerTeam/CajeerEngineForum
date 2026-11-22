@@ -18,13 +18,16 @@ final readonly class SecurityHeadersMiddleware implements MiddlewareInterface
         $response->headers->set('X-Frame-Options', 'SAMEORIGIN');
         $response->headers->set('Referrer-Policy', 'strict-origin-when-cross-origin');
         $response->headers->set('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+        $forumPublic=$response->headers->get('X-Forum-Analytics-Public')==='1';
+        // Internal render-to-middleware signal, not a client-controlled header.
+        $response->headers->remove('X-Forum-Analytics-Public');
         if (str_contains((string) $response->headers->get('Content-Type'), 'text/html')) {
             $route=(string)$request->attributes->get('matched_route','');
             $public=in_array($route,['public.home','public.page.path','public.search','public.search.trailing'],true);
-            $origins=$public?implode(' ',\CajeerEngine\Privacy\ConsentPolicy::origins()):'';
+            $origins=($public||$forumPublic)?implode(' ',\CajeerEngine\Privacy\ConsentPolicy::origins()):'';
             $sources="'self'".($origins!==''?' '.$origins:'');
             $tracking=['script'=>[],'connect'=>[],'frame'=>[]];
-            if($public&&$this->root!==null){
+            if(($public||$forumPublic)&&$this->root!==null){
                 try {
                     $cfg=(new \CajeerEngine\Privacy\TrackingConfig($this->root))->get();
                     if(in_array(strtolower($request->getHost()),$cfg['hosts'],true))$tracking=\CajeerEngine\Privacy\TrackingConfig::csp($cfg);

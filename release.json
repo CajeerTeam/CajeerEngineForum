@@ -17,10 +17,10 @@
     "docs": "GitHub repository docs/",
     "updates": "GitHub Releases",
     "release_builder": "tools/build-release.php",
-    "source_artifact": "storage/releases/cajeerengine-1.2.0-source.zip",
-    "dist_artifact": "storage/releases/cajeerengine-1.2.0-dist.zip",
+    "source_artifact": "storage/releases/cajeerengine-1.2.1-source.zip",
+    "dist_artifact": "storage/releases/cajeerengine-1.2.1-dist.zip",
     "checksums": "storage/releases/*.sha256",
-    "artifact_index": "storage/releases/cajeerengine-1.2.0-artifacts.json",
+    "artifact_index": "storage/releases/cajeerengine-1.2.1-artifacts.json",
     "support_bundle": "storage/app/support",
     "backup": "storage/app/backups/production",
     "server_reports": "storage/app/reports",
@@ -36,6 +36,7 @@
     "engine_api_version": "1.1"
   },
   "product_changes": [
+    "Forum Edition 1.2.1: executable integration of public Forum SSR with the existing consent-gated core analytics runtime, operator-controlled and revisioned forum policy switch (off by default), HTTPS/exact-host validation, fail-closed private/preview exclusion, response-scoped CSP and revision-aware Redis cache invalidation; shared GA4, Yandex Metrica, GTM, Matomo, Plausible, Cloudflare and Analytics Hub settings retained without duplicating SDKs or sending private content.",
     "Forum Edition 1.2.0: read-only, fail-closed Invision v8 source-to-target acceptance with exhaustive phase ID reconciliation, exact skip approval, private recipient and source message checks, on-disk and target attachment SHA-256 verification, verified pre-import backup, and strict staging cutover runbook; existing XenForo v5 acceptance and historical checkpoints preserved. Actual real-data go-live requires independent operator staging approval.",
     "Forum Edition 1.1.11: executable migration hardening with comprehensive quarantine/account/private conversation/attachment ownership checks, indexed target ID-mapping lookups via migration 0080, optional bounded deep SHA-256 file verification, safe pre-completion reconciliation, verified backups on every resume, Invision v8 media snapshot enforcement and correction of unrelated optional tables being misidentified as polls; prior pipeline checkpoints unchanged.",
     "Forum Edition 1.1.10: executable Invision v8 community-data import with member profiles, supported post reactions, topic/board/member subscriptions, private conversations and messages, read-only recipient verification, source schema fingerprints, transactional ID mapping/checkpoints, private default account access, backward-compatible v6/v7 jobs and regression tests.",
@@ -144,6 +145,6 @@
   },
   "stability": "production-stable-gated",
   "edition": "forum",
-  "edition_version": "1.2.0",
+  "edition_version": "1.2.1",
   "upstream_version": "2.1.0"
 }
