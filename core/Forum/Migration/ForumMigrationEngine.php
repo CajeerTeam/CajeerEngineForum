@@ -16,8 +16,8 @@ final class ForumMigrationEngine
     {
         if($avatarFiles!==null && (!is_dir($avatarFiles)||($root=realpath($avatarFiles))===false))throw new \InvalidArgumentException('XenForo avatar snapshot directory not found');
         $this->avatarFiles=$avatarFiles===null?null:$root;
-        if(!in_array($newPipelineVersion,$source instanceof InvisionSource?[2,3,4,5,6,7]:[2,3,4,5],true))throw new \InvalidArgumentException('Invalid new job pipeline version');
-        $this->newPipelineVersion=$source instanceof InvisionSource?($newPipelineVersion===6?6:7):($source instanceof MultiForumSource && $source->platform()==='xenforo'?$newPipelineVersion:min(3,$newPipelineVersion));
+        if(!in_array($newPipelineVersion,$source instanceof InvisionSource?[2,3,4,5,6,7,8]:[2,3,4,5],true))throw new \InvalidArgumentException('Invalid new job pipeline version');
+        $this->newPipelineVersion=$source instanceof InvisionSource?($newPipelineVersion===6?6:($newPipelineVersion===7?7:8)):($source instanceof MultiForumSource && $source->platform()==='xenforo'?$newPipelineVersion:min(3,$newPipelineVersion));
     }
     private array $mappingCache=[];
     private array $statements=[];
@@ -44,17 +44,25 @@ final class ForumMigrationEngine
     private const CONTENT_PHASE='content_links';
     private const MEDIA_PHASES=['conversations','conversation_messages','conversation_attachments','conversation_content'];
     private const INVISION_PHASES=['attachments','polls','invision_content'];
+    private const INVISION_COMMUNITY_PHASES=['inv_profiles','inv_reactions','inv_follow','inv_conversations','inv_messages','inv_pm_content'];
     /** Existing jobs have no pipeline_version and always finish with the original eleven phases. */
     private function phaseNames(array $plan): array
     {
         if(!isset($plan['pipeline_version']))return ForumSource::PHASES;
-        if(in_array($plan['pipeline_version'],[6,7],true)){
+        if(in_array($plan['pipeline_version'],[6,7,8],true)){
             if(!($this->source instanceof InvisionSource))throw new \RuntimeException('Invision pipeline requires Invision source');
             foreach(InvisionSource::CORE_PHASES as $kind)if(!isset($plan[$kind]['count'],$plan[$kind]['high']))throw new \RuntimeException('Incomplete Invision phase ledger');
-            if($plan['pipeline_version']===7){
+            if($plan['pipeline_version']>=7){
                 foreach(self::INVISION_PHASES as $kind)if(!isset($plan[$kind]['count'],$plan[$kind]['high']))
                     throw new \RuntimeException('Incomplete Invision v7 content ledger');
                 if($plan['invision_content']!==$plan['posts'])throw new \RuntimeException('Invision content bounds mismatch');
+                if($plan['pipeline_version']===8){
+                    foreach(self::INVISION_COMMUNITY_PHASES as $kind)
+                        if(!isset($plan[$kind]['count'],$plan[$kind]['high']))throw new \RuntimeException('Incomplete Invision v8 community ledger');
+                    if($plan['inv_profiles']!==$plan['users']||$plan['inv_pm_content']!==$plan['inv_messages']
+                        ||!isset($plan['source_community_schema_sha256']))throw new \RuntimeException('Invalid Invision v8 community ledger');
+                    return array_merge(InvisionSource::CORE_PHASES,self::INVISION_PHASES,self::INVISION_COMMUNITY_PHASES);
+                }
                 return array_merge(InvisionSource::CORE_PHASES,self::INVISION_PHASES);
             }
             return InvisionSource::CORE_PHASES;
@@ -90,7 +98,7 @@ final class ForumMigrationEngine
     {
         $pipelineVersion??=$this->newPipelineVersion;
         if($this->source instanceof InvisionSource){
-            if(!in_array($pipelineVersion,[6,7],true))throw new \RuntimeException('Invalid Invision pipeline version');
+            if(!in_array($pipelineVersion,[6,7,8],true))throw new \RuntimeException('Invalid Invision pipeline version');
             return $this->source->plan($pipelineVersion);
         }
         $plan=$this->source->plan();
@@ -169,7 +177,10 @@ final class ForumMigrationEngine
     /** Validate the ledger while the imported tree is still quarantined. */
     private function verifyMappings(string $job): void
     {
-        foreach(['groups'=>['ce_forum_groups','role_id'],'users'=>['ce_users','id'],'forums'=>['ce_forum_boards','id'],'topics'=>['ce_forum_threads','id'],'posts'=>['ce_forum_posts','id'],'attachments'=>['ce_forum_attachments','id'],'polls'=>['ce_forum_polls','thread_id'],'profiles'=>['ce_forum_member_profiles','user_id'],'reactions'=>['ce_forum_posts','id'],'avatars'=>['ce_forum_profile_images','user_id'],'follows'=>['ce_users','id'],'content_links'=>['ce_forum_posts','id'],'invision_content'=>['ce_forum_posts','id'],'conversations'=>['ce_forum_conversations','id'],'conversation_messages'=>['ce_forum_conversation_messages','id'],'conversation_attachments'=>['ce_forum_attachments','id'],'conversation_content'=>['ce_forum_conversation_messages','id']] as $kind=>[$table,$column]){
+        foreach(['groups'=>['ce_forum_groups','role_id'],'users'=>['ce_users','id'],'forums'=>['ce_forum_boards','id'],'topics'=>['ce_forum_threads','id'],'posts'=>['ce_forum_posts','id'],'attachments'=>['ce_forum_attachments','id'],'polls'=>['ce_forum_polls','thread_id'],'profiles'=>['ce_forum_member_profiles','user_id'],'reactions'=>['ce_forum_posts','id'],'avatars'=>['ce_forum_profile_images','user_id'],'follows'=>['ce_users','id'],'content_links'=>['ce_forum_posts','id'],'invision_content'=>['ce_forum_posts','id'],'inv_profiles'=>['ce_forum_member_profiles','user_id'],
+            'inv_reactions'=>['ce_forum_posts','id'],'inv_follow'=>['ce_users','id'],
+            'inv_conversations'=>['ce_forum_conversations','id'],
+            'inv_messages'=>['ce_forum_conversation_messages','id'],'inv_pm_content'=>['ce_forum_conversation_messages','id'],'conversations'=>['ce_forum_conversations','id'],'conversation_messages'=>['ce_forum_conversation_messages','id'],'conversation_attachments'=>['ce_forum_attachments','id'],'conversation_content'=>['ce_forum_conversation_messages','id']] as $kind=>[$table,$column]){
             // PostgreSQL uses UUID PKs; cast the small ledger key, not the indexed target column.
             $key=$this->db->driver()==='pgsql'?'CAST(m.target_id AS UUID)':'m.target_id';
             $n=(int)$this->query("SELECT COUNT(*) FROM ce_forum_import_map m LEFT JOIN $table t ON t.$column=$key WHERE m.job_id=? AND m.kind=? AND m.outcome='imported' AND t.$column IS NULL",[$job,$kind])->fetchColumn();
@@ -225,12 +236,16 @@ final class ForumMigrationEngine
             $category=$this->row('SELECT visibility FROM ce_forum_categories WHERE id=?',[$job['category_id']]);
             if(!$category||$category['visibility']!=='hidden'||$this->row('SELECT id FROM ce_forum_boards WHERE category_id=? AND (visibility<>? OR state<>?) LIMIT 1',[$job['category_id'],'hidden','readonly']))throw new \RuntimeException('Imported tree must remain hidden and readonly until completion');
             $isMedia=in_array($kind,self::MEDIA_PHASES,true);
-            $isInvisionContent=($plan['pipeline_version']??0)===7 && in_array($kind,self::INVISION_PHASES,true);
+            $isInvisionContent=($plan['pipeline_version']??0)>=7 && in_array($kind,self::INVISION_PHASES,true);
+            $isInvisionCommunity=($plan['pipeline_version']??0)===8 && in_array($kind,self::INVISION_COMMUNITY_PHASES,true);
             $isAdditional=in_array($kind,self::EXTRA_PHASES,true);
             $isCommunity=in_array($kind,self::COMMUNITY_PHASES,true);
             if($isInvisionContent){
                 if(!($this->source instanceof InvisionSource))throw new \RuntimeException('Invision media requires Invision source');
                 $batch=$this->source->contentBatch($kind,$cursor,$plan[$kind]['high'],$kind==='attachments'?1:min(20,$limit));
+            }elseif($isInvisionCommunity){
+                if(!($this->source instanceof InvisionSource))throw new \RuntimeException('Invision community phase requires source');
+                $batch=$this->source->communityBatch($kind,$cursor,$plan[$kind]['high'],min($limit,in_array($kind,['inv_conversations','inv_pm_content'],true)?20:100));
             }elseif($isMedia){
                 if(!($this->source instanceof MultiForumSource)||$this->source->platform()!=='xenforo')throw new \RuntimeException('XenForo media phase requires source');
                 $batch=$this->source->mediaBatch($kind,$cursor,$plan[$kind]['high'],in_array($kind,['conversation_attachments','conversation_content'],true)?min($limit,$kind==='conversation_attachments'?1:20):$limit);
@@ -262,7 +277,7 @@ final class ForumMigrationEngine
               // Bound total relation work, not just the number of topics in a batch.
               $remaining=$limit;
               foreach($batch as $r){
-                $key=match($kind){'groups'=>'group_id','users'=>'user_id','forums'=>'left_id','topics','polls','votes','watches','finalize'=>'topic_id','board_watches'=>'forum_id','posts'=>'post_id','attachments'=>'attach_id','profiles'=>'profile_id','reactions'=>'reaction_source_id','avatars'=>'avatar_id','follows'=>'follow_id','content_links','invision_content'=>'post_id','conversations'=>'conversation_source_id','conversation_messages','conversation_content'=>'message_source_id','conversation_attachments'=>'attach_id'};
+                $key=match($kind){'groups'=>'group_id','users'=>'user_id','forums'=>'left_id','topics','polls','votes','watches','finalize'=>'topic_id','board_watches'=>'forum_id','posts'=>'post_id','attachments'=>'attach_id','profiles'=>'profile_id','reactions'=>'reaction_source_id','avatars'=>'avatar_id','follows'=>'follow_id','content_links','invision_content'=>'post_id','conversations'=>'conversation_source_id','conversation_messages','conversation_content'=>'message_source_id','conversation_attachments'=>'attach_id','inv_profiles'=>'member_id','inv_reactions'=>'id','inv_follow'=>'follow_id','inv_conversations'=>'mt_id','inv_messages','inv_pm_content'=>'msg_id'};
                 $next=(int)$r[$isInvisionContent && $kind==='polls'?'poll_id':$key];
                 if(in_array($kind,['watches','board_watches','votes','follows'],true)){
                     $target=$this->mapped(match($kind){'watches'=>'topics','board_watches'=>'forums','votes'=>'polls','follows'=>'users'},$next);
@@ -305,6 +320,15 @@ final class ForumMigrationEngine
                         'polls'=>$this->importInvisionPoll($r),
                         'invision_content'=>$this->rewriteInvisionPost($r),
                     };
+                }elseif($isInvisionCommunity){
+                    match($kind){
+                        'inv_profiles'=>$this->importInvisionProfile($r),
+                        'inv_reactions'=>$this->importInvisionReaction($r),
+                        'inv_follow'=>$this->importInvisionFollow($r),
+                        'inv_conversations'=>$this->importInvisionConversation($r),
+                        'inv_messages'=>$this->importInvisionMessage($r),
+                        'inv_pm_content'=>$this->rewriteInvisionConversationMessage($r),
+                    };
                 }elseif($isMedia){
                     match($kind){
                         'conversations'=>$this->importConversation($r),
@@ -331,6 +355,161 @@ final class ForumMigrationEngine
      * Each rewritten post, its baseline revision, ledger row and checkpoint commit together.
      */
     /** Append-only v7 pass after all topic, post and attachment mappings exist. */
+    /** All v8 target writes share the engine's existing SQL transaction and ledger. */
+    private function importInvisionProfile(array $row):void
+    {
+        $source=(int)$row['member_id'];$user=$this->mapped('users',$source);
+        if($user===null){$this->mark('inv_profiles',$source,null,'member_not_imported');return;}
+        $fields=['bio'=>['pp_about_me','about_me'], 'location'=>['location'],
+            'website'=>['website','homepage'],'signature'=>['signature']];
+        $values=[];
+        foreach($fields as $field=>$names){
+            $raw='';foreach($names as $name)if(array_key_exists($name,$row)){$raw=(string)($row[$name]??'');break;}
+            $value=in_array($field,['bio','signature'],true)?InvisionContent::plain($raw):trim(strip_tags(str_replace("\0",'',html_entity_decode($raw,ENT_QUOTES|ENT_HTML5,'UTF-8'))));
+            $limit=match($field){'bio'=>2000,'location'=>120,'website'=>500,'signature'=>500};
+            if($value===null||!preg_match('//u',$value)||strlen($value)>$limit*4||mb_strlen($value,'UTF-8')>$limit){
+                $this->mark('inv_profiles',$source,null,'invalid_or_oversized_profile');return;
+            }
+            $values[$field]=$value;
+        }
+        $url=$values['website'];
+        if($url!==''&&(!filter_var($url,FILTER_VALIDATE_URL)||!in_array(strtolower((string)parse_url($url,PHP_URL_SCHEME)),['https','http'],true)
+            ||parse_url($url,PHP_URL_USER)!==null||parse_url($url,PHP_URL_PASS)!==null)){
+            $this->mark('inv_profiles',$source,null,'unsafe_profile_website');return;
+        }
+        if(implode('',$values)===''){$this->mark('inv_profiles',$source,null,'no_supported_profile_fields');return;}
+        // Existing user preferences are private; never publish an imported profile.
+        $this->query('INSERT INTO ce_forum_member_profiles(user_id,bio,location,website,signature) VALUES(?,?,?,?,?)',
+            [$user,$values['bio'],$values['location'],$values['website'],$values['signature']]);
+        $this->mark('inv_profiles',$source,$user);
+    }
+    private function importInvisionReaction(array $row):void
+    {
+        $source=(int)$row['id'];$app=strtolower((string)($row['app']??''));$kind=strtolower((string)($row['type']??''));
+        // IPS reputation may refer to any app's content, never guess its target.
+        if(($app!==''&&$app!=='forums')||!in_array($kind,['pid','post','forums_post'],true)
+            ||(int)$row['rep_rating']<=0){$this->mark('inv_reactions',$source,null,'unsupported_reputation_content');return;}
+        // A custom reaction ID is not necessarily a Like; never change its meaning.
+        if(isset($row['reaction']) && !in_array((int)$row['reaction'],[0,1],true)){
+            $this->mark('inv_reactions',$source,null,'unmapped_custom_reaction');return;
+        }
+        $post=$this->mapped('posts',(int)$row['type_id']);$user=$this->mapped('users',(int)$row['member_id']);
+        if($post===null||$user===null){$this->mark('inv_reactions',$source,null,'post_or_member_not_imported');return;}
+        if((string)($this->row('SELECT author_id FROM ce_forum_posts WHERE id=?',[$post])['author_id']??'')===$user){
+            $this->mark('inv_reactions',$source,null,'self_reaction');return;
+        }
+        if($this->row('SELECT user_id FROM ce_forum_reactions WHERE post_id=? AND user_id=?',[$post,$user])){
+            $this->mark('inv_reactions',$source,null,'duplicate_reaction');return;
+        }
+        $this->query("INSERT INTO ce_forum_reactions(post_id,user_id,reaction_type) VALUES(?,?,'like')",[$post,$user]);
+        $this->mark('inv_reactions',$source,$post);
+    }
+    private function importInvisionFollow(array $row):void
+    {
+        $source=(int)$row['follow_id'];$app=strtolower((string)$row['follow_app']);$area=strtolower((string)$row['follow_area']);
+        if((int)($row['follow_is_anon']??0)!==0){$this->mark('inv_follow',$source,null,'anonymous_follow_not_exposed');return;}
+        $user=$this->mapped('users',(int)$row['follow_member_id']);$old=(int)$row['follow_rel_id'];
+        $relation=match($app.':'.$area){
+            'forums:topic'=>['topics','thread'],'forums:forum'=>['forums','board'],
+            'core:member'=>['users','member'],default=>null};
+        if($user===null||$relation===null){$this->mark('inv_follow',$source,null,'unsupported_or_missing_follower');return;}
+        $target=$this->mapped($relation[0],$old);
+        if($target===null){$this->mark('inv_follow',$source,null,'follow_target_not_imported');return;}
+        if($relation[1]==='member'){
+            if($target===$user){$this->mark('inv_follow',$source,null,'self_follow');return;}
+            $exists=$this->row("SELECT user_id FROM ce_forum_member_relations WHERE user_id=? AND target_id=? AND kind='follow'",[$user,$target]);
+            if(!$exists)$this->query("INSERT INTO ce_forum_member_relations(user_id,target_id,kind) VALUES(?,?,'follow')",[$user,$target]);
+        }else{
+            $table=$relation[1]==='thread'?'ce_forum_watches':'ce_forum_board_watches';
+            $column=$relation[1]==='thread'?'thread_id':'board_id';
+            if(!$this->row("SELECT user_id FROM $table WHERE user_id=? AND $column=?",[$user,$target]))
+                $this->query("INSERT INTO $table($column,user_id,mode) VALUES(?,?,'internal')",[$target,$user]);
+        }
+        $this->mark('inv_follow',$source,$user);
+    }
+    private function importInvisionConversation(array $row):void
+    {
+        $source=(int)$row['mt_id'];
+        if((int)($row['mt_is_draft']??0)!==0||(int)($row['mt_is_deleted']??0)!==0){
+            $this->mark('inv_conversations',$source,null,'draft_or_deleted_conversation');return;
+        }
+        if(!($this->source instanceof InvisionSource))throw new \LogicException('Expected Invision snapshot');
+        $recipients=$this->source->communityRecipients($source);
+        if(count($recipients)<1||count($recipients)>20){$this->mark('inv_conversations',$source,null,'recipient_count_invalid');return;}
+        $members=[];
+        foreach($recipients as $entry){
+            // A former/deleted/banned recipient must never be reinstated.
+            if((int)$entry['map_user_active']!==1||(int)$entry['map_left_time']>0
+                ||(int)($entry['map_user_banned']??0)!==0){
+                // Do not expose a partial historical audience as a different chat.
+                $this->mark('inv_conversations',$source,null,'inactive_or_departed_recipient');return;
+            }
+            $member=$this->mapped('users',(int)$entry['map_user_id']);
+            if($member===null||isset($members[$member])){
+                $this->mark('inv_conversations',$source,null,'unmapped_or_duplicate_active_recipient');return;
+            }
+            $members[$member]=true;
+        }
+        if($members===[]){$this->mark('inv_conversations',$source,null,'no_active_recipients');return;}
+        if(!$this->source->communityHasMessages($source)){$this->mark('inv_conversations',$source,null,'no_messages');return;}
+        $starter=$this->mapped('users',(int)$row['mt_starter_id']);
+        $owner=$starter!==null&&isset($members[$starter])?$starter:array_key_first($members);
+        $raw=html_entity_decode((string)$row['mt_title'],ENT_QUOTES|ENT_HTML5,'UTF-8');
+        $title=trim(strip_tags(str_replace("\0",'',$raw)));
+        if($title===''||!preg_match('//u',$title)||mb_strlen($title,'UTF-8')>180){
+            $this->mark('inv_conversations',$source,null,'invalid_conversation_title');return;
+        }
+        $date=max(0,(int)($row['mt_date']??$row['mt_start_time']??$row['mt_time']??0));
+        $id=self::uuid();$kind=count($members)>2?'group':'direct';
+        $this->query('INSERT INTO ce_forum_conversations(id,owner_id,title,kind,created_at,updated_at) VALUES(?,?,?,?,?,?)',[$id,$owner,$title,$kind,$date,$date]);
+        foreach(array_keys($members) as $member)
+            $this->query('INSERT INTO ce_forum_conversation_participants(conversation_id,user_id,joined_sequence,read_sequence,active) VALUES(?,?,1,0,1)',[$id,$member]);
+        $this->mark('inv_conversations',$source,$id);
+    }
+    private function importInvisionMessage(array $row):void
+    {
+        $source=(int)$row['msg_id'];
+        if((int)($row['msg_is_deleted']??$row['msg_deleted']??0)!==0){
+            $this->mark('inv_messages',$source,null,'deleted_private_message');return;
+        }
+        $conversation=$this->mapped('inv_conversations',(int)$row['msg_topic_id']);
+        if($conversation===null){$this->mark('inv_messages',$source,null,'conversation_not_imported');return;}
+        $author=$this->mapped('users',(int)$row['msg_author_id']);
+        // Never create an accessible private message by a former/non-member author.
+        if($author===null||!$this->row('SELECT user_id FROM ce_forum_conversation_participants WHERE conversation_id=? AND user_id=? AND active=1',[$conversation,$author])){
+            $this->mark('inv_messages',$source,null,'author_not_active_participant');return;
+        }
+        $body=InvisionContent::plain((string)$row['msg_post']);
+        if($body===null||!preg_match('//u',$body)||strlen($body)>80000||preg_match_all('/./us',$body)>20000){
+            $this->mark('inv_messages',$source,null,'invalid_or_oversized_private_message');return;
+        }
+        if(trim($body)==='')$body='[Empty imported message]';
+        $previous=$this->row('SELECT last_sequence,updated_at FROM ce_forum_conversations WHERE id=?',[$conversation]);
+        if($previous===null)throw new \RuntimeException('Imported private conversation not found');
+        $sequence=(int)$previous['last_sequence']+1;
+        $when=max(0,(int)($row['msg_date']??$row['msg_timestamp']??$row['msg_time']??0));
+        $id=self::uuid();
+        $this->query("INSERT INTO ce_forum_conversation_messages(id,conversation_id,author_id,message_sequence,body,body_format,created_at) VALUES(?,?,?,?,?,'plain',?)",[$id,$conversation,$author,$sequence,$body,$when]);
+        $this->query("INSERT INTO ce_forum_conversation_revisions(message_id,revision_number,body,body_format,editor_id,edit_reason,created_at) VALUES(?,1,?,'plain',?,'Invision import',?)",[$id,$body,$author,$when]);
+        $this->query('UPDATE ce_forum_conversations SET last_sequence=?,updated_at=? WHERE id=?',[$sequence,max($when,(int)$previous['updated_at']),$conversation]);
+        $this->mark('inv_messages',$source,$id);
+    }
+    private function rewriteInvisionConversationMessage(array $row):void
+    {
+        $source=(int)$row['msg_id'];$id=$this->mapped('inv_messages',$source);
+        if($id===null){$this->mark('inv_pm_content',$source,null,'message_not_imported');return;}
+        // Private messages do not resolve source attachments into public download URLs.
+        // Only mapped user mentions may become links; unsupported links are sanitized.
+        $resolver=fn(string $kind,int $old):?string=>$kind==='users'&&($user=$this->mapped('users',$old))!==null
+            ?'/forum/members/'.$user:null;
+        $body=InvisionContent::rich((string)$row['msg_post'],$resolver,$this->source instanceof InvisionSource?$this->source->contentOrigin():null);
+        if($body===null){$this->mark('inv_pm_content',$source,null,'invalid_private_rich_content');return;}
+        if($body==='')$body='[Empty imported message]';
+        $this->query("UPDATE ce_forum_conversation_messages SET body=?,body_format='bbcode' WHERE id=?",[$body,$id]);
+        $this->query("UPDATE ce_forum_conversation_revisions SET body=?,body_format='bbcode' WHERE message_id=? AND revision_number=1",[$body,$id]);
+        $this->mark('inv_pm_content',$source,$id);
+    }
+
     private function rewriteInvisionPost(array $row):void
     {
         $source=(int)$row['post_id'];$post=$this->mapped('posts',$source);

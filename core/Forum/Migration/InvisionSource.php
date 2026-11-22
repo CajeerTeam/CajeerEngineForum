@@ -8,17 +8,21 @@ use PDO;
 /**
  * Consistent, read-only Invision Community 4/5 snapshot adapter.
  * Version 6 retains its original six core phases for in-progress imports.
- * Version 7 adds actual post media, polls and rich content as append-only phases.
+ * Version 7 adds post media and content; v8 appends privacy-preserving community data.
  */
 final class InvisionSource implements ForumSource
 {
     public const CORE_PHASES=['groups','users','forums','topics','posts','finalize'];
     public const CONTENT_PHASES=['attachments','polls','invision_content'];
+    public const COMMUNITY_PHASES=['inv_profiles','inv_reactions','inv_follow','inv_conversations','inv_messages','inv_pm_content'];
     private ?string $sourceOrigin=null;
     private array $columns=[];
     private ?string $pollTable=null;
     private array $contentBounds=[];
     private ?string $contentError=null;
+    private ?string $communityError=null;
+    private array $communityBounds=[];
+    private array $communityLayouts=[];
     private array $tree=[];
     private array $ledger=[];
     private string $prefix;
@@ -42,7 +46,7 @@ final class InvisionSource implements ForumSource
         $this->version=$report['version'];
         $this->fingerprint=$report['schema_sha256'];
         $this->driver=$report['database_driver'];
-        foreach(['core_groups','core_members','forums_forums','forums_topics','forums_posts','core_attachments','core_attachments_map','core_polls','forums_polls'] as $table)
+        foreach(['core_groups','core_members','forums_forums','forums_topics','forums_posts','core_attachments','core_attachments_map','core_polls','forums_polls','core_reputation_index','core_follow','core_message_topics','core_message_posts','core_message_topic_user_map','core_pfields_content'] as $table)
             $this->columns[$table]=$this->columnsOf($table);
         // These are mandatory for a reliable privacy-preserving import. A missing
         // publication flag must not be silently interpreted as public content.
@@ -62,7 +66,7 @@ final class InvisionSource implements ForumSource
         try{
             $this->contentBounds['attachments']=$this->optionalBounds('core_attachments','attach_id');
             // Both names occur in known IPS exports; accept only a verifiable layout.
-            foreach(['core_polls','forums_polls'] as $table){
+            foreach(['core_polls','forums_polls','core_reputation_index','core_follow','core_message_topics','core_message_posts','core_message_topic_user_map','core_pfields_content'] as $table){
                 $id=$table==='core_polls'?'pid':'poll_id';
                 if($this->optionalBounds($table,$id)['count']>0){
                     if($this->pollTable!==null)throw new \RuntimeException('Ambiguous Invision poll tables');
@@ -75,6 +79,10 @@ final class InvisionSource implements ForumSource
             if($this->contentBounds['attachments']['count']>0)$this->validateAttachmentSchema();
             if($this->contentBounds['polls']['count']>0)$this->validatePollSchema();
         }catch(\RuntimeException $e){$this->contentError=$e->getMessage();}
+        // Community data uses only source tables with verified, unambiguous keys.
+        // v6/v7 jobs must not be invalidated by a newer community schema.
+        try{$this->prepareCommunity();}
+        catch(\RuntimeException $e){$this->communityError=$e->getMessage();}
         // Keyset scans must have exact, stable keys. All names here are code-owned.
         foreach(['groups','users','topics','posts'] as $phase)
             $this->batch($phase,0,$this->ledger[$phase]['high'],1);
@@ -88,23 +96,120 @@ final class InvisionSource implements ForumSource
     {
         return ['source credentials and ACL','existing account auto-merge','archived posts',
             'remote or unavailable file storage, unsupported attachment layouts',
-            'legacy poll voters, follows, reactions, profiles and private conversations (1.1.10)',
+            'unsupported source reputation types or unknown follow targets, private attachments without a verifiable mapping',
             'member suspensions and moderation privileges'];
     }
-    public function plan(int $pipelineVersion=7): array
+    public function plan(int $pipelineVersion=8): array
     {
         if(!$this->pdo->inTransaction())throw new \RuntimeException('Invision snapshot transaction ended');
         if($pipelineVersion===6)return $this->ledger;
-        if($pipelineVersion!==7)throw new \InvalidArgumentException('Unsupported Invision pipeline');
+        if(!in_array($pipelineVersion,[7,8],true))throw new \InvalidArgumentException('Unsupported Invision pipeline');
         if($this->contentError!==null)throw new \RuntimeException($this->contentError);
-        return array_merge($this->ledger,['pipeline_version'=>7,
+        $plan=array_merge($this->ledger,['pipeline_version'=>$pipelineVersion,
             'source_content_schema_sha256'=>hash('sha256',json_encode([
                 'attachments'=>$this->columns['core_attachments'],
                 'attachment_map'=>$this->columns['core_attachments_map'],
                 'core_polls'=>$this->columns['core_polls'],
                 'forums_polls'=>$this->columns['forums_polls'],
                 'phase_bounds'=>$this->contentBounds],JSON_THROW_ON_ERROR))],$this->contentBounds);
+        if($pipelineVersion===7)return $plan;
+        if($this->communityError!==null)throw new \RuntimeException($this->communityError);
+        return array_merge($plan,['source_community_schema_sha256'=>hash('sha256',json_encode([
+            'layouts'=>$this->communityLayouts,
+            'columns'=>array_intersect_key($this->columns,array_fill_keys([
+                'core_members','core_pfields_content','core_reputation_index','core_follow',
+                'core_message_topics','core_message_posts','core_message_topic_user_map'],true)),
+            'bounds'=>$this->communityBounds],JSON_THROW_ON_ERROR))],$this->communityBounds);
     }
+
+    /** The v8 source is read-only; no target IDs or secrets are ever exposed here. */
+    private function prepareCommunity():void
+    {
+        $this->communityBounds['inv_profiles']=$this->ledger['users'];
+        $specs=[
+            'inv_reactions'=>['core_reputation_index','id', ['id','member_id','type_id','rep_rating']],
+            'inv_follow'=>['core_follow','follow_id',['follow_id','follow_app','follow_area','follow_rel_id','follow_member_id']],
+            'inv_conversations'=>['core_message_topics','mt_id',['mt_id','mt_title','mt_starter_id']],
+            'inv_messages'=>['core_message_posts','msg_id',['msg_id','msg_topic_id','msg_author_id','msg_post']],
+        ];
+        foreach($specs as $phase=>[$table,$pk,$required]){
+            $cols=$this->columns[$table]??[];
+            if($cols!==[] && array_diff($required,$cols)!==[]){
+                $count=(int)$this->pdo->query('SELECT COUNT(*) FROM '.$this->prefix.$table)->fetchColumn();
+                if($count>0)throw new \RuntimeException('Unsupported Invision community columns: '.$table);
+            }
+            $this->communityBounds[$phase]=$this->optionalBounds($table,$pk);
+        }
+        $this->communityBounds['inv_pm_content']=$this->communityBounds['inv_messages'];
+        $messages=$this->communityBounds['inv_messages']['count'];
+        $topics=$this->communityBounds['inv_conversations']['count'];
+        if($messages>0 && $topics===0)throw new \RuntimeException('Private messages exist without conversation topics');
+        $members=$this->columns['core_message_topic_user_map']??[];
+        if($topics>0){
+            foreach(['map_topic_id','map_user_id','map_user_active','map_left_time'] as $col)
+                if(!in_array($col,$members,true))throw new \RuntimeException('Cannot prove Invision private conversation participant privacy');
+            $q='SELECT COUNT(*) FROM '.$this->prefix.'core_message_topics t LEFT JOIN '.$this->prefix.'core_message_topic_user_map m ON m.map_topic_id=t.mt_id WHERE m.map_topic_id IS NULL';
+            if((int)$this->pdo->query($q)->fetchColumn()>0)
+                throw new \RuntimeException('Invision private conversation without participant mappings');
+        }
+        $this->communityLayouts['pm_date']=$this->choose('core_message_topics',['mt_date','mt_start_time','mt_time'],$topics,'private conversation date');
+        $this->communityLayouts['msg_date']=$this->choose('core_message_posts',['msg_date','msg_timestamp','msg_time'],$messages,'private message date');
+        // A source with ambiguous content-type metadata must not have its reputation
+        // rows interpreted as post likes across arbitrary IPS applications.
+        $rep=$this->columns['core_reputation_index']??[];
+        if($this->communityBounds['inv_reactions']['count']>0 && !in_array('type',$rep,true))
+            throw new \RuntimeException('Invision reputation entries need their content type');
+        $this->communityLayouts['rep_app']=in_array('app',$rep,true)?'app':null;
+        $this->communityLayouts['rep_type']=in_array('type',$rep,true)?'type':null;
+        $this->communityLayouts['rep_reaction']=in_array('reaction',$rep,true)?'reaction':null;
+        $this->communityLayouts['pm_body']='msg_post';
+        $this->communityLayouts['profile_bio']=$this->choose('core_members',['pp_about_me','about_me'],0,'profile biography');
+        $this->communityLayouts['profile_location']=$this->choose('core_members',['location'],0,'profile location');
+        $this->communityLayouts['profile_website']=$this->choose('core_members',['website','homepage'],0,'profile website');
+        $this->communityLayouts['profile_signature']=$this->choose('core_members',['signature'],0,'profile signature');
+    }
+
+    private function choose(string $table,array $alternatives,int $count,string $description):?string
+    {
+        foreach($alternatives as $name)if(in_array($name,$this->columns[$table]??[],true))return $name;
+        if($count>0)throw new \RuntimeException('Invision '.$description.' column missing');
+        return null;
+    }
+
+    /** Bounded keyset scans for the append-only v8 community pipeline. */
+    public function communityBatch(string $phase,int $after,int $high,int $limit):array
+    {
+        if(!$this->pdo->inTransaction())throw new \RuntimeException('Invision snapshot transaction ended');
+        if(!in_array($phase,self::COMMUNITY_PHASES,true)||$after<0||$high<0||$limit<1||$limit>500)
+            throw new \InvalidArgumentException('Invalid Invision community batch');
+        if($phase==='inv_pm_content')$phase='inv_messages';
+        $table=match($phase){
+            'inv_profiles'=>'core_members','inv_reactions'=>'core_reputation_index',
+            'inv_follow'=>'core_follow','inv_conversations'=>'core_message_topics','inv_messages'=>'core_message_posts'};
+        $key=match($phase){
+            'inv_profiles'=>'member_id','inv_reactions'=>'id','inv_follow'=>'follow_id',
+            'inv_conversations'=>'mt_id','inv_messages'=>'msg_id'};
+        if($phase!=='inv_profiles' && $this->communityBounds[$phase]['count']===0)return [];
+        $q=$this->pdo->prepare('SELECT * FROM '.$this->prefix.$table.' WHERE '.$key.'>? AND '.$key.'<=? ORDER BY '.$key.' LIMIT '.$limit);
+        $q->execute([$after,$high]);return $q->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    public function communityHasMessages(int $topic):bool
+    {
+        if(!$this->pdo->inTransaction()||$topic<=0)throw new \RuntimeException('Invalid Invision conversation scan');
+        $q=$this->pdo->prepare('SELECT msg_id FROM '.$this->prefix.'core_message_posts WHERE msg_topic_id=? LIMIT 1');
+        $q->execute([$topic]);return $q->fetchColumn()!==false;
+    }
+
+    /** Exact snapshot recipients, never infer a conversation's members from its posts. */
+    public function communityRecipients(int $topic):array
+    {
+        if(!$this->pdo->inTransaction()||$topic<=0)throw new \RuntimeException('Invalid Invision recipient scan');
+        $sql='SELECT map_user_id,map_user_active,map_left_time'.(in_array('map_user_banned',$this->columns['core_message_topic_user_map']??[],true)?',map_user_banned':'').
+            ' FROM '.$this->prefix.'core_message_topic_user_map WHERE map_topic_id=? ORDER BY map_user_id LIMIT 22';
+        $q=$this->pdo->prepare($sql);$q->execute([$topic]);return $q->fetchAll(PDO::FETCH_ASSOC);
+    }
+
     public function batch(string $phase,int $cursor,int $high,int $limit,bool $raw=false): array
     {
         if(!$this->pdo->inTransaction())throw new \RuntimeException('Invision snapshot transaction ended');

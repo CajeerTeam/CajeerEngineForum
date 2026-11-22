@@ -134,7 +134,7 @@ final class InvisionSourceDiscovery
             'blockers'=>$blockers,'warnings'=>$warnings,
             'import_supported'=>count(array_filter($blockers,static fn(array $b):bool=>$b['code']!=='attachment_snapshot_required'))===0,
             'core_import_only'=>false,
-            'next_step'=>'Invision v7 plan/run supports local post attachments, supported polls and safe content conversion; unsupported layouts are refused by the importer before writes',
+            'next_step'=>'Invision v8 plan/run supports core data, local media, supported polls, profiles, reactions, follows and privacy-checked conversations; unsupported layouts fail closed or are reported before cutover',
         ];
     }
 

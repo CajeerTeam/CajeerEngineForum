@@ -45,7 +45,7 @@ try{
     (new MigrationRunner($target,$root.'/migrations'))->run('sqlite');
     $open=static fn():PDO=>new PDO('sqlite:'.$tmp.'/source.sqlite',null,null,[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION]);
     $source=$open();$adapter=new InvisionSource($source,null,null,'v7-frozen',$tmp.'/uploads');
-    $engine=new ForumMigrationEngine($db,$adapter,$tmp.'/uploads');
+    $engine=new ForumMigrationEngine($db,$adapter,$tmp.'/uploads',null,7);
     $plan=$engine->snapshotPlan();
     $check(($plan['pipeline_version']??0)===7&&$plan['attachments']['count']===1&&$plan['polls']['count']===1,'v7 immutable media bounds');
     $phases=(new ReflectionClass($engine))->getMethod('phaseNames')->invoke($engine,$plan);
@@ -70,7 +70,7 @@ try{
     $target->exec('DROP TRIGGER invision_fail');
     $source->rollBack();unset($source,$adapter,$engine);
     $source=$open();$adapter=new InvisionSource($source,null,null,'v7-frozen',$tmp.'/uploads');
-    $engine=new ForumMigrationEngine($db,$adapter,$tmp.'/uploads');
+    $engine=new ForumMigrationEngine($db,$adapter,$tmp.'/uploads',null,7);
     $check($engine->matchesRecordedPlan($plan),'v7 source fingerprint retained after restart');
     for($i=0;$i<60;$i++){
         if($engine->step(1)['job']['state']==='complete')break;

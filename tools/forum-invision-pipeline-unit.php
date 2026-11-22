@@ -26,6 +26,21 @@ catch(RuntimeException $e){$assert(str_contains($e->getMessage(),'bounds mismatc
 $missing=$new;unset($missing['attachments']);
 try{$phases->invoke($engine,$missing);throw new LogicException('expected rejection');}
 catch(RuntimeException $e){$assert(str_contains($e->getMessage(),'content ledger'),'missing media phase blocked');}
-$unknown=$new;$unknown['pipeline_version']=8;
+$v8=$new;$v8['pipeline_version']=8;
+foreach(CajeerEngine\Forum\Migration\InvisionSource::COMMUNITY_PHASES as $kind)$v8[$kind]=['count'=>0,'high'=>0];
+$v8['inv_profiles']=$v8['users'];$v8['inv_pm_content']=$v8['inv_messages'];
+$v8['source_community_schema_sha256']=str_repeat('a',64);
+$assert($phases->invoke($engine,$v8)===array_merge(
+    CajeerEngine\Forum\Migration\InvisionSource::CORE_PHASES,
+    CajeerEngine\Forum\Migration\InvisionSource::CONTENT_PHASES,
+    CajeerEngine\Forum\Migration\InvisionSource::COMMUNITY_PHASES),
+    'v8 appends six community phases without altering earlier checkpoints');
+$invalid=$v8;$invalid['inv_pm_content']['count']=1;
+try{$phases->invoke($engine,$invalid);throw new LogicException('expected rejection');}
+catch(RuntimeException $e){$assert(str_contains($e->getMessage(),'community ledger'),'tampered private-content bounds refused');}
+$invalid=$v8;unset($invalid['inv_follow']);
+try{$phases->invoke($engine,$invalid);throw new LogicException('expected rejection');}
+catch(RuntimeException $e){$assert(str_contains($e->getMessage(),'community ledger'),'missing follow phase blocked');}
+$unknown=$new;$unknown['pipeline_version']=9;
 try{$phases->invoke($engine,$unknown);throw new LogicException('expected rejection');}
 catch(RuntimeException $e){$assert(str_contains($e->getMessage(),'Unsupported import pipeline'),'unknown pipeline rejected');}

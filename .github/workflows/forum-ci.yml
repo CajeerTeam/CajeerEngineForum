@@ -6,7 +6,7 @@ on:
 permissions:
   contents: read
 env:
-  FORUM_CURRENT_VERSION: ${{ '1.1.9' }}
+  FORUM_CURRENT_VERSION: ${{ '1.1.10' }}
 concurrency:
   group: forum-ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -137,6 +137,8 @@ jobs:
       - run: php tools/forum-invision-core-integration.php
       - run: php tools/forum-invision-content-unit.php
       - run: php tools/forum-invision-content-integration.php
+      - run: php tools/forum-invision-community-integration.php
+      - run: python3 tools/forum-tests/invision_community_sql_regression.py
       - run: python tools/forum-tests/invision_discovery_sql_regression.py
       - run: python tools/forum-tests/invision_core_sql_regression.py
       - run: python tools/forum-tests/invision_content_sql_regression.py

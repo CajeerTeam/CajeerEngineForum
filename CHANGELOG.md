@@ -1,3 +1,11 @@
+## [1.1.10] - 2026-11-22 — Invision Community Data (Forum Edition)
+
+- Added v8 transactional Invision 4.x/5.x community-data phases for private member profiles, supported forum-post reactions, topic/board/member follows, private conversation participants, messages and safe rich-content rewriting. All original v6/v7 jobs retain their phase numbering and recorded schema digests.
+- Invision private conversation import requires a verifiable snapshot recipient map. Deleted, left and banned recipients are not restored; any missing active recipient denies import of the whole conversation. Only imported active participants can author historical messages.
+- Positive supported forum reactions and non-anonymous follows are mapped to existing live forum tables. Unsupported content or source schemas are reported or blocked rather than silently converted. Imported local accounts stay disabled with private profiles; imported boards remain hidden and readonly.
+- Added full PHP/PDO SQLite integration (atomic rollback, restart and privacy) in CI, an autonomous v8 phase test, production-schema SQL rollback test, runbook and release gating updates. No new SQL migrations or changes to the CajeerEngine 2.1.0 core version.
+- Source snapshots from real Invision Community installations, PostgreSQL/MySQL deploy acceptance and release-signing certification are still required before a production claim.
+
 ## [1.1.9] - 2026-11-22 — Invision Content & Media (Forum Edition)
 
 - Implemented Invision v7 migration phases: guarded local attachments, imported closed polls with validated choices, and final HTML-to-BBCode rewrite using resolved target IDs.
