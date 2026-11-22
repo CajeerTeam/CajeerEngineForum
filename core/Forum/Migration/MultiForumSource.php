@@ -45,8 +45,8 @@ final class MultiForumSource implements EnrichedForumSource
     public function identity(): string{return hash('sha256',$this->type."\0".$this->sourceVersion."\0".$this->prefix."\0".$this->snapshot.($this->origin===null?'':"\0".$this->origin));}
     public function unsupported(): array
     {
-        $items=['source ACL translation','password hashes','private messages','bans and sanctions','anonymous poll votes','avatars and custom profile fields','remote media','unsupported add-on BBCode (retained as inert text)','source-specific poll visibility (imported closed)'];
-        if($this->type==='xenforo'){$items[]='nonstandard/negative XenForo reactions (explicitly skipped with reason)';$items[]='remote or unstaged XenForo attachments (require immutable local file copy)';}
+        $items=['source ACL translation','password hashes','private messages','bans and sanctions','anonymous poll votes','custom profile fields and covers','remote media','unsupported add-on BBCode (retained as inert text)','source-specific poll visibility (imported closed)'];
+        if($this->type==='xenforo'){$items[]='nonstandard/negative XenForo reactions (explicitly skipped with reason)';$items[]='remote or unstaged XenForo attachments and avatars (require immutable local file copy)';}
         else $items[]='reactions and profile metadata (not yet supported for this platform)';
         return $items;
     }
@@ -82,6 +82,62 @@ final class MultiForumSource implements EnrichedForumSource
         $key=match($phase){'profiles'=>'profile_id','reactions'=>'reaction_source_id',default=>throw new \InvalidArgumentException('Unknown additional phase')};
         $sql=$this->additionalQuery($phase);
         return $this->all('SELECT * FROM ('.$sql.") src WHERE $key>? AND $key<=? ORDER BY $key LIMIT $limit",[$after,$high]);
+    }
+    /** New jobs only: verify native follow schema and avatar marker before importing. */
+    public function communityFingerprint(): string
+    {
+        if($this->type!=='xenforo'||!$this->pdo->inTransaction())throw new \RuntimeException('Community preflight requires XenForo snapshot');
+        $columns=$this->communityColumns('user_follow');
+        if(array_diff(['user_id','follow_user_id'],$columns)!==[])throw new \RuntimeException('XenForo user_follow missing user_id or follow_user_id');
+        if(!in_array('avatar_date',$this->communityColumns('user'),true))throw new \RuntimeException('XenForo user.avatar_date missing');
+        return hash('sha256',json_encode(['user_follow'=>$columns,'user_avatar_date'=>true],JSON_THROW_ON_ERROR));
+    }
+    private function communityColumns(string $name):array
+    {
+        $full=$this->t($name);
+        if($this->pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='mysql'){
+            $stmt=$this->q('SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=?',[$full]);
+            $cols=array_map('strtolower',$stmt->fetchAll(PDO::FETCH_COLUMN));
+        }else{
+            $stmt=$this->q('PRAGMA table_info("'.$full.'")');
+            $cols=array_map('strtolower',array_column($stmt->fetchAll(PDO::FETCH_ASSOC),'name'));
+        }
+        sort($cols,SORT_STRING);
+        return $cols;
+    }
+    private function communityQuery(string $kind):string
+    {
+        return match($kind){
+            'avatars'=>'SELECT user_id AS avatar_id,avatar_date FROM '.$this->t('user').' WHERE avatar_date>0',
+            'follows'=>'SELECT DISTINCT user_id AS follow_id FROM '.$this->t('user_follow'),
+            default=>throw new \InvalidArgumentException('Unsupported XenForo community phase'),
+        };
+    }
+    public function communityPlan():array
+    {
+        $this->communityFingerprint();
+        $counts=[];
+        foreach(['avatars'=>'avatar_id','follows'=>'follow_id'] as $kind=>$key){
+            $sql=$this->communityQuery($kind);
+            $row=$this->q('SELECT COUNT(*) AS n,COALESCE(MAX('.$key.'),0) AS high FROM ('.$sql.') src')->fetch(PDO::FETCH_ASSOC);
+            if((int)$this->q('SELECT COUNT(*) FROM ('.$sql.') src WHERE '.$key.' IS NULL OR '.$key.'<=0')->fetchColumn()>0)
+                throw new \RuntimeException('Invalid XenForo community source ID: '.$kind);
+            $counts[$kind]=['count'=>(int)$row['n'],'high'=>(int)$row['high']];
+        }
+        return $counts;
+    }
+    public function communityBatch(string $kind,int $after,int $high,int $limit):array
+    {
+        if($this->type!=='xenforo'||$after<0||$high<0||$limit<1||$limit>500)
+            throw new \InvalidArgumentException('Invalid XenForo community batch');
+        $key=match($kind){'avatars'=>'avatar_id','follows'=>'follow_id',default=>throw new \InvalidArgumentException('Invalid community kind')};
+        return $this->all('SELECT * FROM ('.$this->communityQuery($kind).") src WHERE $key>? AND $key<=? ORDER BY $key LIMIT $limit",[$after,$high]);
+    }
+    public function communityFollowing(int $user,int $after,int $limit):array
+    {
+        if($this->type!=='xenforo'||$user<1||$after<0||$limit<1||$limit>500)
+            throw new \InvalidArgumentException('Invalid follow cursor');
+        return $this->q('SELECT DISTINCT follow_user_id FROM '.$this->t('user_follow')." WHERE user_id=? AND follow_user_id>? ORDER BY follow_user_id LIMIT $limit",[$user,$after])->fetchAll(PDO::FETCH_COLUMN);
     }
     private function t(string $table):string{return $this->prefix.$table;}
     private function q(string $sql,array $params=[]):\PDOStatement

@@ -1,8 +1,10 @@
 -- Synthetic snapshots with the native column layouts needed by each adapter.
 CREATE TABLE xf_user_group(user_group_id INTEGER PRIMARY KEY,title TEXT);
 INSERT INTO xf_user_group VALUES(2,'Members'),(3,'Administrators');
-CREATE TABLE xf_user(user_id INTEGER PRIMARY KEY,username TEXT,email TEXT,register_date INT,user_group_id INT,secondary_group_ids TEXT,password TEXT);
-INSERT INTO xf_user VALUES(1,'XF Alice','xf-alice@example.test',1600000000,2,'3','do-not-copy'),(2,'XF Bob','xf-bob@example.test',1600000000,2,'','secret'),(3,'Conflict','existing@example.test',1600000000,2,'','secret');
+CREATE TABLE xf_user(user_id INTEGER PRIMARY KEY,username TEXT,email TEXT,register_date INT,user_group_id INT,secondary_group_ids TEXT,password TEXT,avatar_date INT NOT NULL DEFAULT 0);
+INSERT INTO xf_user VALUES(1,'XF Alice','xf-alice@example.test',1600000000,2,'3','do-not-copy',0),(2,'XF Bob','xf-bob@example.test',1600000000,2,'','secret',0),(3,'Conflict','existing@example.test',1600000000,2,'','secret',0);
+CREATE TABLE xf_user_follow(user_id INTEGER NOT NULL, follow_user_id INTEGER NOT NULL, PRIMARY KEY(user_id,follow_user_id));
+INSERT INTO xf_user_follow VALUES(1,2),(1,3),(2,1),(3,1);
 CREATE TABLE xf_node(node_id INTEGER PRIMARY KEY,parent_node_id INT,display_order INT,node_type_id TEXT,title TEXT,description TEXT);
 INSERT INTO xf_node VALUES(15,10,1,'Forum','XF Forum','Board'),(10,0,2,'Category','XF Category',''),(18,10,2,'LinkForum','External','');
 CREATE TABLE xf_thread(thread_id INTEGER PRIMARY KEY,node_id INT,user_id INT,title TEXT,post_date INT,last_post_date INT,discussion_type TEXT,discussion_open INT,sticky INT,discussion_state TEXT);

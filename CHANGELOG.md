@@ -1,3 +1,11 @@
+## [1.1.4] - 2026-11-22 — XenForo Community Data (Forum Edition)
+
+- Реальный XenForo 2.2/2.3 migration pipeline v4 (16 фаз): аватары из локальной копии `data/avatars`, подписки на участников, первичные группы и существующие профили, реакции, группы, подписки на темы/разделы. Новые данные, mapping и checkpoint фиксируются одной транзакцией.
+- Аватары перепроверяются и перекодируются через `ProfileImage::encode`; исходные метаданные удаляются, превышение лимитов и отсутствующие файлы отражаются как пропуски. Без обязательного `--avatar-files` импорт при наличии аватаров не начинается.
+- `xf_user_follow` проверяется перед созданием задания; новый отпечаток схемы и неизменяемые high-water marks проверяются при возобновлении. Отсутствующие связи и пользователи не импортируются молча.
+- Участникам сохраняется безопасная первичная группа источника для отображения, но роли источника создаются с `permissions=[]`; административные полномочия не копируются.
+- Сохранена совместимость существующих jobs pipeline v1 (11), v2 (13), v3 (14); новые XenForo jobs v4 (16). Добавлены проверки отката, восстановления и целостности связей.
+
 ## [1.1.3] - 2026-11-22 — XenForo Content Fidelity (Forum Edition)
 
 - Added `XenForoContent` converter used by an actual post-update phase in `ForumMigrationEngine`; existing target BBCode renderer handles formatting, quotes, mentions, links and supported headings. No remote resources are requested or inline HTML trusted.

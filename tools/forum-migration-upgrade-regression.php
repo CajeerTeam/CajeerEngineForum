@@ -25,7 +25,7 @@ try{
     $pdo->exec("INSERT INTO ce_users(id,email,name,password_hash) VALUES('existing','existing@example.test','existing','hash')");
     $open=static fn():PDO=>new PDO('sqlite:'.$tmp.'/source.sqlite');
     $source=$open();$adapter=new MultiForumSource($source,'xf_','xenforo','2.3.0','extended-test');
-    $engine=new ForumMigrationEngine($db,$adapter);
+    $engine=new ForumMigrationEngine($db,$adapter,null,null,3);
     $job=$engine->start('test-backup')['job']['id'];
     $initial=$engine->progress()['job']['plan'];
     assertImport($initial['pipeline_version']===3&&$initial['content_links']===$initial['posts']&&$initial['profiles']['count']===3&&$initial['reactions']['count']===6,'versioned frozen extended plan');
@@ -45,7 +45,7 @@ try{
     $pdo->exec('DROP TRIGGER injected_failure');
     $source->rollBack();unset($engine,$adapter,$source);
     $source=$open();$adapter=new MultiForumSource($source,'xf_','xenforo','2.3.0','extended-test');
-    $engine=new ForumMigrationEngine($db,$adapter);
+    $engine=new ForumMigrationEngine($db,$adapter,null,null,3);
     assertImport($engine->matchesRecordedPlan($initial),'unchanged frozen source supports restart');
     for($i=0;$i<30;$i++){if($engine->step(10)['job']['state']==='complete')break;}
     assertImport($engine->status()['job']['state']==='complete','extended import resumes to completion');
@@ -55,7 +55,7 @@ try{
     // An in-flight job created in 1.1.0 has no pipeline_version and completes after eleven phases.
     $source->rollBack();unset($engine,$adapter,$source);
     $source=$open();$adapter=new MultiForumSource($source,'xf_','xenforo','2.3.0','old-job-test');
-    $engine=new ForumMigrationEngine($db,$adapter);
+    $engine=new ForumMigrationEngine($db,$adapter,null,null,3);
     $old=$adapter->plan();$oldId=$adapter->identity();
     $category='22222222-2222-4222-8222-222222222222';
     $s=$pdo->prepare("INSERT INTO ce_forum_import_jobs(id,source_version,category_id,backup_id,plan_json,phase,cursor_id,subcursor_id,created_at,updated_at) VALUES(?,?,?,?,?,10,0,0,?,?)");

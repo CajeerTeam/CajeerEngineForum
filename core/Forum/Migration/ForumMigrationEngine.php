@@ -12,10 +12,19 @@ use PDO;
 /** Operator-only, bounded transactional import. Mapping and checkpoint commit with data. */
 final class ForumMigrationEngine
 {
-    public function __construct(private DatabaseManager $db, private ForumSource $source, private ?string $files=null) {}
+    public function __construct(private DatabaseManager $db, private ForumSource $source, private ?string $files=null, ?string $avatarFiles=null,int $newPipelineVersion=4)
+    {
+        if($avatarFiles!==null && (!is_dir($avatarFiles)||($root=realpath($avatarFiles))===false))throw new \InvalidArgumentException('XenForo avatar snapshot directory not found');
+        $this->avatarFiles=$avatarFiles===null?null:$root;
+        if(!in_array($newPipelineVersion,[2,3,4],true))throw new \InvalidArgumentException('Invalid new job pipeline version');
+        $this->newPipelineVersion=$source instanceof MultiForumSource && $source->platform()==='xenforo'?$newPipelineVersion:min(3,$newPipelineVersion);
+    }
     private array $mappingCache=[];
     private array $statements=[];
     private bool $contentPipeline=false;
+    private bool $communityPipeline=false;
+    private ?string $avatarFiles=null;
+    private int $newPipelineVersion;
     private function query(string $sql,array $params=[]): \PDOStatement
     {
         $s=$this->statements[$sql]??=$this->db->connection()->prepare($sql);
@@ -31,15 +40,24 @@ final class ForumMigrationEngine
     private function row(string $sql,array $params=[]): ?array {$s=$this->query($sql,$params);$r=$s->fetch(PDO::FETCH_ASSOC);$s->closeCursor();return $r===false?null:$r;}
     private static function uuid(): string {$b=random_bytes(16);$b[6]=chr((ord($b[6])&15)|64);$b[8]=chr((ord($b[8])&63)|128);return vsprintf('%s%s-%s-%s-%s-%s%s%s',str_split(bin2hex($b),4));}
     private const EXTRA_PHASES=['profiles','reactions'];
+    private const COMMUNITY_PHASES=['avatars','follows'];
     private const CONTENT_PHASE='content_links';
     /** Existing jobs have no pipeline_version and always finish with the original eleven phases. */
     private function phaseNames(array $plan): array
     {
         if(!isset($plan['pipeline_version']))return ForumSource::PHASES;
-        if(!in_array($plan['pipeline_version'],[2,3],true) || !($this->source instanceof EnrichedForumSource))
+        if(!in_array($plan['pipeline_version'],[2,3,4],true) || !($this->source instanceof EnrichedForumSource))
             throw new \RuntimeException('Unsupported import pipeline; do not rewrite an in-progress job');
         $phases=array_merge(ForumSource::PHASES,self::EXTRA_PHASES);
-        if($plan['pipeline_version']===3){
+        if($plan['pipeline_version']===4){
+            if(!($this->source instanceof MultiForumSource)||$this->source->platform()!=='xenforo')
+                throw new \RuntimeException('Community phases require a XenForo source');
+            foreach(self::COMMUNITY_PHASES as $community){
+                if(!isset($plan[$community]['count'],$plan[$community]['high']))throw new \RuntimeException('Incomplete community phase ledger');
+                $phases[]=$community;
+            }
+        }
+        if($plan['pipeline_version']>=3){
             if($this->source->platform()!=='xenforo'||!isset($plan[self::CONTENT_PHASE])||$plan[self::CONTENT_PHASE]!==$plan['posts'])
                 throw new \RuntimeException('Invalid XenForo content phase ledger');
             $phases[]=self::CONTENT_PHASE;
@@ -47,17 +65,24 @@ final class ForumMigrationEngine
         return $phases;
     }
     /** Exact snapshot ledger including added phase high-water marks for new jobs. */
-    public function snapshotPlan(bool $extended=true,int $pipelineVersion=3): array
+    public function snapshotPlan(bool $extended=true,?int $pipelineVersion=null): array
     {
+        $pipelineVersion??=$this->newPipelineVersion;
         $plan=$this->source->plan();
         if($extended && $this->source instanceof EnrichedForumSource){
             $extra=$this->source->additionalPlan();
             if($extra!==[]){
                 if(array_keys($extra)!==self::EXTRA_PHASES)throw new \RuntimeException('Unsupported additional source phases');
-                if(!in_array($pipelineVersion,[2,3],true))throw new \InvalidArgumentException('Invalid pipeline version');
+                if(!in_array($pipelineVersion,[2,3,4],true))throw new \InvalidArgumentException('Invalid pipeline version');
                 $plan['pipeline_version']=$pipelineVersion;
                 foreach($extra as $kind=>$bounds)$plan[$kind]=$bounds;
-                if($pipelineVersion===3 && $this->source->platform()==='xenforo')
+                if($pipelineVersion===4){
+                    if(!($this->source instanceof MultiForumSource)||$this->source->platform()!=='xenforo')
+                        throw new \RuntimeException('Community phases require XenForo');
+                    $plan['source_community_schema_sha256']=$this->source->communityFingerprint();
+                    foreach($this->source->communityPlan() as $kind=>$bounds)$plan[$kind]=$bounds;
+                }
+                if($pipelineVersion>=3 && $this->source->platform()==='xenforo')
                     $plan[self::CONTENT_PHASE]=$plan['posts'];
             }
         }
@@ -65,7 +90,7 @@ final class ForumMigrationEngine
     }
     public function matchesRecordedPlan(array $recorded): bool
     {
-        $current=$this->snapshotPlan(isset($recorded['pipeline_version']),($recorded['pipeline_version']??3)===2?2:3);
+        $current=$this->snapshotPlan(isset($recorded['pipeline_version']),(int)($recorded['pipeline_version']??3));
         // 1.1.1 jobs were created before XenForo schema fingerprints existed.
         // Preserve their exact eleven/thirteen-phase ledger on resume; new jobs
         // verify the full recorded schema, including the 2.2/2.3 key choice.
@@ -85,6 +110,8 @@ final class ForumMigrationEngine
     public function start(string $backup): array
     {
         $this->resetBatch();$plan=$this->snapshotPlan();$id=$this->source->identity();
+        if(($plan['pipeline_version']??1)===4 && ($plan['avatars']['count']??0)>0 && $this->avatarFiles===null)
+            throw new \RuntimeException('XenForo source has avatars: supply --avatar-files as an immutable data/avatars snapshot');
         try{$this->db->transaction(function()use($plan,$id,$backup){
             // The filesystem lease only covers one node. Serialize start decisions in SQL too.
             if($this->db->driver()==='sqlite')$this->query('UPDATE ce_forum_tree_lock SET id=id WHERE id=1');
@@ -108,11 +135,15 @@ final class ForumMigrationEngine
     /** Validate the ledger while the imported tree is still quarantined. */
     private function verifyMappings(string $job): void
     {
-        foreach(['groups'=>['ce_forum_groups','role_id'],'users'=>['ce_users','id'],'forums'=>['ce_forum_boards','id'],'topics'=>['ce_forum_threads','id'],'posts'=>['ce_forum_posts','id'],'attachments'=>['ce_forum_attachments','id'],'polls'=>['ce_forum_polls','thread_id'],'profiles'=>['ce_forum_member_profiles','user_id'],'reactions'=>['ce_forum_posts','id'],'content_links'=>['ce_forum_posts','id']] as $kind=>[$table,$column]){
+        foreach(['groups'=>['ce_forum_groups','role_id'],'users'=>['ce_users','id'],'forums'=>['ce_forum_boards','id'],'topics'=>['ce_forum_threads','id'],'posts'=>['ce_forum_posts','id'],'attachments'=>['ce_forum_attachments','id'],'polls'=>['ce_forum_polls','thread_id'],'profiles'=>['ce_forum_member_profiles','user_id'],'reactions'=>['ce_forum_posts','id'],'avatars'=>['ce_forum_profile_images','user_id'],'follows'=>['ce_users','id'],'content_links'=>['ce_forum_posts','id']] as $kind=>[$table,$column]){
             // PostgreSQL uses UUID PKs; cast the small ledger key, not the indexed target column.
             $key=$this->db->driver()==='pgsql'?'CAST(m.target_id AS UUID)':'m.target_id';
             $n=(int)$this->query("SELECT COUNT(*) FROM ce_forum_import_map m LEFT JOIN $table t ON t.$column=$key WHERE m.job_id=? AND m.kind=? AND m.outcome='imported' AND t.$column IS NULL",[$job,$kind])->fetchColumn();
             if($n!==0)throw new \RuntimeException('Imported target missing: '.$kind);
+            if($kind==='avatars'){
+                $missing=(int)$this->query("SELECT COUNT(*) FROM ce_forum_import_map m LEFT JOIN ce_forum_profile_images i ON i.user_id=".$key." AND i.kind='avatar' WHERE m.job_id=? AND m.kind='avatars' AND m.outcome='imported' AND i.user_id IS NULL",[$job])->fetchColumn();
+                if($missing>0)throw new \RuntimeException('Imported avatar missing');
+            }
         }
     }
     public static function report(DatabaseManager $db,string $id): array
@@ -152,13 +183,20 @@ final class ForumMigrationEngine
             if(!$job)throw new \RuntimeException('Start the import first');if($job['state']==='complete')return;
             $plan=json_decode($job['plan_json'],true,512,JSON_THROW_ON_ERROR);
             $phases=$this->phaseNames($plan);
-            $this->contentPipeline=($plan['pipeline_version']??null)===3 && $this->source->platform()==='xenforo';
+            $this->contentPipeline=($plan['pipeline_version']??0)>=3 && $this->source->platform()==='xenforo';
+            $this->communityPipeline=($plan['pipeline_version']??0)===4 && $this->source->platform()==='xenforo';
+            if($this->communityPipeline && ($plan['avatars']['count']??0)>0 && $this->avatarFiles===null)
+                throw new \RuntimeException('XenForo avatar snapshot directory required to resume this import');
             $phase=(int)$job['phase'];$kind=$phases[$phase]??throw new \RuntimeException('Invalid import phase checkpoint');$cursor=(int)$job['cursor_id'];$sub=(int)$job['subcursor_id'];
             $category=$this->row('SELECT visibility FROM ce_forum_categories WHERE id=?',[$job['category_id']]);
             if(!$category||$category['visibility']!=='hidden'||$this->row('SELECT id FROM ce_forum_boards WHERE category_id=? AND (visibility<>? OR state<>?) LIMIT 1',[$job['category_id'],'hidden','readonly']))throw new \RuntimeException('Imported tree must remain hidden and readonly until completion');
             $isAdditional=in_array($kind,self::EXTRA_PHASES,true);
+            $isCommunity=in_array($kind,self::COMMUNITY_PHASES,true);
             if($kind===self::CONTENT_PHASE){
                 $batch=$this->source->batch('posts',$cursor,$plan[self::CONTENT_PHASE]['high'],min($limit,20));
+            }elseif($isCommunity){
+                if(!($this->source instanceof MultiForumSource))throw new \RuntimeException('Community phase requires XenForo source');
+                $batch=$this->source->communityBatch($kind,$cursor,$plan[$kind]['high'],$kind==='avatars'?min(5,$limit):$limit);
             }elseif($isAdditional){
                 if(!($this->source instanceof EnrichedForumSource))throw new \RuntimeException('Source does not support additional import phases');
                 $batch=$this->source->additionalBatch($kind,$cursor,$plan[$kind]['high'],$limit);
@@ -182,12 +220,14 @@ final class ForumMigrationEngine
               // Bound total relation work, not just the number of topics in a batch.
               $remaining=$limit;
               foreach($batch as $r){
-                $key=match($kind){'groups'=>'group_id','users'=>'user_id','forums'=>'left_id','topics','polls','votes','watches','finalize'=>'topic_id','board_watches'=>'forum_id','posts'=>'post_id','attachments'=>'attach_id','profiles'=>'profile_id','reactions'=>'reaction_source_id','content_links'=>'post_id'};
+                $key=match($kind){'groups'=>'group_id','users'=>'user_id','forums'=>'left_id','topics','polls','votes','watches','finalize'=>'topic_id','board_watches'=>'forum_id','posts'=>'post_id','attachments'=>'attach_id','profiles'=>'profile_id','reactions'=>'reaction_source_id','avatars'=>'avatar_id','follows'=>'follow_id','content_links'=>'post_id'};
                 $next=(int)$r[$key];
-                if(in_array($kind,['watches','board_watches','votes'],true)){
-                    $target=$this->mapped(match($kind){'watches'=>'topics','board_watches'=>'forums','votes'=>'polls'},$next);
+                if(in_array($kind,['watches','board_watches','votes','follows'],true)){
+                    $target=$this->mapped(match($kind){'watches'=>'topics','board_watches'=>'forums','votes'=>'polls','follows'=>'users'},$next);
                     if($target!==null){
-                        $watchers=$this->source->watchers($kind,$next,$sub,$remaining);
+                        $watchers=$kind==='follows'
+                            ?($this->source instanceof MultiForumSource?$this->source->communityFollowing($next,$sub,$remaining):[])
+                            :$this->source->watchers($kind,$next,$sub,$remaining);
                         $optionMap=[];$maxChoices=0;
                         if($kind==='votes'){
                             foreach($this->source->options($next) as $i=>$o)$optionMap[(int)$o['poll_option_id']]=$i+1;
@@ -195,7 +235,10 @@ final class ForumMigrationEngine
                         }
                         foreach($watchers as $uid){
                             $sub=(int)$uid;$user=$this->mapped('users',$sub);if($user===null)continue;
-                            if($kind==='votes'){
+                            if($kind==='follows'){
+                                if($user!==$target && !$this->row("SELECT user_id FROM ce_forum_member_relations WHERE user_id=? AND target_id=? AND kind='follow'",[$target,$user]))
+                                    $this->query("INSERT INTO ce_forum_member_relations(user_id,target_id,kind) VALUES(?,?,'follow')",[$target,$user]);
+                            }elseif($kind==='votes'){
                                 $ballot=$this->source->ballot($next,$sub);
                                 if(count($ballot)>$maxChoices||array_diff(array_map('intval',$ballot),array_keys($optionMap)))continue;
                                 foreach($ballot as $o)$this->query('INSERT INTO ce_forum_poll_votes(thread_id,user_id,option_no) VALUES(?,?,?)',[$target,$user,$optionMap[(int)$o]]);
@@ -216,11 +259,13 @@ final class ForumMigrationEngine
                     }
                 }elseif($kind===self::CONTENT_PHASE){
                     $this->rewriteXenForoPost($r);
+                }elseif($kind==='avatars'){
+                    $this->importAvatar($r);
                 }elseif($isAdditional){
                     $this->importAdditional($kind,$r);
                 }else $this->import($kind,$r,$job['category_id']);
                 $cursor=$next;
-                if(in_array($kind,['watches','board_watches','votes'],true)&&$remaining<=0)break;
+                if(in_array($kind,['watches','board_watches','votes','follows'],true)&&$remaining<=0)break;
               }
             }
             $this->query('UPDATE ce_forum_import_jobs SET phase=?,cursor_id=?,subcursor_id=?,updated_at=? WHERE id=?',[$phase,$cursor,$sub,time(),$id]);
@@ -261,6 +306,36 @@ final class ForumMigrationEngine
         $this->query("UPDATE ce_forum_posts SET body=?,body_format='bbcode' WHERE id=?",[$body,$post]);
         $this->query("UPDATE ce_forum_post_revisions SET body=?,body_format='bbcode' WHERE post_id=? AND revision_number=1",[$body,$post]);
         $this->mark(self::CONTENT_PHASE,$sourceId,$post);
+    }
+
+    /** Copy bytes only from an operator-supplied immutable avatar snapshot; output always
+     * goes through the production image sanitizer (re-encoded JPEG, no source metadata).
+     * All writes and map/checkpoint updates occur in the caller's transaction.
+     */
+    private function importAvatar(array $row): void
+    {
+        $source=(int)$row['avatar_id'];
+        $user=$this->mapped('users',$source);
+        if($user===null){$this->mark('avatars',$source,null,'user_not_imported');return;}
+        if($this->avatarFiles===null){$this->mark('avatars',$source,null,'avatar_directory_not_supplied');return;}
+        $reason='avatar_file_missing_or_unsafe';
+        foreach(XenForoAvatar::paths($this->avatarFiles,$source) as $candidate){
+            if(is_link($candidate)||!is_file($candidate))continue;
+            $real=realpath($candidate);
+            if($real===false||$real!==$candidate||!str_starts_with($real,$this->avatarFiles.DIRECTORY_SEPARATOR))continue;
+            $size=filesize($real);
+            if($size===false||$size<1||$size>2097152){$reason='avatar_file_too_large_or_empty';continue;}
+            $bytes=file_get_contents($real,false,null,0,2097153);
+            if($bytes===false||strlen($bytes)!==$size)throw new \RuntimeException('XenForo avatar snapshot changed during read');
+            try{$image=\CajeerEngine\Forum\Security\ProfileImage::encode('avatar',base64_encode($bytes));}
+            catch(\CajeerEngine\Forum\ForumException $e){
+                if($e->status===503)throw $e; // missing GD fails instead of silently losing images
+                $reason='invalid_avatar_image';continue;
+            }
+            $this->query("INSERT INTO ce_forum_profile_images(user_id,kind,image_data) VALUES(?,'avatar',?)",[$user,$image]);
+            $this->mark('avatars',$source,$user);return;
+        }
+        $this->mark('avatars',$source,null,$reason);
     }
 
     /** Target data, ledger and checkpoint are written in the caller's one SQL transaction. */
@@ -323,7 +398,11 @@ final class ForumMigrationEngine
                 $this->query('INSERT INTO ce_forum_primary_groups(user_id,role_id) VALUES(?,?)',[$id,$member]);
                 $this->query("INSERT INTO ce_forum_member_preferences(user_id,profile_visibility,activity_visibility,show_groups) VALUES(?,'private','private',0)",[$id]);
                 $groups=$this->source->memberships($source);if(count($groups)>1000)throw new \RuntimeException('Source user has over 1000 memberships');
-                foreach(array_unique($groups) as $group){$role=$this->mapped('groups',(int)$group);if($role!==null)$this->query('INSERT INTO ce_user_roles(user_id,role_id) VALUES(?,?)',[$id,$role]);}break;
+                foreach(array_unique($groups) as $group){$role=$this->mapped('groups',(int)$group);if($role!==null)$this->query('INSERT INTO ce_user_roles(user_id,role_id) VALUES(?,?)',[$id,$role]);}
+                if($this->communityPipeline&&$groups!==[]){
+                    $primary=$this->mapped('groups',(int)$groups[0]);
+                    if($primary!==null)$this->query('UPDATE ce_forum_primary_groups SET role_id=? WHERE user_id=?',[$primary,$id]);
+                }break;
             case 'forums':
                 $source=(int)$r['forum_id'];$type=(int)$r['forum_type'];
                 if(!in_array($type,[0,1],true)){$target=null;$reason='link_or_unknown_forum';break;}

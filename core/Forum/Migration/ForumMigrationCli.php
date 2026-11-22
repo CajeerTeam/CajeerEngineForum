@@ -17,7 +17,7 @@ final class ForumMigrationCli
         if(PHP_SAPI!=='cli')throw new \RuntimeException('Operator CLI required');
         $command=$argv[1]??'';$opts=[];
         foreach(array_slice($argv,2) as $arg){if($arg==='--json')continue;if(!preg_match('/\A--([a-z-]+)=(.*)\z/sD',$arg,$m)||isset($opts[$m[1]]))throw new \InvalidArgumentException('Use --name=value options');$opts[$m[1]]=$m[2];}
-        $allowed=match($command){'forum:import:status'=>['job'],'forum:import:map'=>['job','kind','id'],'forum:import:plan'=>['snapshot','prefix','files','platform','source-version'],'forum:import:run'=>['snapshot','prefix','files','batch','steps','seconds','verify-backup','progress-only','confirm','platform','source-version'],default=>[]};
+        $allowed=match($command){'forum:import:status'=>['job'],'forum:import:map'=>['job','kind','id'],'forum:import:plan'=>['snapshot','prefix','files','avatar-files','platform','source-version'],'forum:import:run'=>['snapshot','prefix','files','avatar-files','batch','steps','seconds','verify-backup','progress-only','confirm','platform','source-version'],default=>[]};
         if(array_diff(array_keys($opts),$allowed))throw new \InvalidArgumentException('Unknown import option');
         $db=new DatabaseManager($config);
         if($command==='forum:import:status')return ForumMigrationEngine::report($db,$opts['job']??'');
@@ -33,15 +33,18 @@ final class ForumMigrationCli
         if(str_starts_with($dsn,'sqlite:')&&(!is_file(substr($dsn,7))||!is_readable(substr($dsn,7))))throw new \InvalidArgumentException('Source SQLite snapshot must exist');
         $files=isset($opts['files'])?realpath($opts['files']):null;
         if(isset($opts['files'])&&($files===false||!is_dir($files)))throw new \InvalidArgumentException('Source attachment directory not found');
+        if(isset($opts['avatar-files'])&&$platform!=='xenforo')throw new \InvalidArgumentException('Avatar snapshot only supported for XenForo');
+        $avatarFiles=isset($opts['avatar-files'])?realpath($opts['avatar-files']):null;
+        if(isset($opts['avatar-files'])&&($avatarFiles===false||!is_dir($avatarFiles)))throw new \InvalidArgumentException('XenForo avatar snapshot directory not found');
         // The credentials remain process environment only. Avoid emitting connection exception payloads.
         try{$pdo=new PDO($dsn,getenv('FORUM_IMPORT_SOURCE_USER')?:null,getenv('FORUM_IMPORT_SOURCE_PASSWORD')?:null,[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION,PDO::ATTR_DEFAULT_FETCH_MODE=>PDO::FETCH_ASSOC]);}
         catch(\PDOException){throw new \RuntimeException('Cannot connect to forum snapshot');}
-        $identity=$snapshot."\0".$dsn."\0".($files??'');
+        $identity=$snapshot."\0".$dsn."\0".($files??'').($avatarFiles===null?'':"\0avatars:".$avatarFiles);
         // Canonical source origin is optional; required to remap absolute XenForo links.
         // It is included in the immutable job identity by MultiForumSource.
         $origin=$platform==='xenforo'?(getenv('FORUM_IMPORT_SOURCE_ORIGIN')?:null):null;
         $source=$platform==='phpbb'?new PhpbbSource($pdo,$prefix,$identity):new MultiForumSource($pdo,$prefix,$platform,$opts['source-version']??'', $identity,$origin);
-        $engine=new ForumMigrationEngine($db,$source,$files);
+        $engine=new ForumMigrationEngine($db,$source,$files,$avatarFiles);
         if($command==='forum:import:plan')return $engine->plan();
         if(!OperationLock::exclusiveHeld($root)||!is_file($root.'/storage/app/maintenance.json')||OperationLock::active($root)||is_file($root.'/storage/app/extensions/deployment.json')||is_file($root.'/storage/app/backup-restore.json'))throw new \RuntimeException('Enable maintenance and drain all application nodes before import');
         if(($opts['confirm']??'')!==('import-'.$platform))throw new \InvalidArgumentException('Use --confirm=import-'.$platform.' after reviewing the plan');
@@ -55,7 +58,9 @@ final class ForumMigrationCli
         \CajeerEngine\Extension\DependencyGraph::order((new \CajeerEngine\Extension\ExtensionRegistry($root,$config))->all());
         if(!$engine->exists()){
             ForumMigrationEngine::assertNoRunning($db);
-            $engine->plan(); // Validate source schema before taking the backup.
+            $planning=$engine->plan(); // Validate source schema before taking the backup.
+            if($platform==='xenforo' && ($planning['counts']['avatars']['count']??0)>0 && $avatarFiles===null)
+                throw new \RuntimeException('XenForo avatar snapshot required: supply --avatar-files before capturing a recovery backup');
             $backup=(new BackupManager($root,$config))->capture();
             $engine->start($backup['id']);
         }

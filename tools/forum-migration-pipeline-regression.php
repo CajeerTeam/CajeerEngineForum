@@ -40,7 +40,7 @@ $assert(array_slice($method->invoke($engine,$new),-3)===['profiles','reactions',
 $assert($engine->matchesRecordedPlan($old)&&$engine->matchesRecordedPlan($legacyV2)&&$engine->matchesRecordedPlan($new),'all three ledger formats validate on resume');
 $wrong=$new;$wrong['reactions']['high']=31;
 $assert(!$engine->matchesRecordedPlan($wrong),'changed source bounds block resume');
-$wrong=$new;$wrong['pipeline_version']=4;
+$wrong=$new;$wrong['pipeline_version']=5;
 try{$method->invoke($engine,$wrong);throw new LogicException('Unknown version accepted');}catch(RuntimeException $e){
     $assert(str_contains($e->getMessage(),'Unsupported import pipeline'),'unsupported pipeline fails closed');
 }

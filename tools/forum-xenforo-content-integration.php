@@ -36,7 +36,7 @@ try{
     (new MigrationRunner($pdo,$root.'/migrations'))->run('sqlite');
     $open=static fn():PDO=>new PDO('sqlite:'.$tmp.'/source.sqlite');
     $snapshot=$open();$adapter=new MultiForumSource($snapshot,'xf_','xenforo','2.3.0','content-fidelity', 'https://archive.example/community');
-    $engine=new ForumMigrationEngine($db,$adapter);
+    $engine=new ForumMigrationEngine($db,$adapter,null,null,3);
     $job=$engine->start('test-backup')['job']['id'];$plan=$engine->progress()['job']['plan'];
     $check($plan['pipeline_version']===3 && $plan['content_links']===$plan['posts'],'v3 frozen content conversion ledger');
     for($i=0;$i<120;$i++){
@@ -61,7 +61,7 @@ try{
     $pdo->exec('DROP TRIGGER fail_rewrite');
     $snapshot->rollBack();unset($engine,$adapter,$snapshot);
     $snapshot=$open();$adapter=new MultiForumSource($snapshot,'xf_','xenforo','2.3.0','content-fidelity','https://archive.example/community');
-    $engine=new ForumMigrationEngine($db,$adapter);
+    $engine=new ForumMigrationEngine($db,$adapter,null,null,3);
     $check($engine->matchesRecordedPlan($plan),'same snapshot and URL origin allow safe resume');
     for($i=0;$i<25;$i++)if($engine->step(20)['job']['state']==='complete')break;
     $check($engine->status()['job']['state']==='complete','importer completed after restart');
