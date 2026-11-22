@@ -17,10 +17,10 @@
     "docs": "GitHub repository docs/",
     "updates": "GitHub Releases",
     "release_builder": "tools/build-release.php",
-    "source_artifact": "storage/releases/cajeerengine-1.0.4-source.zip",
-    "dist_artifact": "storage/releases/cajeerengine-1.0.4-dist.zip",
+    "source_artifact": "storage/releases/cajeerengine-1.0.5-source.zip",
+    "dist_artifact": "storage/releases/cajeerengine-1.0.5-dist.zip",
     "checksums": "storage/releases/*.sha256",
-    "artifact_index": "storage/releases/cajeerengine-1.0.4-artifacts.json",
+    "artifact_index": "storage/releases/cajeerengine-1.0.5-artifacts.json",
     "support_bundle": "storage/app/support",
     "backup": "storage/app/backups/production",
     "server_reports": "storage/app/reports",
@@ -36,6 +36,7 @@
     "engine_api_version": "1.1"
   },
   "product_changes": [
+    "Forum Edition 1.0.5: forum-aware SkiF4er ID provisioning, verified external email, forum-member role, live registration policy, anti-spam and atomic identity mapping.",
     "Forum Edition 1.0.4: verified browser-only SkiF4er ID self-link/unlink in forum account security, IdP continuation, local password/TOTP reauthentication, session revocation and migration-free upgrades.",
     "Forum Edition 1.0.3: live SkiF4er ID OIDC login in forum UI, browser-bound safe forum return after verified callback, protected session cookie, fail-closed flow errors, original admin login preserved.",
     "Forum Edition 1.0.2: guarded concurrent extension migrations, fail-closed local migration recovery, atomic asset publication, API request constraint enforcement and enforceable integration allowlists/limits.",
@@ -126,6 +127,6 @@
   },
   "stability": "production-stable-gated",
   "edition": "forum",
-  "edition_version": "1.0.4",
+  "edition_version": "1.0.5",
   "upstream_version": "2.1.0"
 }

@@ -25481,11 +25481,16 @@
                         },
                         "provider": {
                           "type": "string"
+                        },
+                        "auto_provision": {
+                          "type": "boolean",
+                          "description": "Account provisioning is explicitly enabled; registration policy may further restrict new accounts."
                         }
                       },
                       "required": [
                         "enabled",
-                        "provider"
+                        "provider",
+                        "auto_provision"
                       ]
                     }
                   },

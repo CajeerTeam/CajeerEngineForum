@@ -21,7 +21,7 @@ final readonly class OidcController
 
     public function status(Request $request): JsonResponse
     {
-        return new JsonResponse(['data'=>['enabled'=>$this->login !== null, 'provider'=>'SkiF4er ID', 'global_logout'=>$this->login !== null, 'session_strict'=>filter_var(getenv('IDENTITY_SESSION_STRICT') ?: 'false', FILTER_VALIDATE_BOOLEAN)]], 200, ['Cache-Control'=>'no-store']);
+        return new JsonResponse(['data'=>['enabled'=>$this->login !== null, 'provider'=>'SkiF4er ID', 'global_logout'=>$this->login !== null, 'auto_provision'=>$this->login?->canAutoProvision() ?? false, 'session_strict'=>filter_var(getenv('IDENTITY_SESSION_STRICT') ?: 'false', FILTER_VALIDATE_BOOLEAN)]], 200, ['Cache-Control'=>'no-store']);
     }
 
     public function start(Request $request): Response
@@ -94,6 +94,9 @@ final readonly class OidcController
                     : ($target !== null ? '/forum/account/security' : '/admin/#/identity');
             } else {
                 $destination = $target ?? '/admin/';
+                if (($session['provisioned'] ?? false) === true && $target !== null) {
+                    $destination = '/forum/account?created=skif4er';
+                }
             }
             $response = new RedirectResponse($destination, 303);
             if (($session['linked'] ?? false) !== true && ($session['step_up'] ?? false) !== true) {
@@ -101,8 +104,10 @@ final readonly class OidcController
             }
         } catch (\Throwable $error) {
             // Deliberately avoid echoing provider/transport/internal errors to the browser.
-            $code = str_contains($error->getMessage(), 'not linked to a local account') ? 'not_linked'
-                : (str_contains($error->getMessage(), 'multi-factor authentication evidence') ? 'mfa_required' : 'login_failed');
+            $code = ($error instanceof \CajeerEngine\Forum\ForumException && $error->getMessage() === 'Регистрация на форуме отключена.') ? 'registration_closed'
+                : ($error instanceof \CajeerEngine\Forum\ForumException && $error->status === 409 ? 'email_exists'
+                : (str_contains($error->getMessage(), 'not linked to a local account') ? 'not_linked'
+                : (str_contains($error->getMessage(), 'multi-factor authentication evidence') ? 'mfa_required' : 'login_failed')));
             $response = new RedirectResponse($target !== null ? $failure.($forumLink ? 'link_failed' : $code) : $fallback, 303);
         }
         return $clean($response);

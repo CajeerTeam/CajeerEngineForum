@@ -12,6 +12,7 @@ use CajeerEngine\Database\Repository\AuditLogRepository;
 use CajeerEngine\Security\PasswordHasher;
 use CajeerEngine\Database\Repository\UserSessionRepository;
 use Symfony\Component\HttpFoundation\Request;
+use CajeerEngine\Forum\Service\ForumOidcProvisioner;
 
 /** Functional OIDC login orchestration, no email auto-link and no browser exposure of tokens. */
 final readonly class OidcLogin
@@ -21,6 +22,7 @@ final readonly class OidcLogin
         private UserRepository $users, private RoleRepository $roles, private PasswordHasher $passwords,
         private AuditLogRepository $audit, private bool $autoProvision = false, private ?UserSessionRepository $sessions = null,
         private ?AuthenticationAssurance $assurance = null,
+        private ?ForumOidcProvisioner $forumProvisioner = null,
     ) {}
 
     /** @return array{url:string,browser:string} */
@@ -66,15 +68,25 @@ final readonly class OidcLogin
         }
         if ($tx['purpose'] !== 'login') throw new \RuntimeException('Unknown OIDC transaction type.');
         $userId = $this->store->linkedUser($issuer, $claims['sub']);
+        $created = false;
         if ($userId === null) {
             if (!$this->autoProvision) throw new \RuntimeException('This SkiF4er ID is not linked to a local account.');
-            $userId = $this->store->provision($issuer, $claims, $this->users, $this->roles, $this->passwords);
-            $this->audit->record('identity.oidc_provisioned', $userId, ['provider'=>'skif4er', 'subject_digest'=>hash('sha256', $claims['sub'])]);
+            if ($this->forumProvisioner !== null) {
+                $result = $this->forumProvisioner->provision($issuer, $claims, $request);
+                $userId = $result['user_id'];
+                $created = $result['created'];
+            } else {
+                $userId = $this->store->provision($issuer, $claims, $this->users, $this->roles, $this->passwords);
+                $created = true;
+            }
+            if ($created) $this->audit->record('identity.oidc_provisioned', $userId, ['provider'=>'skif4er', 'subject_digest'=>hash('sha256', $claims['sub'])]);
         }
         // Recheck and lock the mapping through session issuance. A concurrent
         // unlink must either revoke this new session or complete before login.
-        return $this->store->withLinkedIdentity($issuer, (string)$claims['sub'],
+        $session = $this->store->withLinkedIdentity($issuer, (string)$claims['sub'],
             fn (string $linkedUserId): array => $this->auth->loginExternal($linkedUserId, $claims, $request));
+        if ($created) $session['provisioned'] = true;
+        return $session;
     }
 
     /** Locally revoke the current OIDC session before returning the pinned Keycloak logout URL. */
@@ -120,6 +132,8 @@ final readonly class OidcLogin
     }
 
     public function accountStatus(string $userId): array { return $this->store->statusForUser($this->client->issuer(), $userId); }
+
+    public function canAutoProvision(): bool { return $this->autoProvision && $this->forumProvisioner !== null; }
 
     /** Used to clear the browser cookie if self-unlink revoked this SSO session. */
     public function isSsoSession(string $userId, string $tokenId): bool

@@ -426,7 +426,14 @@ final class Application
                     $c->get(UserRepository::class), $c->get(RoleRepository::class), $c->get(PasswordHasher::class),
                     $c->get(AuditLogRepository::class), filter_var(getenv('SKIF4ER_ID_AUTO_PROVISION') ?: 'false', FILTER_VALIDATE_BOOLEAN),
                     $c->get(\CajeerEngine\Database\Repository\UserSessionRepository::class),
-                    $c->get(AuthenticationAssurance::class)
+                    $c->get(AuthenticationAssurance::class),
+                    new \CajeerEngine\Forum\Service\ForumOidcProvisioner(
+                        $c->get(DatabaseManager::class),
+                        new OidcStore($c->get(DatabaseManager::class), $vault),
+                        $c->get(UserRepository::class), $c->get(RoleRepository::class),
+                        $c->get(PasswordHasher::class), $c->get(AuditLogRepository::class),
+                        $c->get(ExtensionRuntime::class)->platform()
+                    )
                 ), $c->get(AuthService::class));
             } catch (\Throwable) {
                 $c->get(RuntimeLogger::class)->warning('Identity OIDC disabled', ['code'=>'oidc_configuration_invalid']);

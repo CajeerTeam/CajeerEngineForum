@@ -329,11 +329,21 @@ async function auth(register=false){
  });
  if(register){const trap=node('input');trap.name='website';trap.type='text';trap.tabIndex=-1;trap.autocomplete='off';trap.hidden=true;trap.setAttribute('aria-hidden','true');authForm.append(trap)}
  add(p,authForm,...(register||open?[link(register?'Уже есть аккаунт? Войти':'Создать аккаунт',register?'/forum/login':'/forum/register')]:[]));add(app,p);
+ if(register){
+  try{
+   const status=await api('/auth/oidc/status');
+   if(status.enabled===true&&status.auto_provision===true&&open){
+    const sso=panel();
+    add(sso,node('h3','Регистрация через SkiF4er ID'),link('Создать аккаунт через SkiF4er ID','/auth/oidc/start?return_to='+encodeURIComponent('/forum/account'),'button secondary'),node('p','Потребуется подтверждённый email в SkiF4er ID. Если у вас уже есть аккаунт форума с тем же email, войдите локально и привяжите SkiF4er ID в настройках безопасности.','meta'));
+    add(app,sso);
+   }
+  }catch{/* Local registration remains available when OIDC is unavailable. */}
+ }
  if(!register){
   add(app,link('Забыли пароль?','/forum/forgot-password'),link('Повторить подтверждение email','/forum/resend-email'));
-  const errors={cancelled:'Вход через SkiF4er ID отменён.',provider_error:'SkiF4er ID отклонил авторизацию.',invalid_callback:'Недействительный ответ авторизации. Попробуйте ещё раз.',not_linked:'Этот SkiF4er ID пока не привязан к аккаунту форума. Войдите локально, затем откройте «Настройки аккаунта → Безопасность» для привязки.',mfa_required:'Для этого аккаунта необходима многофакторная авторизация в SkiF4er ID.',login_failed:'Не удалось выполнить вход через SkiF4er ID. Проверьте аккаунт или повторите попытку.'};
+  const errors={cancelled:'Вход через SkiF4er ID отменён.',provider_error:'SkiF4er ID отклонил авторизацию.',invalid_callback:'Недействительный ответ авторизации. Попробуйте ещё раз.',not_linked:'Этот SkiF4er ID пока не привязан к аккаунту форума. Войдите локально, затем откройте «Настройки аккаунта → Безопасность» для привязки.',mfa_required:'Для этого аккаунта необходима многофакторная авторизация в SkiF4er ID.',registration_closed:'Регистрация на форуме закрыта. Для уже привязанных аккаунтов вход работает.',email_exists:'Аккаунт с таким email уже существует. Войдите локально и привяжите SkiF4er ID в настройках безопасности.',login_failed:'Не удалось выполнить вход через SkiF4er ID. Проверьте аккаунт или повторите попытку.'};
   const error=new URLSearchParams(location.search).get('sso_error');if(Object.hasOwn(errors,error))say(errors[error],true);if(new URLSearchParams(location.search).get('identity')==='unlinked')say('SkiF4er ID успешно отвязан. Внешние сессии завершены.');
-  try{const status=await api('/auth/oidc/status');if(status.enabled===true){const sso=panel();add(sso,node('h3','Внешняя авторизация'),link('Войти через SkiF4er ID','/auth/oidc/start?return_to='+encodeURIComponent(returnTo),'button secondary'),node('p','Вход выполняется на стороне SkiF4er ID. Для существующего аккаунта требуется предварительная привязка.','meta'));add(app,sso)}}catch{/* Local login remains available when OIDC is disabled or unreachable. */}
+  try{const status=await api('/auth/oidc/status');if(status.enabled===true){const sso=panel();add(sso,node('h3','Внешняя авторизация'),link('Войти через SkiF4er ID','/auth/oidc/start?return_to='+encodeURIComponent(returnTo),'button secondary'),node('p','Вход выполняется на стороне SkiF4er ID. Для существующего аккаунта требуется привязка; новая регистрация доступна на странице регистрации, если разрешена администратором.','meta'));add(app,sso)}}catch{/* Local login remains available when OIDC is disabled or unreachable. */}
  }
 }
 const watchModes=[['none','Без уведомлений'],['internal','Внутренние уведомления'],['email','Email'],['daily','Ежедневный дайджест'],['weekly','Еженедельный дайджест']];
@@ -435,6 +445,7 @@ async function accountLinkingPanel(){
 }
 async function account(){
  heading('Настройки аккаунта');
+ if(new URLSearchParams(location.search).get('created')==='skif4er')say('Аккаунт форума создан через SkiF4er ID. Email подтверждён, доступные права участника активны.');
  if(!me?.session){add(app,link('Войти','/forum/login'));return}
  add(app,link('Профиль и персональные настройки','/forum/account/profile','button secondary'),link('Приватность и данные','/forum/account/privacy','button secondary'));
  const p=panel();add(p,node('h2','Безопасность'),node('p','Email: '+me.user.email),node('p',me.user.two_factor_enabled?'2FA включена':'2FA выключена'));
