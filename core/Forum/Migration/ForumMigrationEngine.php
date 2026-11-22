@@ -15,6 +15,7 @@ final class ForumMigrationEngine
     public function __construct(private DatabaseManager $db, private ForumSource $source, private ?string $files=null) {}
     private array $mappingCache=[];
     private array $statements=[];
+    private bool $contentPipeline=false;
     private function query(string $sql,array $params=[]): \PDOStatement
     {
         $s=$this->statements[$sql]??=$this->db->connection()->prepare($sql);
@@ -30,31 +31,41 @@ final class ForumMigrationEngine
     private function row(string $sql,array $params=[]): ?array {$s=$this->query($sql,$params);$r=$s->fetch(PDO::FETCH_ASSOC);$s->closeCursor();return $r===false?null:$r;}
     private static function uuid(): string {$b=random_bytes(16);$b[6]=chr((ord($b[6])&15)|64);$b[8]=chr((ord($b[8])&63)|128);return vsprintf('%s%s-%s-%s-%s-%s%s%s',str_split(bin2hex($b),4));}
     private const EXTRA_PHASES=['profiles','reactions'];
+    private const CONTENT_PHASE='content_links';
     /** Existing jobs have no pipeline_version and always finish with the original eleven phases. */
     private function phaseNames(array $plan): array
     {
         if(!isset($plan['pipeline_version']))return ForumSource::PHASES;
-        if($plan['pipeline_version']!==2 || !($this->source instanceof EnrichedForumSource))
+        if(!in_array($plan['pipeline_version'],[2,3],true) || !($this->source instanceof EnrichedForumSource))
             throw new \RuntimeException('Unsupported import pipeline; do not rewrite an in-progress job');
-        return array_merge(ForumSource::PHASES,self::EXTRA_PHASES);
+        $phases=array_merge(ForumSource::PHASES,self::EXTRA_PHASES);
+        if($plan['pipeline_version']===3){
+            if($this->source->platform()!=='xenforo'||!isset($plan[self::CONTENT_PHASE])||$plan[self::CONTENT_PHASE]!==$plan['posts'])
+                throw new \RuntimeException('Invalid XenForo content phase ledger');
+            $phases[]=self::CONTENT_PHASE;
+        }
+        return $phases;
     }
     /** Exact snapshot ledger including added phase high-water marks for new jobs. */
-    public function snapshotPlan(bool $extended=true): array
+    public function snapshotPlan(bool $extended=true,int $pipelineVersion=3): array
     {
         $plan=$this->source->plan();
         if($extended && $this->source instanceof EnrichedForumSource){
             $extra=$this->source->additionalPlan();
             if($extra!==[]){
                 if(array_keys($extra)!==self::EXTRA_PHASES)throw new \RuntimeException('Unsupported additional source phases');
-                $plan['pipeline_version']=2;
+                if(!in_array($pipelineVersion,[2,3],true))throw new \InvalidArgumentException('Invalid pipeline version');
+                $plan['pipeline_version']=$pipelineVersion;
                 foreach($extra as $kind=>$bounds)$plan[$kind]=$bounds;
+                if($pipelineVersion===3 && $this->source->platform()==='xenforo')
+                    $plan[self::CONTENT_PHASE]=$plan['posts'];
             }
         }
         return $plan;
     }
     public function matchesRecordedPlan(array $recorded): bool
     {
-        $current=$this->snapshotPlan(isset($recorded['pipeline_version']));
+        $current=$this->snapshotPlan(isset($recorded['pipeline_version']),($recorded['pipeline_version']??3)===2?2:3);
         // 1.1.1 jobs were created before XenForo schema fingerprints existed.
         // Preserve their exact eleven/thirteen-phase ledger on resume; new jobs
         // verify the full recorded schema, including the 2.2/2.3 key choice.
@@ -97,7 +108,7 @@ final class ForumMigrationEngine
     /** Validate the ledger while the imported tree is still quarantined. */
     private function verifyMappings(string $job): void
     {
-        foreach(['groups'=>['ce_forum_groups','role_id'],'users'=>['ce_users','id'],'forums'=>['ce_forum_boards','id'],'topics'=>['ce_forum_threads','id'],'posts'=>['ce_forum_posts','id'],'attachments'=>['ce_forum_attachments','id'],'polls'=>['ce_forum_polls','thread_id'],'profiles'=>['ce_forum_member_profiles','user_id'],'reactions'=>['ce_forum_posts','id']] as $kind=>[$table,$column]){
+        foreach(['groups'=>['ce_forum_groups','role_id'],'users'=>['ce_users','id'],'forums'=>['ce_forum_boards','id'],'topics'=>['ce_forum_threads','id'],'posts'=>['ce_forum_posts','id'],'attachments'=>['ce_forum_attachments','id'],'polls'=>['ce_forum_polls','thread_id'],'profiles'=>['ce_forum_member_profiles','user_id'],'reactions'=>['ce_forum_posts','id'],'content_links'=>['ce_forum_posts','id']] as $kind=>[$table,$column]){
             // PostgreSQL uses UUID PKs; cast the small ledger key, not the indexed target column.
             $key=$this->db->driver()==='pgsql'?'CAST(m.target_id AS UUID)':'m.target_id';
             $n=(int)$this->query("SELECT COUNT(*) FROM ce_forum_import_map m LEFT JOIN $table t ON t.$column=$key WHERE m.job_id=? AND m.kind=? AND m.outcome='imported' AND t.$column IS NULL",[$job,$kind])->fetchColumn();
@@ -141,11 +152,14 @@ final class ForumMigrationEngine
             if(!$job)throw new \RuntimeException('Start the import first');if($job['state']==='complete')return;
             $plan=json_decode($job['plan_json'],true,512,JSON_THROW_ON_ERROR);
             $phases=$this->phaseNames($plan);
+            $this->contentPipeline=($plan['pipeline_version']??null)===3 && $this->source->platform()==='xenforo';
             $phase=(int)$job['phase'];$kind=$phases[$phase]??throw new \RuntimeException('Invalid import phase checkpoint');$cursor=(int)$job['cursor_id'];$sub=(int)$job['subcursor_id'];
             $category=$this->row('SELECT visibility FROM ce_forum_categories WHERE id=?',[$job['category_id']]);
             if(!$category||$category['visibility']!=='hidden'||$this->row('SELECT id FROM ce_forum_boards WHERE category_id=? AND (visibility<>? OR state<>?) LIMIT 1',[$job['category_id'],'hidden','readonly']))throw new \RuntimeException('Imported tree must remain hidden and readonly until completion');
             $isAdditional=in_array($kind,self::EXTRA_PHASES,true);
-            if($isAdditional){
+            if($kind===self::CONTENT_PHASE){
+                $batch=$this->source->batch('posts',$cursor,$plan[self::CONTENT_PHASE]['high'],min($limit,20));
+            }elseif($isAdditional){
                 if(!($this->source instanceof EnrichedForumSource))throw new \RuntimeException('Source does not support additional import phases');
                 $batch=$this->source->additionalBatch($kind,$cursor,$plan[$kind]['high'],$limit);
             }else $batch=$this->source->batch($kind,$cursor,$plan[$kind]['high'],$kind==='attachments'?1:($kind==='posts'?min($limit,20):$limit));
@@ -168,7 +182,7 @@ final class ForumMigrationEngine
               // Bound total relation work, not just the number of topics in a batch.
               $remaining=$limit;
               foreach($batch as $r){
-                $key=match($kind){'groups'=>'group_id','users'=>'user_id','forums'=>'left_id','topics','polls','votes','watches','finalize'=>'topic_id','board_watches'=>'forum_id','posts'=>'post_id','attachments'=>'attach_id','profiles'=>'profile_id','reactions'=>'reaction_source_id'};
+                $key=match($kind){'groups'=>'group_id','users'=>'user_id','forums'=>'left_id','topics','polls','votes','watches','finalize'=>'topic_id','board_watches'=>'forum_id','posts'=>'post_id','attachments'=>'attach_id','profiles'=>'profile_id','reactions'=>'reaction_source_id','content_links'=>'post_id'};
                 $next=(int)$r[$key];
                 if(in_array($kind,['watches','board_watches','votes'],true)){
                     $target=$this->mapped(match($kind){'watches'=>'topics','board_watches'=>'forums','votes'=>'polls'},$next);
@@ -200,6 +214,8 @@ final class ForumMigrationEngine
                         $this->query('DELETE FROM ce_forum_threads WHERE id=?',[$thread]);
                         $this->query("UPDATE ce_forum_import_map SET target_id=NULL,outcome='skipped',reason='no_importable_posts' WHERE job_id=? AND kind='topics' AND source_id=?",[$id,$next]);
                     }
+                }elseif($kind===self::CONTENT_PHASE){
+                    $this->rewriteXenForoPost($r);
                 }elseif($isAdditional){
                     $this->importAdditional($kind,$r);
                 }else $this->import($kind,$r,$job['category_id']);
@@ -211,6 +227,42 @@ final class ForumMigrationEngine
         });}finally{$this->resetBatch();}
         $result=['ok'=>true,'job'=>$this->row('SELECT id,state,phase,cursor_id,subcursor_id FROM ce_forum_import_jobs WHERE id=?',[$id])];$this->resetBatch();return $result;
     }
+    /** Final pass resolves forward references after every imported post and attachment has an ID.
+     * Each rewritten post, its baseline revision, ledger row and checkpoint commit together.
+     */
+    private function rewriteXenForoPost(array $sourcePost): void
+    {
+        $sourceId=(int)$sourcePost['post_id'];
+        $post=$this->mapped('posts',$sourceId);
+        if($post===null){$this->mark(self::CONTENT_PHASE,$sourceId,null,'post_not_imported');return;}
+        if(!is_string($sourcePost['post_text'])||!preg_match('//u',$sourcePost['post_text'])){
+            $this->mark(self::CONTENT_PHASE,$sourceId,null,'invalid_source_content');return;
+        }
+        $resolver=function(string $kind,int $sourceId): ?string {
+            $target=$this->mapped($kind,$sourceId);
+            if($target===null)return null;
+            return match($kind){
+                'users'=>'/forum/members/'.$target,
+                'topics'=>'/forum/threads/'.$target,
+                'forums'=>'/forum/boards/'.$target,
+                'attachments'=>'/api/v1/forum/attachments/'.$target.'/download',
+                'posts'=>($post=$this->row('SELECT thread_id,ordinal FROM ce_forum_posts WHERE id=?',[$target]))!==null
+                    ?'/forum/threads/'.$post['thread_id'].'?page='.(1+intdiv(max(1,(int)$post['ordinal'])-1,25)).'#post-'.$target:null,
+                default=>null,
+            };
+        };
+        $origin=$this->source instanceof MultiForumSource?$this->source->contentOrigin():null;
+        $body=XenForoContent::convert($sourcePost['post_text'],$resolver,$origin);
+        if(strlen($body)>80000 || preg_match_all('/./us',$body)>20000){
+            // Original source text remains available as plain text for operator review;
+            // never truncate a converted message or store markup the renderer cannot read.
+            $this->mark(self::CONTENT_PHASE,$sourceId,null,'conversion_over_renderer_limit');return;
+        }
+        $this->query("UPDATE ce_forum_posts SET body=?,body_format='bbcode' WHERE id=?",[$body,$post]);
+        $this->query("UPDATE ce_forum_post_revisions SET body=?,body_format='bbcode' WHERE post_id=? AND revision_number=1",[$body,$post]);
+        $this->mark(self::CONTENT_PHASE,$sourceId,$post);
+    }
+
     /** Target data, ledger and checkpoint are written in the caller's one SQL transaction. */
     private function importAdditional(string $kind,array $r): void
     {
@@ -286,6 +338,11 @@ final class ForumMigrationEngine
                 $source=(int)$r['post_id'];$thread=$this->mapped('topics',(int)$r['topic_id']);
                 if((int)$r['post_visibility']!==1||$thread===null||$this->mapped('forums',(int)$r['forum_id'])!==($this->row('SELECT board_id FROM ce_forum_threads WHERE id=?',[$thread])['board_id']??null)){$target=null;$reason='unapproved_or_missing_topic';break;}
                 if($r['post_text']===null){$target=null;$reason='body_over_1mib';break;}
+                // v3 content is rendered by ForumContentRenderer (80 KB / 20k codepoints).
+                // Reject over-limit source rather than importing a post that will break SSR.
+                if($this->contentPipeline && (strlen((string)$r['post_text'])>80000 || preg_match_all('/./us',(string)$r['post_text'])>20000)){
+                    $target=null;$reason='body_over_renderer_limit';break;
+                }
                 $body=$this->source->platform()==='phpbb'?PhpbbText::plain((string)$r['post_text'],(string)$r['bbcode_uid']):str_replace("\0",'',(string)$r['post_text']);
                 if(!preg_match('//u',$body)){$target=null;$reason='invalid_utf8';break;}
                 if(trim($body)==='')$body='[Empty imported message]';

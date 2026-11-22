@@ -1,3 +1,11 @@
+## [1.1.3] - 2026-11-22 — XenForo Content Fidelity (Forum Edition)
+
+- Added `XenForoContent` converter used by an actual post-update phase in `ForumMigrationEngine`; existing target BBCode renderer handles formatting, quotes, mentions, links and supported headings. No remote resources are requested or inline HTML trusted.
+- New XenForo imports use `pipeline_version=3`: eleven original phases, profile/reaction phases, then transactional `content_links` pass after all source-to-target IDs and attachments are known. Body, format, baseline revision, ID map and checkpoint commit together; failed batches roll back and resume safely.
+- Author-attributed quotes and internal links resolve against imported post/thread/member IDs. `FORUM_IMPORT_SOURCE_ORIGIN` enables remapping absolute URLs only for the exact operator-approved source origin; relative XF links are also supported. Unmapped private/deleted targets become inert text rather than dangling old-site links.
+- Conservatively converts images to safe links rather than fetching remote images. Unsupported add-on tags remain inert text; existing jobs without a v3 ledger are not rewritten. Adds executable renderer/security regressions, actual SQLite target SQL rollback checks and real PDO SQLite importer integration tests.
+- Does not change CajeerEngine 2.1.0 or the SQL migration schema. External snapshots and PostgreSQL/MySQL end-to-end staging certification are still mandatory for production cutover.
+
 ## [1.1.2] - 2026-11-22 — XenForo Source Compatibility (Forum Edition)
 
 - XenForo 2.2/2.3 frozen snapshots are checked against the native table/column requirements before any target write or backup, with actionable fail-closed diagnostics for unsupported or incomplete schemas.

@@ -29,16 +29,18 @@ final class SampleExtension implements EnrichedForumSource
 }
 $database=(new ReflectionClass(DatabaseManager::class))->newInstanceWithoutConstructor();
 $engine=new ForumMigrationEngine($database,new SampleExtension());
-$old=$engine->snapshotPlan(false);$new=$engine->snapshotPlan();
+$old=$engine->snapshotPlan(false);$legacyV2=$engine->snapshotPlan(true,2);$new=$engine->snapshotPlan();
 $method=(new ReflectionClass(ForumMigrationEngine::class))->getMethod('phaseNames');
 $assert=static function(bool $passed,string $label):void{if(!$passed)throw new RuntimeException('FAIL '.$label);echo 'PASS '.$label."\n";};
 $assert(!isset($old['pipeline_version'])&&count($method->invoke($engine,$old))===11,'existing job remains exactly 11 phases');
-$assert(($new['pipeline_version']??null)===2&&count($method->invoke($engine,$new))===13,'new jobs add exactly two real phases');
-$assert(array_slice($method->invoke($engine,$new),-2)===['profiles','reactions'],'old indexes and ordering unmodified');
-$assert($engine->matchesRecordedPlan($old)&&$engine->matchesRecordedPlan($new),'both ledger formats validate on resume');
+$assert(($legacyV2['pipeline_version']??null)===2&&count($method->invoke($engine,$legacyV2))===13,'1.1.1/1.1.2 jobs preserve thirteen original phases');
+$assert(($new['pipeline_version']??null)===3&&count($method->invoke($engine,$new))===14,'new XenForo jobs add final content links phase');
+$assert($new['content_links']===$new['posts'],'post conversion bounds are frozen with source post bounds');
+$assert(array_slice($method->invoke($engine,$new),-3)===['profiles','reactions','content_links'],'new conversion follows all original imported entities');
+$assert($engine->matchesRecordedPlan($old)&&$engine->matchesRecordedPlan($legacyV2)&&$engine->matchesRecordedPlan($new),'all three ledger formats validate on resume');
 $wrong=$new;$wrong['reactions']['high']=31;
 $assert(!$engine->matchesRecordedPlan($wrong),'changed source bounds block resume');
-$wrong=$new;$wrong['pipeline_version']=3;
+$wrong=$new;$wrong['pipeline_version']=4;
 try{$method->invoke($engine,$wrong);throw new LogicException('Unknown version accepted');}catch(RuntimeException $e){
     $assert(str_contains($e->getMessage(),'Unsupported import pipeline'),'unsupported pipeline fails closed');
 }

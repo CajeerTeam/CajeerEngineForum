@@ -33,6 +33,9 @@ final class ForumContentRenderer
     private static function url(string $s): ?string
     {
         if(strlen($s)>2048||preg_match('/[\x00-\x20\x7f\\\\]/',$s))return null;
+        // Internal canonical links are restricted to forum resources and attachment downloads;
+        // never interpret //host, traversal, encoded slashes or arbitrary app routes as links.
+        if(preg_match('~\A/(?:forum/(?:threads|boards|members)/[a-f0-9-]{36}|api/v1/forum/attachments/[a-f0-9-]{36}/download)(?:\?page=[1-9][0-9]{0,5})?(?:\#post-[a-f0-9-]{36})?\z~D',$s))return $s;
         $p=parse_url($s);if(!is_array($p)||!in_array(strtolower($p['scheme']??''),['http','https'],true)||empty($p['host'])||isset($p['user'])||isset($p['pass']))return null;
         return $s;
     }
@@ -94,8 +97,8 @@ final class ForumContentRenderer
     /** BBCode stack with a strict allowlist; unmatched tokens are literal, depth bounded. */
     private function bbcode(string $s): string
     {
-        $tags=['b'=>'strong','i'=>'em','u'=>'u','s'=>'del','quote'=>'blockquote','ul'=>'ul','ol'=>'ol','li'=>'li','list'=>'ul','*'=>'li','h1'=>'h1','h2'=>'h2','h3'=>'h3','h4'=>'h4','h5'=>'h5','h6'=>'h6','table'=>'table','tr'=>'tr','th'=>'th','td'=>'td','p'=>'p','code'=>'code','icode'=>'code','url'=>'a'];
-        $pattern='~\\\\(\\\\|\[|@|>)|\[(/?)(b|i|u|s|quote|ul|ol|li|list|\*|h[1-6]|table|tr|th|td|p|icode|code|url)(?:=([^\]\n]{1,2048}))?\]|((?:@|>>)\{([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})\})~i';
+        $tags=['b'=>'strong','i'=>'em','u'=>'u','s'=>'del','quote'=>'blockquote','ul'=>'ul','ol'=>'ol','li'=>'li','list'=>'ul','*'=>'li','h1'=>'h1','h2'=>'h2','h3'=>'h3','h4'=>'h4','h5'=>'h5','h6'=>'h6','table'=>'table','tr'=>'tr','th'=>'th','td'=>'td','p'=>'p','code'=>'code','icode'=>'code','url'=>'a','spoiler'=>'details'];
+        $pattern='~\\\\(\\\\|\[|@|>)|\[(/?)(b|i|u|s|quote|ul|ol|li|list|\*|h[1-6]|table|tr|th|td|p|icode|code|url|spoiler)(?:=([^\]\n]{1,2048}))?\]|((?:@|>>)\{([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})\})~i';
         $stack=[];$out='';$at=0;
         $emit=static function(string $html)use(&$stack,&$out){if($stack)$stack[count($stack)-1]['html'].=$html;else $out.=$html;};
         while(preg_match($pattern,$s,$m,PREG_OFFSET_CAPTURE|PREG_UNMATCHED_AS_NULL,$at)===1){[$token,$pos]=$m[0];$emit(str_replace("\n",'<br>',self::e(substr($s,$at,$pos-$at))));$at=$pos+strlen($token);$g=static fn(int $n)=>$m[$n][0]??null;
@@ -112,7 +115,8 @@ final class ForumContentRenderer
             }
             if($g(2)==='/'){
                 if(!$stack||$stack[count($stack)-1]['name']!==$name||$arg!==null){$emit(self::e($token));continue;}
-                $x=array_pop($stack);$tag=$name==='list'&&$x['arg']==='1'?'ol':$tags[$name];$emit($name==='url'?$this->anchor($x['arg']??html_entity_decode(strip_tags($x['html']),ENT_QUOTES,'UTF-8'),$x['html']):'<'.$tag.'>'.$x['html'].'</'.$tag.'>');continue;
+                $x=array_pop($stack);$tag=$name==='list'&&$x['arg']==='1'?'ol':$tags[$name];$emit($name==='url'?$this->anchor($x['arg']??html_entity_decode(strip_tags($x['html']),ENT_QUOTES,'UTF-8'),$x['html']):
+                    ($name==='spoiler'?'<details class="content-spoiler"><summary>'.self::e($x['arg']??'Spoiler').'</summary>'.$x['html'].'</details>':'<'.$tag.'>'.$x['html'].'</'.$tag.'>'));continue;
             }
             if($name==='code'||$name==='icode'){
                 // Escape literal closing delimiters and backslashes; code remains opaque.
@@ -126,7 +130,11 @@ final class ForumContentRenderer
                 $lang=$arg!==null&&preg_match('/^[a-zA-Z0-9_+-]{1,30}$/D',$arg)?' class="language-'.self::e($arg).'"':'';
                 $emit(($name==='code'?'<pre>':'').'<code'.$lang.'>'.self::e($code).'</code>'.($name==='code'?'</pre>':''));$at=$cursor;continue;
             }
-            if(count($stack)>=16||($arg!==null&&$name!=='url'&&!($name==='list'&&$arg==='1'))){$emit(self::e($token));continue;}
+            if($name==='spoiler'&&$arg!==null){
+                $arg=trim($arg," \t\"'");
+                if(!preg_match('/\A[\p{L}\p{N} _.,:!?()\-]{1,80}\z/uD',$arg)){$emit(self::e($token));continue;}
+            }
+            if(count($stack)>=16||($arg!==null&&$name!=='url'&&!($name==='list'&&$arg==='1')&&$name!=='spoiler')){$emit(self::e($token));continue;}
             $stack[]=['name'=>$name,'arg'=>$arg,'html'=>'','token'=>$token];
         }
         $emit(str_replace("\n",'<br>',self::e(substr($s,$at))));while($stack){$x=array_pop($stack);$emit(self::e($x['token']).$x['html']);}return $out;

@@ -28,7 +28,7 @@ try{
     $engine=new ForumMigrationEngine($db,$adapter);
     $job=$engine->start('test-backup')['job']['id'];
     $initial=$engine->progress()['job']['plan'];
-    assertImport($initial['pipeline_version']===2&&$initial['profiles']['count']===3&&$initial['reactions']['count']===6,'versioned frozen extended plan');
+    assertImport($initial['pipeline_version']===3&&$initial['content_links']===$initial['posts']&&$initial['profiles']['count']===3&&$initial['reactions']['count']===6,'versioned frozen extended plan');
     // Exhaust base phases and the profile phase; inject a rollback into the reactions phase.
     for($i=0;$i<200;$i++){
         $progress=$engine->progress()['job'];
@@ -51,6 +51,7 @@ try{
     assertImport($engine->status()['job']['state']==='complete','extended import resumes to completion');
     assertImport((int)$pdo->query('SELECT COUNT(*) FROM ce_forum_reactions')->fetchColumn()===2,'real reactions imported once');
     assertImport((int)$pdo->query('SELECT COUNT(*) FROM ce_forum_member_profiles')->fetchColumn()===2,'real member profiles imported');
+    assertImport((int)$pdo->query("SELECT COUNT(*) FROM ce_forum_posts WHERE body_format='bbcode'")->fetchColumn()===2,'real post content converted in final phase');
     // An in-flight job created in 1.1.0 has no pipeline_version and completes after eleven phases.
     $source->rollBack();unset($engine,$adapter,$source);
     $source=$open();$adapter=new MultiForumSource($source,'xf_','xenforo','2.3.0','old-job-test');
@@ -62,7 +63,7 @@ try{
     assertImport($engine->matchesRecordedPlan($old),'legacy 11-phase recorded plan remains valid');
     // Guard against accidental interpretation of 11 as an extended phase on old job.
     $phaseNames=(new ReflectionClass(ForumMigrationEngine::class))->getMethod('phaseNames');
-    assertImport(count($phaseNames->invoke($engine,$old))===11&&count($phaseNames->invoke($engine,$initial))===13,'old and new checkpoint indices remain stable');
+    assertImport(count($phaseNames->invoke($engine,$old))===11&&count($phaseNames->invoke($engine,$engine->snapshotPlan(true,2)))===13&&count($phaseNames->invoke($engine,$initial))===14,'all checkpoint indices remain stable');
     echo "PASS migration upgrade regression\n";
 }finally{
     unset($pdo,$db,$source,$adapter,$engine);

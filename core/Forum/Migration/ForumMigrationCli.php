@@ -37,7 +37,10 @@ final class ForumMigrationCli
         try{$pdo=new PDO($dsn,getenv('FORUM_IMPORT_SOURCE_USER')?:null,getenv('FORUM_IMPORT_SOURCE_PASSWORD')?:null,[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION,PDO::ATTR_DEFAULT_FETCH_MODE=>PDO::FETCH_ASSOC]);}
         catch(\PDOException){throw new \RuntimeException('Cannot connect to forum snapshot');}
         $identity=$snapshot."\0".$dsn."\0".($files??'');
-        $source=$platform==='phpbb'?new PhpbbSource($pdo,$prefix,$identity):new MultiForumSource($pdo,$prefix,$platform,$opts['source-version']??'', $identity);
+        // Canonical source origin is optional; required to remap absolute XenForo links.
+        // It is included in the immutable job identity by MultiForumSource.
+        $origin=$platform==='xenforo'?(getenv('FORUM_IMPORT_SOURCE_ORIGIN')?:null):null;
+        $source=$platform==='phpbb'?new PhpbbSource($pdo,$prefix,$identity):new MultiForumSource($pdo,$prefix,$platform,$opts['source-version']??'', $identity,$origin);
         $engine=new ForumMigrationEngine($db,$source,$files);
         if($command==='forum:import:plan')return $engine->plan();
         if(!OperationLock::exclusiveHeld($root)||!is_file($root.'/storage/app/maintenance.json')||OperationLock::active($root)||is_file($root.'/storage/app/extensions/deployment.json')||is_file($root.'/storage/app/backup-restore.json'))throw new \RuntimeException('Enable maintenance and drain all application nodes before import');

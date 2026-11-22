@@ -21,11 +21,15 @@ final class MultiForumSource implements EnrichedForumSource
     private string $pollBallots;
     private string $pollVoters;
     private const KEYS=['groups'=>'group_id','users'=>'user_id','topics'=>'topic_id','posts'=>'post_id','attachments'=>'attach_id','finalize'=>'topic_id','polls'=>'topic_id','votes'=>'topic_id','watches'=>'topic_id','board_watches'=>'forum_id'];
-    public function __construct(private PDO $pdo,private string $prefix,private string $type,private string $sourceVersion,private string $snapshot)
+    public function __construct(private PDO $pdo,private string $prefix,private string $type,private string $sourceVersion,private string $snapshot, private ?string $origin=null)
     {
         if(!preg_match('/\A[A-Za-z0-9_]{1,40}\z/D',$prefix))throw new \InvalidArgumentException('Invalid source prefix');
         $pattern=match($type){'xenforo'=>'2\.[23]\.\d+','mybb'=>'1\.8\.\d+','smf'=>'2\.1\.\d+',default=>throw new \InvalidArgumentException('Unknown forum source')};
         if(!preg_match('/\A'.$pattern.'\z/D',$sourceVersion))throw new \InvalidArgumentException('Unsupported source version; provide the installed stable version');
+        if($origin!==null){
+            if($type!=='xenforo'||!XenForoContent::validOrigin($origin))throw new \InvalidArgumentException('Invalid source forum origin');
+            $this->origin=rtrim($origin,'/');
+        }
         $pdo->setAttribute(PDO::ATTR_ERRMODE,PDO::ERRMODE_EXCEPTION);
         $driver=$pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
         if($driver==='mysql'){$pdo->exec('SET NAMES utf8mb4');$pdo->exec('SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ');$pdo->exec('SET SESSION TRANSACTION READ ONLY');}
@@ -37,10 +41,11 @@ final class MultiForumSource implements EnrichedForumSource
     }
     public function platform(): string{return $this->type;}
     public function version(): string{return $this->sourceVersion;}
-    public function identity(): string{return hash('sha256',$this->type."\0".$this->sourceVersion."\0".$this->prefix."\0".$this->snapshot);}
+    public function contentOrigin(): ?string{return $this->origin;}
+    public function identity(): string{return hash('sha256',$this->type."\0".$this->sourceVersion."\0".$this->prefix."\0".$this->snapshot.($this->origin===null?'':"\0".$this->origin));}
     public function unsupported(): array
     {
-        $items=['source ACL translation','password hashes','private messages','bans and sanctions','anonymous poll votes','avatars and custom profile fields','remote media','source-specific BBCode rendering','source-specific poll visibility (imported closed)'];
+        $items=['source ACL translation','password hashes','private messages','bans and sanctions','anonymous poll votes','avatars and custom profile fields','remote media','unsupported add-on BBCode (retained as inert text)','source-specific poll visibility (imported closed)'];
         if($this->type==='xenforo'){$items[]='nonstandard/negative XenForo reactions (explicitly skipped with reason)';$items[]='remote or unstaged XenForo attachments (require immutable local file copy)';}
         else $items[]='reactions and profile metadata (not yet supported for this platform)';
         return $items;
@@ -169,6 +174,7 @@ final class MultiForumSource implements EnrichedForumSource
         if($this->xenForoSchema!==null){
             $counts['source_schema_sha256']=$this->xenForoSchema->fingerprint();
             $counts['source_attachment_key']=$this->xenForoSchema->attachmentKeyColumn();
+            if($this->origin!==null)$counts['source_content_origin']=$this->origin;
         }
         foreach(self::PHASES as $phase){
             if($phase==='forums'){$n=count($this->tree);$counts[$phase]=['count'=>$n,'high'=>$n];continue;}

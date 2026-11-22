@@ -19,7 +19,7 @@ try{
   $engine=new ForumMigrationEngine($db,$adapter,$tmp);$plan=$engine->plan();
   check($plan['platform']===$platform&&$plan['counts']['topics']['count']===3&&$plan['counts']['source_private_messages']===1&&!$engine->exists(),"$platform preflight and source counts");
   if($platform==='xenforo'){
-   check($plan['pipeline_version']===2&&$plan['counts']['profiles']['count']===3&&$plan['counts']['reactions']['count']===6,'XF extended plan and immutable source counts');
+   check($plan['pipeline_version']===3&&$plan['counts']['profiles']['count']===3&&$plan['counts']['reactions']['count']===6,'XF extended plan and immutable source counts');
    check(count($adapter->additionalBatch('reactions',100,105,3))===3,'XF additional keyset and upper bound');
   } else check($plan['pipeline_version']===1,"$platform legacy pipeline unchanged");
   $tree=$adapter->batch('forums',0,3,3);check((int)$tree[0]['forum_type']===0&&(int)$tree[1]['parent_id']===(int)$tree[0]['forum_id'],"$platform topological ordering");
@@ -46,10 +46,13 @@ try{
   check($pdo->query("SELECT COUNT(*) FROM ce_forum_boards WHERE id='$board' AND visibility='hidden' AND state='readonly' AND seo_index=0")->fetchColumn()==1,"$platform quarantine");
   check($pdo->query("SELECT file_data FROM ce_forum_attachments WHERE id='$attachment'")->fetchColumn()===base64_encode('hello world!'),"$platform actual attachment bytes");
   if($platform==='xenforo'){
-   check((int)$report['job']['phase']===13,'XF two extended phases completed after original phases');
+   check((int)$report['job']['phase']===14,'XF content conversion completed after original and extended phases');
    $aliceProfile=$id('profiles',1);$bobProfile=$id('profiles',2);
    check($aliceProfile===$user&&$bobProfile===$id('users',2)&&$id('profiles',3)===null,'XF profiles mapped only to newly imported users');
    check($pdo->query("SELECT bio FROM ce_forum_member_profiles WHERE user_id='$user'")->fetchColumn()==='Imported biography','XF profile saved, not just mapped');
+   check($pdo->query("SELECT body_format FROM ce_forum_posts WHERE id='$post'")->fetchColumn()==='bbcode','XF final post conversion persisted');
+   check($pdo->query("SELECT body FROM ce_forum_post_revisions WHERE post_id='$post' AND revision_number=1")->fetchColumn()===$pdo->query("SELECT body FROM ce_forum_posts WHERE id='$post'")->fetchColumn(),'XF post baseline revision matches content');
+   check($id('content_links',30)===$post&&$id('content_links',31)===$id('posts',31),'XF conversion is mapped and resumed');
    check($pdo->query("SELECT profile_visibility FROM ce_forum_member_preferences WHERE user_id='$user'")->fetchColumn()==='private','XF imported profile remains private');
    check($id('reactions',100)===$post&&$id('reactions',101)===$id('posts',31),'XF standard reactions mapped');
    $reactionRows=$pdo->query("SELECT reaction_type FROM ce_forum_reactions WHERE post_id='$post'")->fetchAll(PDO::FETCH_COLUMN);
