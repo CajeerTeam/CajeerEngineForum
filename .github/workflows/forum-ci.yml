@@ -6,7 +6,7 @@ on:
 permissions:
   contents: read
 env:
-  FORUM_CURRENT_VERSION: ${{ '1.1.7' }}
+  FORUM_CURRENT_VERSION: ${{ '1.1.8' }}
 concurrency:
   group: forum-ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -134,7 +134,9 @@ jobs:
       - run: python tools/forum-tests/xenforo_media_sql_regression.py
       - run: python tools/forum-tests/xenforo_acceptance_sql_regression.py
       - run: php tools/forum-invision-discovery-regression.php
+      - run: php tools/forum-invision-core-integration.php
       - run: python tools/forum-tests/invision_discovery_sql_regression.py
+      - run: python tools/forum-tests/invision_core_sql_regression.py
       - run: php tools/forum-xenforo-acceptance-unit.php
       - run: python tools/forum-tests/xenforo_community_sql_regression.py
       - run: php tools/forum-migration-regression.php

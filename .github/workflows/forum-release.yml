@@ -117,7 +117,7 @@ jobs:
           python3 tools/certification-evidence.py verify "$ARTIFACT_ROOT" --trusted-key "$pub"
 
           cat > "$RUNNER_TEMP/forum-release-notes.md" <<'NOTES'
-          ## CajeerEngineForum 1.1.7
+          ## CajeerEngineForum 1.1.8
 
           Forum Edition SkiF4er ID Stable, based on CajeerEngine 2.1.0.
 

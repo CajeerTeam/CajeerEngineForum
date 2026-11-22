@@ -1,6 +1,6 @@
 ## Version 1.1.7 — Invision Community source discovery
 
-Use `forum:import:discover --platform=invision` for a **read-only** scan of a frozen Invision Community 4.x/5.x forum database. It detects the installed version and prefix, validates tables, key relationships, forum hierarchy and local attachment snapshot availability. It does not execute an Invision import or modify the target database. See [Invision source discovery 1.1.7](forum-invision-discovery-1.1.7.md). Invision import support is scheduled for 1.1.8 and must not be enabled before source-to-target acceptance.
+Use `forum:import:discover --platform=invision` for a **read-only** scan of a frozen Invision Community 4.x/5.x forum database. It detects the installed version and prefix, validates tables, key relationships, forum hierarchy and local attachment snapshot availability. The discovery command does not modify the target database. As of Forum Edition 1.1.8, the separate `forum:import:plan` and `forum:import:run` commands perform the six core Invision phases (groups, users, categories/forums, topics, posts and finalization). See [Invision Core Import 1.1.8](forum-invision-core-import-1.1.8.md). Attachments, archived posts and community data are not yet imported.
 
 ## Version 1.1.6 — XenForo production acceptance and schema repair
 

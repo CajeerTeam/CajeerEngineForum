@@ -23,11 +23,11 @@ class ReleasePolicy(unittest.TestCase):
     def test_version_chain_is_current(self):
         metadata = json.loads((ROOT/'release.json').read_text())
         self.assertEqual(metadata['edition'], 'forum')
-        self.assertEqual(metadata['edition_version'], '1.1.7')
+        self.assertEqual(metadata['edition_version'], '1.1.8')
         self.assertEqual(metadata['upstream_version'], (ROOT/'VERSION').read_text().strip())
         self.assertEqual(metadata['version'], metadata['upstream_version'])
         self.assertEqual(metadata['channel'], 'stable')
-        self.assertEqual(metadata['distribution']['dist_artifact'], 'storage/releases/cajeerengine-1.1.7-dist.zip')
+        self.assertEqual(metadata['distribution']['dist_artifact'], 'storage/releases/cajeerengine-1.1.8-dist.zip')
 
     def test_publication_needs_external_trust_and_complete_certificate(self):
         # Verify these are executable constraints on the release job, not release.json claims.

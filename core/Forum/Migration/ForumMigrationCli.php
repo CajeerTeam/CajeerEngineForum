@@ -26,8 +26,8 @@ final class ForumMigrationCli
         if(!in_array($command,['forum:import:plan','forum:import:run','forum:import:accept'],true))throw new \InvalidArgumentException('Unknown import command');
         $dsn=getenv('FORUM_IMPORT_SOURCE_DSN')?:'';
         $snapshot=$opts['snapshot']??'';$platform=$opts['platform']??'phpbb';
-        $defaultPrefix=match($platform){'phpbb'=>'phpbb_','xenforo'=>'xf_','mybb'=>'mybb_','smf'=>'smf_',default=>throw new \InvalidArgumentException('Unknown platform')};
-        $prefix=$opts['prefix']??$defaultPrefix;
+        $defaultPrefix=match($platform){'phpbb'=>'phpbb_','xenforo'=>'xf_','mybb'=>'mybb_','smf'=>'smf_','invision'=>'',default=>throw new \InvalidArgumentException('Unknown platform')};
+        $prefix=$opts['prefix']??($platform==='invision'?null:$defaultPrefix);
         if($platform==='phpbb'&&isset($opts['source-version']))throw new \InvalidArgumentException('phpBB version is detected automatically');
         if(!preg_match('/\A[A-Za-z0-9_.-]{1,100}\z/D',$snapshot))throw new \InvalidArgumentException('Set --snapshot to a unique immutable snapshot label');
         if(!str_starts_with($dsn,'mysql:')&&!str_starts_with($dsn,'sqlite:'))throw new \InvalidArgumentException('Set FORUM_IMPORT_SOURCE_DSN to a MySQL/MariaDB or SQLite snapshot');
@@ -44,7 +44,11 @@ final class ForumMigrationCli
         // Canonical source origin is optional; required to remap absolute XenForo links.
         // It is included in the immutable job identity by MultiForumSource.
         $origin=$platform==='xenforo'?(getenv('FORUM_IMPORT_SOURCE_ORIGIN')?:null):null;
-        $source=$platform==='phpbb'?new PhpbbSource($pdo,$prefix,$identity):new MultiForumSource($pdo,$prefix,$platform,$opts['source-version']??'', $identity,$origin);
+        $source=match($platform){
+            'phpbb'=>new PhpbbSource($pdo,$prefix,$identity),
+            'invision'=>new InvisionSource($pdo,$prefix,$opts['source-version']??null,$identity,$files),
+            default=>new MultiForumSource($pdo,$prefix,$platform,$opts['source-version']??'', $identity,$origin),
+        };
         $engine=new ForumMigrationEngine($db,$source,$files,$avatarFiles);
         if($command==='forum:import:plan')return $engine->plan();
         if($platform==='xenforo')self::requireXenForoLedgerWidth($db);

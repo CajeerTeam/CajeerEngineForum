@@ -132,8 +132,9 @@ final class InvisionSourceDiscovery
             'file_storage'=>['local_snapshot_supplied'=>$files!==null,'has_attachments'=>$filesRequired,
                 'storage_methods_need_operator_review'=>isset($optional['core_file_storage'])],
             'blockers'=>$blockers,'warnings'=>$warnings,
-            'import_supported'=>false,
-            'next_step'=>'Invision Core Import will be enabled after source schema and content mapping acceptance in Forum 1.1.8',
+            'import_supported'=>count(array_filter($blockers,static fn(array $b):bool=>$b['code']!=='attachment_snapshot_required'))===0,
+            'core_import_only'=>true,
+            'next_step'=>'Core import is available with forum:import:plan and forum:import:run; media and rich content require later import stages',
         ];
     }
 

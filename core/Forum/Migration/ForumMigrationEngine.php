@@ -17,7 +17,7 @@ final class ForumMigrationEngine
         if($avatarFiles!==null && (!is_dir($avatarFiles)||($root=realpath($avatarFiles))===false))throw new \InvalidArgumentException('XenForo avatar snapshot directory not found');
         $this->avatarFiles=$avatarFiles===null?null:$root;
         if(!in_array($newPipelineVersion,[2,3,4,5],true))throw new \InvalidArgumentException('Invalid new job pipeline version');
-        $this->newPipelineVersion=$source instanceof MultiForumSource && $source->platform()==='xenforo'?$newPipelineVersion:min(3,$newPipelineVersion);
+        $this->newPipelineVersion=$source instanceof InvisionSource?6:($source instanceof MultiForumSource && $source->platform()==='xenforo'?$newPipelineVersion:min(3,$newPipelineVersion));
     }
     private array $mappingCache=[];
     private array $statements=[];
@@ -47,6 +47,11 @@ final class ForumMigrationEngine
     private function phaseNames(array $plan): array
     {
         if(!isset($plan['pipeline_version']))return ForumSource::PHASES;
+        if($plan['pipeline_version']===6){
+            if(!($this->source instanceof InvisionSource))throw new \RuntimeException('Invision pipeline requires Invision source');
+            foreach(InvisionSource::CORE_PHASES as $kind)if(!isset($plan[$kind]['count'],$plan[$kind]['high']))throw new \RuntimeException('Incomplete Invision phase ledger');
+            return InvisionSource::CORE_PHASES;
+        }
         if(!in_array($plan['pipeline_version'],[2,3,4,5],true) || !($this->source instanceof EnrichedForumSource))
             throw new \RuntimeException('Unsupported import pipeline; do not rewrite an in-progress job');
         $phases=array_merge(ForumSource::PHASES,self::EXTRA_PHASES);
@@ -77,6 +82,10 @@ final class ForumMigrationEngine
     public function snapshotPlan(bool $extended=true,?int $pipelineVersion=null): array
     {
         $pipelineVersion??=$this->newPipelineVersion;
+        if($this->source instanceof InvisionSource){
+            if($pipelineVersion!==6)throw new \RuntimeException('Invalid Invision pipeline version');
+            return $this->source->plan();
+        }
         $plan=$this->source->plan();
         if($extended && $this->source instanceof EnrichedForumSource){
             $extra=$this->source->additionalPlan();

@@ -1,3 +1,13 @@
+## [1.1.8] - 2026-11-22 — Invision Core Import (Forum Edition)
+
+- Implemented executable read-only Invision Community 4.x/5.x core source adapter for groups, users, categories/forums, topics and posts.
+- Added pipeline v6 with isolated six-phase ledger, transactional batch writes, ID mappings, schema fingerprint checks and safe restart; existing import jobs retain their previous phase sequences.
+- Imports users disabled and memberships with zero source administrative privileges; imported boards remain hidden and read-only.
+- Excludes unapproved topics/posts; converts IPS HTML content into inert plain text without truncation or script execution.
+- Extended operator CLI `forum:import:plan` / `forum:import:run` with `--platform=invision` and automatic prefix/version detection.
+- Added SQLite integration regression for database writes, rollback, resume, data ownership and source-schema drift, included as an obligatory CI step.
+- Source attachments, archived posts, polls, profiles, reactions and private messages are explicitly deferred, not silently represented as imported.
+
 ## [1.1.7] - 2026-11-22 — Invision Source Discovery (Forum Edition)
 
 - Add executable read-only `forum:import:discover --platform=invision` for frozen MySQL/MariaDB or SQLite Invision Community 4.x and 5.x snapshots. Detect real table prefixes and installed `core`/`forums` application versions.
