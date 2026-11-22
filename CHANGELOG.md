@@ -1,3 +1,11 @@
+## [1.0.4] - 2026-11-22 — Account Linking (Forum Edition)
+
+- Форум `/forum/account/security`: реальная привязка SkiF4er ID после подтверждения локального пароля и TOTP, подтверждения у OIDC-провайдера и одноразовой browser-bound транзакции.
+- Подтверждённый OIDC callback возвращает пользователя на форум, сохраняя административную привязку; отмены и ошибки отображаются без раскрытия токенов.
+- Безопасная отвязка через защищённый CSRF POST с повторной проверкой пароля/TOTP: запрет для OIDC-only профилей, атомарный отзыв внешних сессий, сохранение локальных аккаунтов и сообщений.
+- Проверка подтверждаемых учётных данных относится к тому же UUID, что и локальная сессия; продолжение привязки блокируется при отзыве сессии.
+- Добавлены исполняемые регрессионные проверки и обновлена конфигурация релизного CI. Ядро CajeerEngine остаётся версии 2.1.0.
+
 ## [1.0.3] - 2026-11-22 — SkiF4er ID Login (Forum Edition)
 
 - Connect the real SkiF4er ID confidential OIDC login to the Forum login page. The button is displayed only when the existing OIDC controller reports an enabled provider; local login remains available.

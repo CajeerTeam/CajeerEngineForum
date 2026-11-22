@@ -6,7 +6,7 @@ r=Path(__file__).resolve().parents[1]
 c=sqlite3.connect(':memory:')
 c.executescript('''CREATE TABLE ce_users(id TEXT PRIMARY KEY,email TEXT,status TEXT);
 CREATE TABLE ce_api_tokens(id TEXT PRIMARY KEY,user_id TEXT,name TEXT,revoked_at TEXT,expires_at TEXT);''')
-for v in ['0026_skif4er_oidc','0027_oidc_account_linking']:
+for v in ['0061_engine_skif4er_oidc','0062_engine_oidc_account_linking']:
  c.executescript((r/'migrations/sqlite'/f'{v}.sql').read_text())
 issuer='https://id.skif4er.ru/realms/skif4er';user='12345678-1234-1234-1234-123456789abc';session='session-id'
 c.execute('INSERT INTO ce_users VALUES (?,?,?)',(user,'test@example.test','active'))

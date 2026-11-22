@@ -63,7 +63,9 @@ final readonly class OidcController
     {
         $browser = $request->cookies->get('ce_oidc_tx');
         $target = ForumOidcReturn::verify($request->cookies->get('ce_oidc_return'), $browser);
+        $forumLink = $target === '/forum/account/security';
         $fallback = $target !== null ? '/forum/login' : '/admin/#/login';
+        $failure = $forumLink ? '/forum/account/security?identity_error=' : '/forum/login?sso_error=';
         $response = new RedirectResponse($fallback, 303);
         // Always clear transaction and return cookies, including provider denial,
         // state mismatch and transport faults. Neither cookie is a login session.
@@ -77,17 +79,19 @@ final readonly class OidcController
         if ($this->login === null || !$request->isSecure()) return $clean($response);
         if ($request->query->has('error')) {
             $denied = ($request->query->all()['error'] ?? null) === 'access_denied';
-            return $clean(new RedirectResponse($target !== null ? '/forum/login?sso_error='.($denied ? 'cancelled' : 'provider_error') : $fallback, 303));
+            return $clean(new RedirectResponse($target !== null ? $failure.($denied ? 'cancelled' : 'provider_error') : $fallback, 303));
         }
         $code = $request->query->all()['code'] ?? null;
         $state = $request->query->all()['state'] ?? null;
         if (!is_string($code) || !is_string($state) || !is_string($browser)) {
-            return $clean(new RedirectResponse($target !== null ? '/forum/login?sso_error=invalid_callback' : $fallback, 303));
+            return $clean(new RedirectResponse($target !== null ? $failure.'invalid_callback' : $fallback, 303));
         }
         try {
             $session = $this->login->finish($code, $state, $browser, $request);
             if (($session['linked'] ?? false) === true || ($session['step_up'] ?? false) === true) {
-                $destination = $target !== null ? '/forum/account/security' : '/admin/#/identity';
+                $destination = $forumLink && ($session['linked'] ?? false) === true
+                    ? '/forum/account/security?identity=linked'
+                    : ($target !== null ? '/forum/account/security' : '/admin/#/identity');
             } else {
                 $destination = $target ?? '/admin/';
             }
@@ -99,7 +103,7 @@ final readonly class OidcController
             // Deliberately avoid echoing provider/transport/internal errors to the browser.
             $code = str_contains($error->getMessage(), 'not linked to a local account') ? 'not_linked'
                 : (str_contains($error->getMessage(), 'multi-factor authentication evidence') ? 'mfa_required' : 'login_failed');
-            $response = new RedirectResponse($target !== null ? '/forum/login?sso_error='.$code : $fallback, 303);
+            $response = new RedirectResponse($target !== null ? $failure.($forumLink ? 'link_failed' : $code) : $fallback, 303);
         }
         return $clean($response);
     }
@@ -183,6 +187,12 @@ final readonly class OidcController
         }
         $payload = $request->attributes->get('json');
         if (!is_array($payload) || !is_string($payload['password'] ?? null) || strlen($payload['password']) > 1024) return $this->linkError('validation_failed', 'Введите текущий пароль.', 422);
+        // The only allowed forum continuation is the account security page.
+        // Existing ACP callers omit this field and retain their original redirect.
+        $returnTo = $payload['return_to'] ?? null;
+        if ($returnTo !== null && $returnTo !== '/forum/account/security') {
+            return $this->linkError('invalid_return', 'Недопустимый адрес завершения привязки.', 422);
+        }
         $code = $payload['two_factor_code'] ?? null;
         if (!is_null($code) && (!is_string($code) || strlen($code) > 128)) return $this->linkError('validation_failed', 'Некорректный 2FA код.', 422);
         if (!$this->auth->confirmSensitiveAction($identity, $payload['password'], $code)) return $this->linkError('reauthentication_required', 'Неверный пароль или код 2FA.', 403);
@@ -190,7 +200,14 @@ final readonly class OidcController
             if ($this->login->accountStatus((string)$identity['user_id'])['linked']) return $this->linkError('already_linked', 'SkiF4er ID уже привязан.', 409);
             $tx = $this->login->begin((string)$identity['user_id'], (string)$identity['token_id']);
             $response = new JsonResponse(['data'=>['authorization_url'=>$tx['url']]], 200, ['Cache-Control'=>'no-store']);
-            $response->headers->setCookie(Cookie::create('ce_oidc_tx', $tx['browser'], new \DateTimeImmutable('+5 minutes'), '/auth/oidc', null, true, true, false, Cookie::SAMESITE_LAX));
+            $expiry = new \DateTimeImmutable('+5 minutes');
+            $response->headers->setCookie(Cookie::create('ce_oidc_tx', $tx['browser'], $expiry, '/auth/oidc', null, true, true, false, Cookie::SAMESITE_LAX));
+            if ($returnTo !== null) {
+                $response->headers->setCookie(Cookie::create('ce_oidc_return', ForumOidcReturn::sign($returnTo, $tx['browser']), $expiry, '/auth/oidc', null, true, true, false, Cookie::SAMESITE_LAX));
+            } else {
+                $response->headers->clearCookie('ce_oidc_return', '/auth/oidc', null, true, true, Cookie::SAMESITE_LAX);
+            }
+            $response->headers->set('Referrer-Policy', 'no-referrer');
             return $response;
         } catch (\Throwable) { return $this->linkError('link_failed', 'Не удалось начать безопасную привязку.', 409); }
     }
@@ -214,8 +231,12 @@ final readonly class OidcController
             $response = new JsonResponse(['data'=>['unlinked'=>$unlinked, 'session_revoked'=>$sessionRevoked]], 200, ['Cache-Control'=>'no-store']);
             if ($sessionRevoked) $response->headers->clearCookie('ce_session', '/api/v1', null, true, true, Cookie::SAMESITE_STRICT);
             return $response;
-        } catch (\RuntimeException $e) {
-            return $this->linkError('unlink_denied', $e->getMessage(), 409);
+        } catch (\RuntimeException $error) {
+            if ($error->getMessage() === 'Set up a verified local login before unlinking a provisioned account.') {
+                return $this->linkError('unlink_denied', 'Нельзя отвязать единственный способ входа. Сначала настройте подтверждённый локальный вход.', 409);
+            }
+            // PDO exceptions must not disclose SQL, schema details or internal state.
+            return $this->linkError('unlink_failed', 'Отвязка не завершена. Повторите попытку позже.', 503);
         }
     }
 

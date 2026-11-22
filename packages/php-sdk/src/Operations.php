@@ -6,6 +6,1251 @@ namespace CajeerEngine\ExtensionSdk;
 /** Generated from api/openapi.yaml. */
 final class Operations {
     public const ALL = array (
+  'api_v1_ai_actions' => 
+  array (
+    'method' => 'GET',
+    'path' => '/ai/actions',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => false,
+  ),
+  'api_v1_ai_actions_approve' => 
+  array (
+    'method' => 'POST',
+    'path' => '/ai/actions/{id}/approve',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => true,
+  ),
+  'api_v1_ai_actions_reject' => 
+  array (
+    'method' => 'POST',
+    'path' => '/ai/actions/{id}/reject',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => true,
+  ),
+  'api_v1_ai_actions_show' => 
+  array (
+    'method' => 'GET',
+    'path' => '/ai/actions/{id}',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
+  'api_v1_ai_analytics_explain' => 
+  array (
+    'method' => 'POST',
+    'path' => '/ai/analytics/explain',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => true,
+  ),
+  'api_v1_ai_analytics_insights' => 
+  array (
+    'method' => 'GET',
+    'path' => '/ai/analytics/insights',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'connection_id',
+        'in' => 'query',
+        'required' => true,
+      ),
+      1 => 
+      array (
+        'name' => 'from',
+        'in' => 'query',
+        'required' => false,
+      ),
+      2 => 
+      array (
+        'name' => 'to',
+        'in' => 'query',
+        'required' => false,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
+  'api_v1_ai_automations_delete' => 
+  array (
+    'method' => 'DELETE',
+    'path' => '/ai/automations/{id}',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
+  'api_v1_ai_automations_index' => 
+  array (
+    'method' => 'GET',
+    'path' => '/ai/automations',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => false,
+  ),
+  'api_v1_ai_automations_run' => 
+  array (
+    'method' => 'POST',
+    'path' => '/ai/automations/{id}/run',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => true,
+  ),
+  'api_v1_ai_automations_runs' => 
+  array (
+    'method' => 'GET',
+    'path' => '/ai/automations/{id}/runs',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
+  'api_v1_ai_automations_show' => 
+  array (
+    'method' => 'GET',
+    'path' => '/ai/automations/{id}',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
+  'api_v1_ai_automations_store' => 
+  array (
+    'method' => 'POST',
+    'path' => '/ai/automations',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => true,
+  ),
+  'api_v1_ai_automations_update' => 
+  array (
+    'method' => 'PATCH',
+    'path' => '/ai/automations/{id}',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => true,
+  ),
+  'api_v1_ai_chat' => 
+  array (
+    'method' => 'POST',
+    'path' => '/ai/chat',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => true,
+  ),
+  'api_v1_ai_chat_stream' => 
+  array (
+    'method' => 'POST',
+    'path' => '/ai/chat/stream',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => true,
+  ),
+  'api_v1_ai_conversation_delete' => 
+  array (
+    'method' => 'DELETE',
+    'path' => '/ai/conversations/{id}',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
+  'api_v1_ai_conversation_rename' => 
+  array (
+    'method' => 'PATCH',
+    'path' => '/ai/conversations/{id}',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => true,
+  ),
+  'api_v1_ai_conversation_show' => 
+  array (
+    'method' => 'GET',
+    'path' => '/ai/conversations/{id}',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
+  'api_v1_ai_conversations' => 
+  array (
+    'method' => 'GET',
+    'path' => '/ai/conversations',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => false,
+  ),
+  'api_v1_ai_costs' => 
+  array (
+    'method' => 'GET',
+    'path' => '/ai/costs',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'days',
+        'in' => 'query',
+        'required' => false,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
+  'api_v1_ai_diagnostics_explain' => 
+  array (
+    'method' => 'POST',
+    'path' => '/ai/diagnostics/explain',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => true,
+  ),
+  'api_v1_ai_diagnostics_snapshot' => 
+  array (
+    'method' => 'GET',
+    'path' => '/ai/diagnostics',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'window_minutes',
+        'in' => 'query',
+        'required' => false,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
+  'api_v1_ai_editor_apply' => 
+  array (
+    'method' => 'POST',
+    'path' => '/ai/editor/proposals/{id}/apply',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => true,
+  ),
+  'api_v1_ai_editor_propose' => 
+  array (
+    'method' => 'POST',
+    'path' => '/ai/editor/proposals',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => true,
+  ),
+  'api_v1_ai_migration_explain' => 
+  array (
+    'method' => 'POST',
+    'path' => '/ai/migration/projects/{id}/explain',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => true,
+  ),
+  'api_v1_ai_migration_remediation_apply' => 
+  array (
+    'method' => 'POST',
+    'path' => '/ai/migration/projects/{id}/remediation/{proposal}/apply',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+      1 => 
+      array (
+        'name' => 'proposal',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => true,
+  ),
+  'api_v1_ai_migration_remediation_options' => 
+  array (
+    'method' => 'GET',
+    'path' => '/ai/migration/projects/{id}/remediation',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+      1 => 
+      array (
+        'name' => 'offset',
+        'in' => 'query',
+        'required' => false,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
+  'api_v1_ai_migration_remediation_prepare' => 
+  array (
+    'method' => 'POST',
+    'path' => '/ai/migration/projects/{id}/remediation',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => true,
+  ),
+  'api_v1_ai_migration_remediation_reject' => 
+  array (
+    'method' => 'POST',
+    'path' => '/ai/migration/projects/{id}/remediation/{proposal}/reject',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+      1 => 
+      array (
+        'name' => 'proposal',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => true,
+  ),
+  'api_v1_ai_migration_remediation_rollback' => 
+  array (
+    'method' => 'POST',
+    'path' => '/ai/migration/projects/{id}/remediation/{proposal}/rollback',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+      1 => 
+      array (
+        'name' => 'proposal',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => true,
+  ),
+  'api_v1_ai_migration_report' => 
+  array (
+    'method' => 'GET',
+    'path' => '/ai/migration/projects/{id}/report',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
+  'api_v1_ai_seo_audit' => 
+  array (
+    'method' => 'GET',
+    'path' => '/ai/seo/audit',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'type',
+        'in' => 'query',
+        'required' => true,
+      ),
+      1 => 
+      array (
+        'name' => 'entry_id',
+        'in' => 'query',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
+  'api_v1_ai_seo_batch' => 
+  array (
+    'method' => 'GET',
+    'path' => '/ai/seo/batch',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'type',
+        'in' => 'query',
+        'required' => true,
+      ),
+      1 => 
+      array (
+        'name' => 'limit',
+        'in' => 'query',
+        'required' => false,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
+  'api_v1_ai_seo_insights' => 
+  array (
+    'method' => 'GET',
+    'path' => '/ai/seo/insights',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'connection_id',
+        'in' => 'query',
+        'required' => true,
+      ),
+      1 => 
+      array (
+        'name' => 'from',
+        'in' => 'query',
+        'required' => false,
+      ),
+      2 => 
+      array (
+        'name' => 'to',
+        'in' => 'query',
+        'required' => false,
+      ),
+      3 => 
+      array (
+        'name' => 'limit',
+        'in' => 'query',
+        'required' => false,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
+  'api_v1_ai_seo_insights_propose' => 
+  array (
+    'method' => 'POST',
+    'path' => '/ai/seo/insights/proposals',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => true,
+  ),
+  'api_v1_ai_seo_propose' => 
+  array (
+    'method' => 'POST',
+    'path' => '/ai/seo/proposals',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => true,
+  ),
+  'api_v1_ai_settings' => 
+  array (
+    'method' => 'PUT',
+    'path' => '/ai/settings',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => true,
+  ),
+  'api_v1_ai_status' => 
+  array (
+    'method' => 'GET',
+    'path' => '/ai/status',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => false,
+  ),
+  'api_v1_ai_tools' => 
+  array (
+    'method' => 'GET',
+    'path' => '/ai/tools',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => false,
+  ),
+  'api_v1_ai_translation_apply' => 
+  array (
+    'method' => 'POST',
+    'path' => '/ai/translations/proposals/{id}/apply',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => true,
+  ),
+  'api_v1_ai_translation_batch_create' => 
+  array (
+    'method' => 'POST',
+    'path' => '/ai/translations/batches',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => true,
+  ),
+  'api_v1_ai_translation_batch_show' => 
+  array (
+    'method' => 'GET',
+    'path' => '/ai/translations/batches/{id}',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
+  'api_v1_ai_translation_glossary' => 
+  array (
+    'method' => 'GET',
+    'path' => '/ai/translations/glossary',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'type',
+        'in' => 'query',
+        'required' => true,
+      ),
+      1 => 
+      array (
+        'name' => 'source_locale',
+        'in' => 'query',
+        'required' => true,
+      ),
+      2 => 
+      array (
+        'name' => 'target_locale',
+        'in' => 'query',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
+  'api_v1_ai_translation_glossary_delete' => 
+  array (
+    'method' => 'DELETE',
+    'path' => '/ai/translations/glossary/{id}',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
+  'api_v1_ai_translation_glossary_save' => 
+  array (
+    'method' => 'POST',
+    'path' => '/ai/translations/glossary',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => true,
+  ),
+  'api_v1_ai_translation_overview' => 
+  array (
+    'method' => 'GET',
+    'path' => '/ai/translations/overview',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'type',
+        'in' => 'query',
+        'required' => true,
+      ),
+      1 => 
+      array (
+        'name' => 'entry_id',
+        'in' => 'query',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
+  'api_v1_ai_translation_proposal_show' => 
+  array (
+    'method' => 'GET',
+    'path' => '/ai/translations/proposals/{id}',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
+  'api_v1_ai_translation_propose' => 
+  array (
+    'method' => 'POST',
+    'path' => '/ai/translations/proposals',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => true,
+  ),
+  'api_v1_identity_admin_link' => 
+  array (
+    'method' => 'POST',
+    'path' => '/identity/admin/users/{id}/link',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => true,
+  ),
+  'api_v1_identity_admin_revoke_all' => 
+  array (
+    'method' => 'POST',
+    'path' => '/identity/admin/users/{id}/sessions/revoke-all',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => true,
+  ),
+  'api_v1_identity_admin_revoke_session' => 
+  array (
+    'method' => 'DELETE',
+    'path' => '/identity/admin/users/{id}/sessions/{session}',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+      1 => 
+      array (
+        'name' => 'session',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
+  'api_v1_identity_admin_sessions' => 
+  array (
+    'method' => 'GET',
+    'path' => '/identity/admin/users/{id}/sessions',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
+  'api_v1_identity_admin_unlink' => 
+  array (
+    'method' => 'DELETE',
+    'path' => '/identity/admin/users/{id}/link',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => true,
+  ),
+  'api_v1_identity_admin_users' => 
+  array (
+    'method' => 'GET',
+    'path' => '/identity/admin/users',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'q',
+        'in' => 'query',
+        'required' => false,
+      ),
+      1 => 
+      array (
+        'name' => 'linked',
+        'in' => 'query',
+        'required' => false,
+      ),
+      2 => 
+      array (
+        'name' => 'limit',
+        'in' => 'query',
+        'required' => false,
+      ),
+      3 => 
+      array (
+        'name' => 'offset',
+        'in' => 'query',
+        'required' => false,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
+  'api_v1_knowledge_categories' => 
+  array (
+    'method' => 'GET',
+    'path' => '/knowledge/categories',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => false,
+  ),
+  'api_v1_knowledge_categories_create' => 
+  array (
+    'method' => 'POST',
+    'path' => '/knowledge/categories',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => true,
+  ),
+  'api_v1_knowledge_categories_delete' => 
+  array (
+    'method' => 'DELETE',
+    'path' => '/knowledge/categories/{id}',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
+  'api_v1_knowledge_categories_update' => 
+  array (
+    'method' => 'PUT',
+    'path' => '/knowledge/categories/{id}',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => true,
+  ),
+  'api_v1_knowledge_chat_ask' => 
+  array (
+    'method' => 'POST',
+    'path' => '/knowledge/chat/ask',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => true,
+  ),
+  'api_v1_knowledge_chat_conversations' => 
+  array (
+    'method' => 'GET',
+    'path' => '/knowledge/chat/conversations',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => false,
+  ),
+  'api_v1_knowledge_chat_delete' => 
+  array (
+    'method' => 'DELETE',
+    'path' => '/knowledge/chat/conversations/{id}',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
+  'api_v1_knowledge_chat_feedback' => 
+  array (
+    'method' => 'POST',
+    'path' => '/knowledge/chat/messages/{id}/feedback',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => true,
+  ),
+  'api_v1_knowledge_chat_show' => 
+  array (
+    'method' => 'GET',
+    'path' => '/knowledge/chat/conversations/{id}',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
+  'api_v1_knowledge_documents' => 
+  array (
+    'method' => 'GET',
+    'path' => '/knowledge/documents',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'limit',
+        'in' => 'query',
+        'required' => false,
+      ),
+      1 => 
+      array (
+        'name' => 'offset',
+        'in' => 'query',
+        'required' => false,
+      ),
+      2 => 
+      array (
+        'name' => 'category_id',
+        'in' => 'query',
+        'required' => false,
+      ),
+      3 => 
+      array (
+        'name' => 'q',
+        'in' => 'query',
+        'required' => false,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
+  'api_v1_knowledge_documents_create' => 
+  array (
+    'method' => 'POST',
+    'path' => '/knowledge/documents',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => true,
+  ),
+  'api_v1_knowledge_documents_delete' => 
+  array (
+    'method' => 'DELETE',
+    'path' => '/knowledge/documents/{id}',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => true,
+  ),
+  'api_v1_knowledge_documents_show' => 
+  array (
+    'method' => 'GET',
+    'path' => '/knowledge/documents/{id}',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
+  'api_v1_knowledge_documents_update' => 
+  array (
+    'method' => 'PUT',
+    'path' => '/knowledge/documents/{id}',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => true,
+  ),
+  'api_v1_knowledge_import' => 
+  array (
+    'method' => 'POST',
+    'path' => '/knowledge/import',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => true,
+  ),
+  'api_v1_knowledge_reindex' => 
+  array (
+    'method' => 'POST',
+    'path' => '/knowledge/reindex',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => true,
+  ),
+  'api_v1_knowledge_search' => 
+  array (
+    'method' => 'GET',
+    'path' => '/knowledge/search',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'q',
+        'in' => 'query',
+        'required' => true,
+      ),
+      1 => 
+      array (
+        'name' => 'visibility',
+        'in' => 'query',
+        'required' => false,
+      ),
+      2 => 
+      array (
+        'name' => 'locale',
+        'in' => 'query',
+        'required' => false,
+      ),
+      3 => 
+      array (
+        'name' => 'limit',
+        'in' => 'query',
+        'required' => false,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
+  'api_v1_knowledge_sync' => 
+  array (
+    'method' => 'POST',
+    'path' => '/knowledge/sync-cms',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => true,
+  ),
+  'api_v1_public_support_config' => 
+  array (
+    'method' => 'GET',
+    'path' => '/public/support/config',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => false,
+  ),
+  'api_v1_public_support_handoff' => 
+  array (
+    'method' => 'POST',
+    'path' => '/public/support/tickets/{id}/handoff',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => true,
+  ),
+  'api_v1_public_support_messages_create' => 
+  array (
+    'method' => 'POST',
+    'path' => '/public/support/tickets/{id}/messages',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => true,
+  ),
+  'api_v1_public_support_tickets_create' => 
+  array (
+    'method' => 'POST',
+    'path' => '/public/support/tickets',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => true,
+  ),
+  'api_v1_public_support_tickets_show' => 
+  array (
+    'method' => 'GET',
+    'path' => '/public/support/tickets/{id}',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
+  'api_v1_support_ai_draft' => 
+  array (
+    'method' => 'POST',
+    'path' => '/support/tickets/{id}/ai-draft',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => true,
+  ),
+  'api_v1_support_messages_create' => 
+  array (
+    'method' => 'POST',
+    'path' => '/support/tickets/{id}/messages',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => true,
+  ),
+  'api_v1_support_tickets' => 
+  array (
+    'method' => 'GET',
+    'path' => '/support/tickets',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => false,
+  ),
+  'api_v1_support_tickets_show' => 
+  array (
+    'method' => 'GET',
+    'path' => '/support/tickets/{id}',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
+  'api_v1_support_tickets_update' => 
+  array (
+    'method' => 'PATCH',
+    'path' => '/support/tickets/{id}',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => true,
+  ),
+  'delete_AnalyticsEventJournal' => 
+  array (
+    'method' => 'DELETE',
+    'path' => '/tracking/events/journal',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => false,
+  ),
+  'delete_AnalyticsReportDelete' => 
+  array (
+    'method' => 'DELETE',
+    'path' => '/analytics/reports/{id}',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => true,
+  ),
+  'delete_AnalyticsServerGrant' => 
+  array (
+    'method' => 'DELETE',
+    'path' => '/tracking/events/server/grants/{id}',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
   'delete_ApiTokensRevoke' => 
   array (
     'method' => 'DELETE',
@@ -228,6 +1473,21 @@ final class Operations {
     ),
     'bodyRequired' => false,
   ),
+  'delete_IntegrationsDelete' => 
+  array (
+    'method' => 'DELETE',
+    'path' => '/integrations/{id}',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => true,
+  ),
   'delete_MediaDelete' => 
   array (
     'method' => 'DELETE',
@@ -242,6 +1502,21 @@ final class Operations {
       ),
     ),
     'bodyRequired' => false,
+  ),
+  'delete_MigrationProjectDelete' => 
+  array (
+    'method' => 'DELETE',
+    'path' => '/migration/projects/{id}',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => true,
   ),
   'delete_UsersDisable' => 
   array (
@@ -333,6 +1608,75 @@ final class Operations {
     ),
     'bodyRequired' => false,
   ),
+  'get_AnalyticsEventConfig' => 
+  array (
+    'method' => 'GET',
+    'path' => '/tracking/events',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => false,
+  ),
+  'get_AnalyticsEventJournal' => 
+  array (
+    'method' => 'GET',
+    'path' => '/tracking/events/journal',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => false,
+  ),
+  'get_AnalyticsReportData' => 
+  array (
+    'method' => 'GET',
+    'path' => '/analytics/reports/{id}/data',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+      1 => 
+      array (
+        'name' => 'from',
+        'in' => 'query',
+        'required' => false,
+      ),
+      2 => 
+      array (
+        'name' => 'to',
+        'in' => 'query',
+        'required' => false,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
+  'get_AnalyticsReportIndex' => 
+  array (
+    'method' => 'GET',
+    'path' => '/analytics/reports',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => false,
+  ),
+  'get_AnalyticsServerStatus' => 
+  array (
+    'method' => 'GET',
+    'path' => '/tracking/events/server/grants/{id}',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
   'get_ApiTokensIndex' => 
   array (
     'method' => 'GET',
@@ -342,10 +1686,28 @@ final class Operations {
     ),
     'bodyRequired' => false,
   ),
+  'get_AuthAssuranceStatus' => 
+  array (
+    'method' => 'GET',
+    'path' => '/auth/assurance',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => false,
+  ),
   'get_AuthMe' => 
   array (
     'method' => 'GET',
     'path' => '/auth/me',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => false,
+  ),
+  'get_AuthOidcStatus' => 
+  array (
+    'method' => 'GET',
+    'path' => '/auth/oidc/status',
     'parameters' => 
     array (
     ),
@@ -448,6 +1810,15 @@ final class Operations {
   array (
     'method' => 'GET',
     'path' => '/cms/theme',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => false,
+  ),
+  'get_ConsentPolicy' => 
+  array (
+    'method' => 'GET',
+    'path' => '/privacy/consent',
     'parameters' => 
     array (
     ),
@@ -1800,6 +3171,15 @@ final class Operations {
     ),
     'bodyRequired' => false,
   ),
+  'get_IdentityAccount' => 
+  array (
+    'method' => 'GET',
+    'path' => '/identity/account',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => false,
+  ),
   'get_ImportExportDownload' => 
   array (
     'method' => 'GET',
@@ -1837,6 +3217,15 @@ final class Operations {
   array (
     'method' => 'GET',
     'path' => '/installer/requirements',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => false,
+  ),
+  'get_IntegrationsIndex' => 
+  array (
+    'method' => 'GET',
+    'path' => '/integrations',
     'parameters' => 
     array (
     ),
@@ -2019,6 +3408,48 @@ final class Operations {
         'in' => 'query',
         'required' => true,
       ),
+    ),
+    'bodyRequired' => false,
+  ),
+  'get_MigrationCatalog' => 
+  array (
+    'method' => 'GET',
+    'path' => '/migration/catalog',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => false,
+  ),
+  'get_MigrationProjectIndex' => 
+  array (
+    'method' => 'GET',
+    'path' => '/migration/projects',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => false,
+  ),
+  'get_MigrationProjectShow' => 
+  array (
+    'method' => 'GET',
+    'path' => '/migration/projects/{id}',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
+  'get_PublicConsent' => 
+  array (
+    'method' => 'GET',
+    'path' => '/public/consent',
+    'parameters' => 
+    array (
     ),
     'bodyRequired' => false,
   ),
@@ -2277,6 +3708,15 @@ final class Operations {
     ),
     'bodyRequired' => false,
   ),
+  'get_TrackingConfig' => 
+  array (
+    'method' => 'GET',
+    'path' => '/tracking/counters',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => false,
+  ),
   'get_UpdatesDiagnostics' => 
   array (
     'method' => 'GET',
@@ -2286,10 +3726,34 @@ final class Operations {
     ),
     'bodyRequired' => false,
   ),
+  'get_UpdatesHistory' => 
+  array (
+    'method' => 'GET',
+    'path' => '/updates/history',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'before',
+        'in' => 'query',
+        'required' => false,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
   'get_UpdatesMaintenance' => 
   array (
     'method' => 'GET',
     'path' => '/updates/maintenance',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => false,
+  ),
+  'get_UpdatesNotifications' => 
+  array (
+    'method' => 'GET',
+    'path' => '/updates/notifications',
     'parameters' => 
     array (
     ),
@@ -2571,6 +4035,21 @@ final class Operations {
     ),
     'bodyRequired' => true,
   ),
+  'patch_IntegrationsUpdate' => 
+  array (
+    'method' => 'PATCH',
+    'path' => '/integrations/{id}',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => true,
+  ),
   'patch_Update' => 
   array (
     'method' => 'PATCH',
@@ -2616,10 +4095,94 @@ final class Operations {
     ),
     'bodyRequired' => false,
   ),
+  'post_AnalyticsEventDiagnostic' => 
+  array (
+    'method' => 'POST',
+    'path' => '/public/analytics/events',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => true,
+  ),
+  'post_AnalyticsReportCreate' => 
+  array (
+    'method' => 'POST',
+    'path' => '/analytics/reports',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => true,
+  ),
+  'post_AnalyticsReportSync' => 
+  array (
+    'method' => 'POST',
+    'path' => '/analytics/reports/{id}/sync',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => true,
+  ),
+  'post_AnalyticsServerEvent' => 
+  array (
+    'method' => 'POST',
+    'path' => '/tracking/events/server',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => true,
+  ),
+  'post_AnalyticsServerGrant' => 
+  array (
+    'method' => 'POST',
+    'path' => '/tracking/events/server/grants',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => true,
+  ),
+  'post_AnalyticsWebmasterAction' => 
+  array (
+    'method' => 'POST',
+    'path' => '/analytics/reports/{id}/webmaster',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => true,
+  ),
   'post_ApiTokensStore' => 
   array (
     'method' => 'POST',
     'path' => '/api-tokens',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => false,
+  ),
+  'post_ApiV1AuthSessionsRevokeOthers' => 
+  array (
+    'method' => 'POST',
+    'path' => '/auth/sessions/revoke-others',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => false,
+  ),
+  'post_ApiV1AuthSessionsRotate' => 
+  array (
+    'method' => 'POST',
+    'path' => '/auth/sessions/rotate',
     'parameters' => 
     array (
     ),
@@ -2647,6 +4210,15 @@ final class Operations {
   array (
     'method' => 'POST',
     'path' => '/auth/2fa/enable',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => true,
+  ),
+  'post_AuthAssuranceConfirm' => 
+  array (
+    'method' => 'POST',
+    'path' => '/auth/assurance/confirm',
     'parameters' => 
     array (
     ),
@@ -2695,6 +4267,15 @@ final class Operations {
   array (
     'method' => 'POST',
     'path' => '/auth/logout',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => false,
+  ),
+  'post_AuthOidcGlobalLogout' => 
+  array (
+    'method' => 'POST',
+    'path' => '/auth/oidc/logout',
     'parameters' => 
     array (
     ),
@@ -3567,6 +5148,33 @@ final class Operations {
     ),
     'bodyRequired' => true,
   ),
+  'post_IdentityLinkStart' => 
+  array (
+    'method' => 'POST',
+    'path' => '/identity/link/start',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => true,
+  ),
+  'post_IdentityStepUpStart' => 
+  array (
+    'method' => 'POST',
+    'path' => '/identity/step-up/start',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => false,
+  ),
+  'post_IdentityUnlink' => 
+  array (
+    'method' => 'POST',
+    'path' => '/identity/unlink',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => true,
+  ),
   'post_ImportExportExport' => 
   array (
     'method' => 'POST',
@@ -3612,12 +5220,120 @@ final class Operations {
     ),
     'bodyRequired' => false,
   ),
+  'post_IntegrationsSend' => 
+  array (
+    'method' => 'POST',
+    'path' => '/integrations/{id}/send',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => true,
+  ),
+  'post_IntegrationsStore' => 
+  array (
+    'method' => 'POST',
+    'path' => '/integrations',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => true,
+  ),
+  'post_IntegrationsTest' => 
+  array (
+    'method' => 'POST',
+    'path' => '/integrations/{id}/test',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => true,
+  ),
   'post_MediaStore' => 
   array (
     'method' => 'POST',
     'path' => '/media',
     'parameters' => 
     array (
+    ),
+    'bodyRequired' => true,
+  ),
+  'post_MigrationProjectApprove' => 
+  array (
+    'method' => 'POST',
+    'path' => '/migration/projects/{id}/approve',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => true,
+  ),
+  'post_MigrationProjectCreate' => 
+  array (
+    'method' => 'POST',
+    'path' => '/migration/projects',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => true,
+  ),
+  'post_MigrationProjectPlan' => 
+  array (
+    'method' => 'POST',
+    'path' => '/migration/projects/{id}/plan',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => true,
+  ),
+  'post_MigrationProjectScan' => 
+  array (
+    'method' => 'POST',
+    'path' => '/migration/projects/{id}/scan',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => true,
+  ),
+  'post_MigrationProjectUpload' => 
+  array (
+    'method' => 'POST',
+    'path' => '/migration/projects/{id}/wxr',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
     ),
     'bodyRequired' => true,
   ),
@@ -3756,6 +5472,15 @@ final class Operations {
     ),
     'bodyRequired' => true,
   ),
+  'post_UpdatesBackup' => 
+  array (
+    'method' => 'POST',
+    'path' => '/updates/backup',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => true,
+  ),
   'post_UpdatesCheck' => 
   array (
     'method' => 'POST',
@@ -3764,6 +5489,15 @@ final class Operations {
     array (
     ),
     'bodyRequired' => false,
+  ),
+  'post_UpdatesDownload' => 
+  array (
+    'method' => 'POST',
+    'path' => '/updates/download',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => true,
   ),
   'post_UpdatesMaintenanceOff' => 
   array (
@@ -3778,6 +5512,15 @@ final class Operations {
   array (
     'method' => 'POST',
     'path' => '/updates/maintenance/on',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => false,
+  ),
+  'post_UpdatesNotificationsRead' => 
+  array (
+    'method' => 'POST',
+    'path' => '/updates/notifications/read',
     'parameters' => 
     array (
     ),
@@ -3858,6 +5601,30 @@ final class Operations {
     ),
     'bodyRequired' => false,
   ),
+  'put_AnalyticsEventConfig' => 
+  array (
+    'method' => 'PUT',
+    'path' => '/tracking/events',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => true,
+  ),
+  'put_AnalyticsReportUpdate' => 
+  array (
+    'method' => 'PUT',
+    'path' => '/analytics/reports/{id}',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => true,
+  ),
   'put_CmsNavigationMenu' => 
   array (
     'method' => 'PUT',
@@ -3872,6 +5639,15 @@ final class Operations {
       ),
     ),
     'bodyRequired' => false,
+  ),
+  'put_ConsentPolicy' => 
+  array (
+    'method' => 'PUT',
+    'path' => '/privacy/consent',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => true,
   ),
   'put_ContentTypesUpdate' => 
   array (
@@ -4234,6 +6010,60 @@ final class Operations {
   array (
     'method' => 'PUT',
     'path' => '/forum/watch-settings',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => true,
+  ),
+  'put_IntegrationsSecret' => 
+  array (
+    'method' => 'PUT',
+    'path' => '/integrations/{id}/secret',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => true,
+  ),
+  'put_MigrationProjectMapping' => 
+  array (
+    'method' => 'PUT',
+    'path' => '/migration/projects/{id}/mapping',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => true,
+  ),
+  'put_MigrationProjectUpdate' => 
+  array (
+    'method' => 'PUT',
+    'path' => '/migration/projects/{id}',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => true,
+  ),
+  'put_TrackingConfig' => 
+  array (
+    'method' => 'PUT',
+    'path' => '/tracking/counters',
     'parameters' => 
     array (
     ),

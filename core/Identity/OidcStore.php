@@ -86,7 +86,7 @@ final readonly class OidcStore
                 WHERE t.id = :id AND t.user_id = :user AND t.name = 'admin-session'
                   AND t.revoked_at IS NULL AND (t.expires_at IS NULL OR t.expires_at > CURRENT_TIMESTAMP)
                   AND s.revoked_at IS NULL AND (s.expires_at IS NULL OR s.expires_at > CURRENT_TIMESTAMP)
-                  AND s.last_seen_at >= :cutoff");
+                  AND s.last_seen_at >= :cutoff" . ($this->database->driver() === 'sqlite' ? '' : ' FOR UPDATE'));
             $idle = max(5, (int)(getenv('SESSION_IDLE_MINUTES') ?: 720));
             $token->execute(['id'=>$sessionId, 'user'=>$userId, 'cutoff'=>gmdate('Y-m-d H:i:s', time() - $idle * 60)]);
             if ($token->fetchColumn() === false) throw new \RuntimeException('Local linking session expired or revoked.');
@@ -101,7 +101,13 @@ final readonly class OidcStore
         $stmt->execute(['issuer'=>$issuer, 'user'=>$userId]);
         $row = $stmt->fetch(\PDO::FETCH_ASSOC);
         return $row === false ? ['linked'=>false, 'provisioned'=>false, 'created_at'=>null] :
-            ['linked'=>true, 'provisioned'=>(bool)$row['provisioned'], 'created_at'=>(string)$row['created_at']];
+            ['linked'=>true, 'provisioned'=>self::databaseBoolean($row['provisioned']), 'created_at'=>(string)$row['created_at']];
+    }
+
+    /** PDO PostgreSQL may return booleans as 't'/'f'; casting nonempty 'f' to bool is unsafe. */
+    private static function databaseBoolean(mixed $value): bool
+    {
+        return in_array($value, [true, 1, '1', 't', 'true'], true);
     }
 
     /** Never allow an OIDC-only account to unlink its last functional login method. */
@@ -112,7 +118,7 @@ final readonly class OidcStore
             $stmt->execute(['issuer'=>$issuer, 'user'=>$userId]);
             $row = $stmt->fetch(\PDO::FETCH_ASSOC);
             if ($row === false) return false;
-            if ((bool)$row['provisioned']) throw new \RuntimeException('Set up a verified local login before unlinking a provisioned account.');
+            if (self::databaseBoolean($row['provisioned'])) throw new \RuntimeException('Set up a verified local login before unlinking a provisioned account.');
             $delete = $pdo->prepare('DELETE FROM ce_oidc_identities WHERE issuer = :issuer AND user_id = :user');
             $delete->execute(['issuer'=>$issuer, 'user'=>$userId]);
             if ($delete->rowCount() !== 1) throw new \RuntimeException('Identity changed during unlink.');

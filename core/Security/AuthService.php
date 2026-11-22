@@ -311,7 +311,9 @@ final readonly class AuthService
     {
         if (!($identity['session'] ?? false) || empty($identity['user']['email']) || $password === '') { return false; }
         $user = $this->users->findByEmailForAuth((string) $identity['user']['email']);
-        if ($user === null || !$this->passwords->verify($password, (string) $user['password_hash'])) { return false; }
+        if ($user === null || ($user['status'] ?? '') !== 'active'
+            || (string)($user['id'] ?? '') !== (string)($identity['user_id'] ?? '')
+            || !$this->passwords->verify($password, (string) $user['password_hash'])) { return false; }
         return !filter_var($user['two_factor_enabled'] ?? false, FILTER_VALIDATE_BOOLEAN)
             || ($code !== null && $this->verifyTwoFactorCode((string) $user['id'], (string) $user['two_factor_secret'], $code));
     }

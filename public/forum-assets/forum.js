@@ -331,8 +331,8 @@ async function auth(register=false){
  add(p,authForm,...(register||open?[link(register?'Уже есть аккаунт? Войти':'Создать аккаунт',register?'/forum/login':'/forum/register')]:[]));add(app,p);
  if(!register){
   add(app,link('Забыли пароль?','/forum/forgot-password'),link('Повторить подтверждение email','/forum/resend-email'));
-  const errors={cancelled:'Вход через SkiF4er ID отменён.',provider_error:'SkiF4er ID отклонил авторизацию.',invalid_callback:'Недействительный ответ авторизации. Попробуйте ещё раз.',not_linked:'Этот SkiF4er ID пока не привязан к аккаунту форума. Войдите локально и обратитесь к администратору для привязки.',mfa_required:'Для этого аккаунта необходима многофакторная авторизация в SkiF4er ID.',login_failed:'Не удалось выполнить вход через SkiF4er ID. Проверьте аккаунт или повторите попытку.'};
-  const error=new URLSearchParams(location.search).get('sso_error');if(Object.hasOwn(errors,error))say(errors[error],true);
+  const errors={cancelled:'Вход через SkiF4er ID отменён.',provider_error:'SkiF4er ID отклонил авторизацию.',invalid_callback:'Недействительный ответ авторизации. Попробуйте ещё раз.',not_linked:'Этот SkiF4er ID пока не привязан к аккаунту форума. Войдите локально, затем откройте «Настройки аккаунта → Безопасность» для привязки.',mfa_required:'Для этого аккаунта необходима многофакторная авторизация в SkiF4er ID.',login_failed:'Не удалось выполнить вход через SkiF4er ID. Проверьте аккаунт или повторите попытку.'};
+  const error=new URLSearchParams(location.search).get('sso_error');if(Object.hasOwn(errors,error))say(errors[error],true);if(new URLSearchParams(location.search).get('identity')==='unlinked')say('SkiF4er ID успешно отвязан. Внешние сессии завершены.');
   try{const status=await api('/auth/oidc/status');if(status.enabled===true){const sso=panel();add(sso,node('h3','Внешняя авторизация'),link('Войти через SkiF4er ID','/auth/oidc/start?return_to='+encodeURIComponent(returnTo),'button secondary'),node('p','Вход выполняется на стороне SkiF4er ID. Для существующего аккаунта требуется предварительная привязка.','meta'));add(app,sso)}}catch{/* Local login remains available when OIDC is disabled or unreachable. */}
  }
 }
@@ -392,7 +392,71 @@ async function spamAdmin(){const p=panel();add(p,node('h3','Антиспам: п
 async function manage(){heading('Управление форумом');if(!canModerate()){add(app,node('p','Требуются права модератора.'));return}add(app,link('Центр модерации','/forum/moderation','button'),link('Корзина','/forum/recycle-bin','button secondary'),link('Апелляции на санкции','/forum/moderation/appeals','button secondary'));const d=await f('');if(isAdmin())add(app,link('Forum ACP','/admin/#/forum','button secondary'),link('Жалобы на личные сообщения','/forum/conversation-reports','button secondary'),reorderTree(d),await groupAdmin(),await profileFieldAdmin(),await achievementAdmin(),await mediaAdmin(),await spamAdmin(),nodeAdmin(d));add(app,node('h2','Открытые жалобы'));const reports=await f('/reports?page='+page);for(const r of reports){const b=panel();add(b,node('p',r.reason),node('div',r.body,'body'),link('Открыть тему',`/forum/threads/${r.thread_id}`),link('Рассмотреть в центре модерации','/forum/moderation?kind=report'));add(app,b)}if(!reports.length)add(app,node('p','Нет открытых жалоб.'));add(app,paging(reports.length))}
 function mailPage(reset){heading(reset?'Восстановление пароля':'Повторное подтверждение email');add(app,form([['email','Email','email']],'Отправить письмо',async data=>{await api(reset?'/auth/password/forgot':'/auth/email/resend','POST',data);say('Если аккаунт подходит для операции, письмо будет отправлено. Повторная отправка доступна через минуту.')}),link('Войти','/forum/login'))}
 function tokenPage(reset){heading(reset?'Новый пароль':'Подтверждение email');const token=new URLSearchParams(location.hash.slice(1)).get('token')||'';if(token)history.replaceState(null,'',location.pathname);if(!/^[a-f0-9]{64}$/.test(token)){add(app,node('p','Недействительная ссылка. Запросите новое письмо.'),link('Запросить письмо',reset?'/forum/forgot-password':'/forum/resend-email'));return}add(app,form([['password',reset?'Новый пароль':'Пароль, указанный при регистрации','password']],reset?'Сохранить пароль':'Подтвердить',async data=>{await api(reset?'/auth/password/reset':'/auth/email/verify','POST',{token,password:data.password});app.replaceChildren();heading(reset?'Пароль изменён':'Email подтверждён');add(app,link('Войти','/forum/login'))}))}
-async function account(){heading('Настройки аккаунта');if(!me?.session){add(app,link('Войти','/forum/login'));return}add(app,link('Профиль и персональные настройки','/forum/account/profile','button secondary'),link('Приватность и данные','/forum/account/privacy','button secondary'));const p=panel();add(p,node('h2','Безопасность'),node('p','Email: '+me.user.email),node('p',me.user.two_factor_enabled?'2FA включена':'2FA выключена'));if(me.user.two_factor_enabled){add(p,form([['password','Текущий пароль','password'],['two_factor_code','Новый 2FA-код или код восстановления']],'Отключить 2FA',async data=>{await api('/auth/2fa/disable','POST',data);go('/forum/login')}))}else{add(p,form([['password','Текущий пароль','password']],'Настроить 2FA',async data=>{const setup=await api('/auth/2fa/enable','POST',data);p.replaceChildren(node('h2','Подключите приложение-аутентификатор'),node('p','Введите секрет вручную в приложении TOTP. SHA1, 6 цифр, 30 секунд.'),node('pre',setup.secret),node('p','Подтвердите код в течение 10 минут.'),form([['password','Текущий пароль','password'],['two_factor_code','6-значный код приложения']],'Подтвердить 2FA',async input=>{const result=await api('/auth/2fa/confirm','POST',{...input,setup_token:setup.setup_token});app.replaceChildren();heading('2FA включена');add(app,node('p','Сохраните коды восстановления в безопасном месте. Каждый код используется один раз. Повторный показ невозможен.'),node('pre',result.recovery_codes.join('\n')),link('Войти заново','/forum/login'));me=null}))}))}add(app,p);const q=panel();add(q,node('h2','Активные сессии'));const sessions=await api('/auth/sessions');for(const session of sessions){add(q,add(node('div',undefined,'entry'),node('p',(session.current?'Текущая сессия · ':'')+'Создана: '+session.created_at+' · Последняя активность: '+(session.last_used_at||'—')+' · Истекает: '+session.expires_at),button('Завершить',async()=>{await api('/auth/sessions/'+session.id,'DELETE');if(session.current)go('/forum/login');else{app.replaceChildren();await account()}})))}add(q,form([['password','Текущий пароль','password'],...(me.user.two_factor_enabled?[['two_factor_code','Новый 2FA-код или код восстановления']]:[])],'Завершить все сессии',async data=>{await api('/auth/sessions/revoke-all','POST',data);go('/forum/login')}));add(app,q)}
+/** Account-linking is a real credential-bound OIDC redirect, never a client-side mapping. */
+function skif4erAuthorizeUrl(value){
+ if(typeof value!=='string'||value.length>4096)throw Error('Сервер вернул некорректный адрес SkiF4er ID.');
+ let url;try{url=new URL(value)}catch{throw Error('Некорректный адрес SkiF4er ID.')}
+ if(url.origin!=='https://id.skif4er.ru'||url.pathname!=='/realms/skif4er/protocol/openid-connect/auth'||url.username||url.password||!url.searchParams.has('state')||!url.searchParams.has('code_challenge')||url.searchParams.get('code_challenge_method')!=='S256')throw Error('Недопустимый адрес авторизации SkiF4er ID.');
+ return url.href;
+}
+async function accountLinkingPanel(){
+ const p=panel();add(p,node('h2','SkiF4er ID'),node('p','Привязка позволяет входить на форум через SkiF4er ID без переноса сообщений, ролей и настроек.','meta'));
+ let status;try{status=await api('/identity/account')}catch(e){add(p,node('p','Не удалось загрузить состояние привязки: '+e.message,'meta'));return p}
+ if(!status.enabled){add(p,node('p','Внешняя авторизация SkiF4er ID на этом сервере не настроена.','meta'));return p}
+ const qs=new URLSearchParams(location.search),success=qs.get('identity'),failure=qs.get('identity_error');
+ if(success==='linked'&&status.linked)add(p,node('p','SkiF4er ID успешно привязан. Теперь можно использовать внешний вход.','notice'));
+ const errors={cancelled:'Привязка отменена в SkiF4er ID.',provider_error:'Провайдер не завершил подтверждение.',invalid_callback:'Истекла или недействительна сессия привязки.',link_failed:'Не удалось привязать SkiF4er ID. Аккаунт может быть уже привязан к другому пользователю, либо локальная сессия истекла.'};
+ if(failure&&Object.hasOwn(errors,failure))add(p,node('p',errors[failure],'notice error'));
+ add(p,node('p',status.linked?'Внешний аккаунт привязан.':'Внешний аккаунт не привязан.','strong'));
+ if(status.created_at&&status.linked)add(p,node('p','Дата привязки: '+status.created_at,'meta'));
+ if(status.provisioned){add(p,node('p','Аккаунт создан через SkiF4er ID. Отвязка запрещена, пока не настроен подтверждённый локальный способ входа.','meta'));return p}
+ add(p,node('p',status.linked?'При отвязке будут отозваны все сессии SkiF4er ID этого пользователя. Локальные сессии и данные форума сохранятся.':'Для привязки подтвердите локальный пароль и 2FA (если включена), затем подтвердите личность на сайте SkiF4er ID.','meta'));
+ const fields=[['password','Текущий локальный пароль','password'],...(me.user.two_factor_enabled?[['two_factor_code','Код 2FA или восстановления']]:[])];
+ const operation=status.linked?'Отвязать SkiF4er ID':'Привязать SkiF4er ID';
+ const actionForm=form(fields,operation,async data=>{
+  try{
+   if(status.linked&&!confirm('Отвязать SkiF4er ID и завершить все сессии входа через этот провайдер?'))return;
+   if(!data.two_factor_code)delete data.two_factor_code;
+   const payload=status.linked?data:{...data,return_to:'/forum/account/security'};
+   const result=await api(status.linked?'/identity/unlink':'/identity/link/start','POST',payload);
+   if(status.linked){
+    if(!result.unlinked)throw Error('Привязка отсутствует. Обновите страницу.');
+    if(result.session_revoked){go('/forum/login?identity=unlinked');return}
+    app.replaceChildren();await account();say('SkiF4er ID отвязан. Все внешние сессии отозваны.');return;
+   }
+   go(skif4erAuthorizeUrl(result.authorization_url));
+  }finally{for(const key of ['password','two_factor_code'])if(actionForm.elements.namedItem(key))actionForm.elements.namedItem(key).value=''}
+ });
+ const otp=actionForm.elements.namedItem('two_factor_code');if(otp){otp.required=true;otp.autocomplete='one-time-code'}
+ const pwd=actionForm.elements.namedItem('password');if(pwd)pwd.autocomplete='current-password';
+ if(status.linked)actionForm.querySelector('button[type=submit]')?.classList.add('danger');
+ add(p,actionForm);
+ return p;
+}
+async function account(){
+ heading('Настройки аккаунта');
+ if(!me?.session){add(app,link('Войти','/forum/login'));return}
+ add(app,link('Профиль и персональные настройки','/forum/account/profile','button secondary'),link('Приватность и данные','/forum/account/privacy','button secondary'));
+ const p=panel();add(p,node('h2','Безопасность'),node('p','Email: '+me.user.email),node('p',me.user.two_factor_enabled?'2FA включена':'2FA выключена'));
+ if(me.user.two_factor_enabled){
+  add(p,form([['password','Текущий пароль','password'],['two_factor_code','Новый 2FA-код или код восстановления']],'Отключить 2FA',async data=>{await api('/auth/2fa/disable','POST',data);go('/forum/login')}));
+ }else{
+  add(p,form([['password','Текущий пароль','password']],'Настроить 2FA',async data=>{
+   const setup=await api('/auth/2fa/enable','POST',data);
+   p.replaceChildren(node('h2','Подключите приложение-аутентификатор'),node('p','Введите секрет вручную в приложении TOTP. SHA1, 6 цифр, 30 секунд.'),node('pre',setup.secret),node('p','Подтвердите код в течение 10 минут.'),form([['password','Текущий пароль','password'],['two_factor_code','6-значный код приложения']],'Подтвердить 2FA',async input=>{
+    const result=await api('/auth/2fa/confirm','POST',{...input,setup_token:setup.setup_token});app.replaceChildren();heading('2FA включена');add(app,node('p','Сохраните коды восстановления в безопасном месте. Каждый код используется один раз. Повторный показ невозможен.'),node('pre',result.recovery_codes.join('\n')),link('Войти заново','/forum/login'));me=null;
+   }))
+  }));
+ }
+ add(app,p);
+ add(app,await accountLinkingPanel());
+ const q=panel();add(q,node('h2','Активные сессии'));
+ const sessions=await api('/auth/sessions');for(const session of sessions){
+  add(q,add(node('div',undefined,'entry'),node('p',(session.current?'Текущая сессия · ':'')+'Создана: '+session.created_at+' · Последняя активность: '+(session.last_used_at||'—')+' · Истекает: '+session.expires_at),button('Завершить',async()=>{await api('/auth/sessions/'+session.id,'DELETE');if(session.current)go('/forum/login');else{app.replaceChildren();await account()}})));
+ }
+ add(q,form([['password','Текущий пароль','password'],...(me.user.two_factor_enabled?[['two_factor_code','Новый 2FA-код или код восстановления']]:[])],'Завершить все сессии',async data=>{await api('/auth/sessions/revoke-all','POST',data);go('/forum/login')}));add(app,q);
+}
+
 const notificationKinds={reply:'Новый ответ',mention:'Вас упомянули',quote:'Ваше сообщение процитировано',reaction:'Реакция на сообщение',moderation:'Модерация обсуждения',accepted:'Ваш ответ принят'};
 let notificationRequest=0;
 async function notificationBadge(){if(!me)return;const seq=++notificationRequest;try{const d=await f('/notifications?count_only=1');if(seq===notificationRequest){document.getElementById('notifications').textContent='Уведомления'+(d.unread?' ('+d.unread+')':'');document.getElementById('conversations').textContent='Переписки'+((d.conversation_total_unread??d.conversation_unread)?' ('+(d.conversation_total_unread??d.conversation_unread)+')':'')}}catch{/* Keep navigation usable while offline. */}}

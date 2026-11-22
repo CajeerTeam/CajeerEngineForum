@@ -18,13 +18,13 @@ if (!in_array('sqlite', PDO::getAvailableDrivers(), true)) {
 $cfg=new ConfigRepository(dirname(__DIR__));
 $cfg->set('database.default','sqlite');$cfg->set('database.connections.sqlite.database',':memory:');
 $db=new DatabaseManager($cfg);$pdo=$db->connection();
-$pdo->exec("CREATE TABLE ce_users (id TEXT PRIMARY KEY,email TEXT UNIQUE NOT NULL,name TEXT,status TEXT,password_hash TEXT,two_factor_enabled INTEGER,two_factor_recovery_codes TEXT,last_login_at TEXT,disabled_at TEXT,created_at TEXT,updated_at TEXT)");
+$pdo->exec("CREATE TABLE ce_users (id TEXT PRIMARY KEY,email TEXT UNIQUE NOT NULL,name TEXT,status TEXT,password_hash TEXT,email_verified_at TEXT,two_factor_enabled INTEGER,two_factor_recovery_codes TEXT,last_login_at TEXT,disabled_at TEXT,created_at TEXT,updated_at TEXT)");
 $pdo->exec("CREATE TABLE ce_roles (id TEXT PRIMARY KEY,handle TEXT UNIQUE,name TEXT,permissions TEXT,created_at TEXT,updated_at TEXT)");
 $pdo->exec("CREATE TABLE ce_user_roles (user_id TEXT NOT NULL,role_id TEXT NOT NULL)");
 $pdo->exec("CREATE TABLE ce_api_tokens (id TEXT PRIMARY KEY,user_id TEXT,name TEXT,revoked_at TEXT,expires_at TEXT)");
-$pdo->exec(file_get_contents(dirname(__DIR__).'/migrations/sqlite/0026_skif4er_oidc.sql'));
-$pdo->exec(file_get_contents(dirname(__DIR__).'/migrations/sqlite/0027_oidc_account_linking.sql'));
-$pdo->exec(file_get_contents(dirname(__DIR__).'/migrations/sqlite/0028_unified_sessions.sql'));
+$pdo->exec(file_get_contents(dirname(__DIR__).'/migrations/sqlite/0061_engine_skif4er_oidc.sql'));
+$pdo->exec(file_get_contents(dirname(__DIR__).'/migrations/sqlite/0062_engine_oidc_account_linking.sql'));
+$pdo->exec(file_get_contents(dirname(__DIR__).'/migrations/sqlite/0063_engine_unified_sessions.sql'));
 $roles=new RoleRepository($db);$roles->upsert('viewer','Viewer',['content:read','media:read','system:read']);
 $hasher=new PasswordHasher($cfg);$users=new UserRepository($db,$roles,$hasher);
 $store=new OidcStore($db,new SecretVault('base64:'.base64_encode(random_bytes(32))));

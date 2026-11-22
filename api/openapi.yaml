@@ -25807,6 +25807,12 @@
                   },
                   "two_factor_code": {
                     "type": "string"
+                  },
+                  "return_to": {
+                    "type": "string",
+                    "enum": [
+                      "/forum/account/security"
+                    ]
                   }
                 }
               }

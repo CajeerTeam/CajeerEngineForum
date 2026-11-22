@@ -978,7 +978,7 @@ export const operations = {
         ],
         "bodyRequired": false
     },
-    "delete_ApiV1AuthSessionsRevoke": {
+    "delete_AuthSession": {
         "method": "DELETE",
         "path": "/auth/sessions/{id}",
         "parameters": [
@@ -1037,6 +1037,107 @@ export const operations = {
         "parameters": [
             {
                 "name": "handle",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": false
+    },
+    "delete_Forum_deleteAttachment": {
+        "method": "DELETE",
+        "path": "/forum/attachments/{id}",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": false
+    },
+    "delete_Forum_deleteBoard": {
+        "method": "DELETE",
+        "path": "/forum/boards/{id}",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": false
+    },
+    "delete_Forum_deleteCategory": {
+        "method": "DELETE",
+        "path": "/forum/categories/{id}",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": false
+    },
+    "delete_Forum_deleteDraft": {
+        "method": "DELETE",
+        "path": "/forum/drafts/{id}",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
+    },
+    "delete_Forum_deleteGroup": {
+        "method": "DELETE",
+        "path": "/forum/groups/{id}",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": false
+    },
+    "delete_Forum_deleteProfileField": {
+        "method": "DELETE",
+        "path": "/forum/profile-fields/{id}",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": false
+    },
+    "delete_Forum_deleteProfileImage": {
+        "method": "DELETE",
+        "path": "/forum/account/images/{kind}",
+        "parameters": [
+            {
+                "name": "kind",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": false
+    },
+    "delete_Forum_removeConversationParticipant": {
+        "method": "DELETE",
+        "path": "/forum/conversations/{id}/participants/{user_id}",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            },
+            {
+                "name": "user_id",
                 "in": "path",
                 "required": true
             }
@@ -1207,12 +1308,6 @@ export const operations = {
         "parameters": [],
         "bodyRequired": false
     },
-    "get_ApiV1AuthSessionsIndex": {
-        "method": "GET",
-        "path": "/auth/sessions",
-        "parameters": [],
-        "bodyRequired": false
-    },
     "get_AuthAssuranceStatus": {
         "method": "GET",
         "path": "/auth/assurance",
@@ -1228,6 +1323,29 @@ export const operations = {
     "get_AuthOidcStatus": {
         "method": "GET",
         "path": "/auth/oidc/status",
+        "parameters": [],
+        "bodyRequired": false
+    },
+    "get_AuthPrivacyExport": {
+        "method": "GET",
+        "path": "/auth/privacy/export",
+        "parameters": [
+            {
+                "name": "section",
+                "in": "query",
+                "required": false
+            },
+            {
+                "name": "offset",
+                "in": "query",
+                "required": false
+            }
+        ],
+        "bodyRequired": false
+    },
+    "get_AuthSessions": {
+        "method": "GET",
+        "path": "/auth/sessions",
         "parameters": [],
         "bodyRequired": false
     },
@@ -1477,6 +1595,880 @@ export const operations = {
         "parameters": [
             {
                 "name": "enabled",
+                "in": "query",
+                "required": false
+            }
+        ],
+        "bodyRequired": false
+    },
+    "get_Forum_achievementRules": {
+        "method": "GET",
+        "path": "/forum/achievement-rules",
+        "parameters": [],
+        "bodyRequired": false
+    },
+    "get_Forum_acp": {
+        "method": "GET",
+        "path": "/forum/acp",
+        "parameters": [
+            {
+                "name": "view",
+                "in": "query",
+                "required": false
+            },
+            {
+                "name": "page",
+                "in": "query",
+                "required": false
+            },
+            {
+                "name": "q",
+                "in": "query",
+                "required": false
+            },
+            {
+                "name": "status",
+                "in": "query",
+                "required": false
+            },
+            {
+                "name": "board_id",
+                "in": "query",
+                "required": false
+            },
+            {
+                "name": "thread_id",
+                "in": "query",
+                "required": false
+            },
+            {
+                "name": "id",
+                "in": "query",
+                "required": false
+            },
+            {
+                "name": "job",
+                "in": "query",
+                "required": false
+            }
+        ],
+        "bodyRequired": false
+    },
+    "get_Forum_activity": {
+        "method": "GET",
+        "path": "/forum/activity",
+        "parameters": [
+            {
+                "name": "page",
+                "in": "query",
+                "required": false
+            },
+            {
+                "name": "scope",
+                "in": "query",
+                "required": false
+            }
+        ],
+        "bodyRequired": false
+    },
+    "get_Forum_answers": {
+        "method": "GET",
+        "path": "/forum/threads/{id}/answers",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            },
+            {
+                "name": "page",
+                "in": "query",
+                "required": false
+            },
+            {
+                "name": "sort",
+                "in": "query",
+                "required": false
+            }
+        ],
+        "bodyRequired": false
+    },
+    "get_Forum_attachment": {
+        "method": "GET",
+        "path": "/forum/attachments/{id}",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": false
+    },
+    "get_Forum_attachmentImage": {
+        "method": "GET",
+        "path": "/forum/attachments/{id}/image/{variant}",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            },
+            {
+                "name": "variant",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": false
+    },
+    "get_Forum_attachments": {
+        "method": "GET",
+        "path": "/forum/attachments",
+        "parameters": [],
+        "bodyRequired": false
+    },
+    "get_Forum_board": {
+        "method": "GET",
+        "path": "/forum/boards/{id}",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            },
+            {
+                "name": "page",
+                "in": "query",
+                "required": false
+            }
+        ],
+        "bodyRequired": false
+    },
+    "get_Forum_boardPermissions": {
+        "method": "GET",
+        "path": "/forum/boards/{id}/permissions",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": false
+    },
+    "get_Forum_categoryPermissions": {
+        "method": "GET",
+        "path": "/forum/categories/{id}/permissions",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": false
+    },
+    "get_Forum_conversation": {
+        "method": "GET",
+        "path": "/forum/conversations/{id}",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            },
+            {
+                "name": "page",
+                "in": "query",
+                "required": false
+            }
+        ],
+        "bodyRequired": false
+    },
+    "get_Forum_conversationReport": {
+        "method": "GET",
+        "path": "/forum/conversation-reports/{id}",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": false
+    },
+    "get_Forum_conversationReports": {
+        "method": "GET",
+        "path": "/forum/conversation-reports",
+        "parameters": [
+            {
+                "name": "page",
+                "in": "query",
+                "required": false
+            },
+            {
+                "name": "status",
+                "in": "query",
+                "required": false
+            }
+        ],
+        "bodyRequired": false
+    },
+    "get_Forum_conversationRevisions": {
+        "method": "GET",
+        "path": "/forum/conversations/{id}/messages/{message_id}/revisions",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            },
+            {
+                "name": "message_id",
+                "in": "path",
+                "required": true
+            },
+            {
+                "name": "page",
+                "in": "query",
+                "required": false
+            }
+        ],
+        "bodyRequired": false
+    },
+    "get_Forum_conversationSettings": {
+        "method": "GET",
+        "path": "/forum/conversation-settings",
+        "parameters": [],
+        "bodyRequired": false
+    },
+    "get_Forum_conversations": {
+        "method": "GET",
+        "path": "/forum/conversations",
+        "parameters": [
+            {
+                "name": "page",
+                "in": "query",
+                "required": false
+            },
+            {
+                "name": "archived",
+                "in": "query",
+                "required": false
+            },
+            {
+                "name": "notifications",
+                "in": "query",
+                "required": false
+            },
+            {
+                "name": "q",
+                "in": "query",
+                "required": false
+            }
+        ],
+        "bodyRequired": false
+    },
+    "get_Forum_downloadAttachment": {
+        "method": "GET",
+        "path": "/forum/attachments/{id}/download",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": false
+    },
+    "get_Forum_draft": {
+        "method": "GET",
+        "path": "/forum/drafts/{id}",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": false
+    },
+    "get_Forum_drafts": {
+        "method": "GET",
+        "path": "/forum/drafts",
+        "parameters": [
+            {
+                "name": "page",
+                "in": "query",
+                "required": false
+            },
+            {
+                "name": "scope",
+                "in": "query",
+                "required": false
+            },
+            {
+                "name": "target_id",
+                "in": "query",
+                "required": false
+            }
+        ],
+        "bodyRequired": false
+    },
+    "get_Forum_groupMembership": {
+        "method": "GET",
+        "path": "/forum/members/{id}/groups",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": false
+    },
+    "get_Forum_groups": {
+        "method": "GET",
+        "path": "/forum/groups",
+        "parameters": [],
+        "bodyRequired": false
+    },
+    "get_Forum_index": {
+        "method": "GET",
+        "path": "/forum",
+        "parameters": [],
+        "bodyRequired": false
+    },
+    "get_Forum_latest": {
+        "method": "GET",
+        "path": "/forum/latest",
+        "parameters": [
+            {
+                "name": "page",
+                "in": "query",
+                "required": false
+            },
+            {
+                "name": "cursor",
+                "in": "query",
+                "required": false
+            }
+        ],
+        "bodyRequired": false
+    },
+    "get_Forum_leaderboard": {
+        "method": "GET",
+        "path": "/forum/leaderboard",
+        "parameters": [
+            {
+                "name": "page",
+                "in": "query",
+                "required": false
+            }
+        ],
+        "bodyRequired": false
+    },
+    "get_Forum_mediaStatus": {
+        "method": "GET",
+        "path": "/forum/media/status",
+        "parameters": [],
+        "bodyRequired": false
+    },
+    "get_Forum_memberSanctions": {
+        "method": "GET",
+        "path": "/forum/members/{id}/sanctions",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            },
+            {
+                "name": "page",
+                "in": "query",
+                "required": false
+            }
+        ],
+        "bodyRequired": false
+    },
+    "get_Forum_members": {
+        "method": "GET",
+        "path": "/forum/members",
+        "parameters": [
+            {
+                "name": "q",
+                "in": "query",
+                "required": false
+            },
+            {
+                "name": "sort",
+                "in": "query",
+                "required": false
+            },
+            {
+                "name": "page",
+                "in": "query",
+                "required": false
+            },
+            {
+                "name": "discovery",
+                "in": "query",
+                "required": false
+            }
+        ],
+        "bodyRequired": false
+    },
+    "get_Forum_moderationDetail": {
+        "method": "GET",
+        "path": "/forum/moderation/cases/{kind}/{id}",
+        "parameters": [
+            {
+                "name": "kind",
+                "in": "path",
+                "required": true
+            },
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            },
+            {
+                "name": "page",
+                "in": "query",
+                "required": false
+            }
+        ],
+        "bodyRequired": false
+    },
+    "get_Forum_moderationQueue": {
+        "method": "GET",
+        "path": "/forum/moderation/queue",
+        "parameters": [
+            {
+                "name": "page",
+                "in": "query",
+                "required": false
+            },
+            {
+                "name": "kind",
+                "in": "query",
+                "required": false
+            },
+            {
+                "name": "status",
+                "in": "query",
+                "required": false
+            },
+            {
+                "name": "assigned",
+                "in": "query",
+                "required": false
+            }
+        ],
+        "bodyRequired": false
+    },
+    "get_Forum_myReports": {
+        "method": "GET",
+        "path": "/forum/my-reports",
+        "parameters": [
+            {
+                "name": "page",
+                "in": "query",
+                "required": false
+            },
+            {
+                "name": "kind",
+                "in": "query",
+                "required": false
+            }
+        ],
+        "bodyRequired": false
+    },
+    "get_Forum_mySanctions": {
+        "method": "GET",
+        "path": "/forum/sanctions",
+        "parameters": [
+            {
+                "name": "page",
+                "in": "query",
+                "required": false
+            }
+        ],
+        "bodyRequired": false
+    },
+    "get_Forum_mySubmissions": {
+        "method": "GET",
+        "path": "/forum/submissions",
+        "parameters": [
+            {
+                "name": "page",
+                "in": "query",
+                "required": false
+            }
+        ],
+        "bodyRequired": false
+    },
+    "get_Forum_notificationTarget": {
+        "method": "GET",
+        "path": "/forum/notifications/{id}",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": false
+    },
+    "get_Forum_notifications": {
+        "method": "GET",
+        "path": "/forum/notifications",
+        "parameters": [
+            {
+                "name": "page",
+                "in": "query",
+                "required": false
+            },
+            {
+                "name": "count_only",
+                "in": "query",
+                "required": false
+            }
+        ],
+        "bodyRequired": false
+    },
+    "get_Forum_ownProfile": {
+        "method": "GET",
+        "path": "/forum/account/profile",
+        "parameters": [],
+        "bodyRequired": false
+    },
+    "get_Forum_permissionInspector": {
+        "method": "GET",
+        "path": "/forum/permission-inspector",
+        "parameters": [
+            {
+                "name": "kind",
+                "in": "query",
+                "required": true
+            },
+            {
+                "name": "id",
+                "in": "query",
+                "required": true
+            },
+            {
+                "name": "user_id",
+                "in": "query",
+                "required": false
+            }
+        ],
+        "bodyRequired": false
+    },
+    "get_Forum_postRevisions": {
+        "method": "GET",
+        "path": "/forum/posts/{id}/revisions",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            },
+            {
+                "name": "page",
+                "in": "query",
+                "required": false
+            }
+        ],
+        "bodyRequired": false
+    },
+    "get_Forum_profile": {
+        "method": "GET",
+        "path": "/forum/members/{id}",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            },
+            {
+                "name": "page",
+                "in": "query",
+                "required": false
+            }
+        ],
+        "bodyRequired": false
+    },
+    "get_Forum_profileFields": {
+        "method": "GET",
+        "path": "/forum/profile-fields",
+        "parameters": [],
+        "bodyRequired": false
+    },
+    "get_Forum_profileImage": {
+        "method": "GET",
+        "path": "/forum/members/{id}/images/{kind}",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            },
+            {
+                "name": "kind",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": false
+    },
+    "get_Forum_questions": {
+        "method": "GET",
+        "path": "/forum/questions",
+        "parameters": [
+            {
+                "name": "page",
+                "in": "query",
+                "required": false
+            },
+            {
+                "name": "status",
+                "in": "query",
+                "required": false
+            }
+        ],
+        "bodyRequired": false
+    },
+    "get_Forum_recycleBin": {
+        "method": "GET",
+        "path": "/forum/recycle-bin",
+        "parameters": [
+            {
+                "name": "page",
+                "in": "query",
+                "required": false
+            },
+            {
+                "name": "kind",
+                "in": "query",
+                "required": false
+            }
+        ],
+        "bodyRequired": false
+    },
+    "get_Forum_recycleDetail": {
+        "method": "GET",
+        "path": "/forum/recycle-bin/{kind}/{id}",
+        "parameters": [
+            {
+                "name": "kind",
+                "in": "path",
+                "required": true
+            },
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            },
+            {
+                "name": "page",
+                "in": "query",
+                "required": false
+            }
+        ],
+        "bodyRequired": false
+    },
+    "get_Forum_relations": {
+        "method": "GET",
+        "path": "/forum/member-relations",
+        "parameters": [
+            {
+                "name": "page",
+                "in": "query",
+                "required": false
+            },
+            {
+                "name": "kind",
+                "in": "query",
+                "required": false
+            }
+        ],
+        "bodyRequired": false
+    },
+    "get_Forum_relationship": {
+        "method": "GET",
+        "path": "/forum/members/{id}/relationship",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": false
+    },
+    "get_Forum_reports": {
+        "method": "GET",
+        "path": "/forum/reports",
+        "parameters": [
+            {
+                "name": "page",
+                "in": "query",
+                "required": false
+            }
+        ],
+        "bodyRequired": false
+    },
+    "get_Forum_reviewDownload": {
+        "method": "GET",
+        "path": "/forum/moderation/submissions/{id}/files/{file_id}",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            },
+            {
+                "name": "file_id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": false
+    },
+    "get_Forum_sanctionAppeals": {
+        "method": "GET",
+        "path": "/forum/moderation/appeals",
+        "parameters": [
+            {
+                "name": "page",
+                "in": "query",
+                "required": false
+            }
+        ],
+        "bodyRequired": false
+    },
+    "get_Forum_search": {
+        "method": "GET",
+        "path": "/forum/search",
+        "parameters": [
+            {
+                "name": "page",
+                "in": "query",
+                "required": false
+            },
+            {
+                "name": "q",
+                "in": "query",
+                "required": false
+            },
+            {
+                "name": "tag",
+                "in": "query",
+                "required": false
+            },
+            {
+                "name": "mode",
+                "in": "query",
+                "required": false
+            },
+            {
+                "name": "board_id",
+                "in": "query",
+                "required": false
+            },
+            {
+                "name": "author_id",
+                "in": "query",
+                "required": false
+            },
+            {
+                "name": "from",
+                "in": "query",
+                "required": false
+            },
+            {
+                "name": "to",
+                "in": "query",
+                "required": false
+            },
+            {
+                "name": "sort",
+                "in": "query",
+                "required": false
+            },
+            {
+                "name": "question",
+                "in": "query",
+                "required": false
+            },
+            {
+                "name": "discover",
+                "in": "query",
+                "required": false
+            }
+        ],
+        "bodyRequired": false
+    },
+    "get_Forum_spamStats": {
+        "method": "GET",
+        "path": "/forum/antispam/status",
+        "parameters": [],
+        "bodyRequired": false
+    },
+    "get_Forum_thread": {
+        "method": "GET",
+        "path": "/forum/threads/{id}",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            },
+            {
+                "name": "page",
+                "in": "query",
+                "required": false
+            },
+            {
+                "name": "first_unread",
+                "in": "query",
+                "required": false
+            }
+        ],
+        "bodyRequired": false
+    },
+    "get_Forum_unread": {
+        "method": "GET",
+        "path": "/forum/unread",
+        "parameters": [
+            {
+                "name": "page",
+                "in": "query",
+                "required": false
+            }
+        ],
+        "bodyRequired": false
+    },
+    "get_Forum_watchSettings": {
+        "method": "GET",
+        "path": "/forum/watch-settings",
+        "parameters": [
+            {
+                "name": "page",
+                "in": "query",
+                "required": false
+            }
+        ],
+        "bodyRequired": false
+    },
+    "get_Forum_watches": {
+        "method": "GET",
+        "path": "/forum/watches",
+        "parameters": [
+            {
+                "name": "page",
                 "in": "query",
                 "required": false
             }
@@ -2037,6 +3029,119 @@ export const operations = {
         "parameters": [],
         "bodyRequired": true
     },
+    "patch_Forum_acp_members_id": {
+        "method": "PATCH",
+        "path": "/forum/acp/members/{id}",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
+    },
+    "patch_Forum_conversationFlags": {
+        "method": "PATCH",
+        "path": "/forum/conversations/{id}/settings",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
+    },
+    "patch_Forum_edit": {
+        "method": "PATCH",
+        "path": "/forum/posts/{id}",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
+    },
+    "patch_Forum_editConversationMessage": {
+        "method": "PATCH",
+        "path": "/forum/conversations/{id}/messages/{message_id}",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            },
+            {
+                "name": "message_id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
+    },
+    "patch_Forum_pollControl": {
+        "method": "PATCH",
+        "path": "/forum/threads/{id}/poll",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
+    },
+    "patch_Forum_updateBoard": {
+        "method": "PATCH",
+        "path": "/forum/boards/{id}",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
+    },
+    "patch_Forum_updateCategory": {
+        "method": "PATCH",
+        "path": "/forum/categories/{id}",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
+    },
+    "patch_Forum_updateGroup": {
+        "method": "PATCH",
+        "path": "/forum/groups/{id}",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
+    },
+    "patch_Forum_updatePreferences": {
+        "method": "PATCH",
+        "path": "/forum/account/preferences",
+        "parameters": [],
+        "bodyRequired": true
+    },
+    "patch_Forum_updateProfile": {
+        "method": "PATCH",
+        "path": "/forum/account/profile",
+        "parameters": [],
+        "bodyRequired": true
+    },
     "patch_IntegrationsUpdate": {
         "method": "PATCH",
         "path": "/integrations/{id}",
@@ -2139,12 +3244,6 @@ export const operations = {
         "parameters": [],
         "bodyRequired": false
     },
-    "post_ApiV1AuthSessionsRevokeAll": {
-        "method": "POST",
-        "path": "/auth/sessions/revoke-all",
-        "parameters": [],
-        "bodyRequired": false
-    },
     "post_ApiV1AuthSessionsRevokeOthers": {
         "method": "POST",
         "path": "/auth/sessions/revoke-others",
@@ -2156,6 +3255,12 @@ export const operations = {
         "path": "/auth/sessions/rotate",
         "parameters": [],
         "bodyRequired": false
+    },
+    "post_Auth2faConfirm": {
+        "method": "POST",
+        "path": "/auth/2fa/confirm",
+        "parameters": [],
+        "bodyRequired": true
     },
     "post_Auth2faDisable": {
         "method": "POST",
@@ -2172,6 +3277,18 @@ export const operations = {
     "post_AuthAssuranceConfirm": {
         "method": "POST",
         "path": "/auth/assurance/confirm",
+        "parameters": [],
+        "bodyRequired": true
+    },
+    "post_AuthEmailResend": {
+        "method": "POST",
+        "path": "/auth/email/resend",
+        "parameters": [],
+        "bodyRequired": true
+    },
+    "post_AuthEmailVerify": {
+        "method": "POST",
+        "path": "/auth/email/verify",
         "parameters": [],
         "bodyRequired": true
     },
@@ -2203,6 +3320,36 @@ export const operations = {
         "path": "/auth/oidc/logout",
         "parameters": [],
         "bodyRequired": false
+    },
+    "post_AuthPasswordForgot": {
+        "method": "POST",
+        "path": "/auth/password/forgot",
+        "parameters": [],
+        "bodyRequired": true
+    },
+    "post_AuthPasswordReset": {
+        "method": "POST",
+        "path": "/auth/password/reset",
+        "parameters": [],
+        "bodyRequired": true
+    },
+    "post_AuthPrivacyClearProfile": {
+        "method": "POST",
+        "path": "/auth/privacy/clear-profile",
+        "parameters": [],
+        "bodyRequired": true
+    },
+    "post_AuthPrivacyErase": {
+        "method": "POST",
+        "path": "/auth/privacy/erase",
+        "parameters": [],
+        "bodyRequired": true
+    },
+    "post_AuthSessionsRevokeAll": {
+        "method": "POST",
+        "path": "/auth/sessions/revoke-all",
+        "parameters": [],
+        "bodyRequired": true
     },
     "post_CmsBootstrap": {
         "method": "POST",
@@ -2411,6 +3558,428 @@ export const operations = {
             }
         ],
         "bodyRequired": false
+    },
+    "post_Forum_acp_maintenance": {
+        "method": "POST",
+        "path": "/forum/acp/maintenance",
+        "parameters": [],
+        "bodyRequired": true
+    },
+    "post_Forum_appealSanction": {
+        "method": "POST",
+        "path": "/forum/sanctions/{id}/appeal",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
+    },
+    "post_Forum_bulkThreads": {
+        "method": "POST",
+        "path": "/forum/thread-actions/bulk",
+        "parameters": [],
+        "bodyRequired": true
+    },
+    "post_Forum_cancelSubmission": {
+        "method": "POST",
+        "path": "/forum/submissions/{id}/cancel",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
+    },
+    "post_Forum_category": {
+        "method": "POST",
+        "path": "/forum/categories",
+        "parameters": [],
+        "bodyRequired": true
+    },
+    "post_Forum_createBoard": {
+        "method": "POST",
+        "path": "/forum/categories/{id}/boards",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
+    },
+    "post_Forum_createConversation": {
+        "method": "POST",
+        "path": "/forum/conversations",
+        "parameters": [],
+        "bodyRequired": true
+    },
+    "post_Forum_createGroup": {
+        "method": "POST",
+        "path": "/forum/groups",
+        "parameters": [],
+        "bodyRequired": true
+    },
+    "post_Forum_createProfileField": {
+        "method": "POST",
+        "path": "/forum/profile-fields",
+        "parameters": [],
+        "bodyRequired": true
+    },
+    "post_Forum_createThread": {
+        "method": "POST",
+        "path": "/forum/boards/{id}/threads",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
+    },
+    "post_Forum_decideSanctionAppeal": {
+        "method": "POST",
+        "path": "/forum/sanctions/{id}/appeal/decision",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
+    },
+    "post_Forum_inviteConversation": {
+        "method": "POST",
+        "path": "/forum/conversations/{id}/invite",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
+    },
+    "post_Forum_issueSanction": {
+        "method": "POST",
+        "path": "/forum/members/{id}/sanctions",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
+    },
+    "post_Forum_leaveConversation": {
+        "method": "POST",
+        "path": "/forum/conversations/{id}/leave",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": false
+    },
+    "post_Forum_markNotifications": {
+        "method": "POST",
+        "path": "/forum/notifications/read",
+        "parameters": [],
+        "bodyRequired": true
+    },
+    "post_Forum_markRead": {
+        "method": "POST",
+        "path": "/forum/read-state",
+        "parameters": [],
+        "bodyRequired": true
+    },
+    "post_Forum_mergeThreads": {
+        "method": "POST",
+        "path": "/forum/threads/{id}/merge",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
+    },
+    "post_Forum_moderate": {
+        "method": "POST",
+        "path": "/forum/threads/{id}/moderate",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
+    },
+    "post_Forum_moderateProfile": {
+        "method": "POST",
+        "path": "/forum/members/{id}/moderate-profile",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
+    },
+    "post_Forum_moderationAction": {
+        "method": "POST",
+        "path": "/forum/moderation/cases/{kind}/{id}",
+        "parameters": [
+            {
+                "name": "kind",
+                "in": "path",
+                "required": true
+            },
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
+    },
+    "post_Forum_moveBoard": {
+        "method": "POST",
+        "path": "/forum/boards/{id}/move",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
+    },
+    "post_Forum_previewContent": {
+        "method": "POST",
+        "path": "/forum/content/preview",
+        "parameters": [],
+        "bodyRequired": true
+    },
+    "post_Forum_publishDraft": {
+        "method": "POST",
+        "path": "/forum/drafts/{id}/publish",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
+    },
+    "post_Forum_readConversation": {
+        "method": "POST",
+        "path": "/forum/conversations/{id}/read",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
+    },
+    "post_Forum_recycleChange": {
+        "method": "POST",
+        "path": "/forum/recycle-bin/{kind}/{id}",
+        "parameters": [
+            {
+                "name": "kind",
+                "in": "path",
+                "required": true
+            },
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
+    },
+    "post_Forum_register": {
+        "method": "POST",
+        "path": "/forum/register",
+        "parameters": [],
+        "bodyRequired": true
+    },
+    "post_Forum_reorderNodes": {
+        "method": "POST",
+        "path": "/forum/nodes/reorder",
+        "parameters": [],
+        "bodyRequired": true
+    },
+    "post_Forum_reply": {
+        "method": "POST",
+        "path": "/forum/threads/{id}/posts",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
+    },
+    "post_Forum_report": {
+        "method": "POST",
+        "path": "/forum/posts/{id}/report",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
+    },
+    "post_Forum_reportConversationMessage": {
+        "method": "POST",
+        "path": "/forum/conversations/{id}/messages/{message_id}/report",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            },
+            {
+                "name": "message_id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
+    },
+    "post_Forum_resolve": {
+        "method": "POST",
+        "path": "/forum/reports/{id}/resolve",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": false
+    },
+    "post_Forum_restoreAttachmentOriginal": {
+        "method": "POST",
+        "path": "/forum/attachments/{id}/restore-original",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": false
+    },
+    "post_Forum_restoreConversationRevision": {
+        "method": "POST",
+        "path": "/forum/conversations/{id}/messages/{message_id}/revisions/restore",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            },
+            {
+                "name": "message_id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
+    },
+    "post_Forum_restorePostRevision": {
+        "method": "POST",
+        "path": "/forum/posts/{id}/revisions/restore",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
+    },
+    "post_Forum_retryAttachmentImage": {
+        "method": "POST",
+        "path": "/forum/attachments/{id}/image/retry",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": false
+    },
+    "post_Forum_revokeSanction": {
+        "method": "POST",
+        "path": "/forum/sanctions/{id}/revoke",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
+    },
+    "post_Forum_sendConversation": {
+        "method": "POST",
+        "path": "/forum/conversations/{id}/messages",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
+    },
+    "post_Forum_transferPosts": {
+        "method": "POST",
+        "path": "/forum/threads/{id}/transfer",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
+    },
+    "post_Forum_unsubscribeEmail": {
+        "method": "POST",
+        "path": "/forum/unsubscribe",
+        "parameters": [],
+        "bodyRequired": true
+    },
+    "post_Forum_uploadAttachment": {
+        "method": "POST",
+        "path": "/forum/attachments",
+        "parameters": [],
+        "bodyRequired": true
     },
     "post_IdentityLinkStart": {
         "method": "POST",
@@ -2799,6 +4368,264 @@ export const operations = {
             }
         ],
         "bodyRequired": false
+    },
+    "put_Forum_acceptAnswer": {
+        "method": "PUT",
+        "path": "/forum/threads/{id}/accepted-answer",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
+    },
+    "put_Forum_acp_delegation": {
+        "method": "PUT",
+        "path": "/forum/acp/delegation/{id}",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
+    },
+    "put_Forum_acp_policy": {
+        "method": "PUT",
+        "path": "/forum/acp/policy",
+        "parameters": [],
+        "bodyRequired": true
+    },
+    "put_Forum_acp_theme": {
+        "method": "PUT",
+        "path": "/forum/acp/theme",
+        "parameters": [],
+        "bodyRequired": true
+    },
+    "put_Forum_answerVote": {
+        "method": "PUT",
+        "path": "/forum/posts/{id}/answer-vote",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
+    },
+    "put_Forum_blockConversationUser": {
+        "method": "PUT",
+        "path": "/forum/conversation-blocks/{id}",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
+    },
+    "put_Forum_boardWatch": {
+        "method": "PUT",
+        "path": "/forum/boards/{id}/watch",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
+    },
+    "put_Forum_notificationPreferences": {
+        "method": "PUT",
+        "path": "/forum/notification-preferences",
+        "parameters": [],
+        "bodyRequired": true
+    },
+    "put_Forum_pollVote": {
+        "method": "PUT",
+        "path": "/forum/threads/{id}/poll/vote",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
+    },
+    "put_Forum_reaction": {
+        "method": "PUT",
+        "path": "/forum/posts/{id}/reaction",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
+    },
+    "put_Forum_resolveConversationReport": {
+        "method": "PUT",
+        "path": "/forum/conversation-reports/{id}",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
+    },
+    "put_Forum_reviewPolicy": {
+        "method": "PUT",
+        "path": "/forum/boards/{id}/review-policy",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
+    },
+    "put_Forum_saveAchievementRule": {
+        "method": "PUT",
+        "path": "/forum/achievement-rules/{code}",
+        "parameters": [
+            {
+                "name": "code",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
+    },
+    "put_Forum_saveConversationSettings": {
+        "method": "PUT",
+        "path": "/forum/conversation-settings",
+        "parameters": [],
+        "bodyRequired": true
+    },
+    "put_Forum_saveDraft": {
+        "method": "PUT",
+        "path": "/forum/drafts/{id}",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
+    },
+    "put_Forum_setBoardPermissions": {
+        "method": "PUT",
+        "path": "/forum/boards/{id}/permissions",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
+    },
+    "put_Forum_setCategoryPermissions": {
+        "method": "PUT",
+        "path": "/forum/categories/{id}/permissions",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
+    },
+    "put_Forum_setGroupMembership": {
+        "method": "PUT",
+        "path": "/forum/members/{id}/groups",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
+    },
+    "put_Forum_setProfileImage": {
+        "method": "PUT",
+        "path": "/forum/account/images/{kind}",
+        "parameters": [
+            {
+                "name": "kind",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
+    },
+    "put_Forum_setRelationship": {
+        "method": "PUT",
+        "path": "/forum/members/{id}/relationship",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
+    },
+    "put_Forum_threadMetadata": {
+        "method": "PUT",
+        "path": "/forum/threads/{id}/metadata",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
+    },
+    "put_Forum_updateProfileField": {
+        "method": "PUT",
+        "path": "/forum/profile-fields/{id}",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
+    },
+    "put_Forum_watch": {
+        "method": "PUT",
+        "path": "/forum/threads/{id}/watch",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
+    },
+    "put_Forum_watchPreferences": {
+        "method": "PUT",
+        "path": "/forum/watch-settings",
+        "parameters": [],
+        "bodyRequired": true
     },
     "put_IntegrationsSecret": {
         "method": "PUT",
