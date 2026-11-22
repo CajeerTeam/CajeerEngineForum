@@ -8,7 +8,39 @@ const panel=()=>node('div',undefined,'panel');
 const button=(text,fn,cls='secondary')=>{const b=node('button',text,cls);b.type='button';b.addEventListener('click',()=>run(fn));return b};
 function say(text,error=false){notice.replaceChildren(node('div',text,'notice'+(error?' error':'')))}
 async function run(fn){try{await fn()}catch(e){say(e.message,true)}}
-async function api(path,method='GET',body){const headers={'Accept':'application/json'};if(method!=='GET'){headers['Content-Type']='application/json';if(me?.csrf_token)headers['X-CSRF-Token']=me.csrf_token}if(path==='/auth/login')headers['X-Cajeer-Browser']='1';const res=await fetch(base+path,{method,headers,credentials:'same-origin',...(body===undefined?{}:{body:JSON.stringify(body)})});let data;try{data=await res.json()}catch{throw Error('Сервер вернул некорректный ответ. Проверьте установку.')}if(!res.ok){const error=Error(data.error?.message||`Ошибка ${res.status}`);error.status=res.status;throw error;}return data.data}
+async function api(path,method='GET',body,assuranceRetry=false){
+ const headers={'Accept':'application/json'};
+ if(method!=='GET'){headers['Content-Type']='application/json';if(me?.csrf_token)headers['X-CSRF-Token']=me.csrf_token}
+ if(path==='/auth/login')headers['X-Cajeer-Browser']='1';
+ const res=await fetch(base+path,{method,headers,credentials:'same-origin',cache:'no-store',...(body===undefined?{}:{body:JSON.stringify(body)})});
+ let data;try{data=await res.json()}catch{throw Error('Сервер вернул некорректный ответ. Проверьте установку.')}
+ if(!res.ok){
+  if(res.status===403 && data.error?.code==='step_up_required' && !assuranceRetry){
+   // The server rejected the mutation before dispatching it. Only that request
+   // may be retried, once, and only after fresh session-bound assurance.
+   const sessions=await api('/auth/sessions');
+   const active=Array.isArray(sessions)?sessions.find(s=>s.current):null;
+   if(active?.provider==='skif4er'){
+    if(confirm('Для изменения прав или ограничений требуется подтверждение SkiF4er ID с MFA. Продолжить?')){
+     const auth=await api('/identity/step-up/start','POST',{return_to:location.pathname+location.search},true);
+     const url=new URL(auth.authorization_url);
+     if(url.origin!=='https://id.skif4er.ru'||url.pathname!=='/realms/skif4er/protocol/openid-connect/auth'||url.searchParams.get('max_age')!=='0')throw Error('Недопустимый адрес повторной авторизации.');
+     window.location.assign(url.toString());
+    }
+    throw Error('Повторите операцию после подтверждения SkiF4er ID с MFA.');
+   }
+   if(!active||!['local','legacy'].includes(active.provider))throw Error('Требуется действующая браузерная сессия.');
+   const password=prompt('Повторно введите локальный пароль для критической операции');
+   if(!password)throw Error('Повторное подтверждение отменено.');
+   const twoFactorCode=prompt('Код TOTP (пусто, если 2FA не включена)');
+   if(twoFactorCode===null)throw Error('Повторное подтверждение отменено.');
+   await api('/auth/assurance/confirm','POST',{password,two_factor_code:twoFactorCode},true);
+   return api(path,method,body,true);
+  }
+  const error=Error(data.error?.message||`Ошибка ${res.status}`);error.status=res.status;error.code=data.error?.code;throw error;
+ }
+ return data.data;
+}
 const f=(path,method,body)=>api(forum+path,method,body);
 const isAdmin=()=>me?.scopes?.includes('*');
 const canModerate=()=>isAdmin()||me?.scopes?.includes('forum:moderate');

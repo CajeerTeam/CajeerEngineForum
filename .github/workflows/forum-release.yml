@@ -96,7 +96,7 @@ jobs:
           done
 
           cat > "$RUNNER_TEMP/forum-release-notes.md" <<'NOTES'
-          ## CajeerEngineForum 1.0.7
+          ## CajeerEngineForum 1.0.8
 
           Forum Edition SSO Logout & Revocation, built on CajeerEngine 2.1.0.
 

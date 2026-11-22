@@ -88,10 +88,13 @@ final readonly class OidcController
         }
         try {
             $session = $this->login->finish($code, $state, $browser, $request);
-            if (($session['linked'] ?? false) === true || ($session['step_up'] ?? false) === true) {
-                $destination = $forumLink && ($session['linked'] ?? false) === true
-                    ? '/forum/account/security?identity=linked'
+            if (($session['linked'] ?? false) === true) {
+                $destination = $forumLink ? '/forum/account/security?identity=linked'
                     : ($target !== null ? '/forum/account/security' : '/admin/#/identity');
+            } elseif (($session['step_up'] ?? false) === true) {
+                // The return path is a MAC verified against the one-time OIDC
+                // transaction cookie, never an untrusted callback query value.
+                $destination = $target ?? '/admin/#/identity';
             } else {
                 $destination = $target ?? '/admin/';
                 if (($session['provisioned'] ?? false) === true && $target !== null) {
@@ -188,10 +191,23 @@ final readonly class OidcController
         if ($identity === null || $this->login === null || !$request->isSecure()) {
             return $this->linkError('step_up_unavailable', 'Требуется HTTPS и действующая OIDC-сессия.', 403);
         }
+        $payload = $request->attributes->get('json', []);
+        $raw = is_array($payload) ? ($payload['return_to'] ?? null) : null;
+        $returnTo = $raw === null ? null : ForumOidcReturn::sanitize($raw);
+        if ($raw !== null && ($returnTo === null || $returnTo !== $raw)) {
+            return $this->linkError('invalid_return', 'Недопустимый адрес возврата после подтверждения MFA.', 422);
+        }
         try {
             $tx = $this->login->beginStepUp((string)$identity['user_id'], (string)$identity['token_id']);
             $response = new JsonResponse(['data'=>['authorization_url'=>$tx['url']]], 200, ['Cache-Control'=>'no-store']);
-            $response->headers->setCookie(Cookie::create('ce_oidc_tx', $tx['browser'], new \DateTimeImmutable('+5 minutes'), '/auth/oidc', null, true, true, false, Cookie::SAMESITE_LAX));
+            $expiry = new \DateTimeImmutable('+5 minutes');
+            $response->headers->setCookie(Cookie::create('ce_oidc_tx', $tx['browser'], $expiry, '/auth/oidc', null, true, true, false, Cookie::SAMESITE_LAX));
+            if ($returnTo !== null) {
+                $response->headers->setCookie(Cookie::create('ce_oidc_return', ForumOidcReturn::sign($returnTo, $tx['browser']), $expiry, '/auth/oidc', null, true, true, false, Cookie::SAMESITE_LAX));
+            } else {
+                $response->headers->clearCookie('ce_oidc_return', '/auth/oidc', null, true, true, Cookie::SAMESITE_LAX);
+            }
+            $response->headers->set('Referrer-Policy','no-referrer');
             return $response;
         } catch (\Throwable) { return $this->linkError('step_up_unavailable', 'Повторная авторизация SkiF4er ID недоступна.', 409); }
     }

@@ -27221,7 +27221,7 @@
             "CsrfToken": []
           }
         ],
-        "description": "Start OIDC interactive max_age=0, prompt=login reauthentication for linked current browser session. Signed auth_time and MFA required on callback.",
+        "description": "Start OIDC interactive max_age=0, prompt=login reauthentication for linked current browser session. Signed auth_time and MFA required on callback. Optional return_to is a same-origin forum path, signed against the OIDC transaction browser cookie and never trusted from callback query parameters.",
         "responses": {
           "200": {
             "description": "Success",
@@ -27317,6 +27317,24 @@
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
                 }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "return_to": {
+                    "type": "string",
+                    "minLength": 6,
+                    "maxLength": 1024
+                  }
+                },
+                "additionalProperties": false
               }
             }
           }
