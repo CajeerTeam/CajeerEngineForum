@@ -28,6 +28,7 @@ check(connection.execute('SELECT thread_id FROM ce_forum_ai_conversations WHERE 
 board=connection.execute('SELECT id FROM ce_forum_boards LIMIT 1').fetchone()['id']
 connection.execute('INSERT INTO ce_forum_threads(id,board_id,title) VALUES(?,?,?)',(thread,board,'Example topic'))
 connection.execute('INSERT INTO ce_forum_ai_conversations(id,user_id,title,created_at,updated_at,thread_id) VALUES(?,?,?,?,?,?)',(conversation,uid,'Topic AI',2,2,thread))
+connection.execute("UPDATE ce_forum_ai_conversations SET purpose='thread' WHERE id=?",(conversation,))
 check(connection.execute('SELECT COUNT(*) FROM ce_forum_ai_conversations WHERE user_id=? AND thread_id IS NULL',(uid,)).fetchone()[0]==1,'ordinary AI list excludes thread conversations')
 check(connection.execute('SELECT COUNT(*) FROM ce_forum_ai_conversations WHERE user_id=? AND thread_id=?',(uid,thread)).fetchone()[0]==1,'thread list includes owner and correct topic')
 check(connection.execute('SELECT COUNT(*) FROM ce_forum_ai_conversations WHERE user_id=? AND thread_id=?',(other,thread)).fetchone()[0]==0,'second user cannot list thread session')

@@ -671,7 +671,8 @@ final class Application
         $forumAi = new \CajeerEngine\Forum\ForumAiController(
             $forumAiChat,
             $container->get(AuditLogger::class),
-            new \CajeerEngine\Forum\Service\ForumThreadAssistant($forumDb,$forumTx,$forumAiChat)
+            new \CajeerEngine\Forum\Service\ForumThreadAssistant($forumDb,$forumTx,$forumAiChat),
+            new \CajeerEngine\Forum\Service\ForumAiSearch($forumDb,$forumTx,$forumAiChat)
         );
         $controllers = compact('identity', 'forum', 'forumAi', 'aiAnalytics', 'aiAutomations', 'aiMigration', 'support', 'knowledge', 'ai', 'identityAdmin', 'oidc', 'migration', 'analyticsHub', 'tracking', 'analyticsEvents', 'consent', 'integrations', 'health', 'system', 'contentTypes', 'entries', 'runtime', 'search', 'queue', 'scheduler', 'webhooks', 'extensions', 'installer', 'importExport', 'updates', 'rc', 'stable', 'admin', 'media', 'public', 'cms', 'database', 'auth', 'users', 'roles', 'apiTokens', 'security');
         foreach (\CajeerEngine\Http\RouteRegistry::all() as [$method, $path, $name, $controller, $action, $scopes]) {

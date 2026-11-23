@@ -416,6 +416,36 @@ function searchDiscovery(input,kind,boardId=''){
  input.addEventListener('input',()=>{generation++;clearTimeout(timer);result.replaceChildren();if(kind==='suggest'&&input.value.trim().length>=3)timer=setTimeout(refresh,550)});
  add(box,button(kind==='suggest'?'Подсказки по темам и тегам':'Найти похожие темы',refresh),result);return box;
 }
+/** AI search uses only live public source evidence; nothing is sent to OpenAI until requested. */
+function aiSearchPanel(initial=''){
+ const root=panel(),field=node('textarea'),ask=node('button','Найти ответ с AI'),feedback=node('p','','meta'),answer=aiMessage('assistant',''),body=answer.querySelector('.forum-ai-text'),sources=node('div',undefined,'forum-ai-search-sources');
+ const formEl=node('form');field.value=initial;field.maxLength=600;field.rows=2;field.required=true;field.placeholder='Спросите о публичных обсуждениях';field.setAttribute('aria-label','Вопрос для AI-поиска');ask.type='submit';feedback.setAttribute('role','status');
+ const renderSources=(rows,cited=[])=>{sources.replaceChildren();if(!Array.isArray(rows)||!rows.length)return;
+  add(sources,node('h4','Проверяемые источники'));const set=new Set(cited.map(Number));
+  for(const row of rows){if(!Number.isSafeInteger(row.number)||!Number.isSafeInteger(row.page)||row.page<1||!/^[a-f0-9-]{36}$/.test(row.thread_id)||!/^[a-f0-9-]{36}$/.test(row.post_id))continue;
+   const item=node('div',undefined,'forum-ai-search-source');const url=`/forum/threads/${row.thread_id}?page=${row.page}#post-${row.post_id}`;
+   add(item,link(`[${row.number}] ${row.title}`,url),node('p',row.excerpt||'','meta'));if(set.has(row.number))item.classList.add('cited');add(sources,item);
+  }
+ };
+ const stream=async(question)=>{
+  const response=await fetch('/api/v1/forum/ai/search/stream',{method:'POST',credentials:'same-origin',cache:'no-store',headers:{'Accept':'text/event-stream','Content-Type':'application/json','X-CSRF-Token':me.csrf_token},body:JSON.stringify({question})});
+  if(!response.ok){let data={};try{data=await response.json()}catch{}throw Error(data.error?.message||'HTTP '+response.status)}
+  if(!response.body)throw Error('Потоковый ответ недоступен');
+  const reader=response.body.getReader(),decoder=new TextDecoder();let buffer='',bytes=0,completed=false,found=[];
+  const frame=raw=>{let kind='',data='';for(const line of raw.split('\n')){if(line.startsWith('event:'))kind=line.slice(6).trim();else if(line.startsWith('data:'))data+=line.slice(5).trimStart()}
+   if(!data)return;let value;try{value=JSON.parse(data)}catch{throw Error('Ошибка формата SSE')}
+   if(kind==='sources'){found=value.sources||[];renderSources(found);feedback.textContent=found.length?`Найдено источников: ${found.length}. Формируется ответ…`:'Источники не найдены.'}
+   else if(kind==='delta'){body.textContent+=String(value.text||'')}
+   else if(kind==='done'){completed=true;body.textContent=String(value.text||body.textContent);renderSources(value.sources||found,value.citation_check?.cited_numbers||[]);
+    feedback.textContent=value.no_evidence?'В публичных источниках нет достаточных данных.':value.citation_check?.valid?'Цитаты ссылаются на доступные сообщения. Сопоставьте выводы с первоисточниками.':'Не все утверждения снабжены проверяемыми ссылками — проверьте источники вручную.';}
+   else if(kind==='error')throw Error(value.message||'Ошибка AI-поиска');
+  };
+  try{while(true){const {value,done}=await reader.read();if(done)break;bytes+=value.byteLength;if(bytes>220000)throw Error('Размер ответа превышен');buffer+=decoder.decode(value,{stream:true}).replace(/\r\n/g,'\n');let n;while((n=buffer.indexOf('\n\n'))>=0){frame(buffer.slice(0,n));buffer=buffer.slice(n+2)}}if(!completed)throw Error('Соединение прервано до завершения AI-ответа.')}finally{reader.releaseLock()}
+ };
+ formEl.addEventListener('submit',e=>{e.preventDefault();void run(async()=>{const question=field.value.trim();if(question.length<3||new TextEncoder().encode(question).length>600)throw Error('Вопрос: от 3 до 600 байт.');ask.disabled=true;field.disabled=true;feedback.textContent='Ищем опубликованные сообщения…';body.textContent='';sources.replaceChildren();try{await stream(question)}catch(err){feedback.textContent=err.message;feedback.classList.add('error');throw err}finally{ask.disabled=false;field.disabled=false}})});
+ add(formEl,field,ask);add(root,node('h3','AI-поиск по форуму'),node('p','Поиск использует только общедоступные опубликованные темы. Передача фрагментов в OpenAI начинается после нажатия кнопки. Приватные разделы и личные сообщения не передаются. Ответ может ошибаться.','meta'),formEl,feedback,answer,sources);return root;
+}
+
 async function search(){
  heading('Расширенный поиск');const params=new URLSearchParams(location.search),value=k=>params.get(k)||'',q=value('q'),tag=value('tag'),mode=value('mode')==='posts'?'posts':'threads';
  const tree=await f(''),boards=[['','Все доступные разделы'],...tree.boards.filter(b=>b.node_type!=='container').map(b=>[b.id,b.name])];
@@ -425,7 +455,7 @@ async function search(){
  for(const input of searchForm.querySelectorAll('input')){input.required=false;if(input.type==='text')input.maxLength=input.name==='q'?100:input.name==='author_id'?36:60;}
  const queryInput=searchForm.elements.q;searchForm.insertBefore(searchDiscovery(queryInput,'suggest'),submit);
  const authorBox=node('div'),authorName=node('input'),authorResults=node('div');authorName.placeholder='Имя участника';authorName.maxLength=100;authorName.setAttribute('aria-label','Имя автора');let authorSerial=0;authorName.addEventListener('input',()=>{authorSerial++;authorResults.replaceChildren()});const findAuthor=async()=>{const n=++authorSerial,term=authorName.value.trim();if(term.length<2)return;const rows=await f('/members?'+new URLSearchParams({q:term,discovery:'1'}));if(n!==authorSerial)return;authorResults.replaceChildren();for(const m of rows)add(authorResults,button(m.name,()=>{searchForm.elements.author_id.value=m.id;authorResults.replaceChildren(node('p','Выбран автор: '+m.name,'meta'))}));if(!rows.length)add(authorResults,node('p','Участники не найдены.','meta'))};authorName.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();run(findAuthor)}});add(authorBox,authorName,button('Найти автора',findAuthor),authorResults);searchForm.insertBefore(authorBox,submit);
- add(app,searchForm,node('p','Слова ищутся совместно; "точная фраза" — рядом и в заданном порядке; -слово исключает совпадение в найденном поле. Даты и автор относятся к теме или сообщению в выбранном режиме.','meta'));
+ add(app,searchForm);if(me&&q.length>=3){try{const ai=await f('/ai/status');if(ai.enabled&&ai.configured)add(app,aiSearchPanel(q))}catch{}}add(app,node('p','Слова ищутся совместно; "точная фраза" — рядом и в заданном порядке; -слово исключает совпадение в найденном поле. Даты и автор относятся к теме или сообщению в выбранном режиме.','meta'));
  if(['q','tag','board_id','author_id','from','to','question'].some(k=>params.has(k))){const query=new URLSearchParams(params);query.set('page',String(page));query.set('mode',mode);query.delete('discover');const d=await f('/search?'+query),box=node('div',undefined,'category'),total=Number(d[0]?.total_results??0);
  if(d.length)add(app,node('p',`Найдено: ${total} · Страница ${page} · Доступны первые 100 страниц`,'meta'));
  for(const t of d){const item=node('div',undefined,'entry'),main=node('div'),url=t.post_id?`/forum/threads/${t.id}?page=${t.post_page||1}#post-${t.post_id}`:threadUrl(t),a=link('',url,'strong');a.append(searchHighlight(t.title,q));if(t.prefix)add(main,node('span',t.prefix,'thread-prefix'));add(main,a,node('p',[t.match_type==='post'?'Сообщение':t.match_type==='tag'?'Тег':t.match_type==='title'?'Заголовок':null,dateLabel(t.match_date||t.updated_at),`${t.reply_count??0} ответов`].filter(Boolean).join(' · '),'meta'));if(t.matched_tag)add(main,link('#'+t.matched_tag,'/forum/search?'+new URLSearchParams({tag:t.matched_tag})));if(t.snippet)add(main,add(node('p',undefined,'body'),searchHighlight(t.snippet,q)));if(t.post_id)add(main,link('Перейти к сообщению',url));add(box,add(item,main));}
@@ -774,7 +804,7 @@ async function aiPage(){
  add(formEl,textarea,send,feedback);
  add(side,node('h2','Диалоги'),button('Новый диалог',()=>choose(null)),history);
  add(chat,quota,node('p','Сообщения отправляются внешнему провайдеру OpenAI. AI не читает приватные темы, переписки и настройки форума. Ответы могут содержать ошибки.','meta'),messages,formEl);
- add(layout,side,chat);add(app,layout);await choose(null);
+ add(layout,side,chat);add(app,link('AI-поиск по публичным обсуждениям','/forum/search','button secondary'),layout);await choose(null);
 }
 function aiMessage(role,content){const article=node('article',undefined,'forum-ai-message'),text=node('div',content,'forum-ai-text');add(article,node('strong',role==='assistant'?'AI-помощник':'Вы'),text);return article}
 

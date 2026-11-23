@@ -74,3 +74,10 @@ html[data-forum-sidebar=none] .layout>aside{display:none}
 .forum-thread-ai-sources{display:flex;flex-wrap:wrap;gap:9px;margin:10px 0}
 .forum-thread-ai-sources strong{flex-basis:100%}
 .forum-thread-ai-sessions{max-height:230px;overflow:auto}
+
+/* AI Forum Search: attributed evidence with stable, readable source links. */
+.forum-ai-search-sources{display:grid;gap:10px;margin-top:14px}
+.forum-ai-search-source{border:1px solid var(--line);border-radius:8px;padding:10px;overflow-wrap:anywhere}
+.forum-ai-search-source.cited{border-left:4px solid var(--accent,var(--line))}
+.forum-ai-search-source p{margin:6px 0 0;white-space:pre-wrap}
+.forum-ai-search-sources h4{margin:4px 0}

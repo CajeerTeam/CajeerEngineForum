@@ -31,7 +31,7 @@ if ($driver === 'sqlite') {
     $pdo->exec('PRAGMA foreign_keys=ON');
     (new ReflectionProperty($db,'pdo'))->setValue($db,$pdo);
     $pdo->exec('CREATE TABLE ce_users (id TEXT PRIMARY KEY, email TEXT UNIQUE NOT NULL, name TEXT NOT NULL, password_hash TEXT NOT NULL)');
-    foreach (['0075_engine_ai_cost_control.sql','0084_forum_ai_chat.sql','0085_forum_thread_ai.sql'] as $name) {
+    foreach (['0075_engine_ai_cost_control.sql','0084_forum_ai_chat.sql','0085_forum_thread_ai.sql','0086_forum_ai_search.sql'] as $name) {
         $pdo->exec((string)file_get_contents($root.'/migrations/sqlite/'.$name));
     }
 } else {

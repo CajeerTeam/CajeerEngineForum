@@ -1,3 +1,12 @@
+## [1.3.3] - 2026-11-23
+
+### AI Forum Search
+- AI search on `/forum/search` using real indexed message/thread lookup, permission-checked live publication excerpts and page-aware links.
+- OpenAI Responses API streamed answer only after explicit user action; ten source cap and citation integrity report.
+- Only content readable by both member and guest enters the external model; no private boards, removed posts or personal conversations.
+- Migration 0086 isolates one-shot search transcripts, removes completed history and reaps interrupted sessions; reuses existing budgets and limits.
+- Added real PDO acceptance gates for SQLite/PostgreSQL/MySQL/MariaDB, browser tests for Chromium/Firefox and stricter OpenAPI route-security verification.
+
 ## [1.3.2] - 2026-11-23
 
 ### Contextual Thread Assistant

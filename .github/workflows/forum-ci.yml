@@ -6,7 +6,7 @@ on:
 permissions:
   contents: read
 env:
-  FORUM_CURRENT_VERSION: ${{ '1.3.2' }}
+  FORUM_CURRENT_VERSION: ${{ '1.3.3' }}
 concurrency:
   group: forum-ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -257,6 +257,10 @@ jobs:
         env:
           FORUM_TEST_DRIVER: sqlite
         run: php tools/forum-thread-ai-acceptance.php
+      - name: Real SQL AI forum search acceptance (no skips)
+        env:
+          FORUM_TEST_DRIVER: sqlite
+        run: php tools/forum-ai-search-acceptance.php
       - run: php tools/forum-analytics-dashboard-regression.php
       - run: php tools/forum-engagement-regression.php
       - run: php tools/forum-analytics-hardening-regression.php
@@ -270,6 +274,8 @@ jobs:
       - run: python tools/forum-tests/analytics_rollup_sql_regression.py
       - run: python tools/forum-tests/ai_chat_sql_regression.py
       - run: python tools/forum-tests/thread_ai_sql_regression.py
+      - run: python tools/forum-tests/ai_search_sql_regression.py
+      - run: php tools/forum-ai-search-unit-regression.php
       - run: php tools/forum-seo-unit-regression.php
       - run: python tools/forum-tests/seo_sql_regression.py
       - run: python tools/forum-tests/stable_search_seo_sql_regression.py
@@ -412,6 +418,10 @@ jobs:
         env:
           FORUM_TEST_DRIVER: pgsql
         run: php tools/forum-thread-ai-acceptance.php
+      - name: Real PostgreSQL AI forum search acceptance
+        env:
+          FORUM_TEST_DRIVER: pgsql
+        run: php tools/forum-ai-search-acceptance.php
       - name: Upload PostgreSQL evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -478,6 +488,10 @@ jobs:
         env:
           FORUM_TEST_DRIVER: mysql
         run: php tools/forum-thread-ai-acceptance.php
+      - name: Real MySQL/MariaDB AI forum search acceptance
+        env:
+          FORUM_TEST_DRIVER: mysql
+        run: php tools/forum-ai-search-acceptance.php
   browser:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -521,6 +535,7 @@ jobs:
       - run: python tools/forum-engagement-browser-regression.py --browser ${{ matrix.browser }}
       - run: python tools/forum-ai-chat-browser-regression.py --browser ${{ matrix.browser }}
       - run: python tools/forum-thread-ai-browser-regression.py --browser ${{ matrix.browser }}
+      - run: python tools/forum-ai-search-browser-regression.py --browser ${{ matrix.browser }}
       - name: Real browser E2E with SMTP
         run: python tools/forum-tests/run.py --suite browser --browser ${{ matrix.browser }} --report storage/tmp/forum-ci/browser
       - name: Upload browser evidence
