@@ -62,6 +62,7 @@ final class NativeCli
             $result = match ($command) {
                 'forum:import:discover','forum:import:plan','forum:import:run','forum:import:status','forum:import:map','forum:import:accept','forum:import:verify' => \CajeerEngine\Forum\Migration\ForumMigrationCli::run($rootPath,$config,$argv),
                 'forum:search:reindex' => (new \CajeerEngine\Forum\Service\ForumSearchMaintenance(new DatabaseManager($config)))->rebuild(),
+                'forum:search:repair' => (new \CajeerEngine\Forum\Service\ForumSearchMaintenance(new DatabaseManager($config)))->repair(),
                 'forum:search:check' => (new \CajeerEngine\Forum\Service\ForumSearchMaintenance(new DatabaseManager($config)))->check(),
                 'forum:runtime:check' => \CajeerEngine\Forum\Service\ForumRuntimeCache::diagnostics(),
                 'forum:extensions:retry' => ['ok'=>(new \CajeerEngine\Forum\Service\ForumExtensionOutbox(new DatabaseManager($config)))->retry(self::argument($argv,2,'event_id'))],

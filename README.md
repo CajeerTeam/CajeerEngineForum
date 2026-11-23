@@ -1,10 +1,12 @@
 # CajeerEngine Forum Edition
 
-**Forum Edition 1.3.3 — AI Forum Search (ACL-protected public search, genuine post evidence and sourced OpenAI answers)**, built on CajeerEngine 2.1.0. Publication requires a passing `forum-required` gate and verified signed CI certification tied to the exact commit and release artifacts.
+**Forum Edition 1.3.4 — Knowledge Sync & Search Quality (index repair, source freshness and ranked public evidence)**, built on CajeerEngine 2.1.0. Publication requires a passing `forum-required` gate and verified signed CI certification tied to the exact commit and release artifacts.
 
 Self-hosted forum platform by CajeerTeam. PHP 8.4.1+, CajeerEngine kernel, Symfony Components, REST API, Apache-2.0.
 
 Repository: https://github.com/CajeerTeam/CajeerEngineForum · Upstream: https://github.com/CajeerTeam/CajeerEngine
+
+**Upgrade 1.3.3 → 1.3.4:** [Knowledge Sync & Search Quality guide](docs/forum-knowledge-sync-1.3.4.md). No new migration. Deploy the updated PHP sources, run the mandatory FTS and AI search regressions, then `php bin/cajeer forum:search:check --json` before reopening traffic. `forum:search:repair` repairs drift while indexing is paused. Full CI/staging checks are still required.
 
 **Upgrade 1.3.2 → 1.3.3:** [AI Forum Search guide](docs/forum-ai-search-1.3.3.md). Apply migration `0086_forum_ai_search.sql` for your database, deploy the search PHP/JS/CSS files and run the required AI-search acceptance tests. The existing `/forum/search` page gains explicit, optional OpenAI answers grounded in public posts, with server-created source links, role-isolated temporary storage and shared AI budgets. No private forum content is sent to OpenAI. Database CI, signed release qualification and staging are required before production rollout.
 

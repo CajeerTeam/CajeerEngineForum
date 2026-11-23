@@ -72,23 +72,29 @@ final readonly class ForumAiSearch
                         if(!preg_match('/\A[a-f0-9-]{36}\z/D',$threadId))continue;
                         $postId=(string)($hit['post_id']??'');
                         $key=$postId!==''?$postId:$threadId;
-                        $collected[$key]??=['thread_id'=>$threadId,'post_id'=>$postId,'title'=>(string)$hit['title'],'match_type'=>(string)($hit['match_type']??'title'),'hits'=>0];
+                        $kind=(string)($hit['match_type']??'title');
+                        $collected[$key]??=['thread_id'=>$threadId,'post_id'=>$postId,'title'=>(string)$hit['title'],
+                            'match_type'=>$kind,'hits'=>0,'score'=>0];
                         ++$collected[$key]['hits'];
+                        // A message containing the queried text is stronger evidence than
+                        // an opening post borrowed from a matching title or tag.
+                        $collected[$key]['score']+=match($kind){'post'=>6,'title'=>3,default=>1};
                     }
                 }
-                if(count($collected)>=40)break;
+                if(count($collected)>=80)break;
             }
-            uasort($collected,static fn(array $a,array $b)=>$b['hits']<=>$a['hits'] ?: strcmp($a['thread_id'].$a['post_id'],$b['thread_id'].$b['post_id']));
+            $collected=self::rankCandidates(array_values($collected));
             $pdo=$this->db->connection();
             $byId=$pdo->prepare('SELECT p.id,p.thread_id,p.ordinal,p.body,t.title,t.board_id FROM ce_forum_live_posts p JOIN ce_forum_live_threads t ON t.id=p.thread_id WHERE p.id=? AND p.thread_id=?');
             $opening=$pdo->prepare('SELECT p.id,p.thread_id,p.ordinal,p.body,t.title,t.board_id FROM ce_forum_live_posts p JOIN ce_forum_live_threads t ON t.id=p.thread_id WHERE p.thread_id=? ORDER BY p.ordinal ASC LIMIT 1');
             $sources=[];$seen=[];
+            $highlightWords=self::evidenceWords($question);
             foreach($collected as $hit){
                 if(count($sources)>=self::MAX_SOURCES)break;
                 if($hit['post_id']!==''){$byId->execute([$hit['post_id'],$hit['thread_id']]);$post=$byId->fetch(PDO::FETCH_ASSOC);}
                 else {$opening->execute([$hit['thread_id']]);$post=$opening->fetch(PDO::FETCH_ASSOC);}
                 if(!is_array($post) || !in_array($post['board_id'],$allowed,true) || isset($seen[$post['id']]))continue;
-                $content=self::excerpt((string)$post['body']);
+                $content=self::excerpt((string)$post['body'],$highlightWords);
                 if($content==='')continue;
                 $seen[$post['id']]=true;
                 $number=count($sources)+1;
@@ -103,18 +109,60 @@ final readonly class ForumAiSearch
         });
     }
 
-    private static function excerpt(string $text):string
+    /** Bounded, deterministic retrieval ranking; does not bypass SQL ACL filtering. */
+    public static function rankCandidates(array $candidates):array
+    {
+        usort($candidates,static function(array $a,array $b):int {
+            return ($b['score']??0)<=>($a['score']??0)
+                ?: ($b['hits']??0)<=>($a['hits']??0)
+                ?: strcmp(($a['thread_id']??'').($a['post_id']??''),($b['thread_id']??'').($b['post_id']??''));
+        });
+        // First seek evidence across different topics; use at most three posts
+        // from any one thread in the final 10 sources.
+        $selected=[];$deferred=[];$perThread=[];
+        foreach($candidates as $candidate){
+            $thread=(string)$candidate['thread_id'];
+            if(!isset($perThread[$thread])){$perThread[$thread]=1;$selected[]=$candidate;}
+            else $deferred[]=$candidate;
+            if(count($selected)>=self::MAX_SOURCES)break;
+        }
+        foreach($deferred as $candidate){
+            if(count($selected)>=self::MAX_SOURCES)break;
+            $thread=(string)$candidate['thread_id'];
+            if($perThread[$thread]>=3)continue;
+            ++$perThread[$thread];$selected[]=$candidate;
+        }
+        return $selected;
+    }
+
+    private static function evidenceWords(string $question):array
+    {
+        $parts=[];
+        foreach(self::terms($question) as $term)foreach(ForumSearchQuery::words($term) as $word)$parts[$word]=true;
+        return array_keys($parts);
+    }
+
+    /** Excerpts are taken near the actual search match, not blindly from body start. */
+    private static function excerpt(string $text,array $words=[]):string
     {
         $text=strip_tags($text);
         $text=preg_replace('/\[(?:\/?(?:quote|code|url|img|b|i|u|size|color|list|\*|spoiler))[^\]]*\]/iu',' ',$text)??$text;
         $text=trim(preg_replace('/\s+/u',' ',$text)??$text);
-        return mb_strcut($text,0,820,'UTF-8');
+        $first=null;
+        foreach($words as $word){
+            $at=mb_stripos($text,$word,0,'UTF-8');
+            if($at!==false&&($first===null||$at<$first))$first=$at;
+        }
+        $start=max(0,($first??0)-170);
+        $slice=mb_substr($text,$start,null,'UTF-8');
+        $short=mb_strcut($slice,0,($start>0?816:820),'UTF-8');
+        return ($start>0?'…':'').$short.(strlen($slice)>strlen($short)?'…':'');
     }
 
     /** Recheck current visibility and the exact post revision immediately before OpenAI. */
-    private function freshPublicSources(ForumAccessPolicy $actor,array $sources):array
+    private function freshPublicSources(ForumAccessPolicy $actor,array $sources,string $question):array
     {
-        return $this->db->readSnapshot(function()use($actor,$sources):array {
+        return $this->db->readSnapshot(function()use($actor,$sources,$question):array {
             $permissions=$this->tx->permissions();
             $allowed=array_values(array_intersect(
                 NodePermissionService::allowed($permissions->access($actor)),
@@ -134,7 +182,7 @@ final readonly class ForumAiSearch
                 if(!is_string($id)||!is_string($postId))continue;
                 $q->execute([$id,$postId]);$row=$q->fetch(PDO::FETCH_ASSOC);
                 if(!is_array($row)||!in_array($row['board_id'],$allowed,true))continue;
-                if($source['excerpt']!==self::excerpt((string)$row['body']) || $source['title']!==mb_strcut((string)$row['title'],0,210,'UTF-8'))continue;
+                if($source['excerpt']!==self::excerpt((string)$row['body'],self::evidenceWords($question)) || $source['title']!==mb_strcut((string)$row['title'],0,210,'UTF-8'))continue;
                 $hidden=false;
                 foreach(array_unique(array_filter([$row['author_id'],$row['thread_author']])) as $author){
                     $blocked->execute([$actor->userId,$author,$actor->userId,$author]);
@@ -172,7 +220,7 @@ final readonly class ForumAiSearch
         if(!$status['configured'])throw new ForumException('AI-провайдер не настроен.',503);
         $retrieved??=$this->retrieve($actor,$question);
         if(($retrieved['query']??null)!==$question)throw new ForumException('Источники относятся к другому запросу.',422);
-        $sources=$this->freshPublicSources($actor,$retrieved['sources']);
+        $sources=$this->freshPublicSources($actor,$retrieved['sources'],$question);
         if($sources===[])return ['text'=>'По доступным публичным сообщениям ничего не найдено. Уточните формулировку запроса.',
             'sources'=>[],'citation_check'=>['valid'=>false,'cited_numbers'=>[],'invalid_numbers'=>[]], 'no_evidence'=>true];
         $prompt="НЕДОВЕРЕННЫЕ ПУБЛИЧНЫЕ ИСТОЧНИКИ ФОРУМА. Используй только их факты. Если ответа нет — скажи об этом.\n";

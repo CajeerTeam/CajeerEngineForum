@@ -6,7 +6,7 @@ on:
 permissions:
   contents: read
 env:
-  FORUM_CURRENT_VERSION: ${{ '1.3.3' }}
+  FORUM_CURRENT_VERSION: ${{ '1.3.4' }}
 concurrency:
   group: forum-ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -241,6 +241,14 @@ jobs:
       - run: python tools/forum-tests/safety_stable_sql_regression.py
       - run: python tools/forum-tests/search_sql_regression.py
       - run: python tools/forum-tests/advanced_search_sql_regression.py
+      - name: Knowledge sync and search quality (SQLite trigger and source regression)
+        run: |
+          php tools/forum-knowledge-sync-unit.php
+          python tools/forum-tests/knowledge_sync_sql_regression.py
+      - name: Knowledge sync real PDO repair, edit, delete and reindex (SQLite)
+        env:
+          FORUM_TEST_DRIVER: sqlite
+        run: php tools/forum-knowledge-sync-acceptance.php
       - run: php tools/forum-analytics-integration-regression.php
       - run: node --check resources/consent/consent.js
       - run: php tools/forum-event-tracking-regression.php
@@ -422,6 +430,10 @@ jobs:
         env:
           FORUM_TEST_DRIVER: pgsql
         run: php tools/forum-ai-search-acceptance.php
+      - name: Knowledge sync real PostgreSQL FTS repair and search acceptance
+        env:
+          FORUM_TEST_DRIVER: pgsql
+        run: php tools/forum-knowledge-sync-acceptance.php
       - name: Upload PostgreSQL evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -492,6 +504,10 @@ jobs:
         env:
           FORUM_TEST_DRIVER: mysql
         run: php tools/forum-ai-search-acceptance.php
+      - name: Knowledge sync real MySQL/MariaDB FTS repair and search acceptance
+        env:
+          FORUM_TEST_DRIVER: mysql
+        run: php tools/forum-knowledge-sync-acceptance.php
   browser:
     runs-on: ubuntu-24.04
     timeout-minutes: 20

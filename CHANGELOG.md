@@ -1,3 +1,12 @@
+## [1.3.4] - 2026-11-23
+
+### Knowledge Sync & Search Quality
+- Preserve immediate, transactionally consistent indexing of new/edited/deleted posts, titles and tags on SQLite via FTS5 triggers, PostgreSQL GIN expressions and MySQL/MariaDB FULLTEXT. No parallel stale AI index, cookies or migration.
+- Detect missing SQLite synchronization triggers, stale FTS rows and orphan keys. Restore all three indexes and their triggers inside one database transaction; operator can run `forum:search:check`, `forum:search:repair` (only if broken) or a full `forum:search:reindex` in a write-free window.
+- Recreate correct native expression/FULLTEXT index definitions for PostgreSQL and MySQL/MariaDB when rebuilding; keep all repairs restricted to operator CLI. MySQL DDL is not atomic across tables: keep writes stopped and verify afterwards.
+- Improve grounded AI search using ranked post matches, per-thread diversity and term-centered post excerpts. Revalidate exact excerpts and access before sending public sources to OpenAI. Preserve existing budgets, ACL and cited post permalinks.
+- Add real-PDO acceptance on SQLite/PostgreSQL/MySQL/MariaDB, standalone search-quality checks and full SQLite trigger/soft-delete regression; no new schema migration.
+
 ## [1.3.3] - 2026-11-23
 
 ### AI Forum Search

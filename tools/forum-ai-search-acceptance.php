@@ -72,6 +72,19 @@ try{
     $check(!str_contains(json_encode($evidence,JSON_UNESCAPED_UNICODE),$deleted),'deleted post is not an AI source');
     $check(ForumAiSearch::citations('Ответ [1]',$evidence['sources'])['valid'],'real citation is recognized');
     $check(!ForumAiSearch::citations('Ссылка [99]',$evidence['sources'])['valid'],'fabricated citation rejected');
+    // Edits between search and provider generation must invalidate the old
+    // exact excerpt, rather than leaking stale evidence into OpenAI context.
+    $pdo->prepare('UPDATE ce_forum_posts SET body=? WHERE id=?')->execute([
+        'Криптографический ключ перенесён и обновлён; старые цитаты недействительны.',$post
+    ]);
+    $beforeEditCalls=$client->calls;
+    $stale=$search->answer($actor,'Криптографический ключ',null,$evidence);
+    $check($stale['no_evidence']===true&&$client->calls===$beforeEditCalls,'edited evidence discarded before external generation');
+    $pdo->prepare('UPDATE ce_forum_posts SET body=? WHERE id=?')->execute([
+        'Криптографический ключ хранится отдельно от пользовательского сообщения.',$post
+    ]);
+    $evidence=$search->retrieve($actor,'Криптографический ключ');
+    $check(($evidence['sources'][0]['post_id']??null)===$post,'reindexed current revision discovered after edit');
     $deltas='';$answer=$search->answer($actor,'Криптографический ключ',static function(string $s)use(&$deltas):void{$deltas.=$s;},$evidence);
     $check($deltas==='По сообщениям [1]'&&$answer['text']===$deltas&&$answer['citation_check']['valid'],'real provider stream and bounded citation result');
     $input=json_encode($client->input,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE);
