@@ -66562,6 +66562,48 @@
                         "required": ["forum_index_view","forum_board_view","forum_thread_view","forum_paginated_view","forum_attachment_click","forum_outbound_click"],
                         "additionalProperties": false
                       },
+                      "matomo_events": {
+                        "type": "object",
+                        "description": "Forum Edition Matomo custom event destinations (optional empty strings disable individual events), only on consent-approved anonymous public forum views and trusted clicks. Names are unique, validated and subject to core event rules.",
+                        "properties": {
+                          "forum_index_view": {"type":"string","maxLength":40,"pattern":"^([a-z][a-z0-9_]{0,39})?$"},
+                          "forum_board_view": {"type":"string","maxLength":40,"pattern":"^([a-z][a-z0-9_]{0,39})?$"},
+                          "forum_thread_view": {"type":"string","maxLength":40,"pattern":"^([a-z][a-z0-9_]{0,39})?$"},
+                          "forum_paginated_view": {"type":"string","maxLength":40,"pattern":"^([a-z][a-z0-9_]{0,39})?$"},
+                          "forum_attachment_click": {"type":"string","maxLength":40,"pattern":"^([a-z][a-z0-9_]{0,39})?$"},
+                          "forum_outbound_click": {"type":"string","maxLength":40,"pattern":"^([a-z][a-z0-9_]{0,39})?$"}
+                        },
+                        "required": ["forum_index_view","forum_board_view","forum_thread_view","forum_paginated_view","forum_attachment_click","forum_outbound_click"],
+                        "additionalProperties": false
+                      },
+                      "plausible_events": {
+                        "type": "object",
+                        "description": "Forum Edition Plausible custom event destinations (optional empty strings disable individual events), only on consent-approved anonymous public forum views and trusted clicks. Names are unique, validated and subject to core event rules.",
+                        "properties": {
+                          "forum_index_view": {"type":"string","maxLength":40,"pattern":"^([a-z][a-z0-9_]{0,39})?$"},
+                          "forum_board_view": {"type":"string","maxLength":40,"pattern":"^([a-z][a-z0-9_]{0,39})?$"},
+                          "forum_thread_view": {"type":"string","maxLength":40,"pattern":"^([a-z][a-z0-9_]{0,39})?$"},
+                          "forum_paginated_view": {"type":"string","maxLength":40,"pattern":"^([a-z][a-z0-9_]{0,39})?$"},
+                          "forum_attachment_click": {"type":"string","maxLength":40,"pattern":"^([a-z][a-z0-9_]{0,39})?$"},
+                          "forum_outbound_click": {"type":"string","maxLength":40,"pattern":"^([a-z][a-z0-9_]{0,39})?$"}
+                        },
+                        "required": ["forum_index_view","forum_board_view","forum_thread_view","forum_paginated_view","forum_attachment_click","forum_outbound_click"],
+                        "additionalProperties": false
+                      },
+                      "gtm_events": {
+                        "type": "object",
+                        "description": "Forum Edition Gtm custom event destinations (optional empty strings disable individual events), only on consent-approved anonymous public forum views and trusted clicks. Names are unique, validated and subject to core event rules.",
+                        "properties": {
+                          "forum_index_view": {"type":"string","maxLength":40,"pattern":"^([a-z][a-z0-9_]{0,39})?$"},
+                          "forum_board_view": {"type":"string","maxLength":40,"pattern":"^([a-z][a-z0-9_]{0,39})?$"},
+                          "forum_thread_view": {"type":"string","maxLength":40,"pattern":"^([a-z][a-z0-9_]{0,39})?$"},
+                          "forum_paginated_view": {"type":"string","maxLength":40,"pattern":"^([a-z][a-z0-9_]{0,39})?$"},
+                          "forum_attachment_click": {"type":"string","maxLength":40,"pattern":"^([a-z][a-z0-9_]{0,39})?$"},
+                          "forum_outbound_click": {"type":"string","maxLength":40,"pattern":"^([a-z][a-z0-9_]{0,39})?$"}
+                        },
+                        "required": ["forum_index_view","forum_board_view","forum_thread_view","forum_paginated_view","forum_attachment_click","forum_outbound_click"],
+                        "additionalProperties": false
+                      },
                       "trust_days": {
                         "type": "integer",
                         "minimum": 1,

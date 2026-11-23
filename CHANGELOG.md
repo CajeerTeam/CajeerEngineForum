@@ -1,3 +1,10 @@
+## 1.2.6 — Alternative Analytics Providers (2026-11-23)
+
+- Integrate consent-controlled Matomo `trackEvent`, Plausible `POST /api/event` and GTM `dataLayer.push` calls for forum index/board/thread/pagination views and real attachment/outbound clicks, on the inherited 2.1.0 tracking engine without duplicate tag loaders or server event forgeries.
+- Add ACP-configurable and validated per-provider event names with per-event disable, revision-checked saving, backward-compatible policy editing and a strict, server-approved public SSR boundary. Custom events contain only operator-selected names and sanitized public URLs; private routes, queries and visitor data are excluded.
+- Continue Cloudflare Web Analytics' official beacon for consented public page views and RUM only; it cannot accept custom events. Prevent beacon insertion on URLs with extra sensitive query parameters; require manual Cloudflare setup without edge auto-injection.
+- Extend PHP and Chromium/Firefox browser regressions, API schema, release CI and operator instructions; retain GA4/Yandex support and CajeerEngine 2.1.0, with no schema migration. Live vendor ingestion and release certification remain external deployment checks.
+
 ## 1.2.5 — Google Analytics 4 Integration (2026-11-23)
 
 - Add six production GA4 custom events for real public forum index/board/thread/pagination views and trusted attachment/outbound clicks; ensure there is exactly one inherited gtag.js, one standard page_view per public navigation, and no new SDK or synthetic success events.

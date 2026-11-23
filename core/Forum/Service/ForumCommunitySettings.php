@@ -17,7 +17,7 @@ final readonly class ForumCommunitySettings
     {
         return ['name'=>getenv('APP_NAME')?:'CajeerEngine Forum Edition',
             'description'=>'Обсуждайте идеи, делитесь опытом и находите ответы вместе.',
-            'registration_enabled'=>self::operatorRegistration(), 'analytics_enabled'=>false, 'metrika_goals'=>self::metrikaGoals(), 'ga4_events'=>self::ga4Events(), 'trust_days'=>7,'trust_posts'=>3,
+            'registration_enabled'=>self::operatorRegistration(), 'analytics_enabled'=>false, 'metrika_goals'=>self::metrikaGoals(), 'ga4_events'=>self::ga4Events(), 'matomo_events'=>self::alternativeEvents(), 'plausible_events'=>self::alternativeEvents(), 'gtm_events'=>self::alternativeEvents(), 'trust_days'=>7,'trust_posts'=>3,
             'threads_hour'=>AntiSpamService::setting('THREADS_HOUR',30),
             'new_threads_hour'=>AntiSpamService::setting('NEW_THREADS_HOUR',6),
             'replies_10min'=>AntiSpamService::setting('REPLIES_10MIN',60),
@@ -68,6 +68,26 @@ final readonly class ForumCommunitySettings
             throw new ForumException('События GA4 должны иметь уникальные имена.',422);
         return $events;
     }
+    /** Provider destinations are public event names, never user-controlled visitor fields. */
+    public static function alternativeEvents(): array
+    {
+        return array_combine(array_keys(self::metrikaGoals()),array_keys(self::metrikaGoals()));
+    }
+    public static function validateAlternativeEvents(mixed $events,string $provider): array
+    {
+        if (!in_array($provider,['matomo','plausible','gtm'],true))throw new \LogicException('Unknown analytics provider');
+        $defaults=self::alternativeEvents();
+        if (!is_array($events)||array_diff_key($events,$defaults)||array_diff_key($defaults,$events))
+            throw new ForumException('Некорректный набор событий '.$provider.'.',422);
+        foreach ($events as $value) {
+            if (!is_string($value)||($value!==''&&!\CajeerEngine\Analytics\EventConfig::name($value))||in_array($value,['page_view','pageview'],true))
+                throw new ForumException('Недопустимое имя события '.$provider.'.',422);
+        }
+        $configured=array_filter(array_values($events),static fn(string $v):bool=>$v!=='');
+        if (count($configured)!==count(array_unique($configured)))
+            throw new ForumException('Имена событий '.$provider.' должны быть уникальны.',422);
+        return $events;
+    }
     public static function operatorRegistration(): bool
     { return filter_var(getenv('FORUM_REGISTRATION')===false?'true':getenv('FORUM_REGISTRATION'),FILTER_VALIDATE_BOOLEAN); }
 
@@ -91,7 +111,7 @@ final readonly class ForumCommunitySettings
     public static function validate(array $input): array
     {
         // Preserve older API clients while upgrades migrate the policy document in place.
-        $input+=['metrika_goals'=>self::metrikaGoals(),'ga4_events'=>self::ga4Events()];
+        $input+=['metrika_goals'=>self::metrikaGoals(),'ga4_events'=>self::ga4Events(), 'matomo_events'=>self::alternativeEvents(), 'plausible_events'=>self::alternativeEvents(), 'gtm_events'=>self::alternativeEvents()];
         $keys=array_keys(self::defaults());
         if(array_diff(array_keys($input),$keys)||array_diff($keys,array_keys($input)))throw new ForumException('Передайте все поля политики без неизвестных ключей.',422);
         $out=['name'=>V::text($input['name'],'name',100),'description'=>V::text($input['description'],'description',500,0)];
@@ -101,6 +121,7 @@ final readonly class ForumCommunitySettings
         $out['analytics_enabled']=$input['analytics_enabled'];
         $out['metrika_goals']=self::validateMetrikaGoals($input['metrika_goals']);
         $out['ga4_events']=self::validateGa4Events($input['ga4_events']);
+        foreach (['matomo','plausible','gtm'] as $provider) $out[$provider.'_events']=self::validateAlternativeEvents($input[$provider.'_events'],$provider);
         foreach(['trust_days'=>[1,365],'trust_posts'=>[1,1000],'threads_hour'=>[1,10000],'new_threads_hour'=>[1,10000],'replies_10min'=>[1,10000],'new_replies_10min'=>[1,10000],'attachment_mb'=>[1,25],'attachment_quota_mb'=>[1,2048],'pause_from'=>[0,4102444800],'pause_until'=>[0,4102444800]] as $key=>[$min,$max]){
             $n=$input[$key];if(!is_int($n)||$n<$min||$n>$max)throw new ForumException('Некорректное значение: '.$key,422);$out[$key]=$n;
         }
@@ -117,7 +138,7 @@ final readonly class ForumCommunitySettings
             $tx->permissions()->requireCurrent($actor,'forum:acp:settings',true);
             $before=$this->snapshot();
             if($before['revision']!==$revision)throw new ForumException('Политика изменена. Обновите страницу.',409);
-            $values+=['metrika_goals'=>$before['values']['metrika_goals'],'ga4_events'=>$before['values']['ga4_events']];
+            $values+=['metrika_goals'=>$before['values']['metrika_goals'],'ga4_events'=>$before['values']['ga4_events'],'matomo_events'=>$before['values']['matomo_events'],'plausible_events'=>$before['values']['plausible_events'],'gtm_events'=>$before['values']['gtm_events']];
             $values=self::validate($values);
             // Maintenance scheduling is a separate permission, even when editing the same document.
             if($values['pause_from']!==$before['values']['pause_from']||$values['pause_until']!==$before['values']['pause_until'])$tx->permissions()->requireCurrent($actor,'forum:acp:maintenance',true);

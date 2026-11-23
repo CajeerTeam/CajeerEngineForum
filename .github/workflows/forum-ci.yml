@@ -6,7 +6,7 @@ on:
 permissions:
   contents: read
 env:
-  FORUM_CURRENT_VERSION: ${{ '1.2.5' }}
+  FORUM_CURRENT_VERSION: ${{ '1.2.6' }}
 concurrency:
   group: forum-ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -462,6 +462,7 @@ jobs:
       - run: python tools/forum-tests/theme_browser_regression.py --browser ${{ matrix.browser }}
       - run: python tools/forum-visitor-consent-browser-regression.py --browser ${{ matrix.browser }}
       - run: python tools/forum-ga4-browser-regression.py --browser ${{ matrix.browser }}
+      - run: python tools/forum-alternative-analytics-browser-regression.py --browser ${{ matrix.browser }}
       - name: Real browser E2E with SMTP
         run: python tools/forum-tests/run.py --suite browser --browser ${{ matrix.browser }} --report storage/tmp/forum-ci/browser
       - name: Upload browser evidence

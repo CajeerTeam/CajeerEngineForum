@@ -131,7 +131,7 @@ final readonly class ForumPageRenderer
         ]);
         $headers=['Content-Type'=>'text/html; charset=UTF-8','Cache-Control'=>'private, no-store','Vary'=>'Cookie, Authorization, X-API-Token','X-Robots-Tag'=>$robots];
         if(ForumAnalyticsIntegration::eligible((bool)($community['analytics_enabled']??false),$index,$guest,$preview!==null) && ForumAnalyticsIntegration::publicPath($path)){
-            $tracking=(new ForumAnalyticsIntegration($this->root))->decorate($html,$request,$community['metrika_goals']??[],$community['ga4_events']??[]);
+            $tracking=(new ForumAnalyticsIntegration($this->root))->decorate($html,$request,$community['metrika_goals']??[],$community['ga4_events']??[],['matomo'=>$community['matomo_events']??[],'plausible'=>$community['plausible_events']??[],'gtm'=>$community['gtm_events']??[]]);
             $html=$tracking['html'];
             if($tracking['active'])$headers['X-Forum-Analytics-Public']='1';
         }

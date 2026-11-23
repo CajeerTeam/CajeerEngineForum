@@ -98,6 +98,55 @@
       return events;
     }catch{return null;}
   })();
+  // Provider-specific Forum destinations are signed into an ACL-approved SSR page.
+  // Never derive names or outbound payloads from visitor content, routes or links.
+  const forumAlternativeEvents=(()=>{
+    if(!approvedForumPath)return null;
+    try{
+      const providers=JSON.parse(boot.dataset.ceForumAlternativeEvents||'null');
+      if(!providers||typeof providers!=='object'||Array.isArray(providers)||
+         Object.keys(providers).length!==3)return null;
+      const output={};
+      for(const provider of ['matomo','plausible','gtm']){
+        const events=providers[provider];
+        if(!events||typeof events!=='object'||Array.isArray(events)||
+           Object.keys(events).length!==forumGoalKeys.length)return null;
+        const nonEmpty=[];
+        for(const key of forumGoalKeys){
+          const name=events[key];
+          if(typeof name!=='string'||(name&&(!/^[a-z][a-z0-9_]{0,39}$/.test(name)||
+             /^(?:ce_|google_|ga_|firebase_|gtm_|session_|first_)/.test(name)||
+             ['page_view','pageview','purchase','refund','add_to_cart','begin_checkout','view_item'].includes(name))))return null;
+          if(name)nonEmpty.push(name);
+        }
+        if(new Set(nonEmpty).size!==nonEmpty.length)return null;
+        output[provider]=events;
+      }
+      return output;
+    }catch{return null;}
+  })();
+  function forumAlternativeEvent(provider,key){
+    const name=forumAlternativeEvents?.[provider]?.[key];
+    if(!name||!forumGoalKeys.includes(key)||!trackingAllowed(provider)||
+       !forumPublicPath(location.pathname)||!eventConfig()?.enabled)return false;
+    const c=counters.get(provider),config=trackingConfig(),data=locationData();
+    const configuredId=provider==='gtm'?config?.gtm_id:config?.[provider+'_id'];
+    if(!c||!data||['error','stopped'].includes(c.status)||!configuredId||c.id!==configuredId)return false;
+    // Respect engine event routing restrictions; disabled or remapped names cannot bypass rules.
+    if(eventRule(name)?.[provider]!==name)return false;
+    try{
+      if(provider==='matomo'){
+        if(!Array.isArray(window._paq))return false;
+        window._paq.push(['setCustomUrl',data.page_location],['trackEvent','Forum',name]);
+      }else if(provider==='plausible'){
+        sendPlausible(c,name,data,{});
+      }else if(provider==='gtm'){
+        if(!Array.isArray(window.dataLayer))return false;
+        window.dataLayer.push({event:'ce_'+name});
+      }else return false;
+      return true;
+    }catch{return false;}
+  }
   function forumGa4Event(key){
     if(!forumGa4Events||!forumGoalKeys.includes(key)||!forumGa4Events[key]||!trackingAllowed('ga4')||!forumPublicPath(location.pathname)||!eventConfig()?.enabled)return false;
     const c=counters.get('ga4'),name=forumGa4Events[key];
@@ -211,9 +260,9 @@
               if(new URL(data.page_location).searchParams.has('page'))forumGoal('forum_paginated_view');
             }
           }
-          if(provider==='gtm')window.dataLayer.push({event:'ce_page_view',...data,ce_event_id:id});
-          if(provider==='matomo'){window._paq.push(['setCustomUrl',data.page_location],['setReferrerUrl',data.page_referrer||''],['setDocumentTitle',new URL(data.page_location).pathname],['trackPageView']);}
-          if(provider==='plausible')sendPlausible(c,'pageview',data,{});
+          if(provider==='gtm'){window.dataLayer.push({event:'ce_page_view',...data,ce_event_id:id});forumAlternativeEvent('gtm',new URL(data.page_location).pathname==='/forum'?'forum_index_view':new URL(data.page_location).pathname.startsWith('/forum/boards/')?'forum_board_view':'forum_thread_view');if(new URL(data.page_location).searchParams.has('page'))forumAlternativeEvent('gtm','forum_paginated_view');}
+          if(provider==='matomo'){window._paq.push(['setCustomUrl',data.page_location],['setReferrerUrl',data.page_referrer||''],['setDocumentTitle',new URL(data.page_location).pathname],['trackPageView']);const u=new URL(data.page_location);forumAlternativeEvent('matomo',u.pathname==='/forum'?'forum_index_view':u.pathname.startsWith('/forum/boards/')?'forum_board_view':'forum_thread_view');if(u.searchParams.has('page'))forumAlternativeEvent('matomo','forum_paginated_view');}
+          if(provider==='plausible'){sendPlausible(c,'pageview',data,{});const u=new URL(data.page_location);forumAlternativeEvent('plausible',u.pathname==='/forum'?'forum_index_view':u.pathname.startsWith('/forum/boards/')?'forum_board_view':'forum_thread_view');if(u.searchParams.has('page'))forumAlternativeEvent('plausible','forum_paginated_view');}
           c.last=data.page_location;
         }else{
           if(provider==='ga4')window.gtag('event',target,{...safe,event_id:id,send_to:c.id});
@@ -252,8 +301,13 @@
     // Do not send the same named event a second time if a core automatic rule already sent it.
     const metrika=!(automaticSent&&autoRule?.metrika===forumMetrikaGoals?.[key])&&forumGoal(key);
     const ga4=!(automaticSent&&autoRule?.ga4===forumGa4Events?.[key])&&forumGa4Event(key);
-    if(metrika||ga4)recentForumGoalClicks.set(anchor,{key,at:now});
-    return metrika||ga4;
+    let alternative=false;
+    for(const provider of ['matomo','plausible','gtm']){
+      if(automaticSent&&autoRule?.[provider]===forumAlternativeEvents?.[provider]?.[key])continue;
+      alternative=forumAlternativeEvent(provider,key)||alternative;
+    }
+    if(metrika||ga4||alternative)recentForumGoalClicks.set(anchor,{key,at:now});
+    return metrika||ga4||alternative;
   }
   document.addEventListener('click',e=>{
     if(!e.isTrusted||e.defaultPrevented||!trackingAllowed('metrika'))return;
@@ -357,6 +411,9 @@
   function activateTracking(){
     const c=trackingConfig();if(!c||!eventConfig()?.enabled||!trackingAllowed('metrika'))return;
     if(c.gtm_id){
+      // A GTM container can inspect the browser location itself; do not load it on
+      // pages whose original URL contains data removed by our sanitizer.
+      if(!locationData() || location.href!==locationData().page_location)return;
       startCounter('gtm',c.gtm_id,'https://www.googletagmanager.com/gtm.js?id='+encodeURIComponent(c.gtm_id),()=>{
         window.dataLayer.push({'gtm.start':Date.now(),event:'gtm.js'});
       });
@@ -373,7 +430,8 @@
         if(window._paq)throw new Error('Existing Matomo tracker');
         window._paq=[['disableCookies'],['setTrackerUrl',c.matomo_url.replace(/\/$/,'')+'/matomo.php'],['setSiteId',c.matomo_id],['setRequestMethod','POST'],['requireConsent'],['setConsentGiven']];
       });
-      if(c.cloudflare_token)startCounter('cloudflare',c.cloudflare_token,'https://static.cloudflareinsights.com/beacon.min.js?token='+encodeURIComponent(c.cloudflare_token),script=>{script.type='module';});
+      if(c.cloudflare_token && locationData() && location.href===locationData().page_location)
+        startCounter('cloudflare',c.cloudflare_token,'https://static.cloudflareinsights.com/beacon.min.js?token='+encodeURIComponent(c.cloudflare_token),script=>{script.type='module';});
       if(c.plausible_id&&!counters.has('plausible')){
         const conflict=typeof window.plausible==='function'||[...document.querySelectorAll('script[src]')].some(s=>s.src.startsWith(c.plausible_url.replace(/\/$/,'')+'/js/'));
         counters.set('plausible',{id:c.plausible_id,endpoint:c.plausible_url.replace(/\/$/,''),status:conflict?'error':'loaded',reason:conflict?'existing-tag':null,last:null});publishTracking();

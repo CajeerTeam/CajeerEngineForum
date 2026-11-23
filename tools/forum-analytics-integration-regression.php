@@ -84,6 +84,23 @@ namespace {
         $duplicate=$ga4;$duplicate['forum_index_view']='forum_discussion_read';
         try {ForumCommunitySettings::validateGa4Events($duplicate);throw new \RuntimeException('Duplicate GA4 event accepted');}
         catch(ForumException $e){$check($e->status===422,'duplicate GA4 names rejected');}
+        $alternatives=ForumCommunitySettings::alternativeEvents();
+        $check(count($alternatives)===6&&$alternatives['forum_thread_view']==='forum_thread_view','alternative event destinations default to six public Forum activities');
+        foreach(['matomo','plausible','gtm'] as $provider) {
+            $check($defaults[$provider.'_events']===$alternatives,'default '.$provider.' destinations persisted in Forum policy');
+            $custom=$alternatives;$custom['forum_board_view']='forum_board_opened';$custom['forum_attachment_click']='';
+            $check(ForumCommunitySettings::validateAlternativeEvents($custom,$provider)===$custom,'custom '.$provider.' destination and per-event opt-out accepted');
+            foreach(['bad event','page_view','pageview','ce_forbidden','google_event','purchase','G-INVALID',str_repeat('x',41),22] as $invalid){
+                $broken=$custom;$broken['forum_thread_view']=$invalid;
+                try{ForumCommunitySettings::validateAlternativeEvents($broken,$provider);throw new \RuntimeException('Invalid destination accepted');}
+                catch(ForumException $e){$check($e->status===422,'invalid '.$provider.' destination rejected');}
+            }
+            $duplicate=$custom;$duplicate['forum_thread_view']='forum_board_opened';
+            try{ForumCommunitySettings::validateAlternativeEvents($duplicate,$provider);throw new \RuntimeException('Duplicate destination accepted');}
+            catch(ForumException $e){$check($e->status===422,'duplicate '.$provider.' destination rejected');}
+            try{ForumCommunitySettings::validateAlternativeEvents(['bad'=>'extra'],$provider);throw new \RuntimeException('Unexpected provider key accepted');}
+            catch(ForumException $e){$check($e->status===422,'unexpected '.$provider.' key rejected');}
+        }
         $check($defaults['analytics_enabled']===false,'forum analytics opt-in defaults off');
         if(extension_loaded('mbstring')) {
             $check(ForumCommunitySettings::validate($defaults)['analytics_enabled']===false,'policy accepts disabled analytics');
@@ -114,6 +131,13 @@ namespace {
         $result=$adapter->decorate($html,$req,$goals);
         $check(str_contains($result['html'],'data-ce-forum-metrika-goals=')&&str_contains($result['html'],'thread_goal'),'operator goal configuration is served only on approved SSR page');
         $check(str_contains($result['html'],'data-ce-forum-ga4-events=')&&str_contains($result['html'],'forum_thread_view'),'GA4 custom events bound to same single approved consent script');
+        $check(str_contains($result['html'],'data-ce-forum-alternative-events=')&&str_contains($result['html'],'matomo')&&str_contains($result['html'],'plausible')&&str_contains($result['html'],'gtm'),'three alternative provider event maps attached only to server-approved consent script');
+        $customAlternative=['matomo'=>$alternatives,'plausible'=>$alternatives,'gtm'=>$alternatives];
+        $customAlternative['matomo']['forum_thread_view']='topic_viewed';
+        $check(str_contains($adapter->decorate($html,$req,$goals,$defaults['ga4_events'],$customAlternative)['html'],'topic_viewed'),'operator Matomo customization included in live public render');
+        $customAlternative['plausible']['forum_thread_view']='google_reserved';
+        $check(!$adapter->decorate($html,$req,$goals,$defaults['ga4_events'],$customAlternative)['active'],'invalid alternative destination fails closed before inserting any counter');
+
         $ga4['forum_thread_view']='bad event';
         $check(!$adapter->decorate($html,$req,$goals,$ga4)['active'],'corrupt GA4 event mapping fails closed');
         $ga4=$defaults['ga4_events'];
