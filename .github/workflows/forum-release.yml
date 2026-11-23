@@ -117,12 +117,12 @@ jobs:
           python3 tools/certification-evidence.py verify "$ARTIFACT_ROOT" --trusted-key "$pub"
 
           cat > "$RUNNER_TEMP/forum-release-notes.md" <<'NOTES'
-          ## CajeerEngineForum 1.2.7
+          ## CajeerEngineForum 1.2.8
 
-          Forum Edition Native Analytics Collection, based on CajeerEngine 2.1.0.
+          Forum Edition Analytics Aggregation & Retention, based on CajeerEngine 2.1.0.
 
-          - Anonymous first-party native page views with consent, signed single-use receipts, strict public-page gating, and 90-day retention.
-          - Real SQL aggregation for forum activity and page views with 7/30/90-day reports and ACP settings permission controls.
+          - Anonymous first-party native page views with consent, signed single-use receipts, strict public-page gating and no visitor identifiers.
+          - Atomic idempotent UTC daily rollups with 90-day raw/365-day aggregate retention, 7/30/90/365-day reports and authorized bounded recalculation.
           - Existing Matomo / Plausible / GTM / Cloudflare, GA4 and Metrica integrations retained.
           - ACP-configurable per-provider event mappings, URL sanitization, trusted clicks and duplicate suppression.
           - Explicit analytics refusal and withdrawal, including browser back/forward and BFCache safety.

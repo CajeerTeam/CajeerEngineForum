@@ -56,7 +56,15 @@ final readonly class ForumAdminService
     public function maintenance(ForumAccessPolicy $actor,array $input): array
     {
         $action=$input['action']??null;
-        return $this->tx->write(function()use($actor,$action){
+        return $this->tx->write(function()use($actor,$action,$input){
+            // On MySQL REPEATABLE READ, the first consistent SELECT fixes the
+            // transaction snapshot. Serialize analytics operations BEFORE the
+            // permission lookup so a rebuild never reads a stale snapshot
+            // taken while another worker held the rollup lock. A rejected
+            // operator rolls the lock update back with the outer transaction.
+            if (in_array($action,['analytics_aggregate','analytics_recalculate','analytics_retention'],true)) {
+                $this->db->connection()->exec('UPDATE ce_forum_analytics_state SET lock_version=lock_version+1 WHERE id=1');
+            }
             $this->tx->permissions()->requireCurrent($actor,'forum:acp:maintenance',true);
             $result=match($action){
                 'cleanup_spam'=>['removed'=>$this->tx->antiSpam()->cleanup()],
@@ -65,11 +73,16 @@ final readonly class ForumAdminService
                 'search_check'=>(new ForumSearchMaintenance($this->db))->check(),
                 'performance_check'=>(new ForumPerformanceCheck($this->db))->check(),
                 'redis_check'=>ForumRuntimeCache::diagnostics(),
+                'analytics_aggregate'=>['aggregated'=>(new ForumAnalyticsRollup($this->db))->aggregateBatch(1000)],
+                'analytics_recalculate'=>(new ForumAnalyticsRollup($this->db))->recalculate(
+                    is_string($input['from']??null)?$input['from']:'',
+                    is_string($input['until']??null)?$input['until']:''),
+                'analytics_retention'=>(new ForumAnalyticsRollup($this->db))->cleanup(),
                 'ecosystem_check'=>(new ForumEcosystemCheck($this->db,$this->db->config()))->check(),
                 default=>throw new ForumException('Неизвестная операция обслуживания.',422),
             };
             // No arbitrary SQL, system commands or operator secrets in audit.
-            $this->tx->audit('forum.acp.maintenance',$actor->userId,['action'=>$action,'ok'=>$result['ok']??true,'removed'=>$result['removed']??null]);
+            $this->tx->audit('forum.acp.maintenance',$actor->userId,['action'=>$action,'ok'=>$result['ok']??true,'removed'=>$result['removed']??($result['raw_deleted']??null),'from'=>$action==='analytics_recalculate'?($result['from']??null):null,'until'=>$action==='analytics_recalculate'?($result['until']??null):null]);
             return $result;
         });
     }
@@ -103,7 +116,7 @@ final readonly class ForumAdminService
             if($view==='settings')return $this->tx->settings()->snapshot();
             if($view==='analytics') {
                 $days=$q['days']??'30';
-                if(!is_string($days)||!in_array($days,['7','30','90'],true))throw new ForumException('Некорректный период отчёта.',422);
+                if(!is_string($days)||!in_array($days,['7','30','90','365'],true))throw new ForumException('Некорректный период отчёта.',422);
                 return (new ForumAnalyticsEvents($this->db))->report((int)$days)+['enabled'=>$this->tx->settings()->snapshot()['values']['analytics_enabled']];
             }
             if($view==='policy_history') {

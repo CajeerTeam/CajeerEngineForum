@@ -19,6 +19,7 @@ $pdo=new \PDO('sqlite::memory:',null,null,[\PDO::ATTR_ERRMODE=>\PDO::ERRMODE_EXC
 $prop=new \ReflectionProperty($db,'pdo');$prop->setValue($db,$pdo);
 $pdo->exec('CREATE TABLE ce_forum_community_settings(id INTEGER PRIMARY KEY,revision INTEGER NOT NULL,payload TEXT NOT NULL)');
 $pdo->exec(file_get_contents($root.'/migrations/sqlite/0081_forum_analytics_events.sql'));
+$pdo->exec(file_get_contents($root.'/migrations/sqlite/0082_forum_analytics_rollup.sql'));
 $pdo->exec("INSERT INTO ce_forum_community_settings(id,revision,payload) VALUES(1,0,'{\"analytics_enabled\":false}')");
 $events=new \CajeerEngine\Forum\Service\ForumAnalyticsEvents($db);
 $checks=0;$check=static function(bool $ok,string $message)use(&$checks):void{if(!$ok)throw new \RuntimeException($message);$checks++;};
@@ -39,7 +40,7 @@ $db->transaction(static function()use($events){
 $check($pdo->query('SELECT COUNT(*) FROM ce_forum_analytics_events')->fetchColumn()==6,'Wrong number of committed events');
 $records=$pdo->query('SELECT * FROM ce_forum_analytics_events')->fetchAll(\PDO::FETCH_ASSOC);
 $check(!str_contains(json_encode($records,JSON_THROW_ON_ERROR),'private')&&!str_contains(json_encode($records,JSON_THROW_ON_ERROR),'secret'),'Private payload leaked');
-$check(array_keys($records[0])===['id','event_name','created_at'],'Unexpected analytics fields');
+$check(array_keys($records[0])===['id','event_name','created_at','aggregated_at'],'Unexpected analytics fields');
 try{$db->transaction(static function()use($events){$events->recordAudit('forum.post.edit',[]);throw new \RuntimeException('abort');});}catch(\RuntimeException){}
 $check($pdo->query('SELECT COUNT(*) FROM ce_forum_analytics_events')->fetchColumn()==6,'Rollback failed');
 $events->recordRead('forum_search_performed');$events->recordRead('forum_attachment_downloaded');
@@ -57,9 +58,10 @@ try{$events->recordPage('private_message_read',bin2hex(random_bytes(16)));throw 
 $pdo->exec("UPDATE ce_forum_community_settings SET payload='{\"analytics_enabled\":false}' WHERE id=1");
 $check(!$events->recordPage('forum_board_view',bin2hex(random_bytes(16))),'forum policy disables native collection');
 $pdo->exec("UPDATE ce_forum_community_settings SET payload='{\"analytics_enabled\":true}' WHERE id=1");
-try{$events->report(365);throw new \RuntimeException('Unbounded report accepted');}catch(\InvalidArgumentException){$checks++;}
+try{$events->report(366);throw new \RuntimeException('Unbounded report accepted');}catch(\InvalidArgumentException){$checks++;}
 
 $pdo->exec('UPDATE ce_forum_analytics_events SET created_at=1');
+$check((new \CajeerEngine\Forum\Service\ForumAnalyticsRollup($db))->aggregateBatch()===9,'Legacy events are aggregated before cleanup');
 $check($events->cleanup(time())===9,'Old records cleanup failed');
 $check($events->cleanup(time())===0,'Cleanup not idempotent');
 // A corrupted metrics sink must not poison the publication transaction.

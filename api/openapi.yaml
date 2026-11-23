@@ -66101,13 +66101,14 @@
           {
             "name": "days",
             "in": "query",
-            "description": "Only with view=analytics; UTC daily aggregation for delegated ACP settings operators.",
+            "description": "Only with view=analytics; UTC daily rollups plus unprocessed events, retained 365 days; settings scope required.",
             "schema": {
               "type": "string",
               "enum": [
                 "7",
                 "30",
-                "90"
+                "90",
+                "365"
               ],
               "default": "30"
             }
@@ -67075,8 +67076,21 @@
                       "cleanup_uploads",
                       "search_check",
                       "performance_check",
-                      "redis_check"
+                      "redis_check",
+                      "analytics_aggregate",
+                      "analytics_recalculate",
+                      "analytics_retention"
                     ]
+                  },
+                  "from": {
+                    "type": "string",
+                    "format": "date",
+                    "description": "UTC start date, required for analytics_recalculate (inclusive; at most 31 days)."
+                  },
+                  "until": {
+                    "type": "string",
+                    "format": "date",
+                    "description": "UTC end date, required for analytics_recalculate (inclusive; complete raw retention only)."
                   }
                 },
                 "required": [

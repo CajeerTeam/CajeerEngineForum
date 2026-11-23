@@ -17,15 +17,17 @@ final class ForumRuntimeJobs
     public function register(JobHandlerRegistry $registry): void
     {
         if($this->platform!==null)$registry->register('forum.extensions.dispatch',function(array $p,JobContext $ctx){$ctx->heartbeat();foreach((new ForumExtensionOutbox($this->db))->drain($this->platform,20) as $key=>$n)$this->stats['extensions'][$key]=($this->stats['extensions'][$key]??0)+$n;});
-        $registry->register('forum.analytics.cleanup',function(array $p,JobContext $ctx){
-            // The forum can produce many more than 250 views a day. Drain multiple
-            // indexed batches without turning a cleanup wakeup into an unbounded job.
-            $events=new ForumAnalyticsEvents($this->db);$deleted=0;$started=microtime(true);
+        // Old queued cleanup wakeups remain supported across rolling deployments.
+        $analyticsJob=function(array $p,JobContext $ctx):void{
+            $rollup=new ForumAnalyticsRollup($this->db);$count=0;$started=microtime(true);
             do {
-                $ctx->heartbeat();$count=$events->cleanup(time());$deleted+=$count;
-            } while ($count===250 && $deleted<5000 && microtime(true)-$started<3.0);
-            $this->stats['analytics_cleanup']=$deleted;
-        });
+                $ctx->heartbeat();$batch=$rollup->aggregateBatch();$count+=$batch;
+            } while($batch===ForumAnalyticsRollup::BATCH_SIZE && $count<10000 && microtime(true)-$started<3.0);
+            $ctx->heartbeat();$pruned=$rollup->cleanup();
+            $this->stats['analytics']=['aggregated'=>$count]+$pruned;
+        };
+        $registry->register('forum.analytics.rollup',$analyticsJob);
+        $registry->register('forum.analytics.cleanup',$analyticsJob);
         $registry->register('forum.notifications.dispatch',function(array $p,JobContext $ctx){$ctx->heartbeat();$this->stats['notifications']=($this->stats['notifications']??0)+$this->tx()->notifications()->dispatch(100);});
         $registry->register('forum.mail.dispatch',function(array $p,JobContext $ctx){$ctx->heartbeat();$stats=$this->tx()->watches()->dispatch(5);foreach($stats as $key=>$n)$this->stats['mail'][$key]=($this->stats['mail'][$key]??0)+$n;if($stats['failed'])throw new \RuntimeException('Forum mail delivery failed; SQL retry scheduled');});
         foreach(['image'=>'processImage','replica'=>'syncReplica'] as $kind=>$method)$registry->register('forum.media.'.$kind,function(array $p,JobContext $ctx)use($kind,$method){$ctx->heartbeat();$result=$this->tx()->media()->$method();$this->stats['media'][$kind]=$result;if($result==='failed')throw new \RuntimeException('Forum media processing failed; SQL retry scheduled');});
@@ -34,7 +36,7 @@ final class ForumRuntimeJobs
     public function schedule(): void
     {
         $now=time();$tick=intdiv($now,10);$jobs=[];
-        if($this->db->tableExists('ce_forum_analytics_events') && intdiv($now,60)!==intdiv($now-10,60))$jobs[]='forum.analytics.cleanup';
+        if($this->db->tableExists('ce_forum_analytics_state') && intdiv($now,60)!==intdiv($now-10,60))$jobs[]='forum.analytics.rollup';
         if($this->platform!==null&&$this->db->tableExists('ce_forum_extension_events')&&(new ForumExtensionOutbox($this->db))->pending())$jobs[]='forum.extensions.dispatch';
         if($this->db->tableExists('ce_forum_notifications')&&(new NotificationRepository($this->db))->pending(1))$jobs[]='forum.notifications.dispatch';
         if($this->db->tableExists('ce_forum_mail_delivery')&&(new WatchRepository($this->db))->candidate($now)!==null)$jobs[]='forum.mail.dispatch';
@@ -44,6 +46,6 @@ final class ForumRuntimeJobs
             // Replica discovery itself creates a durable SQL ledger; run at a slower cadence.
             if(getenv('FORUM_MEDIA_S3_REPLICA')==='true')$jobs[]='forum.media.replica';
         }
-        foreach($jobs as $name){$slot=$name==='forum.analytics.cleanup'?intdiv($now,60):($name==='forum.media.replica'?intdiv($now,30):$tick);$this->queue->push($name,['_idempotency_key'=>$name.':'.$slot,'_max_attempts'=>3],'default');}
+        foreach($jobs as $name){$slot=$name==='forum.analytics.rollup'?intdiv($now,60):($name==='forum.media.replica'?intdiv($now,30):$tick);$this->queue->push($name,['_idempotency_key'=>$name.':'.$slot,'_max_attempts'=>3],'default');}
     }
 }
