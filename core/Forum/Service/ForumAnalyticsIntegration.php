@@ -25,7 +25,7 @@ final readonly class ForumAnalyticsIntegration
     }
 
     /** @return array{html:string,active:bool} */
-    public function decorate(string $html,Request $request,array $goals=[]): array
+    public function decorate(string $html,Request $request,array $goals=[],array $ga4Events=[]): array
     {
         // Fail closed if the core configuration, public origin or a consent asset is unavailable.
         if(!$request->isSecure() || $request->getMethod()!=='GET' || !self::publicPath(rtrim($request->getPathInfo(),'/')?:'/'))return ['html'=>$html,'active'=>false];
@@ -39,10 +39,12 @@ final readonly class ForumAnalyticsIntegration
             // static, operator-validated goal names, never visitor data or inline JS.
             $goals=ForumCommunitySettings::validateMetrikaGoals($goals?:ForumCommunitySettings::metrikaGoals());
             $goalJson=htmlspecialchars(json_encode($goals,JSON_THROW_ON_ERROR|JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT),ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8');
+            $ga4Events=ForumCommunitySettings::validateGa4Events($ga4Events?:ForumCommunitySettings::ga4Events());
+            $ga4Json=htmlspecialchars(json_encode($ga4Events,JSON_THROW_ON_ERROR|JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT),ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8');
             // This browser document was authorized for exactly one public path.
             // A later history.replaceState() must not authorize tracking an unrelated/private route.
             $path=htmlspecialchars(rtrim($request->getPathInfo(),'/')?:'/',ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8');
-            $decorated=str_replace('data-ce-consent-dynamic="1"', 'data-ce-consent-dynamic="1" data-ce-forum-approved-path="'.$path.'" data-ce-forum-metrika-goals="'.$goalJson.'"', $decorated);
+            $decorated=str_replace('data-ce-consent-dynamic="1"', 'data-ce-consent-dynamic="1" data-ce-forum-approved-path="'.$path.'" data-ce-forum-metrika-goals="'.$goalJson.'" data-ce-forum-ga4-events="'.$ga4Json.'"', $decorated);
             return ['html'=>$decorated,'active'=>true];
         } catch (\Throwable) {
             return ['html'=>$html,'active'=>false];

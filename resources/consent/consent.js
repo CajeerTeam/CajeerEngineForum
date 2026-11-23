@@ -85,6 +85,27 @@
       return goals;
     }catch{return null;}
   })();
+  const forumGa4Events=(()=>{
+    if(!approvedForumPath)return null;
+    try {
+      const events=JSON.parse(boot.dataset.ceForumGa4Events||'null');
+      if(!events||typeof events!=='object'||Array.isArray(events)||Object.keys(events).length!==forumGoalKeys.length)return null;
+      for(const k of forumGoalKeys){
+        const n=events[k];
+        if(typeof n!=='string'||(n&&(!/^[a-z][a-z0-9_]{0,39}$/.test(n)||/^(?:ce_|google_|ga_|firebase_|gtm_|session_|first_)/.test(n)||['page_view','click','scroll','search','file_download','outbound_click','login','sign_up','form_submit','generate_lead','first_visit','user_engagement','screen_view','purchase','refund','add_to_cart','begin_checkout','view_item'].includes(n))))return null;
+      }
+      if(new Set(Object.values(events).filter(Boolean)).size!==Object.values(events).filter(Boolean).length)return null;
+      return events;
+    }catch{return null;}
+  })();
+  function forumGa4Event(key){
+    if(!forumGa4Events||!forumGoalKeys.includes(key)||!forumGa4Events[key]||!trackingAllowed('ga4')||!forumPublicPath(location.pathname)||!eventConfig()?.enabled)return false;
+    const c=counters.get('ga4'),name=forumGa4Events[key];
+    if(!c||['stopped','error'].includes(c.status)||trackingConfig()?.ga4_id!==c.id||typeof window.gtag!=='function'||!locationData())return false;
+    // Core analytics event rules can disable or remap a custom name; never bypass them.
+    if(eventRule(name)?.ga4!==name)return false;
+    try { window.gtag('event',name,{send_to:c.id});return true; } catch{return false;}
+  }
   function forumGoal(key){
     if(!forumMetrikaGoals||!forumGoalKeys.includes(key)||!forumMetrikaGoals[key]||!trackingAllowed('metrika')||!forumPublicPath(location.pathname))return false;
     const c=counters.get('metrika');
@@ -172,7 +193,15 @@
           dispatchAd(provider,c,target,name,safe,id,data);
           if(name==='page_view')c.last=data.page_location;
         }else if(name==='page_view'){
-          if(provider==='ga4')window.gtag('event','page_view',{...data,send_to:c.id});
+          if(provider==='ga4'){
+            window.gtag('event','page_view',{...data,send_to:c.id});
+            if(forumGa4Events){
+              const url=new URL(data.page_location);
+              const kind=url.pathname==='/forum'?'forum_index_view':url.pathname.startsWith('/forum/boards/')?'forum_board_view':'forum_thread_view';
+              forumGa4Event(kind);
+              if(url.searchParams.has('page'))forumGa4Event('forum_paginated_view');
+            }
+          }
           if(provider==='metrika'){
             window.ym(Number(c.id),'hit',data.page_location,{referer:data.page_referrer||''});
             if(forumMetrikaGoals){
@@ -214,15 +243,17 @@
     if(marker&&!searchSeen){const count=Number(marker.dataset.ceAnalyticsSearch);if(Number.isInteger(count)&&count>=0&&count<=1000000&&autoEvent('search',{result_count:count}))searchSeen=true;}
   }
   const recentForumGoalClicks=new WeakMap();
-  function clickForumGoal(anchor,key,automaticSent=false){
+  function clickForumAction(anchor,key,automaticSent=false){
     const now=Date.now(),previous=recentForumGoalClicks.get(anchor);
     // Some UI wrappers emit more than one trusted click for one user gesture.
     if(previous?.key===key && now-previous.at<800)return false;
-    // The inherited automatic Metrica event may already use this same goal ID.
     const automaticName=key==='forum_outbound_click'?'outbound_click':key==='forum_attachment_click'?'file_download':null;
-    if(automaticSent && automaticName && eventRule(automaticName,true)?.metrika===forumMetrikaGoals?.[key])return true;
-    if(!forumGoal(key))return false;
-    recentForumGoalClicks.set(anchor,{key,at:now});return true;
+    const autoRule=automaticName?eventRule(automaticName,true):null;
+    // Do not send the same named event a second time if a core automatic rule already sent it.
+    const metrika=!(automaticSent&&autoRule?.metrika===forumMetrikaGoals?.[key])&&forumGoal(key);
+    const ga4=!(automaticSent&&autoRule?.ga4===forumGa4Events?.[key])&&forumGa4Event(key);
+    if(metrika||ga4)recentForumGoalClicks.set(anchor,{key,at:now});
+    return metrika||ga4;
   }
   document.addEventListener('click',e=>{
     if(!e.isTrusted||e.defaultPrevented||!trackingAllowed('metrika'))return;
@@ -230,8 +261,8 @@
     try{const u=new URL(a.href,location.origin);if(!['http:','https:'].includes(u.protocol))return;
       const ext=(u.pathname.match(/\.([a-z0-9]{1,8})$/i)?.[1]||'').toLowerCase();const files=['pdf','zip','gz','doc','docx','xls','xlsx','ppt','pptx','csv','txt','mp3','mp4'];
       const fileAuto=(a.hasAttribute('download')||files.includes(ext))?autoEvent('file_download',{file_extension:files.includes(ext)?ext:'other'}):false;
-      if(u.origin===location.origin && /^\/api\/v1\/forum\/attachments\/[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}\/download$/i.test(u.pathname)) clickForumGoal(a,'forum_attachment_click',fileAuto);
-      else if(u.origin!==location.origin){const sent=autoEvent('outbound_click');clickForumGoal(a,'forum_outbound_click',sent);}
+      if(u.origin===location.origin && /^\/api\/v1\/forum\/attachments\/[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}\/download$/i.test(u.pathname)) clickForumAction(a,'forum_attachment_click',fileAuto);
+      else if(u.origin!==location.origin){const sent=autoEvent('outbound_click');clickForumAction(a,'forum_outbound_click',sent);}
     }catch{}
   });
   window.addEventListener('scroll',()=>{

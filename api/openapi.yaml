@@ -66548,6 +66548,20 @@
                         "required": ["forum_index_view","forum_board_view","forum_thread_view","forum_paginated_view","forum_attachment_click","forum_outbound_click"],
                         "additionalProperties": false
                       },
+                      "ga4_events": {
+                        "type": "object",
+                        "description": "Optional Forum Edition GA4 custom event names, sent only for consent-approved anonymous public forum pages. Defaults to forum_* event names; an empty string disables the event. Custom names must be unique and may not collide with reserved or automatic GA4 events.",
+                        "properties": {
+                          "forum_index_view": {"type":"string","maxLength":40,"pattern":"^([a-z][a-z0-9_]{0,39})?$"},
+                          "forum_board_view": {"type":"string","maxLength":40,"pattern":"^([a-z][a-z0-9_]{0,39})?$"},
+                          "forum_thread_view": {"type":"string","maxLength":40,"pattern":"^([a-z][a-z0-9_]{0,39})?$"},
+                          "forum_paginated_view": {"type":"string","maxLength":40,"pattern":"^([a-z][a-z0-9_]{0,39})?$"},
+                          "forum_attachment_click": {"type":"string","maxLength":40,"pattern":"^([a-z][a-z0-9_]{0,39})?$"},
+                          "forum_outbound_click": {"type":"string","maxLength":40,"pattern":"^([a-z][a-z0-9_]{0,39})?$"}
+                        },
+                        "required": ["forum_index_view","forum_board_view","forum_thread_view","forum_paginated_view","forum_attachment_click","forum_outbound_click"],
+                        "additionalProperties": false
+                      },
                       "trust_days": {
                         "type": "integer",
                         "minimum": 1,

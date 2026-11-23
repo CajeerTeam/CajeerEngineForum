@@ -1,3 +1,9 @@
+## 1.2.5 — Google Analytics 4 Integration (2026-11-23)
+
+- Add six production GA4 custom events for real public forum index/board/thread/pagination views and trusted attachment/outbound clicks; ensure there is exactly one inherited gtag.js, one standard page_view per public navigation, and no new SDK or synthetic success events.
+- Add revision-controlled Forum ACP settings with unique, GA4-safe custom event names, one-click per-action disable, legacy policy update preservation, sanitized provider arguments and core analytics event rule controls; all tracking requires HTTPS, approved host, authenticated-guest public SSR ACL, and affirmative analytics consent.
+- Extend PHP and Chromium/Firefox browser regression coverage and release/CI gates to 1.2.5, retaining CajeerEngine 2.1.0 without database migrations. GA4 production-property ingestion still requires independent staging verification.
+
 ## 1.2.4 — Yandex Metrica Integration (2026-11-23)
 
 - Added six operator-configurable Yandex Metrica JavaScript goals for approved public forum index/board/thread views, paginated views, and real attachment/outbound link clicks. Sends no forum UUIDs, queries, user content or personal identifiers with custom goal events.

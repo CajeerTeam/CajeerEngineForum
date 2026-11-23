@@ -70,6 +70,20 @@ namespace {
         $duplicate=$goals;$duplicate['forum_board_view']='thread_goal';
         try {ForumCommunitySettings::validateMetrikaGoals($duplicate);throw new \RuntimeException('Duplicate goal accepted');}
         catch(ForumException $e){$check($e->status===422,'duplicate target rejected');}
+        $ga4=$defaults['ga4_events'];
+        $check(count($ga4)===6&&$ga4['forum_thread_view']==='forum_thread_view','GA4 named custom events ready for an opted-in public forum');
+        $check(ForumCommunitySettings::validateGa4Events($ga4)===$ga4,'GA4 production-safe event names accepted');
+        $ga4['forum_thread_view']='forum_discussion_read';
+        $ga4['forum_outbound_click']='';
+        $check(ForumCommunitySettings::validateGa4Events($ga4)===$ga4,'GA4 custom mapping and per-event opt-out accepted');
+        foreach(['invalid event','G-AAAAAAA','ga_reserved','page_view','session_start','purchase','login',str_repeat('x',41),'<script>',42] as $bad) {
+            $invalid=$ga4;$invalid['forum_board_view']=$bad;
+            try {ForumCommunitySettings::validateGa4Events($invalid);throw new \RuntimeException('Invalid GA4 event accepted');}
+            catch(ForumException $e){$check($e->status===422,'invalid or reserved GA4 event rejected');}
+        }
+        $duplicate=$ga4;$duplicate['forum_index_view']='forum_discussion_read';
+        try {ForumCommunitySettings::validateGa4Events($duplicate);throw new \RuntimeException('Duplicate GA4 event accepted');}
+        catch(ForumException $e){$check($e->status===422,'duplicate GA4 names rejected');}
         $check($defaults['analytics_enabled']===false,'forum analytics opt-in defaults off');
         if(extension_loaded('mbstring')) {
             $check(ForumCommunitySettings::validate($defaults)['analytics_enabled']===false,'policy accepts disabled analytics');
@@ -95,10 +109,16 @@ namespace {
         $result=$adapter->decorate($html,$req);
         $check(!$result['active']&&$result['html']===$html,'no tracking when core counters disabled');
         $tracking=new TrackingConfig($work);
-        $cfg=TrackingConfig::defaults();$cfg['enabled']=true;$cfg['hosts']=['forum.test'];$cfg['metrika_id']='12345678';
+        $cfg=TrackingConfig::defaults();$cfg['enabled']=true;$cfg['hosts']=['forum.test'];$cfg['metrika_id']='12345678';$cfg['ga4_id']='G-ABCDEFGH';
         $tracking->update($cfg);
         $result=$adapter->decorate($html,$req,$goals);
         $check(str_contains($result['html'],'data-ce-forum-metrika-goals=')&&str_contains($result['html'],'thread_goal'),'operator goal configuration is served only on approved SSR page');
+        $check(str_contains($result['html'],'data-ce-forum-ga4-events=')&&str_contains($result['html'],'forum_thread_view'),'GA4 custom events bound to same single approved consent script');
+        $ga4['forum_thread_view']='bad event';
+        $check(!$adapter->decorate($html,$req,$goals,$ga4)['active'],'corrupt GA4 event mapping fails closed');
+        $ga4=$defaults['ga4_events'];
+        $ga4['forum_thread_view']='forum_discussion_read';
+        $check(str_contains($adapter->decorate($html,$req,$goals,$ga4)['html'],'forum_discussion_read'),'custom GA4 event name included only on valid public response');
         $check($result['active'] && substr_count($result['html'],'data-ce-consent-config=')===1,'live consent and counter engine inserted once');
         $check(str_contains($result['html'],'data-ce-forum-approved-path="/forum"'),'server-authorized forum path included in consent runtime');
         $check(!$adapter->decorate($html,Request::create('https://forum.test/forum/members/'.$id))['active'],'member profile never tracked');
@@ -118,6 +138,7 @@ namespace {
         $response=$middleware->process($req,static fn(Request $r)=>new Response($result['html'],200,['Content-Type'=>'text/html; charset=UTF-8','X-Forum-Analytics-Public'=>'1']));
         $csp=(string)$response->headers->get('Content-Security-Policy');
         $check(str_contains($csp,'https://mc.yandex.ru'),'marked public forum response receives provider CSP');
+        $check(str_contains($csp,'https://www.googletagmanager.com'),'approved public response CSP permits GA4 Google tag');
         $check($response->headers->get('X-Forum-Analytics-Public')===null,'internal CSP signal removed from client response');
         $plain=$middleware->process($req,static fn(Request $r)=>new Response('<html/>',200,['Content-Type'=>'text/html']));
         $check(!str_contains((string)$plain->headers->get('Content-Security-Policy'),'mc.yandex.ru'),'unmarked forum response cannot load analytics origin');

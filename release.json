@@ -17,10 +17,10 @@
     "docs": "GitHub repository docs/",
     "updates": "GitHub Releases",
     "release_builder": "tools/build-release.php",
-    "source_artifact": "storage/releases/cajeerengine-1.2.4-source.zip",
-    "dist_artifact": "storage/releases/cajeerengine-1.2.4-dist.zip",
+    "source_artifact": "storage/releases/cajeerengine-1.2.5-source.zip",
+    "dist_artifact": "storage/releases/cajeerengine-1.2.5-dist.zip",
     "checksums": "storage/releases/*.sha256",
-    "artifact_index": "storage/releases/cajeerengine-1.2.4-artifacts.json",
+    "artifact_index": "storage/releases/cajeerengine-1.2.5-artifacts.json",
     "support_bundle": "storage/app/support",
     "backup": "storage/app/backups/production",
     "server_reports": "storage/app/reports",
@@ -36,6 +36,7 @@
     "engine_api_version": "1.1"
   },
   "product_changes": [
+    "Forum Edition 1.2.5: real consent-gated GA4 forum custom-event dispatch on independently server-approved public SSR index/board/thread and paginated views, trusted attachment/outbound clicks, ACP-configurable validated unique GA4 event names (default active only when forum analytics itself is explicitly enabled), single inherited gtag.js and GA4 reporting connection, no private route instrumentation and no database migration; executable PHP/browser release regressions.",
     "Forum Edition 1.2.4: production Yandex Metrica forum-specific goal dispatch on approved public SSR index/board/thread and paginated views, real outbound/attachment click actions, revision-checked ACP goal configuration, per-page operator validated goal identifiers, consent/ACL/CSP controls, browser and PHP regression coverage; reuses the existing single Metrica tag with no private route instrumentation or schema migration.",
     "Forum Edition 1.2.3: consent-aware public visitor tracking with server-approved SSR route markers, exact URL/path gating, page-number-only query sanitization, once-per-navigation GA4/Metrika dispatch, duplicate activation fix, back/forward and BFCache handling, denial/revocation fail-closed behavior, isolated Chromium/Firefox regressions and unchanged CajeerEngine 2.1.0 core. No new SQL migrations.",
     "Forum Edition 1.2.2: transactional anonymous activity-event recording for published threads/replies, registration and effective reaction changes; successful search and download counters; local 90-day retention, disabled-by-default policy gate and safe consent-gated client forwarding through the existing CajeerAnalytics runtime without identifiers, search terms, private data or duplicate external SDKs.",
@@ -148,6 +149,6 @@
   },
   "stability": "production-stable-gated",
   "edition": "forum",
-  "edition_version": "1.2.4",
+  "edition_version": "1.2.5",
   "upstream_version": "2.1.0"
 }
