@@ -1,10 +1,12 @@
 # CajeerEngine Forum Edition
 
-**Forum Edition 1.3.1 — Forum AI Chat (member sessions, streaming responses, durable conversations and hard quotas)**, built on CajeerEngine 2.1.0. Publication requires a passing `forum-required` gate and verified signed CI certification tied to the exact commit and release artifacts.
+**Forum Edition 1.3.2 — Contextual Thread Assistant (summaries, explanations, cited posts and thread-scoped AI chat)**, built on CajeerEngine 2.1.0. Publication requires a passing `forum-required` gate and verified signed CI certification tied to the exact commit and release artifacts.
 
 Self-hosted forum platform by CajeerTeam. PHP 8.4.1+, CajeerEngine kernel, Symfony Components, REST API, Apache-2.0.
 
 Repository: https://github.com/CajeerTeam/CajeerEngineForum · Upstream: https://github.com/CajeerTeam/CajeerEngine
+
+**Upgrade 1.3.1 → 1.3.2:** [Thread AI guide](docs/forum-thread-ai-1.3.2.md). Apply migration `0085_forum_thread_ai.sql` for your database and deploy the updated Forum PHP/JS/CSS and OpenAPI files. The thread panel uses the existing configured OpenAI API key and ACP limits. Only guest-visible public threads may be sent to the provider. Full independent staging and CI remain required.
 
 **Upgrade 1.3.0 → 1.3.1:** [Forum AI Chat](docs/forum-ai-chat-1.3.1.md). Apply migration `0084_forum_ai_chat.sql` on your database, configure the OpenAI API key in the core AI integration, and enable the forum assistant in ACP. Includes a browser chat at `/forum/ai`, streaming responses, separate owner-only history, daily/monthly quotas, and shared monetary budgets. Requires passing database CI and staging before public deployment.
 

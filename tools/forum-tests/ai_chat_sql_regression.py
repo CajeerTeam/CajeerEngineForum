@@ -7,7 +7,7 @@ ROOT=Path(__file__).resolve().parents[2]
 c=sqlite3.connect(':memory:')
 c.execute('PRAGMA foreign_keys=ON')
 c.execute('CREATE TABLE ce_users (id TEXT PRIMARY KEY)')
-for file in ('0075_engine_ai_cost_control.sql','0084_forum_ai_chat.sql'):
+for file in ('0075_engine_ai_cost_control.sql','0084_forum_ai_chat.sql','0085_forum_thread_ai.sql'):
     c.executescript((ROOT/'migrations/sqlite'/file).read_text())
 assert c.execute('SELECT enabled, revision FROM ce_forum_ai_settings').fetchone()==(0,1)
 uid='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'

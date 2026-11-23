@@ -6,13 +6,13 @@ namespace CajeerEngine\Forum;
 
 use CajeerEngine\AI\AiProviderException;
 use CajeerEngine\Audit\AuditLogger;
-use CajeerEngine\Forum\Service\ForumAiChat;
+use CajeerEngine\Forum\Service\{ForumAiChat,ForumThreadAssistant};
 use Symfony\Component\HttpFoundation\{JsonResponse,Request,Response,StreamedResponse};
 
 /** Cookie-session protected member AI; never exposes CMS chat or credentials. */
 final readonly class ForumAiController
 {
-    public function __construct(private ForumAiChat $chat, private AuditLogger $audit) {}
+    public function __construct(private ForumAiChat $chat, private AuditLogger $audit, private ForumThreadAssistant $threadAssistant) {}
 
     private function user(Request $request): string
     {
@@ -74,6 +74,59 @@ final readonly class ForumAiController
             catch(\DomainException|\InvalidArgumentException $e){self::event('error',['message'=>$e->getMessage()]);}
             catch(\Throwable){self::event('error',['message'=>'Не удалось завершить генерацию ответа.']);}
         },200,['Content-Type'=>'text/event-stream; charset=utf-8','Cache-Control'=>'private, no-store, no-transform','X-Accel-Buffering'=>'no','X-Content-Type-Options'=>'nosniff','Vary'=>'Cookie, Authorization']);
+    }
+
+    private function actor(Request $r):\CajeerEngine\Forum\Security\ForumAccessPolicy
+    {
+        $this->user($r);
+        return \CajeerEngine\Forum\Security\ForumAccessPolicy::fromAuth($r->attributes->get('auth'));
+    }
+
+    private function threadInput(Request $r):array
+    {
+        $body=$this->input($r,['mode','message','conversation_id']);
+        if(!is_string($body['mode']??null) || (isset($body['message'])&&!is_string($body['message']))
+            || (isset($body['conversation_id'])&&!is_string($body['conversation_id'])))throw new ForumException('Некорректный запрос к AI.',422);
+        return [$body['mode'],$body['message']??null,$body['conversation_id']??null];
+    }
+
+    public function threadStatus(Request $r,array $p):JsonResponse
+    {
+        return $this->wrap(fn()=> $this->threadAssistant->overview($this->actor($r),(string)$p['id']));
+    }
+    public function threadMessages(Request $r,array $p):JsonResponse
+    {
+        return $this->wrap(fn()=> $this->threadAssistant->messages($this->actor($r),(string)$p['id'],(string)$p['conversation_id']));
+    }
+    public function threadDelete(Request $r,array $p):JsonResponse
+    {
+        return $this->wrap(function()use($r,$p){
+            $this->input($r,[]);
+            $this->threadAssistant->delete($this->actor($r),(string)$p['id'],(string)$p['conversation_id']);
+            return ['deleted'=>true];
+        });
+    }
+    public function threadSend(Request $r,array $p):JsonResponse
+    {
+        return $this->wrap(function()use($r,$p){
+            [$mode,$message,$conversation]=$this->threadInput($r);
+            return $this->threadAssistant->send($this->actor($r),(string)$p['id'],$mode,$message,$conversation);
+        });
+    }
+    public function threadStream(Request $r,array $p):Response
+    {
+        try{$actor=$this->actor($r);[$mode,$message,$conversation]=$this->threadInput($r);}
+        catch(ForumException $e){return new JsonResponse(['error'=>['code'=>'forum_ai_error','message'=>$e->getMessage()]],$e->status,['Cache-Control'=>'no-store']);}
+        return new StreamedResponse(function()use($actor,$p,$mode,$message,$conversation):void{
+            try{
+                $result=$this->threadAssistant->send($actor,(string)$p['id'],$mode,$message,$conversation,fn(string $delta)=>self::event('delta',['text'=>$delta]));
+                self::event('done',$result);
+            }catch(ForumException $e){self::event('error',['message'=>$e->getMessage()]);}
+            catch(AiProviderException){self::event('error',['message'=>'AI-провайдер недоступен. Попробуйте позднее.']);}
+            catch(\DomainException|\InvalidArgumentException $e){self::event('error',['message'=>$e->getMessage()]);}
+            catch(\Throwable){self::event('error',['message'=>'Не удалось завершить генерацию ответа.']);}
+        },200,['Content-Type'=>'text/event-stream; charset=utf-8','Cache-Control'=>'private, no-store, no-transform',
+            'X-Accel-Buffering'=>'no','X-Content-Type-Options'=>'nosniff','Vary'=>'Cookie, Authorization']);
     }
 
     private static function event(string $type,array $payload):void

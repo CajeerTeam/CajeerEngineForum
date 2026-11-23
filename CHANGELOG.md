@@ -1,3 +1,12 @@
+## [1.3.2] - 2026-11-23
+
+### Contextual Thread Assistant
+- Real thread-scope summary, explanation, contextual questions and Responses API SSE, rendered in the thread UI.
+- Fresh authenticated member ACL and independent guest-public ACL for every request; private, deleted and member-only topics are never sent externally.
+- First and latest 23 live published posts (bounded context) with server-derived stable post links and proper pagination; no deleted text or fabricated URLs.
+- Separate user+thread AI histories and delete; generic forum AI cannot access thread-scoped sessions. Reuses core model, token/day quotas and monetary holds.
+- Migration `0085_forum_thread_ai.sql` on PostgreSQL/MySQL/SQLite; browser and real-SQL acceptance added to CI. Full staging and provider acceptance still required.
+
 ## [1.3.1] - 2026-11-23
 
 ### Forum AI Chat

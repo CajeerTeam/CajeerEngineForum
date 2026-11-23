@@ -68,3 +68,9 @@ html[data-forum-sidebar=none] .layout>aside{display:none}
 .forum-ai-text{white-space:pre-wrap;overflow-wrap:anywhere;margin-top:5px}
 .forum-ai-message strong{color:var(--accent)}
 @media(max-width:700px){.forum-ai-layout{grid-template-columns:1fr}}
+
+/* Thread contextual AI: sources are server-validated post links, never model HTML. */
+.forum-thread-ai-result{max-height:50vh;overflow:auto;border:1px solid var(--line);border-radius:8px;padding:10px;margin:10px 0}
+.forum-thread-ai-sources{display:flex;flex-wrap:wrap;gap:9px;margin:10px 0}
+.forum-thread-ai-sources strong{flex-basis:100%}
+.forum-thread-ai-sessions{max-height:230px;overflow:auto}
