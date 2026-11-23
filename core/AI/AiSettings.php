@@ -62,6 +62,18 @@ final readonly class AiSettings
         return is_array($data['model_prices'][$model] ?? null) ? $data['model_prices'][$model] : ($presets[$model] ?? null);
     }
 
+    /** Resolve verified pricing for a forum-selected model without changing CMS settings. */
+    public function forModel(string $model): array
+    {
+        if (!preg_match('/^[a-zA-Z0-9][a-zA-Z0-9._-]{1,79}$/D', $model)) throw new \InvalidArgumentException('Invalid AI model.');
+        $status = $this->status();
+        return $this->locked(function (array $data) use ($model, $status): array {
+            $status['model'] = $model;
+            $status['model_pricing'] = self::pricing($model, $data);
+            return $status;
+        });
+    }
+
     public function key(): string
     {
         return $this->locked(function (array $data): string {

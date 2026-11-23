@@ -667,7 +667,11 @@ final class Application
             $container->get('root_path'), $identityService, new \CajeerEngine\Forum\Service\ForumRuntimeCache($forumDb,$container->get('root_path')),
             $container->get(ExtensionRuntime::class)->platform()
         );
-        $controllers = compact('identity', 'forum', 'aiAnalytics', 'aiAutomations', 'aiMigration', 'support', 'knowledge', 'ai', 'identityAdmin', 'oidc', 'migration', 'analyticsHub', 'tracking', 'analyticsEvents', 'consent', 'integrations', 'health', 'system', 'contentTypes', 'entries', 'runtime', 'search', 'queue', 'scheduler', 'webhooks', 'extensions', 'installer', 'importExport', 'updates', 'rc', 'stable', 'admin', 'media', 'public', 'cms', 'database', 'auth', 'users', 'roles', 'apiTokens', 'security');
+        $forumAi = new \CajeerEngine\Forum\ForumAiController(
+            new \CajeerEngine\Forum\Service\ForumAiChat($forumDb,$container->get(AiSettings::class),$container->get(OpenAiClient::class)),
+            $container->get(AuditLogger::class)
+        );
+        $controllers = compact('identity', 'forum', 'forumAi', 'aiAnalytics', 'aiAutomations', 'aiMigration', 'support', 'knowledge', 'ai', 'identityAdmin', 'oidc', 'migration', 'analyticsHub', 'tracking', 'analyticsEvents', 'consent', 'integrations', 'health', 'system', 'contentTypes', 'entries', 'runtime', 'search', 'queue', 'scheduler', 'webhooks', 'extensions', 'installer', 'importExport', 'updates', 'rc', 'stable', 'admin', 'media', 'public', 'cms', 'database', 'auth', 'users', 'roles', 'apiTokens', 'security');
         foreach (\CajeerEngine\Http\RouteRegistry::all() as [$method, $path, $name, $controller, $action, $scopes]) {
             $router->add([$method], $path, $name, [$controllers[$controller], $action], $scopes);
         }

@@ -1542,7 +1542,7 @@ document.addEventListener('click',async e=>{if(e.target.closest('[data-ops-refre
 // Forum ACP: same-origin session and CSRF transport provided by the existing SPA.
 const forumAcp = (() => {
   let tab = 'overview', page = 1, query = '', filter = '', serial = 0, caps = {}, nativePreset = '30', nativeFrom = '', nativeUntil = '', nativeFocus = 'total', engagementDays = '30', nativeNotice = ''
-  const tabs = [['overview','Обзор'],['structure','Структура и ACL'],['users','Участники'],['groups','Группы'],['threads','Обсуждения'],['posts','Сообщения'],['moderation','Модерация'],['attachments','Вложения'],['audit','Аудит'],['analytics','Аналитическая панель'],['settings','Настройки сообщества'],['themes','Оформление форума'],['policy_history','История политики'],['maintenance','Обслуживание'],['delegation','Делегирование'],['imports','Миграции']]
+  const tabs = [['overview','Обзор'],['structure','Структура и ACL'],['users','Участники'],['groups','Группы'],['threads','Обсуждения'],['posts','Сообщения'],['moderation','Модерация'],['attachments','Вложения'],['audit','Аудит'],['analytics','Аналитическая панель'],['ai','AI-помощник'],['settings','Настройки сообщества'],['themes','Оформление форума'],['policy_history','История политики'],['maintenance','Обслуживание'],['delegation','Делегирование'],['imports','Миграции']]
   const el = (tag, text, cls) => { const n=document.createElement(tag); if(text!=null)n.textContent=text; if(cls)n.className=cls; return n }
   const add = (p,...nodes) => { p.append(...nodes); return p }
   const card = title => add(el('section',null,'card'),el('h2',title))
@@ -1569,9 +1569,10 @@ const forumAcp = (() => {
     const body=el('div');root.append(body);body.append(el('p','Загрузка…'))
     try{
       // Authoritative gate on every mount; never display retained data after logout/role change.
-      const access=await list('access');if(ticket!==serial||!root.isConnected)return;caps=access.capabilities;const available=tabs.filter(([id])=>caps.admin||(id==='users'&&caps.members)||(['settings','themes','analytics'].includes(id)&&caps.settings)||(id==='policy_history'&&caps.audit)||(id==='maintenance'&&caps.maintenance));if(!available.length)throw new Error('Недостаточно прав.');if(!available.some(([id])=>id===tab)){tab=available[0][0];reset()}for(const [id,title] of available)bar.append(action(title,()=>{tab=id;reset();return mount()},tab===id?'':'secondary'));body.replaceChildren();const overview=tab==='overview'?await list('overview'):null;if(ticket!==serial||!root.isConnected)return;
+      const access=await list('access');if(ticket!==serial||!root.isConnected)return;caps=access.capabilities;const available=tabs.filter(([id])=>caps.admin||(id==='users'&&caps.members)||(['settings','themes','analytics','ai'].includes(id)&&caps.settings)||(id==='policy_history'&&caps.audit)||(id==='maintenance'&&caps.maintenance));if(!available.length)throw new Error('Недостаточно прав.');if(!available.some(([id])=>id===tab)){tab=available[0][0];reset()}for(const [id,title] of available)bar.append(action(title,()=>{tab=id;reset();return mount()},tab===id?'':'secondary'));body.replaceChildren();const overview=tab==='overview'?await list('overview'):null;if(ticket!==serial||!root.isConnected)return;
       if(tab==='overview'){const labels={users:'Участники',active_users:'Активные',boards:'Разделы',threads:'Темы',posts:'Сообщения',reports:'Открытые жалобы',pending:'На проверке',attachments:'Вложения'};const grid=el('div',null,'grid cards');for(const [key,val] of Object.entries(overview.counts))grid.append(add(card(labels[key]||key),el('div',val,'kpi-value')));body.append(grid,add(card('Рабочие инструменты'),link('Открыть форум','/forum'),el('p','Структура, участники, группы, публикации и модерация управляются существующими сервисами форума.')));return}
       if(tab==='analytics')return await nativeAnalytics(body,ticket)
+      if(tab==='ai')return await aiSettings(body,ticket)
       if(tab==='settings')return await settings(body,ticket)
       if(tab==='themes')return await themeEditor(body,ticket)
       if(tab==='policy_history')return await policyHistory(body,ticket)
@@ -1583,6 +1584,25 @@ const forumAcp = (() => {
       if(tab==='moderation')return await moderation(body,ticket)
       return await records(body,ticket)
     }catch(e){if(ticket===serial&&root.isConnected){body.replaceChildren();error(body,e)}}
+  }
+  async function aiSettings(body,ticket){
+    const data=await call('/acp/ai');if(ticket!==serial)return;
+    const c=card('Forum AI Chat — управление пользовательским помощником');body.append(c);
+    c.append(el('p','AI-ключ задаётся в настройках ядра OpenAI. Ключ никогда не передаётся пользователю форума. По умолчанию помощник выключен. Диалоги участников изолированы от CMS AI. Для каждой генерации действуют денежные бюджеты ядра и квоты форума.'));
+    if(!data.configured)c.append(el('p','OpenAI API-ключ не настроен. Настройте его в AI-разделе ядра перед включением.'));
+    const fields=[field('AI-помощник',select('enabled',[['false','Отключён'],['true','Включён']],String(data.enabled))),
+      field('Модель OpenAI (пусто — модель ядра: '+data.inherited_model+')',input('model',data.model)),
+      field('Максимум токенов ответа',input('max_output_tokens',data.max_output_tokens,'number')),
+      field('Запросов на участника в сутки',input('daily_request_limit',data.daily_request_limit,'number')),
+      field('Токенов на участника в месяц',input('monthly_token_limit',data.monthly_token_limit,'number'))];
+    c.append(el('p','Ревизия '+data.revision),form(fields,'Сохранить настройки AI',async x=>{
+      if(!confirm('Применить настройки AI-чата для всех участников?'))return;
+      await save('/acp/ai','PUT',{
+        revision:data.revision,enabled:x.enabled==='true',model:x.model.trim(),
+        max_output_tokens:Number(x.max_output_tokens),daily_request_limit:Number(x.daily_request_limit),
+        monthly_token_limit:Number(x.monthly_token_limit)
+      });
+    }),link('Перейти к пользовательскому чату','/forum/ai'));
   }
   async function imports(body,ticket){
     const d=await list('imports',{page:String(page)});if(ticket!==serial)return;

@@ -56,3 +56,15 @@ html[data-forum-sidebar] .acl-allow{color:var(--text)}
 html[data-forum-sidebar=none] .layout{grid-template-columns:minmax(0,1fr)}
 html[data-forum-sidebar=none] .layout>aside{display:none}
 @media(min-width:801px){html[data-forum-sidebar=left] .layout{grid-template-columns:280px minmax(0,1fr)}html[data-forum-sidebar=left] .layout>section{grid-column:2;grid-row:1}html[data-forum-sidebar=left] .layout>aside{grid-column:1;grid-row:1}}
+
+/* 1.3.1 member AI conversation UI. Streaming text is always plain text. */
+.forum-ai-layout{display:grid;grid-template-columns:minmax(180px,1fr) minmax(0,2.2fr);gap:14px;align-items:start}
+.forum-ai-conversation{display:flex;gap:5px;align-items:center;border-top:1px solid var(--line);padding:7px 0;flex-wrap:wrap}
+.forum-ai-conversation button:first-child{flex:1;text-align:left;overflow-wrap:anywhere}
+.forum-ai-conversation button:not(:first-child){font-size:.8rem;padding:4px 8px}
+.forum-ai-messages{max-height:65vh;min-height:200px;overflow-y:auto;overflow-wrap:anywhere;padding:8px;border:1px solid var(--line);border-radius:8px}
+.forum-ai-message{border-bottom:1px solid var(--line);padding:12px 2px}
+.forum-ai-message:last-child{border-bottom:0}
+.forum-ai-text{white-space:pre-wrap;overflow-wrap:anywhere;margin-top:5px}
+.forum-ai-message strong{color:var(--accent)}
+@media(max-width:700px){.forum-ai-layout{grid-template-columns:1fr}}

@@ -6,7 +6,7 @@ on:
 permissions:
   contents: read
 env:
-  FORUM_CURRENT_VERSION: ${{ '1.3.0' }}
+  FORUM_CURRENT_VERSION: ${{ '1.3.1' }}
 concurrency:
   group: forum-ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -245,10 +245,14 @@ jobs:
       - run: node --check resources/consent/consent.js
       - run: php tools/forum-event-tracking-regression.php
       - run: php tools/forum-analytics-rollup-regression.php
-      - name: Forum 1.3.0 real SQLite analytics stable acceptance (no skips)
+      - name: Forum 1.3.1 real SQLite analytics stable acceptance (no skips)
         env:
           FORUM_TEST_DRIVER: sqlite
         run: php tools/forum-analytics-stable-acceptance.php
+      - name: Forum 1.3.1 real SQL AI chat acceptance (no skips)
+        env:
+          FORUM_TEST_DRIVER: sqlite
+        run: php tools/forum-ai-chat-acceptance.php
       - run: php tools/forum-analytics-dashboard-regression.php
       - run: php tools/forum-engagement-regression.php
       - run: php tools/forum-analytics-hardening-regression.php
@@ -260,6 +264,7 @@ jobs:
       - run: node tools/forum-tests/analytics_browser_regression.js
       - run: python tools/forum-tests/analytics_events_sql_regression.py
       - run: python tools/forum-tests/analytics_rollup_sql_regression.py
+      - run: python tools/forum-tests/ai_chat_sql_regression.py
       - run: php tools/forum-seo-unit-regression.php
       - run: python tools/forum-tests/seo_sql_regression.py
       - run: python tools/forum-tests/stable_search_seo_sql_regression.py
@@ -389,10 +394,15 @@ jobs:
         run: python tools/forum-tests/reliability_load.py --report storage/tmp/forum-ci/load
       - name: Network API and security regression (PostgreSQL)
         run: python tools/forum-tests/run.py --suite api --report storage/tmp/forum-ci/network
-      - name: Forum 1.3.0 real PostgreSQL analytics stable acceptance
+      - name: Forum 1.3.1 real PostgreSQL analytics stable acceptance
         env:
           DB_DATABASE: forum_analytics
         run: php tools/forum-analytics-stable-acceptance.php
+      - name: Forum 1.3.1 real PostgreSQL AI chat acceptance
+        env:
+          DB_DATABASE: forum_analytics
+          FORUM_TEST_DRIVER: pgsql
+        run: php tools/forum-ai-chat-acceptance.php
       - name: Upload PostgreSQL evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -446,10 +456,15 @@ jobs:
       - name: Prepare disposable analytics schema (MySQL/MariaDB)
         run: |
           php -r '$p=new PDO("mysql:host=127.0.0.1;port=3306;dbname=mysql","root","ForumCI-Root-123!"); $p->exec("CREATE DATABASE forum_analytics CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"); $p->exec("GRANT ALL PRIVILEGES ON forum_analytics.* TO ".$p->quote("forum_ci")."@".$p->quote("%"));'
-      - name: Forum 1.3.0 real MySQL/MariaDB analytics stable acceptance
+      - name: Forum 1.3.1 real MySQL/MariaDB analytics stable acceptance
         env:
           DB_DATABASE: forum_analytics
         run: php tools/forum-analytics-stable-acceptance.php
+      - name: Forum 1.3.1 real MySQL/MariaDB AI chat acceptance
+        env:
+          DB_DATABASE: forum_analytics
+          FORUM_TEST_DRIVER: mysql
+        run: php tools/forum-ai-chat-acceptance.php
   browser:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -491,6 +506,7 @@ jobs:
       - run: python tools/forum-native-analytics-browser-regression.py --browser ${{ matrix.browser }}
       - run: python tools/forum-analytics-dashboard-browser-regression.py --browser ${{ matrix.browser }}
       - run: python tools/forum-engagement-browser-regression.py --browser ${{ matrix.browser }}
+      - run: python tools/forum-ai-chat-browser-regression.py --browser ${{ matrix.browser }}
       - name: Real browser E2E with SMTP
         run: python tools/forum-tests/run.py --suite browser --browser ${{ matrix.browser }} --report storage/tmp/forum-ci/browser
       - name: Upload browser evidence

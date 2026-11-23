@@ -1,10 +1,12 @@
 # CajeerEngine Forum Edition
 
-**Forum Edition 1.3.0 — Analytics & Metrics Stable (cross-driver acceptance, privacy and release qualification)**, built on CajeerEngine 2.1.0. Publication requires a passing `forum-required` gate and verified signed CI certification tied to the exact commit and release artifacts.
+**Forum Edition 1.3.1 — Forum AI Chat (member sessions, streaming responses, durable conversations and hard quotas)**, built on CajeerEngine 2.1.0. Publication requires a passing `forum-required` gate and verified signed CI certification tied to the exact commit and release artifacts.
 
 Self-hosted forum platform by CajeerTeam. PHP 8.4.1+, CajeerEngine kernel, Symfony Components, REST API, Apache-2.0.
 
 Repository: https://github.com/CajeerTeam/CajeerEngineForum · Upstream: https://github.com/CajeerTeam/CajeerEngine
+
+**Upgrade 1.3.0 → 1.3.1:** [Forum AI Chat](docs/forum-ai-chat-1.3.1.md). Apply migration `0084_forum_ai_chat.sql` on your database, configure the OpenAI API key in the core AI integration, and enable the forum assistant in ACP. Includes a browser chat at `/forum/ai`, streaming responses, separate owner-only history, daily/monthly quotas, and shared monetary budgets. Requires passing database CI and staging before public deployment.
 
 **Upgrade 0.9.3 → 0.9.4:** [physical load & soak certification](docs/forum-load-0.9.4.md). Real CPU/RAM/disk/PostgreSQL measurements, bounded concurrent publication and queue-delay probes; independent 10k/100k/1M + 24-hour signed-evidence workflow. No new migration. Long tests require a dedicated runner and are not claimed as already executed.
 

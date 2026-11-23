@@ -1,3 +1,12 @@
+## [1.3.1] - 2026-11-23
+
+### Forum AI Chat
+- Реальный чат участников `/forum/ai` с SSE-потоком ответов через существующий OpenAI Responses API, историей сообщений, переименованием и удалением диалогов.
+- Отдельные SQL-таблицы форумных диалогов; диалоги CMS AI и приватные публикации форума изолированы от пользовательского чата.
+- Управление моделью и лимитами из ACP, проверка прав и CSRF, ежедневная квота запросов, месячная квота токенов, атомарное резервирование и общий журнал денежных расходов AI.
+- Миграция `0084` для PostgreSQL, MySQL/MariaDB и SQLite; обязательные междрайверные PDO acceptance-тесты, проверка безопасности и сборки.
+- Релизная квалификация в CI и staging обязательна: самостоятельная локальная сборка не считается production-сертификацией.
+
 ## 1.3.0 — Analytics & Metrics Stable (2026-11-23)
 
 - Add a fail-closed real PDO acceptance of signed page views, same-origin rejection, single-use receipts, SQL journal, aggregate worker, transactional retry, ACP reports, bounded recalculation, disabled policy and 90/365-day retention; execute against SQLite, PostgreSQL 17/18, MySQL 8.4 and MariaDB 10.11 with independent disposable CI databases.
