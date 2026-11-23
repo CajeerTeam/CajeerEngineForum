@@ -1541,7 +1541,7 @@ document.addEventListener('click',async e=>{if(e.target.closest('[data-ops-refre
 
 // Forum ACP: same-origin session and CSRF transport provided by the existing SPA.
 const forumAcp = (() => {
-  let tab = 'overview', page = 1, query = '', filter = '', serial = 0, caps = {}, nativePreset = '30', nativeFrom = '', nativeUntil = '', nativeFocus = 'total', nativeNotice = ''
+  let tab = 'overview', page = 1, query = '', filter = '', serial = 0, caps = {}, nativePreset = '30', nativeFrom = '', nativeUntil = '', nativeFocus = 'total', engagementDays = '30', nativeNotice = ''
   const tabs = [['overview','Обзор'],['structure','Структура и ACL'],['users','Участники'],['groups','Группы'],['threads','Обсуждения'],['posts','Сообщения'],['moderation','Модерация'],['attachments','Вложения'],['audit','Аудит'],['analytics','Аналитическая панель'],['settings','Настройки сообщества'],['themes','Оформление форума'],['policy_history','История политики'],['maintenance','Обслуживание'],['delegation','Делегирование'],['imports','Миграции']]
   const el = (tag, text, cls) => { const n=document.createElement(tag); if(text!=null)n.textContent=text; if(cls)n.className=cls; return n }
   const add = (p,...nodes) => { p.append(...nodes); return p }
@@ -1655,6 +1655,71 @@ const forumAcp = (() => {
     const a=document.createElement('a');a.href=url;a.download='forum-analytics-'+d.from+'_'+d.until+'.csv';
     document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
   }
+  function engagementChart(data,metric,label){
+    const svg=nativeSvg('svg',{viewBox:'0 0 920 240',class:'native-chart-svg',role:'img','aria-label':'Активность авторов: '+label+' по дням UTC'});
+    svg.append(nativeSvg('title',{},'Активность форума: '+label));
+    const left=55,right=18,top=20,bottom=37,w=920-left-right,h=240-top-bottom;
+    const x=i=>left+(data.length<=1?w/2:w*i/(data.length-1));
+    const values=data.map(r=>Number(r[metric]||0));const max=Math.max(1,...values);
+    const y=v=>top+h*(1-v/max);
+    for(let step=0;step<=4;step++){
+      const v=max*step/4,yp=y(v);
+      svg.append(nativeSvg('line',{x1:left,x2:920-right,y1:yp,y2:yp,class:'native-chart-grid'}));
+      svg.append(nativeSvg('text',{x:left-9,y:yp+4,'text-anchor':'end',class:'native-chart-axis'},nativeNumber(Math.round(v))));
+    }
+    for(const i of new Set([0,Math.floor((data.length-1)/2),data.length-1])){
+      if(!data[i])continue;
+      svg.append(nativeSvg('text',{x:x(i),y:229,'text-anchor':i===0?'start':i===data.length-1?'end':'middle',class:'native-chart-axis'},data[i].date.slice(5)));
+    }
+    svg.append(nativeSvg('path',{d:values.map((v,i)=>(i===0?'M':'L')+x(i).toFixed(2)+','+y(v).toFixed(2)).join(' '),class:'native-chart-path native-total'}));
+    if(data.length<=31)for(let i=0;i<data.length;i++){
+      const dot=nativeSvg('circle',{cx:x(i),cy:y(values[i]),r:4,tabindex:'0',class:'native-chart-dot native-total','aria-label':data[i].date+' · '+label+': '+nativeNumber(values[i])});
+      dot.append(nativeSvg('title',{},data[i].date+' · '+label+': '+nativeNumber(values[i])));svg.append(dot);
+    }
+    const box=el('div',null,'native-chart');box.append(svg);return box;
+  }
+  function engagementExport(d){
+    const rows=[['date_utc','contributors','contributions','topics','replies'],...d.daily.map(r=>[r.date,r.contributors,r.contributions,r.topics,r.replies])];
+    const csv='\uFEFF'+rows.map(row=>row.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\r\n');
+    const url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
+    const a=document.createElement('a');a.href=url;a.download='forum-engagement-'+d.from+'_'+d.until+'.csv';
+    document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
+  }
+  async function engagementPanel(body,ticket){
+    const d=await list('engagement',{days:engagementDays});if(ticket!==serial)return;
+    const panel=card('Вовлечённость, удержание и воронка участников');body.append(panel);
+    panel.append(el('p','Основа: зарегистрированные участники с ролью форума и сохранённые сообщения. Активность означает публикацию; анонимные просмотры, посещения и сессии не считаются уникальными пользователями. Даты и когорты — UTC.','muted'));
+    const choose=select('engagement_days',[['7','7 дней'],['30','30 дней'],['90','90 дней']],engagementDays);
+    choose.addEventListener('change',()=>{engagementDays=choose.value;return mount()});
+    panel.append(field('Активность за период',choose));
+    panel.append(action('Скачать CSV активности',()=>engagementExport(d),'secondary'));
+    const kpis=el('div',null,'native-kpis');panel.append(kpis);
+    for(const [label,value] of [['Авторы за период',d.summary.contributors],['Публикации',d.summary.contributions],['Новые темы',d.summary.topics],['Ответы',d.summary.replies],['Вернувшиеся авторы за неделю',d.summary.returning_week_contributors]]){
+      const node=el('section',null,'native-kpi');node.append(el('p',label,'native-kpi-title'),el('div',nativeNumber(value),'native-kpi-number'));kpis.append(node);
+    }
+    const engagementTrend=card('Динамика активности авторов');body.append(engagementTrend);
+    const metric=select('engagement_metric',[['contributors','Авторы'],['contributions','Публикации'],['topics','Новые темы'],['replies','Ответы']],'contributors');
+    const plot=el('div');const renderTrend=()=>plot.replaceChildren(engagementChart(d.daily,metric.value,metric.selectedOptions[0].textContent));
+    metric.addEventListener('change',renderTrend);engagementTrend.append(field('Показатель',metric),plot);renderTrend();
+    const retention=card('Когорты регистрации · публикация ровно на день D+N');body.append(retention);
+    retention.append(el('p','Учитываются только когорты с полностью прошедшим D+1, D+7 или D+30. Прочерк означает отсутствие подходящей когорты, а не нулевое удержание.','muted'));
+    const retentionRows=[1,7,30].map(n=>{const r=d.retention['d'+n];return ['D+'+n,nativeNumber(r.eligible),nativeNumber(r.returned),r.percent===null?'—':r.percent+'%']});
+    retention.append(tableDom(['День','Зарегистрировано в зрелых когортах','Опубликовали в этот день','Удержание авторов'],retentionRows));
+    const funnel=card('Воронка регистрации → публикации за 7 дней');body.append(funnel);
+    funnel.append(el('p','Учитываются только регистрации, для которых завершились первые 7 полных календарных дней. Вторая публикация считается только после первой; источник — сохранённые сообщения.','muted'));
+    funnel.append(tableDom(['Этап','Участников','От зарегистрированных'],[
+      ['Регистрации',nativeNumber(d.funnel.eligible_registrations),'100%'],
+      ['Первая публикация',nativeNumber(d.funnel.first_contribution),d.funnel.first_rate===null?'—':d.funnel.first_rate+'%'],
+      ['Вторая публикация',nativeNumber(d.funnel.second_contribution),d.funnel.second_rate===null?'—':d.funnel.second_rate+'%']
+    ]));
+    const activity=card('Авторская активность по дням');body.append(activity);
+    activity.append(tableDom(['UTC','Активные авторы','Публикации','Темы','Ответы'],d.daily.map(r=>[r.date,nativeNumber(r.contributors),nativeNumber(r.contributions),nativeNumber(r.topics),nativeNumber(r.replies)])));
+    const cohorts=card('Когорты регистраций · последние 90 дней');body.append(cohorts);
+    cohorts.append(el('p','Пустые или ещё не завершённые D+N обозначены прочерком. Для авторских показателей доступны только сохранённые сообщения.','muted'));
+    cohorts.append(tableDom(['Регистрация UTC','Участники','D+1','D+7','D+30'],d.cohorts.filter(r=>r.registrations>0).map(r=>[r.date,nativeNumber(r.registrations),...['d1_rate','d7_rate','d30_rate'].map(k=>r[k]===null?'—':r[k]+'%')])));
+    if(!d.cohorts.some(r=>r.registrations>0))cohorts.append(el('p','Нет зарегистрированных участников за 90 дней.','empty'));
+  }
+
   async function nativeAnalytics(body,ticket){
     const presetDays=nativePreset==='custom'?null:Number(nativePreset);
     const from=presetDays?nativeDate(presetDays-1):nativeFrom;
@@ -1689,6 +1754,8 @@ const forumAcp = (() => {
       cards.append(item);
     }
     header.append(cards);
+    try { await engagementPanel(body,ticket); } catch(e) {const warning=card('Вовлечённость: ошибка получения данных');body.append(warning);error(warning,e)}
+    if(ticket!==serial)return;
     const trend=card('Динамика событий');body.append(trend);
     trend.append(el('p','Значения за календарные дни UTC. Выберите показатель или событие; исходные посещения не пересчитываются и данные не отправляются наружу.','muted'));
     const focuses=[['total','Все показатели'],['views','Просмотры'],['actions','Действия'],...d.breakdown.map(r=>[r.event_name,nativeEventNames[r.event_name]||r.event_name])];

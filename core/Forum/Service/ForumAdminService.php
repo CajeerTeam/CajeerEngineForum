@@ -95,7 +95,7 @@ final readonly class ForumAdminService
             $search=V::text($q['q']??'','q',100,0);
             $status=V::text($q['status']??'all','status',20);
             if($view==='access')return ['allowed'=>true,'capabilities'=>$caps];
-            $permission=match($view){'settings','themes','analytics','analytics_dashboard'=>'settings','users'=>'members','audit','policy_history'=>'audit',default=>'admin'};
+            $permission=match($view){'settings','themes','analytics','analytics_dashboard','engagement'=>'settings','users'=>'members','audit','policy_history'=>'audit',default=>'admin'};
             if(!$caps['admin']&&!$caps[$permission])throw new ForumException('Недостаточно прав.',403);
             if($view==='delegation'){
                 $id=V::id($q['id']??null);$user=(new UserRepository($this->db,new RoleRepository($this->db)))->findById($id)??throw new ForumException('Участник не найден.',404);
@@ -114,6 +114,12 @@ final readonly class ForumAdminService
             }
             if($view==='themes')return (new ForumThemeService($this->db,$this->tx))->editor($actor);
             if($view==='settings')return $this->tx->settings()->snapshot();
+            if($view==='engagement') {
+                $days=$q['days']??'30';
+                if(!is_string($days)||!in_array($days,['7','30','90'],true))
+                    throw new ForumException('Период вовлечённости: 7, 30 или 90 дней.',422);
+                return (new ForumEngagementAnalytics($this->db))->get((int)$days);
+            }
             if($view==='analytics_dashboard') {
                 $from=$q['from']??null;$until=$q['until']??null;
                 if(($from!==null&&!is_string($from))||($until!==null&&!is_string($until)))

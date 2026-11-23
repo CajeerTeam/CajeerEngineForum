@@ -66025,6 +66025,7 @@
                 "post",
                 "analytics",
                 "analytics_dashboard",
+                "engagement",
                 "settings",
                 "policy_history",
                 "delegation",
@@ -66114,7 +66115,7 @@
           {
             "name": "days",
             "in": "query",
-            "description": "Only with view=analytics; UTC daily rollups plus unprocessed events, retained 365 days; settings scope required.",
+            "description": "For view=analytics: 7, 30, 90, 365. For view=engagement: 7, 30, 90; registered members and saved authored forum posts, no visitor IDs in response. Settings scope required.",
             "schema": {
               "type": "string",
               "enum": [
@@ -66455,7 +66456,7 @@
             }
           }
         },
-        "description": "Authenticated. analytics_dashboard requires current forum:acp:settings, accepts inclusive UTC from/until (max 365 retained days), returns only aggregated anonymous counts; CSV is generated locally from these results. Each view requires its own current forum ACP permission; all other views require global administrator. Delegation, settings, and policy history use the same authorization checks."
+        "description": "Authenticated. analytics_dashboard and engagement require current forum:acp:settings. The dashboard accepts inclusive UTC from/until (max 365 retained days); engagement accepts days=7|30|90 and calculates distinct authors, contribution cohorts, D1/D7/D30 retention and 7-day activation funnel from forum members and saved authored posts. Both expose only aggregate counts, not member IDs. CSV is generated locally from results. Each view requires its own current forum ACP permission; all other views require global administrator. Delegation, settings, and policy history use the same authorization checks."
       }
     },
     "/forum/acp/members/{id}": {

@@ -1,3 +1,9 @@
+## 1.2.10 — Engagement & Retention Analytics (2026-11-23)
+- Implemented contribution-backed daily active authors, authored post volumes, new-topic vs reply counts, exact distinct contributors and consecutive-week returning authors from existing forum data; excluded CMS-only roles and account identifiers from ACP responses.
+- Added D+1, D+7 and D+30 registration cohorts for members publishing a post on the exact subsequent UTC day, with maturity/zero-denominator safeguards and a sequential 7-day registration → first post → second post activation funnel. No anonymous view is represented as a unique member or inferred session.
+- Added an interactive ACP author activity graph, 7/30/90-day filter, per-day table, retention and conversion KPIs, 90-day cohort breakdown and aggregated CSV export; retained the existing anonymous analytics dashboard, permission checks and other providers.
+- Indexed registration and post-activity scans with driver-specific `0083_forum_engagement_indexes.sql`. Added PHP/SQLite, actual SQLite query and Chromium/Firefox regression suites and versioned release gates. Signed production certification still requires full CI and staging on the target database.
+
 ## 1.2.9 — Forum Analytics Dashboard (2026-11-23)
 - Replaced the basic Forum ACP analytics table with a working first-party dashboard: authenticated settings-scoped date filters (7/30/90/365 days or a custom 1–365-day UTC range), three KPIs, responsive SVG trend charts, event-level filtering, grouped breakdowns, weekday averages and daily drilldown.
 - Compare each metric with the *entire* preceding equal-length window when available within the stored 365 days, otherwise mark it unavailable; avoid invented visitors, sessions, retention rates or conversion funnels. Zero denominators do not yield fabricated percentage growth.
