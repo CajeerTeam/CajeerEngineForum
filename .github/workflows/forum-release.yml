@@ -117,11 +117,13 @@ jobs:
           python3 tools/certification-evidence.py verify "$ARTIFACT_ROOT" --trusted-key "$pub"
 
           cat > "$RUNNER_TEMP/forum-release-notes.md" <<'NOTES'
-          ## CajeerEngineForum 1.2.6
+          ## CajeerEngineForum 1.2.7
 
-          Forum Edition Alternative Analytics Providers, based on CajeerEngine 2.1.0.
+          Forum Edition Native Analytics Collection, based on CajeerEngine 2.1.0.
 
-          - Working Matomo / Plausible custom Forum events, GTM dataLayer routing and Cloudflare pageview / RUM beacon on consent-approved public pages.
+          - Anonymous first-party native page views with consent, signed single-use receipts, strict public-page gating, and 90-day retention.
+          - Real SQL aggregation for forum activity and page views with 7/30/90-day reports and ACP settings permission controls.
+          - Existing Matomo / Plausible / GTM / Cloudflare, GA4 and Metrica integrations retained.
           - ACP-configurable per-provider event mappings, URL sanitization, trusted clicks and duplicate suppression.
           - Explicit analytics refusal and withdrawal, including browser back/forward and BFCache safety.
           - Read-only Invision 4/5 v8 source acceptance and verified migration backup gates retained.

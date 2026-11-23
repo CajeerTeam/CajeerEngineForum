@@ -66023,6 +66023,7 @@
                 "attachments",
                 "audit",
                 "post",
+                "analytics",
                 "settings",
                 "policy_history",
                 "delegation",
@@ -66096,6 +66097,20 @@
               "pattern": "^[a-f0-9]{64}$"
             },
             "description": "Migration job identifier for import_job (global administrators only)."
+          },
+          {
+            "name": "days",
+            "in": "query",
+            "description": "Only with view=analytics; UTC daily aggregation for delegated ACP settings operators.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "7",
+                "30",
+                "90"
+              ],
+              "default": "30"
+            }
           }
         ],
         "responses": {
@@ -66293,6 +66308,76 @@
                           }
                         },
                         "ok": {
+                          "type": "boolean"
+                        },
+                        "days": {
+                          "type": "integer",
+                          "enum": [
+                            7,
+                            30,
+                            90
+                          ]
+                        },
+                        "timezone": {
+                          "type": "string",
+                          "enum": [
+                            "UTC"
+                          ]
+                        },
+                        "from": {
+                          "type": "string",
+                          "format": "date"
+                        },
+                        "until": {
+                          "type": "string",
+                          "format": "date"
+                        },
+                        "page_views": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "actions": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "totals": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "integer",
+                            "minimum": 0
+                          }
+                        },
+                        "series": {
+                          "type": "array",
+                          "maxItems": 90,
+                          "items": {
+                            "type": "object",
+                            "required": [
+                              "day",
+                              "views",
+                              "actions"
+                            ],
+                            "properties": {
+                              "day": {
+                                "type": "string",
+                                "format": "date"
+                              },
+                              "views": {
+                                "type": "integer",
+                                "minimum": 0
+                              },
+                              "actions": {
+                                "type": "integer",
+                                "minimum": 0
+                              }
+                            }
+                          }
+                        },
+                        "retention_days": {
+                          "type": "integer",
+                          "const": 90
+                        },
+                        "enabled": {
                           "type": "boolean"
                         }
                       }
@@ -66538,70 +66623,225 @@
                         "type": "object",
                         "description": "Optional Yandex Metrica JavaScript goal IDs on consent-approved public forum pages; empty disables the corresponding goal.",
                         "properties": {
-                          "forum_index_view": {"type":"string","maxLength":64,"pattern":"^[A-Za-z][A-Za-z0-9_]{0,63}$|^$"},
-                          "forum_board_view": {"type":"string","maxLength":64,"pattern":"^[A-Za-z][A-Za-z0-9_]{0,63}$|^$"},
-                          "forum_thread_view": {"type":"string","maxLength":64,"pattern":"^[A-Za-z][A-Za-z0-9_]{0,63}$|^$"},
-                          "forum_paginated_view": {"type":"string","maxLength":64,"pattern":"^[A-Za-z][A-Za-z0-9_]{0,63}$|^$"},
-                          "forum_attachment_click": {"type":"string","maxLength":64,"pattern":"^[A-Za-z][A-Za-z0-9_]{0,63}$|^$"},
-                          "forum_outbound_click": {"type":"string","maxLength":64,"pattern":"^[A-Za-z][A-Za-z0-9_]{0,63}$|^$"}
+                          "forum_index_view": {
+                            "type": "string",
+                            "maxLength": 64,
+                            "pattern": "^[A-Za-z][A-Za-z0-9_]{0,63}$|^$"
+                          },
+                          "forum_board_view": {
+                            "type": "string",
+                            "maxLength": 64,
+                            "pattern": "^[A-Za-z][A-Za-z0-9_]{0,63}$|^$"
+                          },
+                          "forum_thread_view": {
+                            "type": "string",
+                            "maxLength": 64,
+                            "pattern": "^[A-Za-z][A-Za-z0-9_]{0,63}$|^$"
+                          },
+                          "forum_paginated_view": {
+                            "type": "string",
+                            "maxLength": 64,
+                            "pattern": "^[A-Za-z][A-Za-z0-9_]{0,63}$|^$"
+                          },
+                          "forum_attachment_click": {
+                            "type": "string",
+                            "maxLength": 64,
+                            "pattern": "^[A-Za-z][A-Za-z0-9_]{0,63}$|^$"
+                          },
+                          "forum_outbound_click": {
+                            "type": "string",
+                            "maxLength": 64,
+                            "pattern": "^[A-Za-z][A-Za-z0-9_]{0,63}$|^$"
+                          }
                         },
-                        "required": ["forum_index_view","forum_board_view","forum_thread_view","forum_paginated_view","forum_attachment_click","forum_outbound_click"],
+                        "required": [
+                          "forum_index_view",
+                          "forum_board_view",
+                          "forum_thread_view",
+                          "forum_paginated_view",
+                          "forum_attachment_click",
+                          "forum_outbound_click"
+                        ],
                         "additionalProperties": false
                       },
                       "ga4_events": {
                         "type": "object",
                         "description": "Optional Forum Edition GA4 custom event names, sent only for consent-approved anonymous public forum pages. Defaults to forum_* event names; an empty string disables the event. Custom names must be unique and may not collide with reserved or automatic GA4 events.",
                         "properties": {
-                          "forum_index_view": {"type":"string","maxLength":40,"pattern":"^([a-z][a-z0-9_]{0,39})?$"},
-                          "forum_board_view": {"type":"string","maxLength":40,"pattern":"^([a-z][a-z0-9_]{0,39})?$"},
-                          "forum_thread_view": {"type":"string","maxLength":40,"pattern":"^([a-z][a-z0-9_]{0,39})?$"},
-                          "forum_paginated_view": {"type":"string","maxLength":40,"pattern":"^([a-z][a-z0-9_]{0,39})?$"},
-                          "forum_attachment_click": {"type":"string","maxLength":40,"pattern":"^([a-z][a-z0-9_]{0,39})?$"},
-                          "forum_outbound_click": {"type":"string","maxLength":40,"pattern":"^([a-z][a-z0-9_]{0,39})?$"}
+                          "forum_index_view": {
+                            "type": "string",
+                            "maxLength": 40,
+                            "pattern": "^([a-z][a-z0-9_]{0,39})?$"
+                          },
+                          "forum_board_view": {
+                            "type": "string",
+                            "maxLength": 40,
+                            "pattern": "^([a-z][a-z0-9_]{0,39})?$"
+                          },
+                          "forum_thread_view": {
+                            "type": "string",
+                            "maxLength": 40,
+                            "pattern": "^([a-z][a-z0-9_]{0,39})?$"
+                          },
+                          "forum_paginated_view": {
+                            "type": "string",
+                            "maxLength": 40,
+                            "pattern": "^([a-z][a-z0-9_]{0,39})?$"
+                          },
+                          "forum_attachment_click": {
+                            "type": "string",
+                            "maxLength": 40,
+                            "pattern": "^([a-z][a-z0-9_]{0,39})?$"
+                          },
+                          "forum_outbound_click": {
+                            "type": "string",
+                            "maxLength": 40,
+                            "pattern": "^([a-z][a-z0-9_]{0,39})?$"
+                          }
                         },
-                        "required": ["forum_index_view","forum_board_view","forum_thread_view","forum_paginated_view","forum_attachment_click","forum_outbound_click"],
+                        "required": [
+                          "forum_index_view",
+                          "forum_board_view",
+                          "forum_thread_view",
+                          "forum_paginated_view",
+                          "forum_attachment_click",
+                          "forum_outbound_click"
+                        ],
                         "additionalProperties": false
                       },
                       "matomo_events": {
                         "type": "object",
                         "description": "Forum Edition Matomo custom event destinations (optional empty strings disable individual events), only on consent-approved anonymous public forum views and trusted clicks. Names are unique, validated and subject to core event rules.",
                         "properties": {
-                          "forum_index_view": {"type":"string","maxLength":40,"pattern":"^([a-z][a-z0-9_]{0,39})?$"},
-                          "forum_board_view": {"type":"string","maxLength":40,"pattern":"^([a-z][a-z0-9_]{0,39})?$"},
-                          "forum_thread_view": {"type":"string","maxLength":40,"pattern":"^([a-z][a-z0-9_]{0,39})?$"},
-                          "forum_paginated_view": {"type":"string","maxLength":40,"pattern":"^([a-z][a-z0-9_]{0,39})?$"},
-                          "forum_attachment_click": {"type":"string","maxLength":40,"pattern":"^([a-z][a-z0-9_]{0,39})?$"},
-                          "forum_outbound_click": {"type":"string","maxLength":40,"pattern":"^([a-z][a-z0-9_]{0,39})?$"}
+                          "forum_index_view": {
+                            "type": "string",
+                            "maxLength": 40,
+                            "pattern": "^([a-z][a-z0-9_]{0,39})?$"
+                          },
+                          "forum_board_view": {
+                            "type": "string",
+                            "maxLength": 40,
+                            "pattern": "^([a-z][a-z0-9_]{0,39})?$"
+                          },
+                          "forum_thread_view": {
+                            "type": "string",
+                            "maxLength": 40,
+                            "pattern": "^([a-z][a-z0-9_]{0,39})?$"
+                          },
+                          "forum_paginated_view": {
+                            "type": "string",
+                            "maxLength": 40,
+                            "pattern": "^([a-z][a-z0-9_]{0,39})?$"
+                          },
+                          "forum_attachment_click": {
+                            "type": "string",
+                            "maxLength": 40,
+                            "pattern": "^([a-z][a-z0-9_]{0,39})?$"
+                          },
+                          "forum_outbound_click": {
+                            "type": "string",
+                            "maxLength": 40,
+                            "pattern": "^([a-z][a-z0-9_]{0,39})?$"
+                          }
                         },
-                        "required": ["forum_index_view","forum_board_view","forum_thread_view","forum_paginated_view","forum_attachment_click","forum_outbound_click"],
+                        "required": [
+                          "forum_index_view",
+                          "forum_board_view",
+                          "forum_thread_view",
+                          "forum_paginated_view",
+                          "forum_attachment_click",
+                          "forum_outbound_click"
+                        ],
                         "additionalProperties": false
                       },
                       "plausible_events": {
                         "type": "object",
                         "description": "Forum Edition Plausible custom event destinations (optional empty strings disable individual events), only on consent-approved anonymous public forum views and trusted clicks. Names are unique, validated and subject to core event rules.",
                         "properties": {
-                          "forum_index_view": {"type":"string","maxLength":40,"pattern":"^([a-z][a-z0-9_]{0,39})?$"},
-                          "forum_board_view": {"type":"string","maxLength":40,"pattern":"^([a-z][a-z0-9_]{0,39})?$"},
-                          "forum_thread_view": {"type":"string","maxLength":40,"pattern":"^([a-z][a-z0-9_]{0,39})?$"},
-                          "forum_paginated_view": {"type":"string","maxLength":40,"pattern":"^([a-z][a-z0-9_]{0,39})?$"},
-                          "forum_attachment_click": {"type":"string","maxLength":40,"pattern":"^([a-z][a-z0-9_]{0,39})?$"},
-                          "forum_outbound_click": {"type":"string","maxLength":40,"pattern":"^([a-z][a-z0-9_]{0,39})?$"}
+                          "forum_index_view": {
+                            "type": "string",
+                            "maxLength": 40,
+                            "pattern": "^([a-z][a-z0-9_]{0,39})?$"
+                          },
+                          "forum_board_view": {
+                            "type": "string",
+                            "maxLength": 40,
+                            "pattern": "^([a-z][a-z0-9_]{0,39})?$"
+                          },
+                          "forum_thread_view": {
+                            "type": "string",
+                            "maxLength": 40,
+                            "pattern": "^([a-z][a-z0-9_]{0,39})?$"
+                          },
+                          "forum_paginated_view": {
+                            "type": "string",
+                            "maxLength": 40,
+                            "pattern": "^([a-z][a-z0-9_]{0,39})?$"
+                          },
+                          "forum_attachment_click": {
+                            "type": "string",
+                            "maxLength": 40,
+                            "pattern": "^([a-z][a-z0-9_]{0,39})?$"
+                          },
+                          "forum_outbound_click": {
+                            "type": "string",
+                            "maxLength": 40,
+                            "pattern": "^([a-z][a-z0-9_]{0,39})?$"
+                          }
                         },
-                        "required": ["forum_index_view","forum_board_view","forum_thread_view","forum_paginated_view","forum_attachment_click","forum_outbound_click"],
+                        "required": [
+                          "forum_index_view",
+                          "forum_board_view",
+                          "forum_thread_view",
+                          "forum_paginated_view",
+                          "forum_attachment_click",
+                          "forum_outbound_click"
+                        ],
                         "additionalProperties": false
                       },
                       "gtm_events": {
                         "type": "object",
                         "description": "Forum Edition Gtm custom event destinations (optional empty strings disable individual events), only on consent-approved anonymous public forum views and trusted clicks. Names are unique, validated and subject to core event rules.",
                         "properties": {
-                          "forum_index_view": {"type":"string","maxLength":40,"pattern":"^([a-z][a-z0-9_]{0,39})?$"},
-                          "forum_board_view": {"type":"string","maxLength":40,"pattern":"^([a-z][a-z0-9_]{0,39})?$"},
-                          "forum_thread_view": {"type":"string","maxLength":40,"pattern":"^([a-z][a-z0-9_]{0,39})?$"},
-                          "forum_paginated_view": {"type":"string","maxLength":40,"pattern":"^([a-z][a-z0-9_]{0,39})?$"},
-                          "forum_attachment_click": {"type":"string","maxLength":40,"pattern":"^([a-z][a-z0-9_]{0,39})?$"},
-                          "forum_outbound_click": {"type":"string","maxLength":40,"pattern":"^([a-z][a-z0-9_]{0,39})?$"}
+                          "forum_index_view": {
+                            "type": "string",
+                            "maxLength": 40,
+                            "pattern": "^([a-z][a-z0-9_]{0,39})?$"
+                          },
+                          "forum_board_view": {
+                            "type": "string",
+                            "maxLength": 40,
+                            "pattern": "^([a-z][a-z0-9_]{0,39})?$"
+                          },
+                          "forum_thread_view": {
+                            "type": "string",
+                            "maxLength": 40,
+                            "pattern": "^([a-z][a-z0-9_]{0,39})?$"
+                          },
+                          "forum_paginated_view": {
+                            "type": "string",
+                            "maxLength": 40,
+                            "pattern": "^([a-z][a-z0-9_]{0,39})?$"
+                          },
+                          "forum_attachment_click": {
+                            "type": "string",
+                            "maxLength": 40,
+                            "pattern": "^([a-z][a-z0-9_]{0,39})?$"
+                          },
+                          "forum_outbound_click": {
+                            "type": "string",
+                            "maxLength": 40,
+                            "pattern": "^([a-z][a-z0-9_]{0,39})?$"
+                          }
                         },
-                        "required": ["forum_index_view","forum_board_view","forum_thread_view","forum_paginated_view","forum_attachment_click","forum_outbound_click"],
+                        "required": [
+                          "forum_index_view",
+                          "forum_board_view",
+                          "forum_thread_view",
+                          "forum_paginated_view",
+                          "forum_attachment_click",
+                          "forum_outbound_click"
+                        ],
                         "additionalProperties": false
                       },
                       "trust_days": {
@@ -67347,6 +67587,129 @@
                       }
                     }
                   }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/forum/analytics/page-view": {
+      "post": {
+        "tags": [
+          "Forum"
+        ],
+        "operationId": "post_Forum_Native_Analytics_PageView",
+        "summary": "Store one anonymous, consent-approved public Forum page view using a signed one-use render receipt",
+        "description": "No user IDs, page IDs, referrers, cookies, IPs, User-Agents, query parameters or URLs are submitted or persisted. Same-origin HTTPS enforced, 30-minute receipt expiration, unique SQL receipt IDs and rate limiting.",
+        "x-cajeer-route": "api.v1.forum.analytics.native.page",
+        "x-cajeer-required-scopes": null,
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "receipt"
+                ],
+                "properties": {
+                  "receipt": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200,
+                    "pattern": "^v1\\.(index|board|thread|page)\\.[0-9]+\\.[a-f0-9]{32}\\.[a-f0-9]{64}$"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Receipt processed, recorded true for a new event and false if already used/collection disabled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data"
+                  ],
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "required": [
+                        "recorded"
+                      ],
+                      "properties": {
+                        "recorded": {
+                          "type": "boolean"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }

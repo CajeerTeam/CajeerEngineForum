@@ -1541,8 +1541,8 @@ document.addEventListener('click',async e=>{if(e.target.closest('[data-ops-refre
 
 // Forum ACP: same-origin session and CSRF transport provided by the existing SPA.
 const forumAcp = (() => {
-  let tab = 'overview', page = 1, query = '', filter = '', serial = 0, caps = {}
-  const tabs = [['overview','Обзор'],['structure','Структура и ACL'],['users','Участники'],['groups','Группы'],['threads','Обсуждения'],['posts','Сообщения'],['moderation','Модерация'],['attachments','Вложения'],['audit','Аудит'],['settings','Настройки сообщества'],['themes','Оформление форума'],['policy_history','История политики'],['maintenance','Обслуживание'],['delegation','Делегирование'],['imports','Миграции']]
+  let tab = 'overview', page = 1, query = '', filter = '', serial = 0, caps = {}, nativeDays = '30'
+  const tabs = [['overview','Обзор'],['structure','Структура и ACL'],['users','Участники'],['groups','Группы'],['threads','Обсуждения'],['posts','Сообщения'],['moderation','Модерация'],['attachments','Вложения'],['audit','Аудит'],['analytics','Собственная статистика'],['settings','Настройки сообщества'],['themes','Оформление форума'],['policy_history','История политики'],['maintenance','Обслуживание'],['delegation','Делегирование'],['imports','Миграции']]
   const el = (tag, text, cls) => { const n=document.createElement(tag); if(text!=null)n.textContent=text; if(cls)n.className=cls; return n }
   const add = (p,...nodes) => { p.append(...nodes); return p }
   const card = title => add(el('section',null,'card'),el('h2',title))
@@ -1569,8 +1569,9 @@ const forumAcp = (() => {
     const body=el('div');root.append(body);body.append(el('p','Загрузка…'))
     try{
       // Authoritative gate on every mount; never display retained data after logout/role change.
-      const access=await list('access');if(ticket!==serial||!root.isConnected)return;caps=access.capabilities;const available=tabs.filter(([id])=>caps.admin||(id==='users'&&caps.members)||(['settings','themes'].includes(id)&&caps.settings)||(id==='policy_history'&&caps.audit)||(id==='maintenance'&&caps.maintenance));if(!available.some(([id])=>id===tab)){tab=available[0][0];reset()}for(const [id,title] of available)bar.append(action(title,()=>{tab=id;reset();return mount()},tab===id?'':'secondary'));body.replaceChildren();const overview=tab==='overview'?await list('overview'):null;if(ticket!==serial||!root.isConnected)return;
+      const access=await list('access');if(ticket!==serial||!root.isConnected)return;caps=access.capabilities;const available=tabs.filter(([id])=>caps.admin||(id==='users'&&caps.members)||(['settings','themes','analytics'].includes(id)&&caps.settings)||(id==='policy_history'&&caps.audit)||(id==='maintenance'&&caps.maintenance));if(!available.some(([id])=>id===tab)){tab=available[0][0];reset()}for(const [id,title] of available)bar.append(action(title,()=>{tab=id;reset();return mount()},tab===id?'':'secondary'));body.replaceChildren();const overview=tab==='overview'?await list('overview'):null;if(ticket!==serial||!root.isConnected)return;
       if(tab==='overview'){const labels={users:'Участники',active_users:'Активные',boards:'Разделы',threads:'Темы',posts:'Сообщения',reports:'Открытые жалобы',pending:'На проверке',attachments:'Вложения'};const grid=el('div',null,'grid cards');for(const [key,val] of Object.entries(overview.counts))grid.append(add(card(labels[key]||key),el('div',val,'kpi-value')));body.append(grid,add(card('Рабочие инструменты'),link('Открыть форум','/forum'),el('p','Структура, участники, группы, публикации и модерация управляются существующими сервисами форума.')));return}
+      if(tab==='analytics')return await nativeAnalytics(body,ticket)
       if(tab==='settings')return await settings(body,ticket)
       if(tab==='themes')return await themeEditor(body,ticket)
       if(tab==='policy_history')return await policyHistory(body,ticket)
@@ -1599,6 +1600,35 @@ const forumAcp = (() => {
     c.append(tableDom(['Источник','Версия','Состояние','Фаза','Курсор','Действия'],d.items.map(r=>[r.platform,r.source_version,r.state,r.phase,r.cursor_id,action('Отчёт',async()=>{const v=await list('import_job',{job:r.id});if(ticket!==serial)return;detail.replaceChildren(add(card('Отчёт '+r.id),el('p','Backup: '+v.job.backup_id),el('pre',JSON.stringify(v,null,2),'json')));})])));
     if(!d.items.length)c.append(el('p','Импорт ещё не запускался.'));c.append(add(el('div',null,'toolbar'),...(page>1?[action('Назад',()=>{page--;return mount()})]:[]),el('span','Страница '+d.page),...(d.has_more?[action('Далее',()=>{page++;return mount()})]:[])));
   }
+  async function nativeAnalytics(body,ticket){
+    const d=await list('analytics',{days:nativeDays});if(ticket!==serial)return;
+    const info=card('Собственная статистика форума (UTC)');body.append(info);
+    info.append(el('p',d.enabled?'Сбор включён в настройках сообщества.':'Сбор выключен. Исторические анонимные записи удаляются по сроку хранения.'),
+      el('p','Показываются агрегированные события за '+d.from+' — '+d.until+'. Просмотры учитываются только на публичных индексируемых страницах после согласия; публикации, реакции, поиск и загрузки считаются сервером после успешных операций. Без cookies, IP, аккаунтов, URL, поисковых запросов и персональных идентификаторов. Повторные подтверждения одного просмотра исключены. Срок хранения — 90 дней.'));
+    const period=select('native_period',[['7','7 дней'],['30','30 дней'],['90','90 дней']],nativeDays);
+    period.addEventListener('change',()=>{nativeDays=period.value;mount()});
+    info.append(field('Период отчёта',period));
+    const totals=el('div',null,'grid cards');
+    totals.append(add(card('Просмотры страниц'),el('div',String(d.page_views),'kpi-value')),
+      add(card('Действия'),el('div',String(d.actions),'kpi-value')));
+    info.append(totals);
+    const names={forum_index_view:'Главная форума',forum_board_view:'Разделы',forum_thread_view:'Темы',forum_paginated_view:'Страницы пагинации',forum_thread_created:'Созданные темы',forum_post_published:'Опубликованные ответы',forum_post_edited:'Редактирования',forum_registration_completed:'Регистрации',forum_reaction_added:'Добавленные реакции',forum_reaction_removed:'Удалённые реакции',forum_reaction_changed:'Изменённые реакции',forum_search_performed:'Поисковые запросы (количество)',forum_attachment_downloaded:'Скачивания вложений'};
+    const events=card('События за период');body.append(events);
+    const entries=Object.entries(names).map(([key,label])=>[label,d.totals?.[key]??0]);
+    events.append(tableDom(['Событие','Количество'],entries));
+    const daily=card('Динамика по дням (UTC)');body.append(daily);
+    const max=Math.max(1,...d.series.map(r=>r.views+r.actions));
+    const table=el('table'),thead=el('thead'),tr=el('tr');
+    for(const label of ['Дата','Просмотры','Действия','Динамика'])tr.append(el('th',label));thead.append(tr);table.append(thead);
+    const tbody=el('tbody');
+    for(const r of d.series){
+      const line=el('tr');line.append(el('td',r.day),el('td',String(r.views)),el('td',String(r.actions)));
+      const td=el('td');const bar=el('div',null,'native-stats-bar');bar.style.width=Math.max(0,Math.round((r.views+r.actions)/max*100))+'%';
+      bar.style.minHeight='12px';bar.style.background='currentColor';bar.style.opacity='.45';bar.title=(r.views+r.actions)+' событий';td.append(bar);line.append(td);tbody.append(line);
+    }
+    table.append(tbody);daily.append(add(el('div',null,'table-wrap'),table),action('Обновить статистику',()=>mount()));
+  }
+
   const localDate = epoch => {if(!epoch)return '';const d=new Date(epoch*1000);return new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,16)}
   async function settings(body,ticket){
     const d=await list('settings');if(ticket!==serial)return;const v=d.values,c=card('Настройки сообщества');body.append(c);
@@ -1608,7 +1638,7 @@ const forumAcp = (() => {
     const fields=[field('Название форума',input('name',v.name)),field('Описание',area('description',v.description)),field('Регистрация',select('registration_enabled',[['true','Разрешена'],['false','Отключена']],String(v.registration_enabled))),field('Аналитика публичных страниц форума',select('analytics_enabled',[['true','Разрешить при согласии посетителя'],['false','Отключена']],String(v.analytics_enabled??false))),...limits.map(([k,l])=>field(l,input(k,v[k],'number'))),...metrikaFields.map(([k,l])=>field('Метрика · '+l+' (имя цели)',input('metrika_'+k,v.metrika_goals?.[k]??''))),...ga4Fields.map(([k,l])=>field('GA4 · '+l+' (имя события)',input('ga4_'+k,v.ga4_events?.[k]??k))),...['matomo','plausible','gtm'].flatMap(provider=>ga4Fields.map(([k,l])=>field(provider.toUpperCase()+' · '+l+' (событие, пустое — отключено)',input(provider+'_'+k,v[provider+'_events']?.[k]??k))))];
     if(caps.maintenance){fields.push(field('Начало паузы публикаций (местное время; пусто — нет)',input('pause_from',localDate(v.pause_from),'datetime-local')),field('Окончание (пусто — без срока)',input('pause_until',localDate(v.pause_until),'datetime-local')))}
     const analytics=card('Аналитика Forum Edition · ядро CajeerEngine');body.append(analytics);
-    analytics.append(el('p','Отслеживаются только общедоступные индексируемые страницы для анонимных посетителей и только после согласия. Закрытые темы, профили, личные переписки и ACP не отслеживаются. Сначала настройте Matomo, Plausible, Cloudflare Web Analytics или GTM (либо GA4/Метрику) и разрешите HTTPS-домен в настройках ядра, затем включите аналитику форума. GTM исключает прямые теги; для него требуются согласия на аналитику, маркетинг и функциональные категории. Cloudflare Web Analytics собирает просмотры/веб-метрики и не поддерживает произвольные события.'),el('p','В Метрике создайте цели типа «JavaScript-событие» с соответствующими именами. В GA4 события форума по умолчанию включены и отправляются с заданными уникальными именами; пустое поле отключает событие. Отдельная регистрация событий в GA4 не нужна; для использования как конверсий/ключевых событий настройте их в интерфейсе GA4. URL и содержимое форума в дополнительных событиях не передаются. Стандартные page_view и hit работают отдельно. Не подключайте gtag.js повторно через тему или GTM.'));
+    analytics.append(el('p','Отслеживаются только общедоступные индексируемые страницы для анонимных посетителей и только после согласия. Закрытые темы, профили, личные переписки и ACP не отслеживаются. Собственная статистика форума собирается локально без внешних провайдеров: для неё достаточно HTTPS, настроенного серверного APP_KEY и согласия посетителя. Для сторонних провайдеров отдельно настройте Matomo, Plausible, Cloudflare Web Analytics или GTM (либо GA4/Метрику) и разрешите HTTPS-домен в настройках ядра. GTM исключает прямые теги; для него требуются согласия на аналитику, маркетинг и функциональные категории. Cloudflare Web Analytics собирает просмотры/веб-метрики и не поддерживает произвольные события.'),el('p','В Метрике создайте цели типа «JavaScript-событие» с соответствующими именами. В GA4 события форума по умолчанию включены и отправляются с заданными уникальными именами; пустое поле отключает событие. Отдельная регистрация событий в GA4 не нужна; для использования как конверсий/ключевых событий настройте их в интерфейсе GA4. URL и содержимое форума в дополнительных событиях не передаются. Стандартные page_view и hit работают отдельно. Не подключайте gtag.js повторно через тему или GTM.'));
     const links=add(el('div',null,'toolbar'));
     for(const [scope,title,href] of [['tracking:read','Счётчики','#/tracking'],['tracking:read','Правила событий','#/analytics-events'],['analytics:read','Analytics Hub','#/analytics-hub'],['privacy:read','Согласие','#/privacy']])if(integrationScope(scope))links.append(link(title,href));
     if(!links.childElementCount)links.append(el('p','Для управления провайдерами нужны полномочия ядра tracking:read / analytics:read / privacy:read.'));

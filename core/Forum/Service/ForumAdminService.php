@@ -82,7 +82,7 @@ final readonly class ForumAdminService
             $search=V::text($q['q']??'','q',100,0);
             $status=V::text($q['status']??'all','status',20);
             if($view==='access')return ['allowed'=>true,'capabilities'=>$caps];
-            $permission=match($view){'settings','themes'=>'settings','users'=>'members','audit','policy_history'=>'audit',default=>'admin'};
+            $permission=match($view){'settings','themes','analytics'=>'settings','users'=>'members','audit','policy_history'=>'audit',default=>'admin'};
             if(!$caps['admin']&&!$caps[$permission])throw new ForumException('Недостаточно прав.',403);
             if($view==='delegation'){
                 $id=V::id($q['id']??null);$user=(new UserRepository($this->db,new RoleRepository($this->db)))->findById($id)??throw new ForumException('Участник не найден.',404);
@@ -101,6 +101,11 @@ final readonly class ForumAdminService
             }
             if($view==='themes')return (new ForumThemeService($this->db,$this->tx))->editor($actor);
             if($view==='settings')return $this->tx->settings()->snapshot();
+            if($view==='analytics') {
+                $days=$q['days']??'30';
+                if(!is_string($days)||!in_array($days,['7','30','90'],true))throw new ForumException('Некорректный период отчёта.',422);
+                return (new ForumAnalyticsEvents($this->db))->report((int)$days)+['enabled'=>$this->tx->settings()->snapshot()['values']['analytics_enabled']];
+            }
             if($view==='policy_history') {
                 $stmt=$this->db->connection()->query("SELECT id,event,actor_id,context,created_at FROM ce_audit_log WHERE event IN ('forum.acp.policy.update','forum.acp.maintenance','forum.acp.delegation.update','forum.acp.theme.draft','forum.acp.theme.activate','forum.acp.theme.restore','forum.acp.theme.delete') ORDER BY id DESC LIMIT 26 OFFSET ".(int)$page);
                 $rows=$stmt->fetchAll(\PDO::FETCH_ASSOC);$more=count($rows)>25;if($more)array_pop($rows);

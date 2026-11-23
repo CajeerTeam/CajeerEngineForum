@@ -17,10 +17,10 @@
     "docs": "GitHub repository docs/",
     "updates": "GitHub Releases",
     "release_builder": "tools/build-release.php",
-    "source_artifact": "storage/releases/cajeerengine-1.2.6-source.zip",
-    "dist_artifact": "storage/releases/cajeerengine-1.2.6-dist.zip",
+    "source_artifact": "storage/releases/cajeerengine-1.2.7-source.zip",
+    "dist_artifact": "storage/releases/cajeerengine-1.2.7-dist.zip",
     "checksums": "storage/releases/*.sha256",
-    "artifact_index": "storage/releases/cajeerengine-1.2.6-artifacts.json",
+    "artifact_index": "storage/releases/cajeerengine-1.2.7-artifacts.json",
     "support_bundle": "storage/app/support",
     "backup": "storage/app/backups/production",
     "server_reports": "storage/app/reports",
@@ -36,6 +36,7 @@
     "engine_api_version": "1.1"
   },
   "product_changes": [
+    "Forum Edition 1.2.7: real first-party native analytics collects anonymous consent-approved indexable public forum page views using signed 30-minute one-use receipts and an HTTPS same-origin POST, verifies and deduplicates them in the existing transactional SQL ledger, combines with committed forum publishing/reactions/search/download events, and presents UTC daily and per-event 7/30/90-day reports in permission-scoped Forum ACP; 90-day bounded cleanup and no new SQL migrations; external analytics remain optional.",
     "Forum Edition 1.2.6: Matomo, Plausible and GTM forum event destinations dispatched through the existing consent-gated providers on ACL-verified public forum pages, with ACP configuration, per-event disable, strict validation, sanitized URLs, trusted attachment/outbound clicks, browser/PHP regression tests, and preserved GA4/Metrica rules; Cloudflare Web Analytics is integrated for its supported pageview/RUM beacon only, with sensitive-query suppression. No new SDK or database migration.",
     "Forum Edition 1.2.5: real consent-gated GA4 forum custom-event dispatch on independently server-approved public SSR index/board/thread and paginated views, trusted attachment/outbound clicks, ACP-configurable validated unique GA4 event names (default active only when forum analytics itself is explicitly enabled), single inherited gtag.js and GA4 reporting connection, no private route instrumentation and no database migration; executable PHP/browser release regressions.",
     "Forum Edition 1.2.4: production Yandex Metrica forum-specific goal dispatch on approved public SSR index/board/thread and paginated views, real outbound/attachment click actions, revision-checked ACP goal configuration, per-page operator validated goal identifiers, consent/ACL/CSP controls, browser and PHP regression coverage; reuses the existing single Metrica tag with no private route instrumentation or schema migration.",
@@ -147,10 +148,11 @@
     "1.2.4": "Disaster Recovery",
     "1.2.5": "Production Deployment",
     "1.3.0": "Integration Certification, Security & Load Testing",
-    "1.2.6": "Alternative Analytics Providers — Matomo, Plausible, Cloudflare Web Analytics and GTM"
+    "1.2.6": "Alternative Analytics Providers — Matomo, Plausible, Cloudflare Web Analytics and GTM",
+    "1.2.7": "Native Analytics Collection — first-party counters and ACP reports"
   },
   "stability": "production-stable-gated",
   "edition": "forum",
-  "edition_version": "1.2.6",
+  "edition_version": "1.2.7",
   "upstream_version": "2.1.0"
 }

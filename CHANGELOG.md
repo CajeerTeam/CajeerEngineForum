@@ -1,3 +1,8 @@
+## 1.2.7 — Native Analytics Collection (2026-11-23)
+- Added first-party, anonymous, consent-gated page-view recording on public SEO-indexable guest forum index, board and thread HTML pages, including pagination. Each render gets a distinct 30-minute HMAC-signed, single-use receipt after the cache lookup; server validates HTTPS and same origin, writes no URL, IP, referrer, user-agent, account, browser or cookie identifier.
+- Extended the existing transactionally recorded forum activity journal with idempotent native page views and real 7/30/90-day UTC SQL reporting. ACP settings-authorized operators can view event totals and daily trends; public API cannot read reports. Existing 90-day retention and cleanup remain active. No external analytics account or database migration is required.
+- Added PHP and Chromium/Firefox regressions, release/CI gates, API documentation and static ACP assets. Publication still requires full target-database CI and independently signed release qualification.
+
 ## 1.2.6 — Alternative Analytics Providers (2026-11-23)
 
 - Integrate consent-controlled Matomo `trackEvent`, Plausible `POST /api/event` and GTM `dataLayer.push` calls for forum index/board/thread/pagination views and real attachment/outbound clicks, on the inherited 2.1.0 tracking engine without duplicate tag loaders or server event forgeries.

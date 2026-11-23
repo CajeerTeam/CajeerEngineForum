@@ -3,7 +3,7 @@
 declare(strict_types=1);
 namespace CajeerEngine\Forum;
 
-use CajeerEngine\Forum\Service\{DiscussionService, EngagementService, ModerationService, RegistrationService};
+use CajeerEngine\Forum\Service\{DiscussionService, EngagementService, ModerationService, RegistrationService, ForumNativeAnalytics};
 use CajeerEngine\Forum\Security\ForumAccessPolicy;
 use CajeerEngine\Forum\Validation\ForumValidator as V;
 use Symfony\Component\HttpFoundation\{JsonResponse, Request, Response};
@@ -28,8 +28,9 @@ final readonly class ForumController
         }
         $load=fn()=> (new ForumPageRenderer($this->discussions,$this->root,$settings,$this->platform))->render($request,$this->reader($request));
         // Dynamic extension panels can depend on time or external state; never reuse stale HTML.
-        if($this->platform?->hasForumPanels())return $load();
-        return $this->cached($request,'page',$load,$settings);
+        $response=$this->platform?->hasForumPanels()?$load():$this->cached($request,'page',$load,$settings);
+        return ForumNativeAnalytics::enhance($response,$request,$this->root,
+            (bool)($settings->community()['analytics_enabled']??false),$this->reader($request)->userId==='');
     }
     public function legacy(Request $request,array $parameters=[]): Response
     {
@@ -67,6 +68,16 @@ final readonly class ForumController
     private function reader(Request $r): ForumAccessPolicy { return ForumAccessPolicy::optional($r->attributes->get('auth')); }
     private function id(array $p): string { return V::id($p['id'] ?? null); }
     private function offset(Request $r): int { return V::offset($r->query->all()['page'] ?? 1); }
+    /** Strictly anonymous one-use receipt issued only on an indexable public SSR page. */
+    public function nativePageView(Request $r): JsonResponse
+    {
+        return $this->respond(function()use($r){
+            $body=$this->body($r);
+            if (array_diff(array_keys($body),['receipt']) || count($body)!==1)throw new ForumException('Недопустимый запрос.',422);
+            $result=$this->discussions->nativePageView($r,$body['receipt']);
+            return ['recorded'=>$result];
+        });
+    }
     public function adminListing(Request $r): JsonResponse { return $this->respond(fn()=> $this->discussions->admin()->listing($this->actor($r),$r->query->all())); }
     public function adminDelegation(Request $r,array $p): JsonResponse { return $this->respond(fn()=> $this->discussions->admin()->delegation($this->actor($r),$this->id($p),$this->body($r))); }
     public function adminTheme(Request $r): JsonResponse { return $this->respond(fn()=> $this->discussions->admin()->theme($this->actor($r),$this->body($r))); }

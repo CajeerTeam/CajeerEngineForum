@@ -15,6 +15,8 @@ final readonly class DiscussionService
     public function __construct(private DatabaseManager $db, private ForumTransaction $tx, private BoardRepository $boards, private ThreadRepository $threads, private PostRepository $posts, private MemberRepository $members) {}
 
     public function analyticsRead(string $name): void { $this->tx->analyticsRead($name); }
+    public function nativePageView(\Symfony\Component\HttpFoundation\Request $request,mixed $receipt): bool
+    { return (new ForumNativeAnalytics($this->db))->collect($request,$receipt); }
 
     public function seoSettings(string $root): \CajeerEngine\Forum\ForumSeoSettings { return new \CajeerEngine\Forum\ForumSeoSettings($root,$this->db,true); }
 

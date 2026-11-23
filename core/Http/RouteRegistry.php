@@ -300,6 +300,7 @@ final class RouteRegistry
             ['GET', '/search', 'public.search', 'search', 'publicPage', null],
             ['GET', '/search/', 'public.search.trailing', 'search', 'publicPage', null],
             ['GET', '/', 'public.home', 'forum', 'page', null],
+            ['POST', '/api/v1/forum/analytics/page-view', 'api.v1.forum.analytics.native.page', 'forum', 'nativePageView', null],
             ['GET', '/api/v1/forum/acp', 'api.v1.forum.acp.index', 'forum', 'adminListing', []],
             ['PUT', '/api/v1/forum/acp/delegation/{id}', 'api.v1.forum.acp.delegation', 'forum', 'adminDelegation', ['*']],
             ['PUT', '/api/v1/forum/acp/theme', 'api.v1.forum.acp.theme', 'forum', 'adminTheme', ['forum:acp:settings']],
