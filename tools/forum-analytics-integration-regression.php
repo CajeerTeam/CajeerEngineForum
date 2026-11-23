@@ -58,6 +58,18 @@ namespace {
     try {
         foreach(['consent.js','consent.css'] as $name)\CajeerEngine\Update\OperationFiles::copy($root.'/resources/consent/'.$name,$work.'/resources/consent/'.$name,0644);
         $defaults=ForumCommunitySettings::defaults();
+        $check(count($defaults['metrika_goals'])===6&&count(array_filter($defaults['metrika_goals']))===0,'Metrica goals disabled until operator configures them');
+        $goals=$defaults['metrika_goals'];$goals['forum_thread_view']='thread_goal';$goals['forum_outbound_click']='outbound_goal';
+        $check(ForumCommunitySettings::validateMetrikaGoals($goals)===$goals,'production goal identifiers accepted');
+        foreach (['bad goal','<script>','',str_repeat('z',65)] as $bad) {
+            if($bad==='')continue;
+            $invalid=$goals;$invalid['forum_thread_view']=$bad;
+            try {ForumCommunitySettings::validateMetrikaGoals($invalid);throw new \RuntimeException('Invalid goal accepted');}
+            catch(ForumException $e){$check($e->status===422,'invalid goal rejected');}
+        }
+        $duplicate=$goals;$duplicate['forum_board_view']='thread_goal';
+        try {ForumCommunitySettings::validateMetrikaGoals($duplicate);throw new \RuntimeException('Duplicate goal accepted');}
+        catch(ForumException $e){$check($e->status===422,'duplicate target rejected');}
         $check($defaults['analytics_enabled']===false,'forum analytics opt-in defaults off');
         if(extension_loaded('mbstring')) {
             $check(ForumCommunitySettings::validate($defaults)['analytics_enabled']===false,'policy accepts disabled analytics');
@@ -85,11 +97,14 @@ namespace {
         $tracking=new TrackingConfig($work);
         $cfg=TrackingConfig::defaults();$cfg['enabled']=true;$cfg['hosts']=['forum.test'];$cfg['metrika_id']='12345678';
         $tracking->update($cfg);
-        $result=$adapter->decorate($html,$req);
+        $result=$adapter->decorate($html,$req,$goals);
+        $check(str_contains($result['html'],'data-ce-forum-metrika-goals=')&&str_contains($result['html'],'thread_goal'),'operator goal configuration is served only on approved SSR page');
         $check($result['active'] && substr_count($result['html'],'data-ce-consent-config=')===1,'live consent and counter engine inserted once');
         $check(str_contains($result['html'],'data-ce-forum-approved-path="/forum"'),'server-authorized forum path included in consent runtime');
         $check(!$adapter->decorate($html,Request::create('https://forum.test/forum/members/'.$id))['active'],'member profile never tracked');
-        $check(!$adapter->decorate($html,Request::create('https://forum.test/forum/conversations'))['active'],'private messages never tracked');
+        $check(!$adapter->decorate($html,Request::create('https://forum.test/forum/conversations'),$goals)['active'],'private messages never tracked');
+        $invalid=$goals;$invalid['forum_thread_view']='invalid goal';
+        $check(!$adapter->decorate($html,$req,$invalid)['active'],'corrupt goal configuration fails closed');
         $check(!$adapter->decorate($html,Request::create('https://forum.test/forum','HEAD'))['active'],'HEAD does not initialize browser tracking');
         $check(str_contains($result['html'],'/assets/ce-consent/consent.js')&&!str_contains($result['html'],'src="https://mc.yandex.ru'),'optional provider remains inert until consent');
         $other=$adapter->decorate($html,Request::create('https://other.test/forum','GET'));

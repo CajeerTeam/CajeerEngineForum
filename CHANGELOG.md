@@ -1,3 +1,9 @@
+## 1.2.4 — Yandex Metrica Integration (2026-11-23)
+
+- Added six operator-configurable Yandex Metrica JavaScript goals for approved public forum index/board/thread views, paginated views, and real attachment/outbound link clicks. Sends no forum UUIDs, queries, user content or personal identifiers with custom goal events.
+- Integrated per-page goal settings through revision-controlled Forum ACP community policy, validated unique goal identifiers, shared core single-tag consent runtime and strict server-approved routes; existing counter setup and response-scoped CSP remain mandatory.
+- Tested opt-in, denial, duplicate views, actual link actions, private route exclusion and invalid goal configurations in PHP and browser regressions; bumped release/CI gates to 1.2.4 without changing CajeerEngine 2.1.0, adding database migrations or claiming vendor acceptance.
+
 ## 1.2.3 — Visitor Tracking & Consent (2026-11-23)
 
 - Restrict forum tracking to explicitly enabled, anonymous, public and indexable server-rendered forum/board/thread pages. Bind a per-response approved path to the shared consent runtime so client-side URL changes cannot activate tracking on private routes, account pages, profiles, messages or ACP.

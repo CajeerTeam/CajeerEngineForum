@@ -71,6 +71,26 @@
     return !/^\/forum(?:\/|$)/i.test(normalized) ||
       (approvedForumPath === normalized && /^\/forum(?:$|\/(?:boards|threads)\/[a-f0-9-]{36}$)/i.test(normalized));
   };
+  // Configuration is attached only to a server-authorized, ACL-checked public SSR
+  // forum response. Arbitrary client code cannot add another approved route.
+  const forumGoalKeys=['forum_index_view','forum_board_view','forum_thread_view',
+    'forum_paginated_view','forum_attachment_click','forum_outbound_click'];
+  const forumMetrikaGoals=(()=>{
+    if(!approvedForumPath)return null;
+    try {
+      const goals=JSON.parse(boot.dataset.ceForumMetrikaGoals||'null');
+      if(!goals||typeof goals!=='object'||Array.isArray(goals)||Object.keys(goals).length!==forumGoalKeys.length)return null;
+      for(const k of forumGoalKeys)if(typeof goals[k]!=='string'||(goals[k]&&!/^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(goals[k])))return null;
+      if(new Set(Object.values(goals).filter(Boolean)).size!==Object.values(goals).filter(Boolean).length)return null;
+      return goals;
+    }catch{return null;}
+  })();
+  function forumGoal(key){
+    if(!forumMetrikaGoals||!forumGoalKeys.includes(key)||!forumMetrikaGoals[key]||!trackingAllowed('metrika')||!forumPublicPath(location.pathname))return false;
+    const c=counters.get('metrika');
+    if(!c||['stopped','error'].includes(c.status)||trackingConfig()?.metrika_id!==c.id||typeof window.ym!=='function'||!locationData())return false;
+    try { window.ym(Number(c.id),'reachGoal',forumMetrikaGoals[key]);return true; } catch{return false;}
+  }
   const trackingStatus = () => Object.fromEntries([...counters].map(([name,c])=>[name,{id:c.id,status:c.status,reason:c.reason||null}]));
   function publishTracking(){document.dispatchEvent(new CustomEvent('cajeer:tracking-status',{detail:trackingStatus()}));}
   function locationData(value=location.href || (location.origin+location.pathname+(location.search||''))) {
@@ -153,7 +173,15 @@
           if(name==='page_view')c.last=data.page_location;
         }else if(name==='page_view'){
           if(provider==='ga4')window.gtag('event','page_view',{...data,send_to:c.id});
-          if(provider==='metrika')window.ym(Number(c.id),'hit',data.page_location,{referer:data.page_referrer||''});
+          if(provider==='metrika'){
+            window.ym(Number(c.id),'hit',data.page_location,{referer:data.page_referrer||''});
+            if(forumMetrikaGoals){
+              const pathname=new URL(data.page_location).pathname;
+              const kind=pathname==='/forum'?'forum_index_view':pathname.startsWith('/forum/boards/')?'forum_board_view':'forum_thread_view';
+              forumGoal(kind);
+              if(new URL(data.page_location).searchParams.has('page'))forumGoal('forum_paginated_view');
+            }
+          }
           if(provider==='gtm')window.dataLayer.push({event:'ce_page_view',...data,ce_event_id:id});
           if(provider==='matomo'){window._paq.push(['setCustomUrl',data.page_location],['setReferrerUrl',data.page_referrer||''],['setDocumentTitle',new URL(data.page_location).pathname],['trackPageView']);}
           if(provider==='plausible')sendPlausible(c,'pageview',data,{});
@@ -185,13 +213,25 @@
     const marker=document.querySelector('[data-ce-analytics-search]');
     if(marker&&!searchSeen){const count=Number(marker.dataset.ceAnalyticsSearch);if(Number.isInteger(count)&&count>=0&&count<=1000000&&autoEvent('search',{result_count:count}))searchSeen=true;}
   }
+  const recentForumGoalClicks=new WeakMap();
+  function clickForumGoal(anchor,key,automaticSent=false){
+    const now=Date.now(),previous=recentForumGoalClicks.get(anchor);
+    // Some UI wrappers emit more than one trusted click for one user gesture.
+    if(previous?.key===key && now-previous.at<800)return false;
+    // The inherited automatic Metrica event may already use this same goal ID.
+    const automaticName=key==='forum_outbound_click'?'outbound_click':key==='forum_attachment_click'?'file_download':null;
+    if(automaticSent && automaticName && eventRule(automaticName,true)?.metrika===forumMetrikaGoals?.[key])return true;
+    if(!forumGoal(key))return false;
+    recentForumGoalClicks.set(anchor,{key,at:now});return true;
+  }
   document.addEventListener('click',e=>{
     if(!e.isTrusted||e.defaultPrevented||!trackingAllowed('metrika'))return;
     const a=e.target instanceof Element?e.target.closest('a[href]'):null;if(!a||a.closest('.ce-consent-panel')||a.closest('[data-ce-analytics-ignore]'))return;
     try{const u=new URL(a.href,location.origin);if(!['http:','https:'].includes(u.protocol))return;
       const ext=(u.pathname.match(/\.([a-z0-9]{1,8})$/i)?.[1]||'').toLowerCase();const files=['pdf','zip','gz','doc','docx','xls','xlsx','ppt','pptx','csv','txt','mp3','mp4'];
-      if(a.hasAttribute('download')||files.includes(ext))autoEvent('file_download',{file_extension:files.includes(ext)?ext:'other'});
-      else if(u.origin!==location.origin)autoEvent('outbound_click');
+      const fileAuto=(a.hasAttribute('download')||files.includes(ext))?autoEvent('file_download',{file_extension:files.includes(ext)?ext:'other'}):false;
+      if(u.origin===location.origin && /^\/api\/v1\/forum\/attachments\/[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}\/download$/i.test(u.pathname)) clickForumGoal(a,'forum_attachment_click',fileAuto);
+      else if(u.origin!==location.origin){const sent=autoEvent('outbound_click');clickForumGoal(a,'forum_outbound_click',sent);}
     }catch{}
   });
   window.addEventListener('scroll',()=>{

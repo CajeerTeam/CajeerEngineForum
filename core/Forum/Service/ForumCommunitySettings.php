@@ -17,7 +17,7 @@ final readonly class ForumCommunitySettings
     {
         return ['name'=>getenv('APP_NAME')?:'CajeerEngine Forum Edition',
             'description'=>'Обсуждайте идеи, делитесь опытом и находите ответы вместе.',
-            'registration_enabled'=>self::operatorRegistration(), 'analytics_enabled'=>false, 'trust_days'=>7,'trust_posts'=>3,
+            'registration_enabled'=>self::operatorRegistration(), 'analytics_enabled'=>false, 'metrika_goals'=>self::metrikaGoals(), 'trust_days'=>7,'trust_posts'=>3,
             'threads_hour'=>AntiSpamService::setting('THREADS_HOUR',30),
             'new_threads_hour'=>AntiSpamService::setting('NEW_THREADS_HOUR',6),
             'replies_10min'=>AntiSpamService::setting('REPLIES_10MIN',60),
@@ -25,6 +25,27 @@ final readonly class ForumCommunitySettings
             'attachment_mb'=>intdiv(AttachmentService::limits()['file_bytes'],1048576),
             'attachment_quota_mb'=>intdiv(AttachmentService::limits()['quota_bytes'],1048576),
             'pause_from'=>0,'pause_until'=>0];
+    }
+    /** Identifiers must match explicitly configured JavaScript-event goals in Yandex Metrica. */
+    public static function metrikaGoals(): array
+    {
+        return ['forum_index_view'=>'','forum_board_view'=>'','forum_thread_view'=>'',
+            'forum_paginated_view'=>'','forum_attachment_click'=>'','forum_outbound_click'=>''];
+    }
+    public static function validateMetrikaGoals(mixed $goals): array
+    {
+        $defaults=self::metrikaGoals();
+        if(!is_array($goals)||array_diff_key($goals,$defaults)||array_diff_key($defaults,$goals))
+            throw new ForumException('Некорректный набор целей Яндекс Метрики.',422);
+        foreach($goals as $value) {
+            if(!is_string($value)||($value!==''&&!preg_match('/^[a-zA-Z][a-zA-Z0-9_]{0,63}$/D',$value)))
+                throw new ForumException('Некорректный идентификатор цели Яндекс Метрики.',422);
+        }
+        // One goal may not mean several different actions within the same counter.
+        $configured=array_filter(array_values($goals),static fn(string $v):bool=>$v!=='');
+        if(count($configured)!==count(array_unique($configured)))
+            throw new ForumException('Идентификаторы целей Яндекс Метрики должны быть уникальны.',422);
+        return $goals;
     }
     public static function operatorRegistration(): bool
     { return filter_var(getenv('FORUM_REGISTRATION')===false?'true':getenv('FORUM_REGISTRATION'),FILTER_VALIDATE_BOOLEAN); }
@@ -48,6 +69,8 @@ final readonly class ForumCommunitySettings
     }
     public static function validate(array $input): array
     {
+        // Preserve older API clients while upgrades migrate the policy document in place.
+        $input+=['metrika_goals'=>self::metrikaGoals()];
         $keys=array_keys(self::defaults());
         if(array_diff(array_keys($input),$keys)||array_diff($keys,array_keys($input)))throw new ForumException('Передайте все поля политики без неизвестных ключей.',422);
         $out=['name'=>V::text($input['name'],'name',100),'description'=>V::text($input['description'],'description',500,0)];
@@ -55,6 +78,7 @@ final readonly class ForumCommunitySettings
         $out['registration_enabled']=$input['registration_enabled'];
         if(!is_bool($input['analytics_enabled']))throw new ForumException('Некорректный флаг аналитики форума.',422);
         $out['analytics_enabled']=$input['analytics_enabled'];
+        $out['metrika_goals']=self::validateMetrikaGoals($input['metrika_goals']);
         foreach(['trust_days'=>[1,365],'trust_posts'=>[1,1000],'threads_hour'=>[1,10000],'new_threads_hour'=>[1,10000],'replies_10min'=>[1,10000],'new_replies_10min'=>[1,10000],'attachment_mb'=>[1,25],'attachment_quota_mb'=>[1,2048],'pause_from'=>[0,4102444800],'pause_until'=>[0,4102444800]] as $key=>[$min,$max]){
             $n=$input[$key];if(!is_int($n)||$n<$min||$n>$max)throw new ForumException('Некорректное значение: '.$key,422);$out[$key]=$n;
         }

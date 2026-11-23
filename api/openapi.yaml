@@ -66534,6 +66534,20 @@
                       "analytics_enabled": {
                         "type": "boolean"
                       },
+                      "metrika_goals": {
+                        "type": "object",
+                        "description": "Optional Yandex Metrica JavaScript goal IDs on consent-approved public forum pages; empty disables the corresponding goal.",
+                        "properties": {
+                          "forum_index_view": {"type":"string","maxLength":64,"pattern":"^[A-Za-z][A-Za-z0-9_]{0,63}$|^$"},
+                          "forum_board_view": {"type":"string","maxLength":64,"pattern":"^[A-Za-z][A-Za-z0-9_]{0,63}$|^$"},
+                          "forum_thread_view": {"type":"string","maxLength":64,"pattern":"^[A-Za-z][A-Za-z0-9_]{0,63}$|^$"},
+                          "forum_paginated_view": {"type":"string","maxLength":64,"pattern":"^[A-Za-z][A-Za-z0-9_]{0,63}$|^$"},
+                          "forum_attachment_click": {"type":"string","maxLength":64,"pattern":"^[A-Za-z][A-Za-z0-9_]{0,63}$|^$"},
+                          "forum_outbound_click": {"type":"string","maxLength":64,"pattern":"^[A-Za-z][A-Za-z0-9_]{0,63}$|^$"}
+                        },
+                        "required": ["forum_index_view","forum_board_view","forum_thread_view","forum_paginated_view","forum_attachment_click","forum_outbound_click"],
+                        "additionalProperties": false
+                      },
                       "trust_days": {
                         "type": "integer",
                         "minimum": 1,
