@@ -1,3 +1,12 @@
+## 1.2.11 — Analytics Security & Hardening (2026-11-23)
+
+- Enforce HTTPS, exact Origin, `Sec-Fetch-Site: same-origin`, fetch mode and JSON content type for first-party page-view collection. Invalid/legacy metadata fail closed before reading analytics receipts.
+- Hide registration cohort, D+1/D+7/D+30 and activation metrics when the relevant denominator is under five. Mark suppressed cohorts explicitly; ACP displays a dash or `<5`, never a fabricated zero.
+- Group the live author activity stream in SQL by author and UTC day, transferring one result per active author/day rather than each individual forum post. Preserve exact topics, replies, active authors, repeat publishing and same-day first/second post funnels.
+- Retry transient native collection failures at most once with the same idempotent receipt; cancel retries on consent withdrawal and do not retry permanent 4xx rejections.
+- Cover strict collection metadata, grouped multi-post days, small-group redaction and ACP rendering in regressions; retain existing transactional rollups, retention jobs and signed-release checks.
+- No migration. No additional cookies or unique visitor identifiers. Core remains 2.1.0.
+
 ## 1.2.10 — Engagement & Retention Analytics (2026-11-23)
 - Implemented contribution-backed daily active authors, authored post volumes, new-topic vs reply counts, exact distinct contributors and consecutive-week returning authors from existing forum data; excluded CMS-only roles and account identifiers from ACP responses.
 - Added D+1, D+7 and D+30 registration cohorts for members publishing a post on the exact subsequent UTC day, with maturity/zero-denominator safeguards and a sequential 7-day registration → first post → second post activation funnel. No anonymous view is represented as a unique member or inferred session.

@@ -1702,22 +1702,22 @@ const forumAcp = (() => {
     const plot=el('div');const renderTrend=()=>plot.replaceChildren(engagementChart(d.daily,metric.value,metric.selectedOptions[0].textContent));
     metric.addEventListener('change',renderTrend);engagementTrend.append(field('Показатель',metric),plot);renderTrend();
     const retention=card('Когорты регистрации · публикация ровно на день D+N');body.append(retention);
-    retention.append(el('p','Учитываются только когорты с полностью прошедшим D+1, D+7 или D+30. Прочерк означает отсутствие подходящей когорты, а не нулевое удержание.','muted'));
-    const retentionRows=[1,7,30].map(n=>{const r=d.retention['d'+n];return ['D+'+n,nativeNumber(r.eligible),nativeNumber(r.returned),r.percent===null?'—':r.percent+'%']});
+    retention.append(el('p','Учитываются зрелые когорты. Если менее 5 участников, значения скрываются; прочерк не означает нулевое удержание.','muted'));
+    const retentionRows=[1,7,30].map(n=>{const r=d.retention['d'+n];return ['D+'+n,r.eligible===null?'—':nativeNumber(r.eligible),r.returned===null?'—':nativeNumber(r.returned),r.percent===null?'—':r.percent+'%']});
     retention.append(tableDom(['День','Зарегистрировано в зрелых когортах','Опубликовали в этот день','Удержание авторов'],retentionRows));
     const funnel=card('Воронка регистрации → публикации за 7 дней');body.append(funnel);
     funnel.append(el('p','Учитываются только регистрации, для которых завершились первые 7 полных календарных дней. Вторая публикация считается только после первой; источник — сохранённые сообщения.','muted'));
     funnel.append(tableDom(['Этап','Участников','От зарегистрированных'],[
-      ['Регистрации',nativeNumber(d.funnel.eligible_registrations),'100%'],
-      ['Первая публикация',nativeNumber(d.funnel.first_contribution),d.funnel.first_rate===null?'—':d.funnel.first_rate+'%'],
-      ['Вторая публикация',nativeNumber(d.funnel.second_contribution),d.funnel.second_rate===null?'—':d.funnel.second_rate+'%']
+      ['Регистрации',d.funnel.eligible_registrations===null?'—':nativeNumber(d.funnel.eligible_registrations),d.funnel.eligible_registrations===null?'—':'100%'],
+      ['Первая публикация',d.funnel.first_contribution===null?'—':nativeNumber(d.funnel.first_contribution),d.funnel.first_rate===null?'—':d.funnel.first_rate+'%'],
+      ['Вторая публикация',d.funnel.second_contribution===null?'—':nativeNumber(d.funnel.second_contribution),d.funnel.second_rate===null?'—':d.funnel.second_rate+'%']
     ]));
     const activity=card('Авторская активность по дням');body.append(activity);
     activity.append(tableDom(['UTC','Активные авторы','Публикации','Темы','Ответы'],d.daily.map(r=>[r.date,nativeNumber(r.contributors),nativeNumber(r.contributions),nativeNumber(r.topics),nativeNumber(r.replies)])));
     const cohorts=card('Когорты регистраций · последние 90 дней');body.append(cohorts);
-    cohorts.append(el('p','Пустые или ещё не завершённые D+N обозначены прочерком. Для авторских показателей доступны только сохранённые сообщения.','muted'));
-    cohorts.append(tableDom(['Регистрация UTC','Участники','D+1','D+7','D+30'],d.cohorts.filter(r=>r.registrations>0).map(r=>[r.date,nativeNumber(r.registrations),...['d1_rate','d7_rate','d30_rate'].map(k=>r[k]===null?'—':r[k]+'%')])));
-    if(!d.cohorts.some(r=>r.registrations>0))cohorts.append(el('p','Нет зарегистрированных участников за 90 дней.','empty'));
+    cohorts.append(el('p','Прочерк означает незрелый период; когорты с 1–4 регистрациями скрыты для приватности. Показатели основаны только на сохранённых сообщениях.','muted'));
+    cohorts.append(tableDom(['Регистрация UTC','Участники','D+1','D+7','D+30'],d.cohorts.filter(r=>r.registrations>0||r.suppressed).map(r=>[r.date,r.suppressed?'<5':nativeNumber(r.registrations),...['d1_rate','d7_rate','d30_rate'].map(k=>r[k]===null?'—':r[k]+'%')])));
+    if(!d.cohorts.some(r=>r.registrations>0||r.suppressed))cohorts.append(el('p','Нет зарегистрированных участников за 90 дней.','empty'));
   }
 
   async function nativeAnalytics(body,ticket){

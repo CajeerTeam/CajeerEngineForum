@@ -70,8 +70,13 @@ final readonly class ForumNativeAnalytics
         if (!$request->isSecure() || $request->getMethod()!=='POST') throw new ForumException('Требуется HTTPS.',403);
         $origin=(string)$request->headers->get('Origin','');
         $expected='https://'.strtolower($request->getHttpHost());
+        // Only a real same-origin browser fetch is accepted. Missing Fetch Metadata
+        // is not evidence of a same-origin request, and a top-level navigation is
+        // not a valid analytics collection request. Legacy browsers fail closed.
         if (!hash_equals($expected,strtolower($origin)) ||
-            !in_array(strtolower((string)$request->headers->get('Sec-Fetch-Site','same-origin')),['same-origin','none'],true))
+            strtolower((string)$request->headers->get('Sec-Fetch-Site',''))!=='same-origin' ||
+            !in_array(strtolower((string)$request->headers->get('Sec-Fetch-Mode','')),['cors','same-origin'],true) ||
+            strtolower(trim(explode(';',(string)$request->headers->get('Content-Type',''))[0]))!=='application/json')
             throw new ForumException('Запрос должен исходить с форума.',403);
         [$event,$id]=self::verify($receipt);
         return (new ForumAnalyticsEvents($this->db))->recordPage($event,$id);
@@ -94,7 +99,7 @@ final readonly class ForumNativeAnalytics
             $html=(new ConsentPolicy($root))->decorate($html);
             if (!str_contains($html,'data-ce-consent-config=')) return $response;
         }
-        $tag='<script defer src="/forum-assets/native-analytics.js?v=1.2.9" data-ce-native-receipt="'.$receipt.'" data-ce-native-path="'.htmlspecialchars($path,ENT_QUOTES,'UTF-8').'"></script>';
+        $tag='<script defer src="/forum-assets/native-analytics.js?v=1.2.11" data-ce-native-receipt="'.$receipt.'" data-ce-native-path="'.htmlspecialchars($path,ENT_QUOTES,'UTF-8').'"></script>';
         $html=str_ireplace('</head>',$tag.'</head>',$html);
         $response->setContent($html);
         $response->headers->set('X-Forum-Analytics-Public','1');

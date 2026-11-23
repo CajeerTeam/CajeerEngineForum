@@ -18,6 +18,8 @@ final readonly class ForumEngagementAnalytics
 {
     public const COHORT_DAYS = 90;
     public const FUNNEL_DAYS = 7;
+    /** Never disclose exact retention/activation for a tiny registration cohort. */
+    public const MIN_COHORT_MEMBERS = 5;
     public function __construct(private DatabaseManager $db) {}
 
     public function get(int $days = 30, ?int $now = null): array
@@ -61,17 +63,23 @@ final readonly class ForumEngagementAnalytics
                 $daily[$day]=['date'=>gmdate('Y-m-d',$day),'contributors'=>0,'contributions'=>0,'topics'=>0,'replies'=>0];
             }
             $seen = []; $actors = [];
-            // Each post is a single contribution. Opening posts have ordinal=1;
-            // do NOT also count ce_forum_threads or the same post is doubled.
-            // Streaming and ordered rows avoid fetching full post bodies and avoid
-            // materializing one row per post. Per-user state supports exact distincts.
-            $posts=$pdo->prepare('SELECT p.author_id,p.created_at,p.ordinal FROM ce_forum_live_posts p '
-                .'JOIN ce_users u ON u.id=p.author_id WHERE p.created_at>=? AND p.created_at<? AND '
-                .$membership.' ORDER BY p.created_at,p.id');
+            // Aggregate inside SQL before transferring results to PHP. PostgreSQL
+            // stores TIMESTAMPTZ and has no SUBSTR(timestamp) overload, while
+            // MySQL DATETIME/SQLite TEXT can be rendered with SUBSTR directly.
+            // The 0083 created_at index still bounds the 90-day source scan.
+            $dayExpr=$this->db->driver()==='pgsql'
+                ? "TO_CHAR(p.created_at AT TIME ZONE 'UTC','YYYY-MM-DD')"
+                : 'SUBSTR(p.created_at,1,10)';
+            $posts=$pdo->prepare('SELECT p.author_id,'.$dayExpr.' AS activity_date, '
+                .'COUNT(*) AS contributions,SUM(CASE WHEN p.ordinal=1 THEN 1 ELSE 0 END) AS topics '
+                .'FROM ce_forum_live_posts p JOIN ce_users u ON u.id=p.author_id '
+                .'WHERE p.created_at>=? AND p.created_at<? AND '.$membership
+                .' GROUP BY p.author_id,'.$dayExpr.' ORDER BY activity_date,p.author_id');
             $posts->execute([gmdate('Y-m-d H:i:s',$oldest),gmdate('Y-m-d H:i:s',$untilExclusive)]);
             while ($post=$posts->fetch(PDO::FETCH_ASSOC)) {
-                $author=(string)$post['author_id'];$day=self::day((string)$post['created_at']);
-                if ($day===null || $day<$oldest || $day>$today) continue;
+                $author=(string)$post['author_id'];$day=self::day((string)$post['activity_date']);
+                $contributions=(int)$post['contributions'];$topics=(int)$post['topics'];
+                if ($day===null || $day<$oldest || $day>$today || $contributions<1 || $topics<0 || $topics>$contributions) continue;
                 $actor=$actors[$author]??['last_day'=>null,'first_week'=>false,'second_week'=>false,
                     'previous_week'=>false,'current_week'=>false,'in_window'=>false];
                 if ($actor['last_day']!==$day) {
@@ -85,8 +93,9 @@ final readonly class ForumEngagementAnalytics
                     }
                 }
                 if(isset($daily[$day])){
-                    $daily[$day]['contributions']++;
-                    $daily[$day][(int)$post['ordinal']===1?'topics':'replies']++;
+                    $daily[$day]['contributions']+=$contributions;
+                    $daily[$day]['topics']+=$topics;
+                    $daily[$day]['replies']+=$contributions-$topics;
                     $actor['in_window']=true;
                 }
                 if ($day>=$previousWeek && $day<$currentWeek)$actor['previous_week']=true;
@@ -96,6 +105,11 @@ final readonly class ForumEngagementAnalytics
                     if (!$actor['first_week']){
                         $actor['first_week']=true;
                         $cohorts[$registered]['first_contribution']++;
+                        // Two or more posts on the SAME day also complete the funnel.
+                        if ($contributions>=2){
+                            $actor['second_week']=true;
+                            $cohorts[$registered]['second_contribution']++;
+                        }
                     } elseif (!$actor['second_week']){
                         $actor['second_week']=true;
                         $cohorts[$registered]['second_contribution']++;
@@ -144,17 +158,26 @@ final readonly class ForumEngagementAnalytics
             $funnel['first_rate']=self::ratio($funnel['first_contribution'],$funnel['eligible_registrations']);
             $funnel['second_rate']=self::ratio($funnel['second_contribution'],$funnel['eligible_registrations']);
             $funnel['repeat_rate']=self::ratio($funnel['second_contribution'],$funnel['first_contribution']);
+            if ($funnel['eligible_registrations'] < self::MIN_COHORT_MEMBERS) {
+                // Do not reveal individual activation from an identifiable small cohort.
+                foreach (['eligible_registrations','first_contribution','second_contribution','first_rate','second_rate','repeat_rate'] as $key) $funnel[$key]=null;
+            }
             $publicCohorts=[];
             foreach($cohorts as $start=>$row){
                 $row['d1_rate']=$start+86400<$today?self::ratio($row['d1'],$row['registrations']):null;
                 $row['d7_rate']=$start+7*86400<$today?self::ratio($row['d7'],$row['registrations']):null;
                 $row['d30_rate']=$start+30*86400<$today?self::ratio($row['d30'],$row['registrations']):null;
+                $row['suppressed']=$row['registrations']>0 && $row['registrations']<self::MIN_COHORT_MEMBERS;
+                if ($row['suppressed']) {
+                    foreach (['registrations','d1','d7','d30','first_contribution','second_contribution','d1_rate','d7_rate','d30_rate'] as $key) $row[$key]=null;
+                }
                 $publicCohorts[]=$row;
             }
             return ['timezone'=>'UTC','from'=>gmdate('Y-m-d',$from),'until'=>gmdate('Y-m-d',$today),
                 'cohort_from'=>gmdate('Y-m-d',$oldest),'days'=>$days,'summary'=>$totals,
                 'daily'=>array_values($daily),'retention'=>$retention,'funnel'=>$funnel,
                 'cohorts'=>array_reverse($publicCohorts),
+                'privacy_min_cohort'=>self::MIN_COHORT_MEMBERS,
                 'method'=>'registered_forum_members_and_retained_authored_posts',
                 'limitations'=>'Activity means authored forum posts, not unique visits or sessions. '
                     .'Deleted posts/threads, imported dates, removed roles and incomplete current UTC day affect results.'];
@@ -162,7 +185,10 @@ final readonly class ForumEngagementAnalytics
     }
 
     private static function rate(int $eligible,int $returned):array
-    {return ['eligible'=>$eligible,'returned'=>$returned,'percent'=>self::ratio($returned,$eligible)];}
+    {
+        if ($eligible<self::MIN_COHORT_MEMBERS) return ['eligible'=>null,'returned'=>null,'percent'=>null];
+        return ['eligible'=>$eligible,'returned'=>$returned,'percent'=>self::ratio($returned,$eligible)];
+    }
     private static function ratio(int $numerator,int $denominator):?float
     {return $denominator>0?round($numerator*100/$denominator,1):null;}
     private static function day(string $timestamp):?int

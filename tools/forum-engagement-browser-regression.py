@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Real 1.2.10 ACP bundle against a deterministic analytics API transport."""
+"""Real 1.2.11 ACP bundle against a deterministic analytics API transport."""
 import argparse
 import shutil
 from pathlib import Path
@@ -17,9 +17,9 @@ mock=mock.replace(marker,""" if(view==='engagement'){
   return {timezone:'UTC',from:'2026-11-17',until:'2026-11-23',days:Number(days),cohort_from:'2026-08-26',
   summary:{contributors:5,contributions:9,topics:2,replies:7,active_member_days:9,current_week_contributors:5,returning_week_contributors:1,contributions_per_contributor:1.8},
   daily:[{date:'2026-11-22',contributors:4,contributions:4,topics:1,replies:3}],
-  retention:{d1:{eligible:4,returned:3,percent:75},d7:{eligible:3,returned:2,percent:66.7},d30:{eligible:1,returned:1,percent:100}},
-  funnel:{eligible_registrations:3,first_contribution:2,second_contribution:1,first_rate:66.7,second_rate:33.3,repeat_rate:50,within_days:7},
-  cohorts:[{date:'2026-11-21',registrations:1,d1_rate:100,d7_rate:null,d30_rate:null},{date:'2026-10-20',registrations:1,d1_rate:0,d7_rate:100,d30_rate:100}],
+  retention:{d1:{eligible:null,returned:null,percent:null},d7:{eligible:6,returned:4,percent:66.7},d30:{eligible:null,returned:null,percent:null}},
+  funnel:{eligible_registrations:null,first_contribution:null,second_contribution:null,first_rate:null,second_rate:null,repeat_rate:null,within_days:7},
+  cohorts:[{date:'2026-11-21',registrations:null,suppressed:true,d1_rate:null,d7_rate:null,d30_rate:null},{date:'2026-10-20',registrations:5,suppressed:false,d1_rate:0,d7_rate:100,d30_rate:100}],
   method:'registered_forum_members_and_retained_authored_posts'};
  }
 """+marker)
@@ -53,11 +53,13 @@ with sync_playwright() as p:
  ok(page.get_by_text('Авторская активность по дням').count()==1,'daily contributors')
  ok(page.get_by_text('Когорты регистраций · последние 90 дней').count()==1,'90-day cohort detail')
  ok('66.7%' in page.get_by_text('Когорты регистрации · публикация ровно на день D+N').locator('..').inner_text(),'D7 retention percent')
- ok('33.3%' in page.get_by_text('Воронка регистрации → публикации за 7 дней').locator('..').inner_text(),'sequential funnel conversion')
+ ok('—' in page.get_by_text('Воронка регистрации → публикации за 7 дней').locator('..').inner_text(),'small funnel suppressed in ACP')
  ok(page.get_by_text('Аналитическая панель форума',exact=True).count()==1,'previous dashboard preserved')
  ok(page.get_by_text('Динамика событий').count()==1,'original chart preserved')
  ok(page.get_by_text('Вторая публикация',exact=True).count()==1,'second publication stage visible')
  ok('—' in page.get_by_text('Когорты регистраций · последние 90 дней').locator('..').inner_text(),'unmatured rates unavailable')
+ ok('<5' in page.get_by_text('Когорты регистраций · последние 90 дней').locator('..').inner_text(),'suppressed registration is not rendered as exact count or zero')
+ ok('<5' in page.get_by_text('Когорты регистраций · последние 90 дней').locator('..').inner_text(),'suppressed registration is not rendered as exact count or zero')
  page.locator('select[name="engagement_days"]').select_option('90')
  page.get_by_text('Вовлечённость, удержание и воронка участников',exact=True).wait_for()
  ok(any('view=engagement&days=90' in c for c in page.evaluate('window.apiCalls')),'90-day filter reaches API')

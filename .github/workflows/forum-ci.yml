@@ -6,7 +6,7 @@ on:
 permissions:
   contents: read
 env:
-  FORUM_CURRENT_VERSION: ${{ '1.2.10' }}
+  FORUM_CURRENT_VERSION: ${{ '1.2.11' }}
 concurrency:
   group: forum-ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -247,6 +247,7 @@ jobs:
       - run: php tools/forum-analytics-rollup-regression.php
       - run: php tools/forum-analytics-dashboard-regression.php
       - run: php tools/forum-engagement-regression.php
+      - run: php tools/forum-analytics-hardening-regression.php
       - run: python tools/forum-tests/analytics_dashboard_sql_regression.py
       - run: python tools/forum-tests/engagement_sql_regression.py
       - run: node --check admin/static/assets/admin-app.js

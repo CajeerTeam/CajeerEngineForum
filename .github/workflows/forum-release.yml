@@ -117,10 +117,13 @@ jobs:
           python3 tools/certification-evidence.py verify "$ARTIFACT_ROOT" --trusted-key "$pub"
 
           cat > "$RUNNER_TEMP/forum-release-notes.md" <<'NOTES'
-          ## CajeerEngineForum 1.2.10
+          ## CajeerEngineForum 1.2.11
 
-          Forum Edition Analytics Dashboard, based on CajeerEngine 2.1.0.
+          Forum Edition Analytics Security & Hardening, based on CajeerEngine 2.1.0.
 
+          - Native page-view collection requires HTTPS, matching Origin, Fetch Metadata and JSON; retry only transient failures, at most once, with an idempotent receipt.
+          - Suppress small engagement/retention cohorts and activation denominators in ACP; preserve non-identifying statistics.
+          - Optimize retention queries with SQL author/day aggregation and existing indexes, preserving exact topic/reply counts.
           - Anonymous first-party native page views with consent, signed single-use receipts, strict public-page gating and no visitor identifiers.
           - Permission-gated native ACP dashboard: date ranges, full-window comparisons, event drilldowns, charts and anonymous CSV downloads.
           - Atomic idempotent UTC daily rollups with 90-day raw/365-day aggregate retention, 7/30/90/365-day reports and authorized bounded recalculation.

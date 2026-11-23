@@ -1,5 +1,5 @@
 <?php
-/** Executable 1.2.10 cohort and activation regression on real PDO SQLite in CI. */
+/** Executable 1.2.11 privacy and grouped engagement regression on real PDO SQLite in CI. */
 declare(strict_types=1);
 $root=dirname(__DIR__);
 spl_autoload_register(static function(string $name)use($root):void{
@@ -58,15 +58,29 @@ $check($report['summary']['topics']===2 && $report['summary']['replies']===7,'op
 $check($report['summary']['returning_week_contributors']===1,'weekly returning author');
 $check($report['summary']['active_member_days']===9,'distinct active member-days');
 $check($report['retention']['d1']['returned']===3,'exact D1 authors');
-$check($report['retention']['d7']['returned']===2,'exact D7 authors');
-$check($report['retention']['d30']['returned']===1,'exact D30 authors');
-$check($report['funnel']['eligible_registrations']===3,'only 7-day matured cohorts');
-$check($report['funnel']['first_contribution']===2 && $report['funnel']['second_contribution']===1,'sequential activation');
+$check($report['retention']['d7']['returned']===null && $report['retention']['d7']['eligible']===null,'small D7 cohort suppressed');
+$check($report['retention']['d30']['returned']===null,'small D30 cohort suppressed');
+$check($report['funnel']['eligible_registrations']===null,'small seven-day funnel suppressed');
+$check($report['funnel']['first_contribution']===null && $report['funnel']['second_contribution']===null,'small funnel stages suppressed');
 $cohorts=array_column($report['cohorts'],null,'date');
 $check($cohorts['2026-11-21']['d7_rate']===null,'immature cohort is unavailable');
-$check($cohorts['2026-10-20']['d30_rate']===100.0,'D30 exact matured rate');
+$check($cohorts['2026-10-20']['suppressed'] && $cohorts['2026-10-20']['d30_rate']===null && $cohorts['2026-10-20']['registrations']===null,'identifiable daily cohort is redacted');
 $check(!str_contains(json_encode($report,JSON_THROW_ON_ERROR),'"author_id"')&&!str_contains(json_encode($report,JSON_THROW_ON_ERROR),'"user_id"'),'no personal identifiers in response');
+$check($report['privacy_min_cohort']===5,'privacy threshold declared');
 $check($pdo->query('SELECT COUNT(*) FROM ce_forum_posts')->fetchColumn()===count($posts)+1,'report is read-only');
+// Five members registered on one day reveal an aggregate cohort, not identities.
+for($i=0;$i<5;$i++){
+    $id='batch'.$i;$register->execute([$id,'2026-11-10 10:00:00']);$role->execute([$id,'role-forum']);
+    $insert->execute(['batch-post-'.$i.'-1',$id,'2026-11-10 11:00:00',1]);
+    $insert->execute(['batch-post-'.$i.'-2',$id,'2026-11-10 12:00:00',2]);
+    $insert->execute(['batch-post-'.$i.'-3',$id,'2026-11-11 10:00:00',2]);
+}
+$grouped=(new ForumEngagementAnalytics($db))->get(7,strtotime('2026-11-23 12:00:00 UTC'));
+$cohort=array_column($grouped['cohorts'],null,'date')['2026-11-10'];
+$check($cohort['registrations']===6 && !$cohort['suppressed'],'sufficient cohort reports actual registration count');
+$check($cohort['first_contribution']===6 && $cohort['second_contribution']===6,'multiple same-day posts counted as sequential funnel steps');
+$check($cohort['d1']===6,'grouped daily posts count each author once for D+1');
+$check($grouped['summary']['topics']===7 && $grouped['summary']['replies']===17,'database pre-aggregation preserves full post totals');
 $report90=(new ForumEngagementAnalytics($db))->get(90,strtotime('2026-11-23 12:00:00 UTC'));
 $check(count($report90['daily'])===90 && count($report90['cohorts'])===90,'complete 90-day arrays');
 echo "Forum engagement: {$ok} PASS\n";
