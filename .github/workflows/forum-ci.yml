@@ -6,7 +6,7 @@ on:
 permissions:
   contents: read
 env:
-  FORUM_CURRENT_VERSION: ${{ '1.3.4' }}
+  FORUM_CURRENT_VERSION: ${{ '1.3.5' }}
 concurrency:
   group: forum-ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -269,6 +269,12 @@ jobs:
         env:
           FORUM_TEST_DRIVER: sqlite
         run: php tools/forum-ai-search-acceptance.php
+      - name: Forum 1.3.5 support SQL migration and transactional regression
+        run: python tools/forum-tests/support_sql_regression.py
+      - name: Forum 1.3.5 support AI, FAQ and operator flow real SQLite PDO
+        env:
+          FORUM_TEST_DRIVER: sqlite
+        run: php tools/forum-support-acceptance.php
       - run: php tools/forum-analytics-dashboard-regression.php
       - run: php tools/forum-engagement-regression.php
       - run: php tools/forum-analytics-hardening-regression.php
@@ -430,6 +436,11 @@ jobs:
         env:
           FORUM_TEST_DRIVER: pgsql
         run: php tools/forum-ai-search-acceptance.php
+      - name: Forum 1.3.5 support AI, FAQ and operator flow real PostgreSQL PDO
+        env:
+          DB_DATABASE: forum_analytics
+          FORUM_TEST_DRIVER: pgsql
+        run: php tools/forum-support-acceptance.php
       - name: Knowledge sync real PostgreSQL FTS repair and search acceptance
         env:
           FORUM_TEST_DRIVER: pgsql
@@ -504,6 +515,11 @@ jobs:
         env:
           FORUM_TEST_DRIVER: mysql
         run: php tools/forum-ai-search-acceptance.php
+      - name: Forum 1.3.5 support AI, FAQ and operator flow real MySQL/MariaDB PDO
+        env:
+          DB_DATABASE: forum_analytics
+          FORUM_TEST_DRIVER: mysql
+        run: php tools/forum-support-acceptance.php
       - name: Knowledge sync real MySQL/MariaDB FTS repair and search acceptance
         env:
           FORUM_TEST_DRIVER: mysql
@@ -552,6 +568,7 @@ jobs:
       - run: python tools/forum-ai-chat-browser-regression.py --browser ${{ matrix.browser }}
       - run: python tools/forum-thread-ai-browser-regression.py --browser ${{ matrix.browser }}
       - run: python tools/forum-ai-search-browser-regression.py --browser ${{ matrix.browser }}
+      - run: python tools/forum-support-browser-regression.py --browser ${{ matrix.browser }}
       - name: Real browser E2E with SMTP
         run: python tools/forum-tests/run.py --suite browser --browser ${{ matrix.browser }} --report storage/tmp/forum-ci/browser
       - name: Upload browser evidence

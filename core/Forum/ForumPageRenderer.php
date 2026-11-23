@@ -176,7 +176,7 @@ final readonly class ForumPageRenderer
 
     private static function interactive(string $path): bool
     {
-        return in_array($path,array_map(static fn($p)=>'/forum/'.$p,['ai','search','members','questions','activity','leaderboard','unread','notifications','conversations','conversation-settings','conversation-reports','drafts','watches','manage','moderation','moderation/appeals','moderation/sanctions','submissions','recycle-bin','safety','sanctions','member-relations','login','register','forgot-password','resend-email','verify-email','reset-password','unsubscribe','account','account/profile','account/preferences','account/privacy','account/security','account/sessions']),true)
+        return in_array($path,array_map(static fn($p)=>'/forum/'.$p,['ai','support','support/operator','search','members','questions','activity','leaderboard','unread','notifications','conversations','conversation-settings','conversation-reports','drafts','watches','manage','moderation','moderation/appeals','moderation/sanctions','submissions','recycle-bin','safety','sanctions','member-relations','login','register','forgot-password','resend-email','verify-email','reset-password','unsubscribe','account','account/profile','account/preferences','account/privacy','account/security','account/sessions']),true)
             || preg_match('~^/forum/conversations/[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$~D',$path)===1;
     }
     private static function page(mixed $value,int $max): int

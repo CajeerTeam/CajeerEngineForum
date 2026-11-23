@@ -117,41 +117,21 @@ jobs:
           python3 tools/certification-evidence.py verify "$ARTIFACT_ROOT" --trusted-key "$pub"
 
           cat > "$RUNNER_TEMP/forum-release-notes.md" <<'NOTES'
-          ## CajeerEngineForum 1.3.4
+          ## CajeerEngineForum 1.3.5 — AI Support Assistant
 
-          Forum Edition Analytics & Metrics Stable, based on CajeerEngine 2.1.0.
+          Forum Edition 1.3.5 on CajeerEngine 2.1.0.
 
-          - Independently certified native analytics: SQLite/PostgreSQL/MySQL real SQL ingestion, signed receipt and exact-origin rejection, rollup, recalculate, retention, failure rollback and unchanged ACP totals.
-          - Native collector binds an issued receipt to the exact approved path and pagination query, including after delayed consent and history changes.
-          - Native page-view collection requires HTTPS, matching Origin, Fetch Metadata and JSON; retry only transient failures, at most once, with an idempotent receipt.
-          - Suppress small engagement/retention cohorts and activation denominators in ACP; preserve non-identifying statistics.
-          - Optimize retention queries with SQL author/day aggregation and existing indexes, preserving exact topic/reply counts.
-          - Anonymous first-party native page views with consent, signed single-use receipts, strict public-page gating and no visitor identifiers.
-          - Permission-gated native ACP dashboard: date ranges, full-window comparisons, event drilldowns, charts and anonymous CSV downloads.
-          - Atomic idempotent UTC daily rollups with 90-day raw/365-day aggregate retention, 7/30/90/365-day reports and authorized bounded recalculation.
-          - Existing Matomo / Plausible / GTM / Cloudflare, GA4 and Metrica integrations retained.
-          - ACP-configurable per-provider event mappings, URL sanitization, trusted clicks and duplicate suppression.
-          - Explicit analytics refusal and withdrawal, including browser back/forward and BFCache safety.
-          - Read-only Invision 4/5 v8 source acceptance and verified migration backup gates retained.
-          - Existing XenForo 2.2/2.3 production acceptance and migration checkpoints retained.
-          - Real-data source migration certification requires independent staging operator approval.
-          - Verified release certificate bound to tested exact source and distribution archives.
-          - Independently pinned Ed25519 publisher key and protected production publication.
-          - Live HTTPS Forum login, OIDC configuration, session and schema integrity admission checks.
-          - Preserves replay-protected TOTP, fail-closed migration repair and 1.0.9 security hardening.
-          - Forum local sign-out and CSRF-checked RP-initiated SkiF4er ID sign-out with browser-bound completion state.
-          - Verified server-side OIDC back-channel logout revoking the matching local browser sessions.
-          - Existing linked SSO login, local login and safe return to forum pages.
-          - Explicit account linking and protected, local browser sessions.
-          - 1.0.2 security and migration stabilizations retained.
-          - Administration, migrations, backups, deployment and recovery tooling.
-          - Source and distribution ZIP packages from the successful CI run, with SHA-256 checksums.
+          - Isolated member-owned support ticket storage and member-facing support UI.
+          - Verified public FAQ with revisioned editor for authorized Forum ACP operators.
+          - Optional grounded AI replies using the existing OpenAI Responses, SQL quotas and shared cost budgets.
+          - AI failure, unavailable source, invalid citation, and exhausted quota fall back to the human queue.
+          - Ticket assignment, operator response, explicit user handoff and resolution are guarded by ACL and CAS revision.
+          - Public evidence rechecked when viewing stored AI replies; changed or unavailable posts revoke the AI text.
+          - New required 0087 migration on PostgreSQL, MySQL/MariaDB and SQLite.
+          - Cross-driver PDO acceptance and browser regression required in CI.
 
-          CI, staging, recovery and archive signature evidence was revalidated before publication.
-          This does not prove an external IdP browser sign-in, a completed independent 24-hour soak,
-          or successful production deployment. Obtain operational approval and backup the target first.
-
-          See README.md and docs/ for installation, migration and operational instructions.
+          Publication of signed artifacts is gated on successful CI, external staging approval,
+          independently trusted signing keys and production change-control review.
           NOTES
 
           # A failure while uploading leaves a draft, not a partially public release.

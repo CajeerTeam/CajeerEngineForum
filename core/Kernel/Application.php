@@ -674,7 +674,11 @@ final class Application
             new \CajeerEngine\Forum\Service\ForumThreadAssistant($forumDb,$forumTx,$forumAiChat),
             new \CajeerEngine\Forum\Service\ForumAiSearch($forumDb,$forumTx,$forumAiChat)
         );
-        $controllers = compact('identity', 'forum', 'forumAi', 'aiAnalytics', 'aiAutomations', 'aiMigration', 'support', 'knowledge', 'ai', 'identityAdmin', 'oidc', 'migration', 'analyticsHub', 'tracking', 'analyticsEvents', 'consent', 'integrations', 'health', 'system', 'contentTypes', 'entries', 'runtime', 'search', 'queue', 'scheduler', 'webhooks', 'extensions', 'installer', 'importExport', 'updates', 'rc', 'stable', 'admin', 'media', 'public', 'cms', 'database', 'auth', 'users', 'roles', 'apiTokens', 'security');
+        $forumSupport = new \CajeerEngine\Forum\ForumSupportController(
+            new \CajeerEngine\Forum\Service\ForumSupportAssistant($forumDb, new \CajeerEngine\Forum\Service\ForumAiSearch($forumDb,$forumTx,$forumAiChat)),
+            $container->get(AuditLogger::class)
+        );
+        $controllers = compact('identity', 'forum', 'forumAi', 'forumSupport', 'aiAnalytics', 'aiAutomations', 'aiMigration', 'support', 'knowledge', 'ai', 'identityAdmin', 'oidc', 'migration', 'analyticsHub', 'tracking', 'analyticsEvents', 'consent', 'integrations', 'health', 'system', 'contentTypes', 'entries', 'runtime', 'search', 'queue', 'scheduler', 'webhooks', 'extensions', 'installer', 'importExport', 'updates', 'rc', 'stable', 'admin', 'media', 'public', 'cms', 'database', 'auth', 'users', 'roles', 'apiTokens', 'security');
         foreach (\CajeerEngine\Http\RouteRegistry::all() as [$method, $path, $name, $controller, $action, $scopes]) {
             $router->add([$method], $path, $name, [$controllers[$controller], $action], $scopes);
         }

@@ -25,7 +25,7 @@ final readonly class RateLimitMiddleware implements MiddlewareInterface
         $identity = ($request->getClientIp() ?: 'unknown');
         $hit = $this->limiter->hit($bucket, $identity, $limit, $window);
 
-        if ($hit['allowed'] && str_starts_with($path, '/api/v1/forum/ai/')) {
+        if ($hit['allowed'] && (str_starts_with($path, '/api/v1/forum/ai/') || str_starts_with($path, '/api/v1/forum/support/') || str_starts_with($path, '/api/v1/forum/acp/support/'))) {
             $ai = $this->limiter->hit('forum_ai', $identity, $this->config->int('security.rate_limits.forum_ai', 30), $window);
             if (!$ai['allowed'] || $ai['remaining'] < $hit['remaining']) $hit = $ai;
         }

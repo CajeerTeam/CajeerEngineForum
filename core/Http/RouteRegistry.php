@@ -10,7 +10,7 @@ final class RouteRegistry
     /** These public GET/HEAD operations optionally resolve an existing session. */
     public static function optionalAuthentication(string $name): bool
     {
-        return in_array($name,['forum.home','forum.page','public.home','api.v1.forum.index','api.v1.forum.board','api.v1.forum.thread','api.v1.forum.search','api.v1.forum.latest','api.v1.forum.profile','api.v1.forum.members','api.v1.forum.profileImage','api.v1.forum.attachment','api.v1.forum.downloadAttachment','api.v1.forum.attachmentImage','api.v1.forum.activity','api.v1.forum.leaderboard','api.v1.forum.questions','api.v1.forum.answers'],true);
+        return in_array($name,['forum.home','forum.page','public.home','api.v1.forum.index','api.v1.forum.board','api.v1.forum.thread','api.v1.forum.search','api.v1.forum.latest','api.v1.forum.profile','api.v1.forum.members','api.v1.forum.profileImage','api.v1.forum.attachment','api.v1.forum.downloadAttachment','api.v1.forum.attachmentImage','api.v1.forum.activity','api.v1.forum.leaderboard','api.v1.forum.questions','api.v1.forum.answers','api.v1.forum.support.faqs'],true);
     }
 
     /** @return list<array{0:string,1:string,2:string,3:string,4:string,5:?array}> */
@@ -305,6 +305,19 @@ final class RouteRegistry
             ['DELETE', '/api/v1/forum/threads/{id}/ai/conversations/{conversation_id}', 'api.v1.forum.thread.ai.delete', 'forumAi', 'threadDelete', []],
             ['POST', '/api/v1/forum/threads/{id}/ai', 'api.v1.forum.thread.ai.send', 'forumAi', 'threadSend', []],
             ['POST', '/api/v1/forum/threads/{id}/ai/stream', 'api.v1.forum.thread.ai.stream', 'forumAi', 'threadStream', []],
+            ['GET', '/api/v1/forum/support/faqs', 'api.v1.forum.support.faqs', 'forumSupport', 'faqs', null],
+            ['GET', '/api/v1/forum/support/tickets', 'api.v1.forum.support.mine', 'forumSupport', 'mine', []],
+            ['POST', '/api/v1/forum/support/tickets', 'api.v1.forum.support.create', 'forumSupport', 'create', []],
+            ['GET', '/api/v1/forum/support/tickets/{id}', 'api.v1.forum.support.show', 'forumSupport', 'show', []],
+            ['POST', '/api/v1/forum/support/tickets/{id}/reply', 'api.v1.forum.support.reply', 'forumSupport', 'reply', []],
+            ['POST', '/api/v1/forum/support/tickets/{id}/handoff', 'api.v1.forum.support.handoff', 'forumSupport', 'handoff', []],
+            ['GET', '/api/v1/forum/acp/support/tickets', 'api.v1.forum.acp.support.queue', 'forumSupport', 'queue', ['forum:acp:members']],
+            ['POST', '/api/v1/forum/acp/support/tickets/{id}/action', 'api.v1.forum.acp.support.action', 'forumSupport', 'action', ['forum:acp:members']],
+            ['POST', '/api/v1/forum/acp/support/tickets/{id}/reply', 'api.v1.forum.acp.support.reply', 'forumSupport', 'operatorReply', ['forum:acp:members']],
+            ['GET', '/api/v1/forum/acp/support/faqs', 'api.v1.forum.acp.support.faqs', 'forumSupport', 'manageFaq', ['forum:acp:members']],
+            ['POST', '/api/v1/forum/acp/support/faqs', 'api.v1.forum.acp.support.faqs.create', 'forumSupport', 'createFaq', ['forum:acp:members']],
+            ['PUT', '/api/v1/forum/acp/support/faqs/{id}', 'api.v1.forum.acp.support.faqs.update', 'forumSupport', 'updateFaq', ['forum:acp:members']],
+            ['DELETE', '/api/v1/forum/acp/support/faqs/{id}', 'api.v1.forum.acp.support.faqs.delete', 'forumSupport', 'deleteFaq', ['forum:acp:members']],
             ['GET', '/api/v1/forum/ai/search', 'api.v1.forum.ai.search.sources', 'forumAi', 'searchSources', []],
             ['POST', '/api/v1/forum/ai/search', 'api.v1.forum.ai.search.answer', 'forumAi', 'searchAnswer', []],
             ['POST', '/api/v1/forum/ai/search/stream', 'api.v1.forum.ai.search.stream', 'forumAi', 'searchStream', []],
