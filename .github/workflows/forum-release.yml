@@ -117,10 +117,12 @@ jobs:
           python3 tools/certification-evidence.py verify "$ARTIFACT_ROOT" --trusted-key "$pub"
 
           cat > "$RUNNER_TEMP/forum-release-notes.md" <<'NOTES'
-          ## CajeerEngineForum 1.2.11
+          ## CajeerEngineForum 1.3.0
 
-          Forum Edition Analytics Security & Hardening, based on CajeerEngine 2.1.0.
+          Forum Edition Analytics & Metrics Stable, based on CajeerEngine 2.1.0.
 
+          - Independently certified native analytics: SQLite/PostgreSQL/MySQL real SQL ingestion, signed receipt and exact-origin rejection, rollup, recalculate, retention, failure rollback and unchanged ACP totals.
+          - Native collector binds an issued receipt to the exact approved path and pagination query, including after delayed consent and history changes.
           - Native page-view collection requires HTTPS, matching Origin, Fetch Metadata and JSON; retry only transient failures, at most once, with an idempotent receipt.
           - Suppress small engagement/retention cohorts and activation denominators in ACP; preserve non-identifying statistics.
           - Optimize retention queries with SQL author/day aggregation and existing indexes, preserving exact topic/reply counts.

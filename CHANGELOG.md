@@ -1,3 +1,9 @@
+## 1.3.0 — Analytics & Metrics Stable (2026-11-23)
+
+- Add a fail-closed real PDO acceptance of signed page views, same-origin rejection, single-use receipts, SQL journal, aggregate worker, transactional retry, ACP reports, bounded recalculation, disabled policy and 90/365-day retention; execute against SQLite, PostgreSQL 17/18, MySQL 8.4 and MariaDB 10.11 with independent disposable CI databases.
+- Bind every native page-view receipt to the rendered path and pagination value. Re-check on consent change and retry; stale history changes can no longer record another page using an old receipt. Add PHP and Chromium/Firefox regressions.
+- Keep existing GA4, Yandex Metrica, Matomo, Plausible, GTM and Cloudflare integrations and release signing gates. No new schema migration, cookie or user identifier. Signed deployment requires full CI/staging and operator approval; the source patch alone is not production certification.
+
 ## 1.2.11 — Analytics Security & Hardening (2026-11-23)
 
 - Enforce HTTPS, exact Origin, `Sec-Fetch-Site: same-origin`, fetch mode and JSON content type for first-party page-view collection. Invalid/legacy metadata fail closed before reading analytics receipts.

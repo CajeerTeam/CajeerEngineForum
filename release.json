@@ -17,10 +17,10 @@
     "docs": "GitHub repository docs/",
     "updates": "GitHub Releases",
     "release_builder": "tools/build-release.php",
-    "source_artifact": "storage/releases/cajeerengine-1.2.11-source.zip",
-    "dist_artifact": "storage/releases/cajeerengine-1.2.11-dist.zip",
+    "source_artifact": "storage/releases/cajeerengine-1.3.0-source.zip",
+    "dist_artifact": "storage/releases/cajeerengine-1.3.0-dist.zip",
     "checksums": "storage/releases/*.sha256",
-    "artifact_index": "storage/releases/cajeerengine-1.2.11-artifacts.json",
+    "artifact_index": "storage/releases/cajeerengine-1.3.0-artifacts.json",
     "support_bundle": "storage/app/support",
     "backup": "storage/app/backups/production",
     "server_reports": "storage/app/reports",
@@ -36,6 +36,7 @@
     "engine_api_version": "1.1"
   },
   "product_changes": [
+    "Forum Edition 1.3.0: Analytics & Metrics Stable. Executable production acceptance of real SQL-backed event recording, one-use HMAC page receipts, same-origin checks, transactional rollup, live dashboard and bounded recalculation, event and aggregate retention, aborted publication rollback and engagement queries across SQLite, PostgreSQL, MySQL and MariaDB. Native client now binds approved path and pagination and revalidates after delayed consent or history changes. CI rejects failed real-database checks; publish requires a separately certified signed release, staging and operator approval. No new migration or identifier.",
     "Forum Edition 1.2.11: analytics security and hardening. Strict HTTPS/same-origin/Fetch-Metadata/JSON requirements for one-use native page-view receipts reject malformed or cross-site collection; ACP engagement reports suppress 1–4 member registration cohorts and small retention/funnel denominators without misleading zeroes; contributor-day aggregates are computed in bounded SQL before streaming to PHP, reducing rows transferred for high-traffic forums while preserving exact post/topic/reply counts and same-day two-post activation. Regression coverage includes PHP origin checks, SQL grouping and ACP privacy output. Native browser collector retries transient backend failures once with the same one-use receipt and cancels retries on consent withdrawal. Existing transactional ledger, worker idempotency, role-gated ACP and 90/365-day retention continue unchanged. No new database migration or tracking identifier.",
     "Forum Edition 1.2.10: real contribution-based engagement and registration-cohort retention in ACP. Calculates unique active authors and daily contributions, new topics vs replies, weekly returning authors, mature D+1/D+7/D+30 publishing retention, sequential 7-day first/second post activation funnel, interactive author trend graph and CSV. Uses existing member roles and surviving published posts in read-only bounded SQL; migration 0083 adds activity/cohort indexes on PostgreSQL, MySQL and SQLite. No new cookies, visitor tracking identifiers or synthetic unique visits; private source identities never leave the service. Existing anonymous event dashboard and permission gates remain intact.",
     "Forum Edition 1.2.9: functional first-party analytics dashboard in Forum ACP with approved date ranges up to 365 retained UTC days, server-consistent aggregate plus pending ledger reads, full-window prior-period comparisons only where retained data exists, daily event series, category and weekday drilldowns, responsive SVG graphs and anonymous CSV export. Permission scoped to forum:acp:settings; maintenance remains separately authorized. No new database migrations or external SDKs.",
@@ -151,7 +152,7 @@
     "1.2.3": "Observability & Operations",
     "1.2.4": "Disaster Recovery",
     "1.2.5": "Production Deployment",
-    "1.3.0": "Integration Certification, Security & Load Testing",
+    "1.3.0": "Analytics & Metrics Stable — real cross-driver analytics acceptance and exact page authorization",
     "1.2.6": "Alternative Analytics Providers — Matomo, Plausible, Cloudflare Web Analytics and GTM",
     "1.2.7": "Native Analytics Collection — first-party counters and ACP reports",
     "1.2.8": "Analytics Aggregation & Retention — atomic daily rollups, retention and recalculation",
@@ -161,6 +162,6 @@
   },
   "stability": "production-stable-gated",
   "edition": "forum",
-  "edition_version": "1.2.11",
+  "edition_version": "1.3.0",
   "upstream_version": "2.1.0"
 }

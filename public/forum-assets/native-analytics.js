@@ -4,12 +4,19 @@
   const script=document.currentScript;
   const receipt=script?.dataset.ceNativeReceipt;
   const approved=script?.dataset.ceNativePath;
+  const approvedPage=script?.dataset.ceNativePage ?? '';
   if (!receipt || !approved || !/^v1\.(index|board|thread|page)\.[0-9]+\.[a-f0-9]{32}\.[a-f0-9]{64}$/.test(receipt)) return;
   // A route pushed into history or an untrusted query must not inherit authorization.
-  if (location.protocol!=='https:' || location.pathname.replace(/\/+$/,'')!==approved) return;
-  const query=new URLSearchParams(location.search);
-  if ([...query.keys()].some(key=>key!=='page') || query.getAll('page').length>1 ||
-      (query.has('page')&&!/^[1-9][0-9]{0,3}$/.test(query.get('page')))) return;
+  // Revalidate the ORIGINAL server-approved representation on every consent
+  // change or retry. Consent may be granted after client-side navigation.
+  function onApprovedPage(){
+    if (location.protocol!=='https:' || location.pathname.replace(/\/+$/,'')!==approved) return false;
+    const query=new URLSearchParams(location.search);
+    if ([...query.keys()].some(key=>key!=='page') || query.getAll('page').length>1 ||
+        (query.has('page')&&!/^[1-9][0-9]{0,3}$/.test(query.get('page')))) return false;
+    return (query.get('page') ?? '')===approvedPage;
+  }
+  if (!onApprovedPage()) return;
   let completed=false, sending=false, attempts=0, retryTimer=null;
   // A transient outage must not require the visitor to change consent again.
   // Reuse the SAME receipt: SQL idempotency ensures a lost HTTP response
@@ -19,7 +26,7 @@
     retryTimer=setTimeout(()=>{retryTimer=null;void submit();},800);
   }
   async function submit(){
-    if (completed || sending || attempts>=2 || location.pathname.replace(/\/+$/,'')!==approved ||
+    if (completed || sending || attempts>=2 || !onApprovedPage() ||
         !window.CajeerConsent?.allows('analytics')) return;
     sending=true;attempts++;
     let transient=false;

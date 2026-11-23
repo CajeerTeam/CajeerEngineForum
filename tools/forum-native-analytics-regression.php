@@ -91,6 +91,9 @@ namespace {
     $check(substr_count($response->getContent(),'data-ce-consent-config=')===1,'native collection uses one consent runtime');
     preg_match('/data-ce-native-receipt="([^"]+)"/',$response->getContent(),$m);
     $check(N::verify($m[1]) [0]==='forum_paginated_view','rendered pagination receipt is signed');
+    $check(str_contains($response->getContent(),'data-ce-native-page="2"'),'collector bound to rendered page number');
+    $plain=N::enhance(new Response($html,200,$headers),new Request('https://forum.test/forum/threads/'.$uuid),$root,true,true);
+    $check(str_contains($plain->getContent(),'data-ce-native-page=""'),'non-paginated page has no approved page override');
     $again=N::enhance(new Response($html,200,$headers),new Request('https://forum.test/forum/threads/'.$uuid.'?page=2'),$root,true,true);
     preg_match('/data-ce-native-receipt="([^"]+)"/',$again->getContent(),$n);
     $check($m[1]!==$n[1],'each HTML response gets a separate one-use receipt');

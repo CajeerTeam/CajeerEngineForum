@@ -14,19 +14,19 @@ def check(result,why):
     if not result:raise AssertionError(why)
     print('PASS',why,flush=True)
 
-def setup(browser,*,path=PATH,query='',consent=False,protocol='https:',approved=PATH,response_ok=True):
+def setup(browser,*,path=PATH,query='',approved_page='',consent=False,protocol='https:',approved=PATH,response_ok=True):
     page=browser.new_page()
     page.set_content('<!doctype html><html><head></head><body><h1>Forum</h1></body></html>')
-    page.evaluate('''({source,receipt,approved,path,query,protocol,consent,responseOk})=>{
+    page.evaluate('''({source,receipt,approved,approvedPage,path,query,protocol,consent,responseOk})=>{
       window.test={sent:[],consent,pathname:path,attempts:0};
       window.CajeerConsent={allows:(kind)=>kind==='analytics' && test.consent};
       const script=document.createElement('script');
-      script.dataset.ceNativeReceipt=receipt;script.dataset.ceNativePath=approved;
+      script.dataset.ceNativeReceipt=receipt;script.dataset.ceNativePath=approved;script.dataset.ceNativePage=approvedPage;
       Object.defineProperty(document,'currentScript',{configurable:true,get:()=>script});
-      const location={protocol,pathname:path,search:query};
+      const location={protocol,pathname:path,search:query};window.test.location=location;
       const fetch=(url,opts)=>{test.sent.push({url,opts});return Promise.resolve({ok:responseOk,status:responseOk?200:503});};
       new Function('location','fetch','document',source)(location,fetch,document);
-    }''',dict(source=SOURCE,receipt=TOKEN,approved=approved,path=path,query=query,protocol=protocol,consent=consent,responseOk=response_ok))
+    }''',dict(source=SOURCE,receipt=TOKEN,approved=approved,approvedPage=approved_page,path=path,query=query,protocol=protocol,consent=consent,responseOk=response_ok))
     return page
 
 p=argparse.ArgumentParser()
@@ -60,15 +60,38 @@ with sync_playwright() as pw:
     page=setup(browser,consent=True,protocol='http:')
     check(page.evaluate('test.sent.length===0'),'http page never collects')
     page.close()
-    page=setup(browser,consent=True,query='?page=2')
+    page=setup(browser,consent=True,query='?page=2',approved_page='2')
     page.wait_for_function('test.sent.length===1')
     check(page.evaluate('test.sent.length===1'),'allowlisted pagination view collects after consent')
+    page.close()
+    page=setup(browser,query='?page=2',approved_page='2')
+    page.evaluate("test.consent=true;document.dispatchEvent(new CustomEvent('cajeer:consent-change'))")
+    page.wait_for_function('test.sent.length===1')
+    check(page.evaluate('test.sent.length===1'),'rendered pagination representation tracked exactly once')
+    page.close()
+    page=setup(browser,consent=False)
+    page.evaluate("test.consent=true;test.location.search='?page=2';document.dispatchEvent(new CustomEvent('cajeer:consent-change'))")
+    check(page.evaluate('test.sent.length===0'),'history change to another page before consent rejects stale receipt')
+    page.close()
+    page=setup(browser,consent=False,query='?page=2',approved_page='2')
+    page.evaluate("test.consent=true;test.location.search='?page=3';document.dispatchEvent(new CustomEvent('cajeer:consent-change'))")
+    check(page.evaluate('test.sent.length===0'),'pagination changes after render reject old receipt')
+    page.close()
+    page=setup(browser,consent=False)
+    page.evaluate("test.consent=true;test.location.search='?utm=secret';document.dispatchEvent(new CustomEvent('cajeer:consent-change'))")
+    check(page.evaluate('test.sent.length===0'),'sensitive query added before consent rejects old receipt')
     page.close()
     page=setup(browser,consent=True,response_ok=False)
     page.wait_for_function('test.sent.length===1')
     page.wait_for_function('test.sent.length===2',timeout=4000)
     page.wait_for_timeout(950)
     check(page.evaluate('test.sent.length===2'),'one automatic retry on backend 503, without consent change or third attempt')
+    page.close()
+    page=setup(browser,consent=True,response_ok=False)
+    page.wait_for_function('test.sent.length===1')
+    page.evaluate("test.location.search='?page=2'")
+    page.wait_for_timeout(950)
+    check(page.evaluate('test.sent.length===1'),'navigation during transient failure cancels stale retry')
     page.close()
     page=setup(browser,consent=True,response_ok=False)
     page.wait_for_function('test.sent.length===1')

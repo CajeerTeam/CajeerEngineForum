@@ -6,7 +6,7 @@ on:
 permissions:
   contents: read
 env:
-  FORUM_CURRENT_VERSION: ${{ '1.2.11' }}
+  FORUM_CURRENT_VERSION: ${{ '1.3.0' }}
 concurrency:
   group: forum-ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -245,6 +245,10 @@ jobs:
       - run: node --check resources/consent/consent.js
       - run: php tools/forum-event-tracking-regression.php
       - run: php tools/forum-analytics-rollup-regression.php
+      - name: Forum 1.3.0 real SQLite analytics stable acceptance (no skips)
+        env:
+          FORUM_TEST_DRIVER: sqlite
+        run: php tools/forum-analytics-stable-acceptance.php
       - run: php tools/forum-analytics-dashboard-regression.php
       - run: php tools/forum-engagement-regression.php
       - run: php tools/forum-analytics-hardening-regression.php
@@ -359,7 +363,7 @@ jobs:
       - run: composer install --prefer-dist --no-interaction
       - name: Prepare isolated databases
         run: |
-          php -r '$p=new PDO("pgsql:host=127.0.0.1;port=5432;dbname=forum_install",getenv("DB_USERNAME"),getenv("DB_PASSWORD")); foreach (["forum_upgrade","forum_http","forum_identity","forum_test_phpunit","forum_test_core","forum_test_network","forum_test_load","forum_perf","forum_test_redis"] as $db) $p->exec("CREATE DATABASE ".$db);'
+          php -r '$p=new PDO("pgsql:host=127.0.0.1;port=5432;dbname=forum_install",getenv("DB_USERNAME"),getenv("DB_PASSWORD")); foreach (["forum_upgrade","forum_http","forum_identity","forum_test_phpunit","forum_test_core","forum_test_network","forum_test_load","forum_perf","forum_test_redis","forum_analytics"] as $db) $p->exec("CREATE DATABASE ".$db);'
       - name: PHPUnit PostgreSQL integration
         run: |
           mkdir -p storage/tmp/forum-ci
@@ -385,6 +389,10 @@ jobs:
         run: python tools/forum-tests/reliability_load.py --report storage/tmp/forum-ci/load
       - name: Network API and security regression (PostgreSQL)
         run: python tools/forum-tests/run.py --suite api --report storage/tmp/forum-ci/network
+      - name: Forum 1.3.0 real PostgreSQL analytics stable acceptance
+        env:
+          DB_DATABASE: forum_analytics
+        run: php tools/forum-analytics-stable-acceptance.php
       - name: Upload PostgreSQL evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -435,6 +443,13 @@ jobs:
         run: |
           php -r '$p=new PDO("mysql:host=127.0.0.1;port=3306;dbname=mysql","root","ForumCI-Root-123!"); $p->exec("SET GLOBAL log_bin_trust_function_creators = 1"); if((int)$p->query("SELECT @@GLOBAL.log_bin_trust_function_creators")->fetchColumn()!==1)exit(1);'
       - run: php tools/forum-search-db-regression.php
+      - name: Prepare disposable analytics schema (MySQL/MariaDB)
+        run: |
+          php -r '$p=new PDO("mysql:host=127.0.0.1;port=3306;dbname=mysql","root","ForumCI-Root-123!"); $p->exec("CREATE DATABASE forum_analytics CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"); $p->exec("GRANT ALL PRIVILEGES ON forum_analytics.* TO ".$p->quote("forum_ci")."@".$p->quote("%"));'
+      - name: Forum 1.3.0 real MySQL/MariaDB analytics stable acceptance
+        env:
+          DB_DATABASE: forum_analytics
+        run: php tools/forum-analytics-stable-acceptance.php
   browser:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
