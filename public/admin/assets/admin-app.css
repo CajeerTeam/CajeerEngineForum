@@ -16,3 +16,37 @@
 
 /* Forum design editor: compact color controls and responsive preview. */
 .forum-theme-colors{min-width:0;border:1px solid var(--line);border-radius:12px;padding:12px;display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:12px}.forum-theme-colors input[type=color]{height:42px;padding:4px;cursor:pointer}.forum-theme-colors legend{font-weight:700;padding:0 6px}#forum-acp iframe{display:block;margin:12px 0;background:#fff;border-radius:8px}
+
+/* Forum Edition 1.2.9: first-party ACP analytics dashboard, accessible and responsive. */
+.native-dashboard-filters{display:flex;align-items:end;gap:12px;flex-wrap:wrap;margin:14px 0 18px}
+.native-dashboard-filters>.form-row{min-width:160px;max-width:235px}
+.native-range{display:flex;align-items:end;gap:10px;flex-wrap:wrap}
+.native-range>.form-row{min-width:145px;max-width:200px}
+.native-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(205px,1fr));gap:12px;margin-top:14px}
+.native-kpi{border:1px solid var(--line);border-radius:14px;padding:17px;background:var(--surface-2)}
+.native-kpi-title{font-size:13px;color:var(--muted);margin:0}
+.native-kpi-number{font-size:30px;font-weight:800;line-height:1.5;font-variant-numeric:tabular-nums}
+.native-kpi-meta{font-size:12px;color:var(--muted);margin:0}
+.native-chart{margin:18px 0 0;overflow:hidden}
+.native-chart-svg{display:block;width:100%;height:auto;min-height:190px;max-height:360px;overflow:visible}
+.native-chart-grid{stroke:var(--line);stroke-width:1;stroke-dasharray:4 6}
+.native-chart-axis{fill:var(--muted);font-size:13px}
+.native-chart-path{fill:none;stroke-width:3;stroke-linecap:round;stroke-linejoin:round}
+.native-chart-path.native-total{stroke:#155eef}
+.native-chart-path.native-views{stroke:#027a48}
+.native-chart-path.native-actions{stroke:#d97706}
+.native-chart-dot{stroke:#fff;stroke-width:2;outline-offset:2}
+.native-chart-dot.native-total{fill:#155eef}
+.native-chart-dot.native-views{fill:#027a48}
+.native-chart-dot.native-actions{fill:#d97706}
+.native-legend{display:flex;gap:20px;flex-wrap:wrap;margin:8px 0 0;font-size:13px;color:var(--muted)}
+.native-legend-item:before{content:' ';display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:7px;background:#155eef}
+.native-legend-item.native-views:before{background:#027a48}
+.native-legend-item.native-actions:before{background:#d97706}
+.native-category{display:flex;justify-content:space-between;gap:12px;margin:13px 0 6px;font-size:14px}
+.native-category-track{height:10px;border-radius:999px;background:var(--line-2);overflow:hidden}
+.native-category-fill{height:100%;border-radius:999px;background:#155eef}
+.native-category-fill.native-views{background:#027a48}
+.native-category-fill.native-actions{background:#d97706}
+#forum-acp details summary{cursor:pointer;font-weight:650;padding:10px 0}
+@media(max-width:700px){.native-dashboard-filters,.native-range{display:grid;grid-template-columns:1fr}.native-dashboard-filters>.form-row,.native-range>.form-row{max-width:none}.native-kpi-number{font-size:26px}}

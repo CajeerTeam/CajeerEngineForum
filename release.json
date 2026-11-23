@@ -17,10 +17,10 @@
     "docs": "GitHub repository docs/",
     "updates": "GitHub Releases",
     "release_builder": "tools/build-release.php",
-    "source_artifact": "storage/releases/cajeerengine-1.2.8-source.zip",
-    "dist_artifact": "storage/releases/cajeerengine-1.2.8-dist.zip",
+    "source_artifact": "storage/releases/cajeerengine-1.2.9-source.zip",
+    "dist_artifact": "storage/releases/cajeerengine-1.2.9-dist.zip",
     "checksums": "storage/releases/*.sha256",
-    "artifact_index": "storage/releases/cajeerengine-1.2.8-artifacts.json",
+    "artifact_index": "storage/releases/cajeerengine-1.2.9-artifacts.json",
     "support_bundle": "storage/app/support",
     "backup": "storage/app/backups/production",
     "server_reports": "storage/app/reports",
@@ -36,6 +36,7 @@
     "engine_api_version": "1.1"
   },
   "product_changes": [
+    "Forum Edition 1.2.9: functional first-party analytics dashboard in Forum ACP with approved date ranges up to 365 retained UTC days, server-consistent aggregate plus pending ledger reads, full-window prior-period comparisons only where retained data exists, daily event series, category and weekday drilldowns, responsive SVG graphs and anonymous CSV export. Permission scoped to forum:acp:settings; maintenance remains separately authorized. No new database migrations or external SDKs.",
     "Forum Edition 1.2.8: production UTC daily SQL counters with transactionally idempotent batch ingestion of native anonymous events, consistent snapshot reports combining applied rollups with live pending rows, 90-day processed raw retention and 365-day daily history, bounded authenticated ACP recalculation of full raw-retained date ranges, permissioned operations and audited maintenance, scheduled recovery-safe processing, migration 0082 for SQLite/PostgreSQL/MySQL and integration/SQL regression tests.",
     "Forum Edition 1.2.7: real first-party native analytics collects anonymous consent-approved indexable public forum page views using signed 30-minute one-use receipts and an HTTPS same-origin POST, verifies and deduplicates them in the existing transactional SQL ledger, combines with committed forum publishing/reactions/search/download events, and presents UTC daily and per-event 7/30/90-day reports in permission-scoped Forum ACP; 90-day bounded cleanup and no new SQL migrations; external analytics remain optional.",
     "Forum Edition 1.2.6: Matomo, Plausible and GTM forum event destinations dispatched through the existing consent-gated providers on ACL-verified public forum pages, with ACP configuration, per-event disable, strict validation, sanitized URLs, trusted attachment/outbound clicks, browser/PHP regression tests, and preserved GA4/Metrica rules; Cloudflare Web Analytics is integrated for its supported pageview/RUM beacon only, with sensitive-query suppression. No new SDK or database migration.",
@@ -151,10 +152,11 @@
     "1.3.0": "Integration Certification, Security & Load Testing",
     "1.2.6": "Alternative Analytics Providers — Matomo, Plausible, Cloudflare Web Analytics and GTM",
     "1.2.7": "Native Analytics Collection — first-party counters and ACP reports",
-    "1.2.8": "Analytics Aggregation & Retention — atomic daily rollups, retention and recalculation"
+    "1.2.8": "Analytics Aggregation & Retention — atomic daily rollups, retention and recalculation",
+    "1.2.9": "Forum Analytics Dashboard — first-party ACP filters, comparisons, event graphs and aggregated CSV"
   },
   "stability": "production-stable-gated",
   "edition": "forum",
-  "edition_version": "1.2.8",
+  "edition_version": "1.2.9",
   "upstream_version": "2.1.0"
 }

@@ -94,7 +94,7 @@ final readonly class ForumNativeAnalytics
             $html=(new ConsentPolicy($root))->decorate($html);
             if (!str_contains($html,'data-ce-consent-config=')) return $response;
         }
-        $tag='<script defer src="/forum-assets/native-analytics.js?v=1.2.8" data-ce-native-receipt="'.$receipt.'" data-ce-native-path="'.htmlspecialchars($path,ENT_QUOTES,'UTF-8').'"></script>';
+        $tag='<script defer src="/forum-assets/native-analytics.js?v=1.2.9" data-ce-native-receipt="'.$receipt.'" data-ce-native-path="'.htmlspecialchars($path,ENT_QUOTES,'UTF-8').'"></script>';
         $html=str_ireplace('</head>',$tag.'</head>',$html);
         $response->setContent($html);
         $response->headers->set('X-Forum-Analytics-Public','1');

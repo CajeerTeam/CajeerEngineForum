@@ -1,3 +1,9 @@
+## 1.2.9 — Forum Analytics Dashboard (2026-11-23)
+- Replaced the basic Forum ACP analytics table with a working first-party dashboard: authenticated settings-scoped date filters (7/30/90/365 days or a custom 1–365-day UTC range), three KPIs, responsive SVG trend charts, event-level filtering, grouped breakdowns, weekday averages and daily drilldown.
+- Compare each metric with the *entire* preceding equal-length window when available within the stored 365 days, otherwise mark it unavailable; avoid invented visitors, sessions, retention rates or conversion funnels. Zero denominators do not yield fabricated percentage growth.
+- Read the existing atomic UTC daily rollups and not-yet-applied raw events in one consistent snapshot; limit all SQL queries by date and permit access only under existing Forum ACP settings permission. Maintenance operations retain their separate permission, confirmation and audit log.
+- Export bounded anonymous aggregated CSV on the client without downloading raw records or adding tracking dependencies. Preserve first-party consent, source retention and CajeerEngine 2.1.0. No migration required; live staging acceptance remains a deployment gate.
+
 ## 1.2.8 — Analytics Aggregation & Retention (2026-11-23)
 - Store anonymous UTC counters in the durable `ce_forum_analytics_daily` table, using `0082_forum_analytics_rollup.sql` on PostgreSQL, MySQL/MariaDB and SQLite. The worker marks each raw row as aggregated in the same transaction as its rollup increment, with a database-serialized maintenance lock; retries and worker crashes cannot lose or double-count committed events.
 - Serve 7/30/90/365-day ACP reports from daily rollups combined with still-unprocessed events using a consistent database snapshot. Backlogged events remain visible immediately; no per-visitor IDs, paths, account IDs or content is stored.

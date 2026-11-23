@@ -14,14 +14,14 @@
     "assets/admin-app.js": {
       "path": "/admin/assets/admin-app.js",
       "exists": true,
-      "size": 370546,
-      "sha256": "0a82a6e8e44fb133645dcf155d9250dadd2bc00011eabef34b63d08c837aef07"
+      "size": 378092,
+      "sha256": "b625fb4d55ad6acf89ea2af835f48c66f877a21d3d1b3cec8e36e61fa0b60600"
     },
     "assets/admin-app.css": {
       "path": "/admin/assets/admin-app.css",
       "exists": true,
-      "size": 8666,
-      "sha256": "fbc4bb46d75bbdc8de5955a465768ba05505bb614d2b24ef330b77e952275e71"
+      "size": 11236,
+      "sha256": "1135f222e38b4ad3a3560af618b1ae5c8e334f0e6e367aa8ee571a7d851db810"
     },
     "assets/admin-preview.js": {
       "path": "/admin/assets/admin-preview.js",

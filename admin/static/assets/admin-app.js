@@ -1541,8 +1541,8 @@ document.addEventListener('click',async e=>{if(e.target.closest('[data-ops-refre
 
 // Forum ACP: same-origin session and CSRF transport provided by the existing SPA.
 const forumAcp = (() => {
-  let tab = 'overview', page = 1, query = '', filter = '', serial = 0, caps = {}, nativeDays = '30'
-  const tabs = [['overview','Обзор'],['structure','Структура и ACL'],['users','Участники'],['groups','Группы'],['threads','Обсуждения'],['posts','Сообщения'],['moderation','Модерация'],['attachments','Вложения'],['audit','Аудит'],['analytics','Собственная статистика'],['settings','Настройки сообщества'],['themes','Оформление форума'],['policy_history','История политики'],['maintenance','Обслуживание'],['delegation','Делегирование'],['imports','Миграции']]
+  let tab = 'overview', page = 1, query = '', filter = '', serial = 0, caps = {}, nativePreset = '30', nativeFrom = '', nativeUntil = '', nativeFocus = 'total', nativeNotice = ''
+  const tabs = [['overview','Обзор'],['structure','Структура и ACL'],['users','Участники'],['groups','Группы'],['threads','Обсуждения'],['posts','Сообщения'],['moderation','Модерация'],['attachments','Вложения'],['audit','Аудит'],['analytics','Аналитическая панель'],['settings','Настройки сообщества'],['themes','Оформление форума'],['policy_history','История политики'],['maintenance','Обслуживание'],['delegation','Делегирование'],['imports','Миграции']]
   const el = (tag, text, cls) => { const n=document.createElement(tag); if(text!=null)n.textContent=text; if(cls)n.className=cls; return n }
   const add = (p,...nodes) => { p.append(...nodes); return p }
   const card = title => add(el('section',null,'card'),el('h2',title))
@@ -1569,7 +1569,7 @@ const forumAcp = (() => {
     const body=el('div');root.append(body);body.append(el('p','Загрузка…'))
     try{
       // Authoritative gate on every mount; never display retained data after logout/role change.
-      const access=await list('access');if(ticket!==serial||!root.isConnected)return;caps=access.capabilities;const available=tabs.filter(([id])=>caps.admin||(id==='users'&&caps.members)||(['settings','themes','analytics'].includes(id)&&caps.settings)||(id==='policy_history'&&caps.audit)||(id==='maintenance'&&caps.maintenance));if(!available.some(([id])=>id===tab)){tab=available[0][0];reset()}for(const [id,title] of available)bar.append(action(title,()=>{tab=id;reset();return mount()},tab===id?'':'secondary'));body.replaceChildren();const overview=tab==='overview'?await list('overview'):null;if(ticket!==serial||!root.isConnected)return;
+      const access=await list('access');if(ticket!==serial||!root.isConnected)return;caps=access.capabilities;const available=tabs.filter(([id])=>caps.admin||(id==='users'&&caps.members)||(['settings','themes','analytics'].includes(id)&&caps.settings)||(id==='policy_history'&&caps.audit)||(id==='maintenance'&&caps.maintenance));if(!available.length)throw new Error('Недостаточно прав.');if(!available.some(([id])=>id===tab)){tab=available[0][0];reset()}for(const [id,title] of available)bar.append(action(title,()=>{tab=id;reset();return mount()},tab===id?'':'secondary'));body.replaceChildren();const overview=tab==='overview'?await list('overview'):null;if(ticket!==serial||!root.isConnected)return;
       if(tab==='overview'){const labels={users:'Участники',active_users:'Активные',boards:'Разделы',threads:'Темы',posts:'Сообщения',reports:'Открытые жалобы',pending:'На проверке',attachments:'Вложения'};const grid=el('div',null,'grid cards');for(const [key,val] of Object.entries(overview.counts))grid.append(add(card(labels[key]||key),el('div',val,'kpi-value')));body.append(grid,add(card('Рабочие инструменты'),link('Открыть форум','/forum'),el('p','Структура, участники, группы, публикации и модерация управляются существующими сервисами форума.')));return}
       if(tab==='analytics')return await nativeAnalytics(body,ticket)
       if(tab==='settings')return await settings(body,ticket)
@@ -1600,47 +1600,146 @@ const forumAcp = (() => {
     c.append(tableDom(['Источник','Версия','Состояние','Фаза','Курсор','Действия'],d.items.map(r=>[r.platform,r.source_version,r.state,r.phase,r.cursor_id,action('Отчёт',async()=>{const v=await list('import_job',{job:r.id});if(ticket!==serial)return;detail.replaceChildren(add(card('Отчёт '+r.id),el('p','Backup: '+v.job.backup_id),el('pre',JSON.stringify(v,null,2),'json')));})])));
     if(!d.items.length)c.append(el('p','Импорт ещё не запускался.'));c.append(add(el('div',null,'toolbar'),...(page>1?[action('Назад',()=>{page--;return mount()})]:[]),el('span','Страница '+d.page),...(d.has_more?[action('Далее',()=>{page++;return mount()})]:[])));
   }
+  const nativeEventNames={forum_index_view:'Главная форума',forum_board_view:'Разделы',forum_thread_view:'Темы',forum_paginated_view:'Пагинация',forum_thread_created:'Созданные темы',forum_post_published:'Опубликованные ответы',forum_post_edited:'Редактирования',forum_registration_completed:'Регистрации',forum_reaction_added:'Добавленные реакции',forum_reaction_removed:'Удалённые реакции',forum_reaction_changed:'Изменённые реакции',forum_search_performed:'Поиски (количество)',forum_attachment_downloaded:'Скачивания вложений'};
+  const nativeNumber=n=>Number(n||0).toLocaleString('ru-RU');
+  const nativeDate=daysAgo=>new Date(Date.now()-daysAgo*86400000).toISOString().slice(0,10);
+  const nativeChange=(value,previous,pct,available)=>{
+    if(!available)return 'Нет полного периода для сравнения';
+    if(previous===0)return value===0?'Без изменений':'В предыдущем периоде — 0';
+    return (pct>0?'+':'')+String(pct)+'% к предыдущему периоду';
+  };
+  const nativeSvg=(tag,attributes={},label='')=>{
+    const n=document.createElementNS('http://www.w3.org/2000/svg',tag);
+    for(const [key,value] of Object.entries(attributes))n.setAttribute(key,String(value));
+    if(label)n.textContent=label;return n;
+  };
+  function nativeChart(d,focus){
+    const data=d.daily,svg=nativeSvg('svg',{viewBox:'0 0 920 278',role:'img','aria-label':'Динамика анонимных событий за '+d.from+' — '+d.until,class:'native-chart-svg'});
+    svg.append(nativeSvg('title',{},'Аналитика форума, динамика по дням UTC'));
+    const series=focus==='total'?[['total','Всего','native-total'],['views','Просмотры','native-views'],['actions','Действия','native-actions']]:[
+      [focus,focus==='views'?'Просмотры':focus==='actions'?'Действия':nativeEventNames[focus]||focus,'native-total']];
+    const values=name=>data.map(r=>name==='total'?Number(r.total):name==='views'?Number(r.views):name==='actions'?Number(r.actions):Number(r.events?.[name]??0));
+    const max=Math.max(1,...series.flatMap(([name])=>values(name)));
+    const left=55,right=18,top=18,bottom=42,width=920-left-right,height=278-top-bottom;
+    const x=i=>left+(data.length===1?width/2:i*width/(data.length-1));
+    const y=v=>top+height*(1-v/max);
+    for(let tick=0;tick<=4;tick++){
+      const value=max*tick/4,yp=y(value);
+      svg.append(nativeSvg('line',{x1:left,y1:yp,x2:920-right,y2:yp,class:'native-chart-grid'}));
+      svg.append(nativeSvg('text',{x:left-9,y:yp+4,'text-anchor':'end',class:'native-chart-axis'},Math.round(value).toLocaleString('ru-RU')));
+    }
+    const steps=new Set([0,Math.floor((data.length-1)/4),Math.floor((data.length-1)/2),Math.floor(3*(data.length-1)/4),data.length-1]);
+    for(const i of [...steps].sort((a,b)=>a-b)){
+      svg.append(nativeSvg('text',{x:x(i),y:278-13,'text-anchor':i===0&&data.length>1?'start':i===data.length-1&&data.length>1?'end':'middle',class:'native-chart-axis'},data[i].day.slice(5)));
+    }
+    for(const [name,label,klass] of series){
+      const points=values(name),path=points.map((v,i)=>(i===0?'M':'L')+x(i).toFixed(2)+','+y(v).toFixed(2)).join(' ');
+      svg.append(nativeSvg('path',{d:path,class:'native-chart-path '+klass}));
+      if(data.length<=31){
+        for(let i=0;i<points.length;i++){
+          const dot=nativeSvg('circle',{cx:x(i),cy:y(points[i]),r:4,class:'native-chart-dot '+klass,tabindex:'0','aria-label':data[i].day+' · '+label+' · '+nativeNumber(points[i])});
+          dot.append(nativeSvg('title',{},data[i].day+' · '+label+': '+nativeNumber(points[i])));svg.append(dot);
+        }
+      }
+    }
+    const block=el('div',null,'native-chart');block.append(svg);
+    const legend=el('div',null,'native-legend');for(const [_name,label,klass] of series)legend.append(el('span',label,'native-legend-item '+klass));
+    block.append(legend);return block;
+  }
+  function nativeExport(d){
+    // Export only aggregated UTC counts. No identifiers or arbitrary strings.
+    const keys=Object.keys(nativeEventNames);
+    const rows=[['date_utc','page_views','actions','total',...keys],...d.daily.map(r=>[r.day,r.views,r.actions,r.total,...keys.map(k=>r.events?.[k]??0)])];
+    const csv='\uFEFF'+rows.map(row=>row.map(cell=>'"'+String(cell).replace(/"/g,'""')+'"').join(',')).join('\r\n');
+    const url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
+    const a=document.createElement('a');a.href=url;a.download='forum-analytics-'+d.from+'_'+d.until+'.csv';
+    document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
+  }
   async function nativeAnalytics(body,ticket){
-    const d=await list('analytics',{days:nativeDays});if(ticket!==serial)return;
-    const info=card('Собственная статистика форума (UTC)');body.append(info);
-    info.append(el('p',d.enabled?'Сбор включён в настройках сообщества.':'Сбор выключен. Исторические анонимные записи удаляются по сроку хранения.'),
-      el('p','Показываются агрегированные события за '+d.from+' — '+d.until+'. Просмотры учитываются только на публичных индексируемых страницах после согласия; публикации, реакции, поиск и загрузки считаются сервером после успешных операций. Без cookies, IP, аккаунтов, URL, поисковых запросов и персональных идентификаторов. Повторные подтверждения одного просмотра исключены. Исходные события хранятся 90 дней, дневные итоги — 365 дней. Пересчёт допускается только за даты с полным исходным журналом.'));
-    const period=select('native_period',[['7','7 дней'],['30','30 дней'],['90','90 дней'],['365','365 дней']],nativeDays);
-    period.addEventListener('change',()=>{nativeDays=period.value;mount()});
-    info.append(field('Период отчёта',period));
-    const processing=add(card('Агрегация и хранение'),
-      el('p','В очереди: '+String(d.pending_events??0)+' событий · Последняя агрегация: '+(d.last_aggregated_at?new Date(d.last_aggregated_at*1000).toLocaleString('ru-RU'):'ещё не выполнялась')+' · Последний пересчёт: '+(d.last_recalculated_at?new Date(d.last_recalculated_at*1000).toLocaleString('ru-RU'):'не выполнялся')),
-      el('p','Пакетный worker агрегирует события атомарно. Очистка удаляет только обработанные исходные записи старше '+d.raw_retention_days+' дней и дневные агрегаты старше '+d.aggregate_retention_days+' дней.'));
-    body.append(processing);
-    if(caps.maintenance||caps.admin){
-      const status=el('pre','','json');processing.append(status);
-      const run=async actionName=>{status.textContent='Выполняется…';try{const value=await call('/acp/maintenance','POST',{action:actionName});status.textContent=JSON.stringify(value,null,2);await mount()}catch(e){status.textContent='Ошибка: '+e.message;throw e}};
-      processing.append(add(el('div',null,'toolbar'),action('Обработать до 1000 событий',()=>run('analytics_aggregate')),action('Очистить обработанные записи по сроку хранения',()=>{if(confirm('Удалить только обработанные события с истекшим сроком хранения?'))return run('analytics_retention')})));
-      const today=new Date();today.setUTCHours(0,0,0,0);const endDate=new Date(today.getTime()-86400000).toISOString().slice(0,10);const beginDate=new Date(today.getTime()-7*86400000).toISOString().slice(0,10);
-      processing.append(form([field('С даты (UTC)',input('from',beginDate,'date')),field('По дату включительно (UTC)',input('until',endDate,'date'))],
-        'Пересчитать дневные итоги',async x=>{if(!confirm('Пересчитать агрегаты за выбранные даты из сохранённых исходных событий?'))return;
-          status.textContent='Пересчёт…';try{const result=await call('/acp/maintenance','POST',{action:'analytics_recalculate',from:x.from,until:x.until});status.textContent=JSON.stringify(result,null,2);await mount()}catch(e){status.textContent='Ошибка: '+e.message;throw e}}));
+    const presetDays=nativePreset==='custom'?null:Number(nativePreset);
+    const from=presetDays?nativeDate(presetDays-1):nativeFrom;
+    const until=presetDays?nativeDate(0):nativeUntil;
+    const d=await list('analytics_dashboard',{from,until});if(ticket!==serial)return;
+    const header=card('Аналитическая панель форума');body.append(header);
+    header.append(el('p','UTC · '+d.from+' — '+d.until+' · '+d.days+' дн. · только анонимные агрегированные события. Нет cookies, IP, идентификаторов участников и персональных данных.', 'muted'));
+    if(!d.enabled)header.append(el('p','Сбор выключен настройками сообщества. Ниже показываются сохранённые исторические данные.','notice'));
+    if(!d.comparison.available)header.append(el('p','Предыдущий период полностью вышел за 365-дневный срок хранения. Сравнение недоступно, а не равно нулю.','muted'));
+    const selectors=el('div',null,'native-dashboard-filters');
+    const period=select('native_period',[['7','7 дней'],['30','30 дней'],['90','90 дней'],['365','365 дней'],['custom','Свой период']],nativePreset);
+    period.addEventListener('change',()=>{nativePreset=period.value;if(nativePreset==='custom'){
+      nativeFrom=nativeFrom||d.from;nativeUntil=nativeUntil||d.until;
+    }return mount()});
+    selectors.append(field('Период (UTC)',period));
+    if(nativePreset==='custom'){
+      const fromInput=input('from',nativeFrom,'date'),untilInput=input('until',nativeUntil,'date');
+      fromInput.min=untilInput.min=nativeDate(364);fromInput.max=untilInput.max=nativeDate(0);
+      const range=add(el('form',null,'native-range'),field('С даты',fromInput),field('По дату включительно',untilInput));
+      const submit=el('button','Применить','btn');submit.type='submit';range.append(submit);
+      range.addEventListener('submit',e=>{e.preventDefault();if(!fromInput.value||!untilInput.value||fromInput.value>untilInput.value){error(header,new Error('Укажите правильный диапазон дат.'));return;}
+        nativeFrom=fromInput.value;nativeUntil=untilInput.value;mount();});selectors.append(range);
     }
+    selectors.append(action('Скачать CSV',()=>nativeExport(d),'secondary'),action('Обновить',()=>mount(),'secondary'));
+    header.append(selectors);
+    const summary=d.summary,previous=d.comparison.available;
+    const cards=el('div',null,'native-kpis');
+    for(const [title,key] of [['Все события','total'],['Просмотры страниц','page_views'],['Действия посетителей','actions']]){
+      const value=summary[key],prior=summary['previous_'+key],pct=summary[key+'_change_pct'];
+      const item=el('section',null,'native-kpi');item.append(el('p',title,'native-kpi-title'),el('div',nativeNumber(value),'native-kpi-number'),
+        el('p',nativeChange(value,prior,pct,previous),'native-kpi-meta'));
+      cards.append(item);
+    }
+    header.append(cards);
+    const trend=card('Динамика событий');body.append(trend);
+    trend.append(el('p','Значения за календарные дни UTC. Выберите показатель или событие; исходные посещения не пересчитываются и данные не отправляются наружу.','muted'));
+    const focuses=[['total','Все показатели'],['views','Просмотры'],['actions','Действия'],...d.breakdown.map(r=>[r.event_name,nativeEventNames[r.event_name]||r.event_name])];
+    if(!focuses.some(([name])=>name===nativeFocus))nativeFocus='total';
+    const seriesSelect=select('native_focus',focuses,nativeFocus);
+    const chartBody=el('div');
+    seriesSelect.addEventListener('change',()=>{nativeFocus=seriesSelect.value;chartBody.replaceChildren(nativeChart(d,nativeFocus))});
+    trend.append(field('Ряд на графике',seriesSelect));chartBody.append(nativeChart(d,nativeFocus));trend.append(chartBody);
 
-    const totals=el('div',null,'grid cards');
-    totals.append(add(card('Просмотры страниц'),el('div',String(d.page_views),'kpi-value')),
-      add(card('Действия'),el('div',String(d.actions),'kpi-value')));
-    info.append(totals);
-    const names={forum_index_view:'Главная форума',forum_board_view:'Разделы',forum_thread_view:'Темы',forum_paginated_view:'Страницы пагинации',forum_thread_created:'Созданные темы',forum_post_published:'Опубликованные ответы',forum_post_edited:'Редактирования',forum_registration_completed:'Регистрации',forum_reaction_added:'Добавленные реакции',forum_reaction_removed:'Удалённые реакции',forum_reaction_changed:'Изменённые реакции',forum_search_performed:'Поисковые запросы (количество)',forum_attachment_downloaded:'Скачивания вложений'};
-    const events=card('События за период');body.append(events);
-    const entries=Object.entries(names).map(([key,label])=>[label,d.totals?.[key]??0]);
-    events.append(tableDom(['Событие','Количество'],entries));
-    const daily=card('Динамика по дням (UTC)');body.append(daily);
-    const max=Math.max(1,...d.series.map(r=>r.views+r.actions));
-    const table=el('table'),thead=el('thead'),tr=el('tr');
-    for(const label of ['Дата','Просмотры','Действия','Динамика'])tr.append(el('th',label));thead.append(tr);table.append(thead);
-    const tbody=el('tbody');
-    for(const r of d.series){
-      const line=el('tr');line.append(el('td',r.day),el('td',String(r.views)),el('td',String(r.actions)));
-      const td=el('td');const bar=el('div',null,'native-stats-bar');bar.style.width=Math.max(0,Math.round((r.views+r.actions)/max*100))+'%';
-      bar.style.minHeight='12px';bar.style.background='currentColor';bar.style.opacity='.45';bar.title=(r.views+r.actions)+' событий';td.append(bar);line.append(td);tbody.append(line);
+    const overview=card('События по категориям');body.append(overview);
+    const all=summary.total||0;
+    for(const [label,count,cls] of [['Просмотры',summary.page_views,'native-views'],['Действия',summary.actions,'native-actions']]){
+      const line=el('div',null,'native-category');line.append(el('span',label),el('strong',nativeNumber(count)+' · '+(all?((count/all)*100).toFixed(1):'0')+'%'));
+      const track=el('div',null,'native-category-track'),fill=el('div',null,'native-category-fill '+cls);fill.style.width=(all?(count/all*100):0)+'%';track.append(fill);overview.append(line,track);
     }
-    table.append(tbody);daily.append(add(el('div',null,'table-wrap'),table),action('Обновить статистику',()=>mount()));
+    const details=card('Детализация событий');body.append(details);
+    if(!d.breakdown.length)details.append(el('p','За период событий не зарегистрировано.','empty'));
+    else {
+      const rows=d.breakdown.map(r=>[
+        nativeEventNames[r.event_name]||r.event_name,r.category==='view'?'Просмотр':'Действие',nativeNumber(r.total),
+        previous?nativeNumber(r.previous):'—',previous?nativeChange(r.total,r.previous,r.percent_change,true):'—',
+        action('На график',()=>{nativeFocus=r.event_name;seriesSelect.value=nativeFocus;chartBody.replaceChildren(nativeChart(d,nativeFocus));trend.scrollIntoView({behavior:'smooth',block:'start'})},'secondary')]);
+      details.append(tableDom(['Событие','Тип','Текущий период','Предыдущий период','Изменение',''],rows));
+    }
+    const week=card('Активность по дням недели (UTC)');body.append(week);
+    const weekdays=['Вс','Пн','Вт','Ср','Чт','Пт','Сб'];
+    const buckets=Array.from({length:7},()=>({days:0,total:0,views:0,actions:0}));
+    for(const r of d.daily){const day=new Date(r.day+'T00:00:00Z').getUTCDay();buckets[day].days++;buckets[day].total+=r.total;buckets[day].views+=r.views;buckets[day].actions+=r.actions;}
+    week.append(tableDom(['День недели','Дней в периоде','Всего событий','Среднее за день'],[1,2,3,4,5,6,0].map(n=>[
+      weekdays[n],buckets[n].days,nativeNumber(buckets[n].total),buckets[n].days?(buckets[n].total/buckets[n].days).toFixed(1):'—'])));
+    const daily=card('Дневные итоги · UTC');body.append(daily);
+    const detailsToggle=el('details');detailsToggle.append(el('summary','Показать таблицу по всем датам ('+d.days+')'));
+    detailsToggle.append(tableDom(['Дата','Просмотры','Действия','Всего'],d.daily.map(r=>[r.day,nativeNumber(r.views),nativeNumber(r.actions),nativeNumber(r.total)])));
+    daily.append(detailsToggle);
+
+    const processing=card('Состояние сбора и хранение');body.append(processing);
+    const dateTime=t=>t?new Date(t*1000).toLocaleString('ru-RU'):'нет данных';
+    processing.append(el('p','Неагрегированных событий: '+nativeNumber(d.pending_events)+' · Последняя агрегация: '+dateTime(d.last_aggregated_at)+' · Пересчёт: '+dateTime(d.last_recalculated_at)),
+      el('p','Исходный журнал: '+d.raw_retention_days+' дней; готовые дневные агрегаты: '+d.aggregate_retention_days+' дней. Очистка не удаляет необработанные события.','muted'));
+    if(nativeNotice)processing.append(el('p',nativeNotice,'notice'));
+    if(caps.maintenance||caps.admin){
+      const status=el('p',null,'muted');processing.append(status);
+      const run=async(actionName,args={})=>{status.textContent='Выполняется…';const result=await call('/acp/maintenance','POST',{action:actionName,...args});nativeNotice=actionName+': '+JSON.stringify(result);return mount()};
+      processing.append(add(el('div',null,'toolbar'),action('Агрегировать до 1000',()=>run('analytics_aggregate')),
+        action('Очистить по срокам',()=>{if(confirm('Очистить обработанный журнал и истёкшие дневные итоги?'))return run('analytics_retention')})));
+      processing.append(form([field('Пересчитать с даты (UTC)',input('from',nativeDate(8),'date')),
+        field('По дату (UTC)',input('until',nativeDate(1),'date'))],'Пересчитать (до 31 дня)',x=>{
+        if(!confirm('Пересчитать дневные итоги из доступного исходного журнала?'))return;
+        return run('analytics_recalculate',{from:x.from,until:x.until});
+      }));
+    }
   }
 
   const localDate = epoch => {if(!epoch)return '';const d=new Date(epoch*1000);return new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,16)}
