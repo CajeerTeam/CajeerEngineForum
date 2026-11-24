@@ -17,10 +17,10 @@
     "docs": "GitHub repository docs/",
     "updates": "GitHub Releases",
     "release_builder": "tools/build-release.php",
-    "source_artifact": "storage/releases/cajeerengine-1.5.2-source.zip",
-    "dist_artifact": "storage/releases/cajeerengine-1.5.2-dist.zip",
+    "source_artifact": "storage/releases/cajeerengine-1.5.3-source.zip",
+    "dist_artifact": "storage/releases/cajeerengine-1.5.3-dist.zip",
     "checksums": "storage/releases/*.sha256",
-    "artifact_index": "storage/releases/cajeerengine-1.5.2-artifacts.json",
+    "artifact_index": "storage/releases/cajeerengine-1.5.3-artifacts.json",
     "support_bundle": "storage/app/support",
     "backup": "storage/app/backups/production",
     "server_reports": "storage/app/reports",
@@ -36,6 +36,7 @@
     "engine_api_version": "1.1"
   },
   "product_changes": [
+    "Forum Edition 1.5.3: durable digest-bound partial downloads, verified range resume, automatic operator staging, retry state and progress diagnostics. Installation remains explicitly approved; independent qualification required.",
     "Forum Edition 1.5.2: sequential release plans, channel promotion, authenticated upgrade floor and runtime compatibility checks before deployment. No schema migration; independent qualification required.",
     "Forum Edition 1.5.1: paginated conditional GitHub release synchronization, atomic complete catalog, bounded retries and persistent cooldown, protected optional API token, synchronization diagnostics. No schema migration; independent qualification required.",
     "Forum Edition 1.5.0: exact signed candidate acquisition, verified deployment identity and independent run-attempt receipts, minor-version recovery, resumable verified draft publication and mandatory qualification. Certification pending real CI and physical evidence.",
@@ -212,11 +213,11 @@
   },
   "stability": "production-stable-gated",
   "edition": "forum",
-  "edition_version": "1.5.2",
+  "edition_version": "1.5.3",
   "upstream_version": "2.1.0",
   "upgrade_compatibility": {
     "schema": 1,
-    "min_from": "1.5.1",
+    "min_from": "1.5.2",
     "php": ">=8.4.1 <9.0",
     "extensions": [
       "json",

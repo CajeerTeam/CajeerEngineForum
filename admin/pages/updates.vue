@@ -10,6 +10,7 @@ type UpdateState = {
   wizard?: { operator_ready?: boolean; production_apply_enabled?: boolean; installed?: boolean; staged_installable?: boolean
     operator_status?: { status?: string; checked_at?: string; reason?: string; age_seconds?: number }; maintenance?: { enabled?: boolean; update_active?: boolean };
     rollback?: { available: boolean; transaction?: string; from_version?: string; to_version?: string } }
+  auto_stage?: {enabled:boolean;state?:string;next_attempt_at?:number}; download_progress?: {version:string;state:string;received_bytes:number;total_bytes:number}
   requests?: UpdateRequest[]; backups?: RecoveryBackup[]; downloads?: Array<{version:string}>
 }
 const api = useAdminApi()
@@ -120,6 +121,8 @@ onUnmounted(() => {if(timer)clearInterval(timer)})
       <details v-if="state.last_check?.next?.notes"><summary>Описание релиза</summary><pre>{{ state.last_check.next.notes.slice(0,4000) }}</pre></details>
       <p>Подпись: {{ state.wizard?.production_apply_enabled ? 'ключ настроен' : 'отсутствует доверенный ключ' }}</p>
       <p>Оператор: {{ state.wizard?.operator_ready ? 'готов' : (state.wizard?.operator_status?.reason || 'недоступен') }} · {{ state.wizard?.operator_status?.checked_at || 'нет heartbeat' }}</p>
+      <p>Автоподготовка: {{ state.auto_stage?.enabled ? (state.auto_stage.state || "ожидание") : "выключена" }}</p>
+      <div v-if="state.download_progress?.total_bytes"><p>{{ state.download_progress.version }} · {{ state.download_progress.state }} · {{ state.download_progress.received_bytes }} / {{ state.download_progress.total_bytes }} байт</p><progress :max="state.download_progress.total_bytes" :value="state.download_progress.received_bytes" /></div>
       <button :disabled="loading" @click="check">Проверить сейчас</button>
       <button :disabled="!canDownload" @click="download">Скачать и подготовить {{ latest }}</button>
       <p v-if="!state.wizard?.operator_ready">Проверьте UPDATE_WEB_UPGRADE_ENABLED, UPDATE_OPERATOR_ENABLED, состояние systemd timer и recovery-журнал. Без свежего heartbeat очередь не принимается.</p>

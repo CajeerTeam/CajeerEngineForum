@@ -6,7 +6,7 @@ on:
 permissions:
   contents: read
 env:
-  FORUM_CURRENT_VERSION: ${{ '1.5.2' }}
+  FORUM_CURRENT_VERSION: ${{ '1.5.3' }}
 concurrency:
   group: forum-ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -374,6 +374,7 @@ jobs:
       - run: php tools/update-regression.php
       - run: php tools/update-policy-regression.php
       - run: php tools/secure-release-downloader-regression.php
+      - run: php tools/automatic-release-staging-regression.php
       - run: php tools/automatic-release-discovery-regression.php
       - run: php tools/github-release-regression.php
       - run: php tools/github-release-sync-regression.php
@@ -1139,8 +1140,8 @@ jobs:
           if [ "$FORUM_CURRENT_VERSION" = 1.0.0-rc.1 ]; then
             ref=refs/tags/v0.9.9; baseline_version=0.9.9
           fi
-          if [ "$FORUM_CURRENT_VERSION" = 1.5.2 ]; then
-            ref=refs/tags/v1.5.1; baseline_version=1.5.1
+          if [ "$FORUM_CURRENT_VERSION" = 1.5.3 ]; then
+            ref=refs/tags/v1.5.2; baseline_version=1.5.2
           fi
           echo "FORUM_COMPOSE_BASELINE=$baseline_version" >> "$GITHUB_ENV"
           if [ "$ref" = v0.8.7 ]; then

@@ -1,3 +1,9 @@
+## [1.5.3] - 2026-11-24
+
+- Persist digest-bound partial ZIP downloads; validate exact HTTP ranges and restart when ranges are ignored.
+- Opt-in automatic staging in the dedicated operator, with persistent retry cooldown and explicit installation approval.
+- Report transfer progress and staging state in ACP. No database migration. Physical qualification remains required.
+
 ## [1.5.2] - 2026-11-24
 
 - Ordered update plans, stable promotion from preview channels, and signed minimum source version.

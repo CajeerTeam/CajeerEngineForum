@@ -42,6 +42,11 @@ final class UpdateManager
         $path=$dir.'/plan-'.bin2hex(random_bytes(12)).'.json'; OperationFiles::json($path,$plan);
         return $plan+['plan_file'=>$path];
     }
+    /** Authenticate the announced digest before allocating a large partial download. */
+    public function verifyReleaseDigest(string $digest, string $signature): array
+    {
+        return ReleaseSignature::verifyDigest($digest,$signature,$this->trustedKey());
+    }
     public function verifyPackage(string $packagePath, ?string $expectedSha=null, ?string $signature=null): array
     {
         try {
@@ -222,11 +227,30 @@ final class UpdateManager
         return is_file($file)?OperationFiles::read($file):[];
     }
     /** CLI places and verifies a signed artifact before a browser can request it. */
-    public function publish(string $package, ?string $signature=null, ?string $expectedSha=null, ?string $expectedVersion=null): array
+    public function publish(string $package, ?string $signature=null, ?string $expectedSha=null, ?string $expectedVersion=null, bool $automatic=false): array
     {
-        $this->cliOnly(); $package=$this->resolvePackage($package); $lock=OperationLock::acquire($this->rootPath,true); $dir=null; $published=false;
+        $this->cliOnly(); $package=$this->resolvePackage($package); $lock=OperationLock::acquire($this->rootPath,true); $dir=null; $published=false; $approval=null;
         try {
-            if (OperationLock::active($this->rootPath)||is_file($this->rootPath.'/storage/app/backup-restore.json')) throw new \RuntimeException('Recovery pending');
+            if ($this->recoveryPending()) throw new \RuntimeException('Recovery pending');
+            if ($automatic) {
+                $approval=OperationLock::openLockFile($this->requestDir().'/approval.lock',0660);
+                if (!flock($approval,LOCK_EX|LOCK_NB)) throw new \RuntimeException('Another approval is in progress');
+                foreach (glob($this->requestDir().'/request-*.json')?:[] as $file) {
+                    if (!in_array(OperationFiles::read($file)['state']??null,['completed','failed'],true)) throw new \RuntimeException('Approved operation takes precedence');
+                }
+                $prior=$this->staged();
+                if ($this->stageEligible($prior) && ($prior['version']??null)===$expectedVersion && ($prior['sha256']??null)===$expectedSha) {
+                    $v=$this->verifyPackage($this->path('inbox/'.$prior['id'].'/package.zip'),$expectedSha);
+                    if ($v['ok'] && $v['version']===$expectedVersion) {
+                        UpdatePreflight::identity($v['manifest'],$this->currentVersion(),$this->channel(),$expectedVersion);
+                        UpdateCompatibility::requireRuntime($v['manifest'],$this->config);
+                        if (!(new \CajeerEngine\Extension\ExtensionRegistry($this->rootPath,$this->config))->targetCompatibility($v['version'],$v['manifest']['engine_api_version'])['ok']) throw new \RuntimeException('Target release incompatible with enabled extensions');
+                        return $prior+['cached'=>true];
+                    }
+                }
+            }
+            $free=disk_free_space($this->rootPath.'/storage/app');
+            if ($free!==false && $free < filesize($package)+33554432) throw new \RuntimeException('Insufficient disk space for verified inbox staging');
             $id=bin2hex(random_bytes(16)); $dir=$this->path('inbox/'.$id); OperationFiles::dir($dir); chmod($dir,0700);
             OperationFiles::copy($package,$dir.'/package.zip'); OperationFiles::copy($signature??$package.'.sig',$dir.'/package.zip.sig');
             $v=$this->verifyPackage($dir.'/package.zip',$expectedSha);
@@ -237,7 +261,7 @@ final class UpdateManager
             if(isset($v['manifest']['upgrade_compatibility'])&&!$extensions['ok'])throw new \RuntimeException('Target release incompatible with enabled extensions');
             $data=['ok'=>true,'id'=>$id,'from_version'=>$this->currentVersion(),'runtime_compatibility'=>$runtime,'extension_compatibility'=>$extensions,'version'=>$v['version'],'sha256'=>$v['sha256'],'file_count'=>$v['file_count']];
             OperationFiles::json($this->requestDir().'/staged.json',$data,0644); $published=true; return $data;
-        } finally { try { if (!$published&&$dir!==null) $this->discardStage($dir); } finally { OperationLock::release($lock); } }
+        } finally { try { if (!$published&&$dir!==null) $this->discardStage($dir); } finally { OperationLock::release($approval); OperationLock::release($lock); } }
     }
     public function request(string $action, array $payload, string $actor): array
     {
@@ -317,6 +341,12 @@ final class UpdateManager
         return array_slice($items, 0, $limit);
     }
 
+    /** Diagnostic only: a progress record never authorizes installation. */
+    public function downloadProgress(): array
+    {
+        try { return array_intersect_key(OperationFiles::read($this->path('download-status.json')),array_flip(['version','state','received_bytes','total_bytes','checked_at'])); }
+        catch (\Throwable) { return []; }
+    }
     /** Read the signed download receipt for UI; staging will independently verify it. */
     public function downloaded(): array
     {

@@ -160,7 +160,7 @@ final class UpdateOperator
             }
         }
         $dir = OperationFiles::path($this->rootPath, 'storage/app/update-requests');
-        if (!is_dir($dir)) return $this->status('idle', null, true);
+        if (!is_dir($dir)) return $this->idle();
         if (is_link($dir)) throw new \RuntimeException('Symlink request directory');
 
         $pending = [];
@@ -186,7 +186,7 @@ final class UpdateOperator
             catch (\Throwable) { return $this->status('recovery_required', $id, false, 'Invalid approved installation request'); }
             $pending[] = ['id' => $id, 'at' => $record['requested_at']];
         }
-        if ($pending === []) return $this->status('idle', null, true);
+        if ($pending === []) return $this->idle();
         usort($pending, static fn (array $a, array $b): int => ($a['at'] <=> $b['at']) ?: strcmp($a['id'], $b['id']));
         $id = $pending[0]['id'];
         $this->status('running', $id, true);
@@ -230,6 +230,15 @@ final class UpdateOperator
             } catch (\Throwable) { /* unverifiable journal: manual intervention */ }
             return $this->status('recovery_required', $id, false, 'Interrupted operation has no verified terminal journal');
         }
+    }
+
+    private function idle(): array
+    {
+        $auto = new AutomaticReleaseStaging($this->rootPath, $this->config);
+        if (!$auto->due()) return $this->status('idle', null, true);
+        $this->status('running', null, true);
+        $result = $auto->run();
+        return $this->status(($result['ok'] ?? false) ? 'idle' : 'failed', null, (bool) ($result['ok'] ?? false)) + ['auto_stage'=>$result];
     }
 
     private function status(string $status, ?string $id, bool $ok, ?string $detail = null, ?string $transaction = null): array

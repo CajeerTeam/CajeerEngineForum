@@ -115,6 +115,29 @@ try {
     putenv('UPDATE_TRUSTED_PUBLIC_KEY_FILE=');
     try { $downloader->download(); } catch (RuntimeException $error) { $missingKey = str_contains($error->getMessage(), 'Signed ZIP release verification failed'); }
     requireDownloader($missingKey, 'missing out-of-band trust key blocks release');
+
+    // Simulate a connection dropping after the first durable prefix. The second
+    // invocation must read the same signed sidecars and append to that prefix.
+    putenv('UPDATE_TRUSTED_PUBLIC_KEY_FILE=' . $keys . '/public.key');
+    $offsets=[]; $transfer=static function(string $url,$stream,int $limit,int $timeout,Closure $progress)use($zipFile,&$offsets):int {
+        $offset=(int)fstat($stream)['size']; $offsets[]=$offset;
+        $bytes=file_get_contents($zipFile);
+        if (count($offsets)===1) {
+            fwrite($stream,substr($bytes,0,600));$progress(600);
+            throw new RuntimeException('simulated network interruption');
+        }
+        if ($offset!==600 || ftell($stream)!==600) throw new RuntimeException('partial position lost');
+        fwrite($stream,substr($bytes,$offset));$progress(strlen($bytes));return strlen($bytes);
+    };
+    $resuming = new GitHubReleaseDownloader($root,$config,$monitor,$transport,$transfer);
+    try {$resuming->download();}catch(RuntimeException $error){requireDownloader(str_contains($error->getMessage(),'simulated network interruption'),'interrupted stream fails without publication');}
+    clearstatcache();requireDownloader(filesize($final.'/.partial.zip')===600&&!is_file($final.'/verified.json'),'partial ZIP persisted across invocation');
+    try {$resuming->download();}catch(RuntimeException $error){requireDownloader(str_contains($error->getMessage(),'Signed ZIP release verification failed'),'resumed signed invalid archive rejected by manifest verifier');}
+    requireDownloader($offsets===[0,600]&&!is_file($final.'/.partial.zip')&&!is_file($final.'/verified.json'),'completed invalid archive removed; exact resume offset observed');
+    putenv('UPDATE_TRUSTED_PUBLIC_KEY_FILE=');
+    try {$resuming->download();}catch(RuntimeException $error){requireDownloader(str_contains($error->getMessage(),'Provision UPDATE_TRUSTED_PUBLIC_KEY_FILE'),'untrusted digest rejected before ZIP transfer');}
+    requireDownloader($offsets===[0,600],'missing trust prevents any package bytes');
+
 } finally {
     $old === false ? putenv('UPDATE_TRUSTED_PUBLIC_KEY_FILE') : putenv('UPDATE_TRUSTED_PUBLIC_KEY_FILE=' . $old);
     eraseDownloader($tmp);

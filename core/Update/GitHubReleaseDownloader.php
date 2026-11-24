@@ -15,6 +15,7 @@ final readonly class GitHubReleaseDownloader
         private ConfigRepository $config,
         private ?GitHubReleaseMonitor $monitor = null,
         private ?\Closure $transport = null,
+        private ?\Closure $resumeTransport = null,
     ) {}
 
     /** @return array<string,mixed> */
@@ -27,6 +28,7 @@ final readonly class GitHubReleaseDownloader
         $lock = OperationLock::acquire($this->rootPath, false);
         // Use a distinct lock from operations.lock: downloads cannot starve site requests.
         $downloadGuard = null;
+        $version = null; $declaredSize = null; $received = 0; $lastProgress = 0;
         try {
             $directory = OperationFiles::path($this->rootPath, 'storage/app/updates/downloads');
             OperationFiles::dir($directory, 0700);
@@ -35,9 +37,10 @@ final readonly class GitHubReleaseDownloader
             if (!is_resource($downloadGuard) || !flock($downloadGuard, LOCK_EX | LOCK_NB)) {
                 throw new \RuntimeException('Another release download is in progress');
             }
-            if (OperationLock::active($this->rootPath) || is_file($this->rootPath . '/storage/app/backup-restore.json')) {
+            if (OperationLock::active($this->rootPath) || is_file($this->rootPath . '/storage/app/backup-restore.json') || is_file($this->rootPath . '/storage/app/extensions/deployment.json')) {
                 throw new \RuntimeException('Recovery in progress; do not download updates');
             }
+            PartialRelease::cleanup($directory);
             $resolver = new UpdateResolver($this->config->get('updates', []), $this->rootPath, $this->monitor);
             $current = (new \CajeerEngine\Forum\ForumVersion($this->rootPath))->current();
             $check = $resolver->check($current);
@@ -96,11 +99,12 @@ final readonly class GitHubReleaseDownloader
                     $digest = $prior['sha256'] ?? '';
                     if (($prior['version'] ?? null) === $version && is_string($digest)
                         && preg_match('/^[a-f0-9]{64}$/D', $digest)
-                        && (!isset($asset['sha256']) || hash_equals($asset['sha256'], $digest))) {
+                        && isset($asset['sha256']) && hash_equals($asset['sha256'], $digest) && filesize($published) === $declaredSize) {
                         $verified = (new UpdateManager($this->rootPath, $this->config))->verifyPackage($published, $digest);
                         if (($verified['ok'] ?? false) && ($verified['version'] ?? '') === $version && ($verified['mode'] ?? '') === 'dist'
                             && $this->checksumMatches($published . '.sha256', $name, $digest)) {
                             UpdatePreflight::identity($verified['manifest'],$current,$resolver->channel(),$version);
+                            $this->progress($version, 'verified', $declaredSize, $declaredSize);
                             return $this->result($version, $published, $verified, true);
                         }
                     }
@@ -114,31 +118,70 @@ final readonly class GitHubReleaseDownloader
                 'checksum' => $path . '/.' . $suffix . '.sha256',
                 'signature' => $path . '/.' . $suffix . '.sig',
             ];
+            $partial = $path . '/.partial.zip';
+            $partialState = $path . '/.partial.json';
+            $resumable = $this->transport === null || $this->resumeTransport !== null;
+            if ($resumable) $parts['package'] = $partial;
             $temporarySignature = $parts['package'] . '.sig';
+            $preservePartial = $resumable;
             try {
                 $timeout = max(15, min(1800, $this->config->int('updates.core.download_timeout_seconds', 300)));
                 $sizes = [
                     'checksum' => 256,
                     'signature' => 8192,
-                    'package' => min($maxBytes, max($declaredSize + 1048576, $declaredSize)),
+                    'package' => $declaredSize,
                 ];
                 foreach (['checksum', 'signature', 'package'] as $type) {
-                    $stream = fopen($parts[$type], 'xb');
+                    if ($type === 'package' && $resumable) {
+                        $text = file_get_contents($parts['checksum']);
+                        if (!is_string($text) || !preg_match('/^([a-f0-9]{64})  ' . preg_quote($name, '/') . '\r?\n?$/D', $text, $match)) throw new \RuntimeException('Invalid GitHub checksum sidecar');
+                        if (isset($asset['sha256']) && !hash_equals($asset['sha256'], $match[1])) throw new \RuntimeException('GitHub release SHA-256 checksum mismatch');
+                        (new UpdateManager($this->rootPath,$this->config))->verifyReleaseDigest($match[1],$parts['signature']);
+                        // GitHub may omit the asset digest. Authenticate freshly fetched sidecars before reusing bytes.
+                        if (is_file($published) && !is_link($published) && filesize($published)===$declaredSize) {
+                            $existing=(new UpdateManager($this->rootPath,$this->config))->verifyPackage($published,$match[1],$parts['signature']);
+                            if (($existing['ok']??false) && $existing['version']===$version && $existing['mode']==='dist') {
+                                UpdatePreflight::identity($existing['manifest'],$current,$resolver->channel(),$version);
+                                OperationFiles::copy($parts['checksum'],$published.'.sha256');
+                                OperationFiles::copy($parts['signature'],$published.'.sig');
+                                $this->receipt($receipt,$version,$check['channel'],$existing,$declaredSize,$tag);
+                                $preservePartial=false;
+                                $this->progress($version,'verified',$declaredSize,$declaredSize);
+                                return $this->result($version,$published,$existing,true);
+                            }
+                        }
+                        $identity = ['version'=>$version, 'size'=>$declaredSize, 'sha256'=>$match[1], 'signature_sha256'=>OperationFiles::hash($parts['signature']), 'tag'=>$tag];
+                        $stream = PartialRelease::open($partial, $partialState, $identity);
+                        $preservePartial = true;
+                        $received = (int) fstat($stream)['size'];
+                        $this->progress($version, 'downloading', $received, $declaredSize);
+                    } else $stream = fopen($parts[$type], 'xb');
                     if (!is_resource($stream)) throw new \RuntimeException('Cannot create download staging file');
                     try {
                         chmod($parts[$type], 0600);
-                        $size = $this->transport !== null
+                        if ($type === 'package' && $resumable) {
+                            $progress = function(int $bytes) use ($version, $declaredSize, &$received, &$lastProgress): void {
+                                $received = $bytes;
+                                if (time() - $lastProgress >= 2) { $lastProgress = time(); $this->progress($version, 'downloading', $bytes, $declaredSize); }
+                            };
+                            $size = $this->resumeTransport !== null
+                                ? ($this->resumeTransport)($urls[$type], $stream, $declaredSize, $timeout, $progress)
+                                : (new GitHubAssetTransport())->download($urls[$type], $stream, $declaredSize, $timeout, true, $progress);
+                        } else $size = $this->transport !== null
                             ? ($this->transport)($urls[$type], $stream, $sizes[$type], $timeout)
                             : (new GitHubAssetTransport())->download($urls[$type], $stream, $sizes[$type], $timeout);
                         if (!is_int($size) || $size < 1 || $size > $sizes[$type]
                             || fstat($stream)['size'] !== $size || !fflush($stream) || !fsync($stream)) {
                             throw new \RuntimeException('Incomplete or oversized GitHub release asset');
                         }
-                    } finally { fclose($stream); }
+                    } finally { if ($type === 'package') { $received = (int) fstat($stream)['size']; fflush($stream); fsync($stream); } fclose($stream); }
                 }
+                clearstatcache(true, $parts['package']);
                 if (filesize($parts['package']) !== $declaredSize) {
                     throw new \RuntimeException('Downloaded ZIP length differs from GitHub release metadata');
                 }
+                $preservePartial = false; // Complete bytes that fail authentication must never be reused.
+                $this->progress($version, 'verifying', $declaredSize, $declaredSize);
                 $sha = OperationFiles::hash($parts['package']);
                 if (!$this->checksumMatches($parts['checksum'], $name, $sha)) {
                     throw new \RuntimeException('GitHub release SHA-256 checksum mismatch');
@@ -156,26 +199,41 @@ final readonly class GitHubReleaseDownloader
                 OperationFiles::copy($parts['checksum'], $published . '.sha256');
                 OperationFiles::copy($parts['signature'], $published . '.sig');
                 OperationFiles::copy($parts['package'], $published);
-                OperationFiles::json($receipt, [
-                    'format' => 'cajeerengine.verified-release.v1',
-                    'version' => $version,
-                    'channel' => $check['channel'],
-                    'sha256' => $sha,
-                    'key_id' => $verified['key_id'],
-                    'size' => $declaredSize,
-                    'downloaded_at' => gmdate(DATE_ATOM),
-                    'source' => GitHubEndpoints::releaseUrl($tag),
-                ], 0600);
+                $this->receipt($receipt,$version,$check['channel'],$verified,$declaredSize,$tag);
+                $this->progress($version, 'verified', $declaredSize, $declaredSize);
                 return $this->result($version, $published, $verified, false);
             } finally {
                 foreach (array_merge(array_values($parts), [$temporarySignature]) as $temp) {
+                    if ($temp === $partial && $preservePartial) continue;
                     if (is_file($temp) && !is_link($temp)) unlink($temp);
                 }
+                if ($resumable && !$preservePartial && is_file($partialState)) OperationFiles::remove($partialState);
             }
+        } catch (\Throwable $e) {
+            if ($version !== null && is_int($declaredSize)) $this->progress($version, 'failed', $received, $declaredSize);
+            throw $e;
         } finally {
             if (is_resource($downloadGuard)) { flock($downloadGuard, LOCK_UN); fclose($downloadGuard); }
             OperationLock::release($lock);
         }
+    }
+
+    private function receipt(string $path,string $version,string $channel,array $verified,int $size,string $tag): void
+    {
+        OperationFiles::json($path,[
+            'format'=>'cajeerengine.verified-release.v1','version'=>$version,'channel'=>$channel,
+            'sha256'=>$verified['sha256'],'key_id'=>$verified['key_id'],'size'=>$size,
+            'downloaded_at'=>gmdate(DATE_ATOM),'source'=>GitHubEndpoints::releaseUrl($tag),
+        ],0600);
+    }
+
+    private function progress(string $version, string $state, int $received, int $size): void
+    {
+        try {
+            OperationFiles::json(OperationFiles::path($this->rootPath, 'storage/app/updates/download-status.json'), [
+                'version'=>$version, 'state'=>$state, 'received_bytes'=>max(0,min($received,$size)), 'total_bytes'=>$size, 'checked_at'=>gmdate(DATE_ATOM),
+            ], 0644);
+        } catch (\Throwable) { /* diagnostic failure cannot invalidate verified bytes */ }
     }
 
     private function checksumMatches(string $path, string $name, string $digest): bool

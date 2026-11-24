@@ -22,11 +22,11 @@ test(P::compare('1.5.3-rc.10','1.5.3-rc.2')>0&&P::compare('1.5.3-z','1.5.3')<0&&
 rejects(fn()=>P::plan($releases,'1.5.1','bad',true),'invalid channel refused');
 $dup=$releases;$dup[]=rel('1.5.2');test(P::plan($dup,'1.5.1','stable',true)['next']['version']==='1.5.3','duplicate version excluded');
 $policy=json_decode(file_get_contents(dirname(__DIR__).'/release.json'),true,512,JSON_THROW_ON_ERROR)['upgrade_compatibility'];
-$m=['edition'=>'forum','mode'=>'dist','version'=>'1.5.2','upgrade_compatibility'=>$policy];
-F::identity($m,'1.5.1','stable','1.5.2');test(true,'signed source floor accepts predecessor');
-rejects(fn()=>F::identity($m,'1.5.0','stable',null),'mandatory intermediate release enforced');
-rejects(fn()=>C::validate(array_replace($policy,['min_from'=>'1.5.2']),'1.5.2'),'impossible source floor rejected');
-rejects(fn()=>C::validate(array_replace($policy,['extensions'=>['../bad']]),'1.5.2'),'malformed requirements rejected');
+$m=['edition'=>'forum','mode'=>'dist','version'=>'1.5.3','upgrade_compatibility'=>$policy];
+F::identity($m,'1.5.2','stable','1.5.3');test(true,'signed source floor accepts predecessor');
+rejects(fn()=>F::identity($m,'1.5.1','stable',null),'mandatory intermediate release enforced');
+rejects(fn()=>C::validate(array_replace($policy,['min_from'=>'1.5.3']),'1.5.3'),'impossible source floor rejected');
+rejects(fn()=>C::validate(array_replace($policy,['extensions'=>['../bad']]),'1.5.3'),'malformed requirements rejected');
 $r=['php'=>'8.4.1','extensions'=>$policy['extensions'],'database_driver'=>'pgsql','database_version'=>'17.0','redis_enabled'=>true,'redis_version'=>'7.4.0'];
 test(C::evaluate($policy,$r)['ok'],'compatible platform accepted');
 foreach([['php'=>'8.3.0'],['extensions'=>[]],['database_version'=>'16.9'],['database_driver'=>'unknown'],['redis_version'=>'6.2'],['redis_version'=>null]] as $i=>$bad)test(!C::evaluate($policy,array_replace($r,$bad))['ok'],'runtime rejection '.$i);

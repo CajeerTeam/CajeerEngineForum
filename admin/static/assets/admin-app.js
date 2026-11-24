@@ -1,5 +1,5 @@
 const ADMIN_VERSION = '2.1.0'
-const FORUM_EDITION = '1.5.2'
+const FORUM_EDITION = '1.5.3'
 let oidcEnabled = false
 const API_BASE = '/api/v1'
 const TOKEN_KEY = 'cajeerengine.admin.token'
@@ -1532,6 +1532,8 @@ function updatesView() {
       <p class="muted">Синхронизировано страниц: ${escapeHtml(u.metadata_page_count ?? check.metadata_page_count ?? 0)} · Каталог: ${fmtTime(u.metadata_fetched_at || check.metadata_fetched_at)}${u.retry_at || check.retry_at ? ' · Повтор после: '+fmtTime(u.retry_at || check.retry_at) : ''}</p>
       ${latest.source && /^https:\/\/github\.com\/CajeerTeam\/CajeerEngineForum\/releases\//i.test(latest.source) ? `<p><a href="${escapeHtml(latest.source)}" target="_blank" rel="noopener noreferrer">Открыть релиз на GitHub</a></p>` : ''}
       ${typeof latest.notes === 'string' && latest.notes ? `<details><summary>Описание релиза</summary><pre class="json">${escapeHtml(latest.notes.slice(0,4000))}</pre></details>` : ''}
+      <p>Автоподготовка: ${escapeHtml(u.auto_stage?.enabled ? (u.auto_stage.state || "ожидание") : "выключена")}${u.auto_stage?.next_attempt_at ? " · следующий запуск: "+fmtTime(Number(u.auto_stage.next_attempt_at)*1000) : ""}</p>
+      ${u.download_progress?.total_bytes > 0 ? `<p>Загрузка ${escapeHtml(u.download_progress.version)}: ${escapeHtml(u.download_progress.state)} · ${escapeHtml(u.download_progress.received_bytes)} / ${escapeHtml(u.download_progress.total_bytes)} байт</p><progress max="${escapeHtml(u.download_progress.total_bytes)}" value="${escapeHtml(u.download_progress.received_bytes)}"></progress>` : ""}
       <div class="toolbar"><button class="btn secondary" data-update-check ${updatesWorking?'disabled':''}>Проверить сейчас</button><button class="btn" data-update-download ${downloadReady?'':'disabled'}>Скачать и подготовить ${escapeHtml(latest.version||'')}</button></div>
       <p class="muted">${!enabled?'Необходим свежий heartbeat UpdateOperator, включённые настройки и отсутствие незавершённого восстановления. Причина: '+escapeHtml(w.operator_status?.reason||'неизвестно'):!trust?'Задайте UPDATE_TRUSTED_PUBLIC_KEY_FILE.':'Загрузка запускается в фоновом операторе; статус обновится автоматически.'}</p>
     </div>

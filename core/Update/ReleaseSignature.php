@@ -24,12 +24,19 @@ final class ReleaseSignature
     public static function verify(string $zip, string $signatureFile, string $publicFile, ?string $expected = null): array
     {
         if (!function_exists('sodium_crypto_sign_verify_detached')) throw new \RuntimeException('ext-sodium required');
+        $sha = OperationFiles::hash($zip);
+        if ($expected !== null && !hash_equals($sha,strtolower($expected))) throw new \RuntimeException('Release signature or SHA256 mismatch');
+        return self::verifyDigest($sha,$signatureFile,$publicFile);
+    }
+    public static function verifyDigest(string $sha, string $signatureFile, string $publicFile): array
+    {
+        if (!function_exists('sodium_crypto_sign_verify_detached')) throw new \RuntimeException('ext-sodium required');
+        if (!preg_match('/^[a-f0-9]{64}$/D',$sha)) throw new \RuntimeException('Invalid release digest');
         $public = self::key($publicFile, SODIUM_CRYPTO_SIGN_PUBLICKEYBYTES);
         if (!is_file($signatureFile)||is_link($signatureFile)||filesize($signatureFile)>8192) throw new \RuntimeException('Invalid signature file');
         $data = OperationFiles::read($signatureFile);
-        $sha = OperationFiles::hash($zip);
         $sig = base64_decode((string)($data['signature'] ?? ''), true);
-        if (($data['format']??null)!=='cajeerengine.release-signature.v1' || ($data['key_id']??null)!==hash('sha256',$public) || ($data['sha256']??null)!==$sha || ($expected!==null && !hash_equals($sha,strtolower($expected))) || !is_string($sig) || strlen($sig)!==SODIUM_CRYPTO_SIGN_BYTES || !sodium_crypto_sign_verify_detached($sig,self::PREFIX.$sha,$public)) throw new \RuntimeException('Release signature or SHA256 mismatch');
+        if (($data['format']??null)!=='cajeerengine.release-signature.v1' || ($data['key_id']??null)!==hash('sha256',$public) || ($data['sha256']??null)!==$sha || !is_string($sig) || strlen($sig)!==SODIUM_CRYPTO_SIGN_BYTES || !sodium_crypto_sign_verify_detached($sig,self::PREFIX.$sha,$public)) throw new \RuntimeException('Release signature or SHA256 mismatch');
         return ['sha256'=>$sha,'key_id'=>$data['key_id']];
     }
     public static function generate(string $secretFile, string $publicFile): array

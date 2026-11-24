@@ -180,11 +180,11 @@ jobs:
           test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')" = "$RELEASE_SHA"
 
           cat > "$RUNNER_TEMP/forum-release-notes.md" <<'NOTES'
-          ## CajeerEngineForum 1.5.2 — Update Channels & Compatibility
+          ## CajeerEngineForum 1.5.3 — Automatic Download & Staging
 
-          Forum Edition 1.5.2 on CajeerEngine 2.1.0.
+          Forum Edition 1.5.3 on CajeerEngine 2.1.0.
 
-          - Sequential update paths, explicit channels, and signed PHP/SQL/Redis/source-version compatibility checks.
+          - Resumable signed ZIP downloads, automatic background staging and explicit installation approval.
           - Physical 10k/100k/1M workload and 24-hour soak with fixed SLOs.
           - Dependency failures, durable queue replay, interrupted update recovery and post-fault workload.
           - Publication requires passing CI, disaster recovery and independent physical evidence for the exact signed artifact.
