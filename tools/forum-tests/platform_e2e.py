@@ -141,6 +141,7 @@ class PlatformJourney(unittest.TestCase):
                 # Same cookie works in both ACP and forum, including its published module assets.
                 admin.goto(self.base + '/admin/#/platform-workflows')
                 expect(admin.locator('.brand-sub')).to_contain_text('Forum ' + version)
+                self.assertEqual(api(admin, '/platform/workflows')['rules'], [])
                 form = admin.locator('[data-workflow-form]')
                 expect(form).to_be_visible()
                 form.locator('[name=name]').fill('E2E assignment')

@@ -59,7 +59,7 @@ try{
     $boardId=(string)$pdo->query('SELECT id FROM ce_forum_boards ORDER BY id LIMIT 1')->fetchColumn();
     $roleId=(string)$pdo->query("SELECT id FROM ce_roles WHERE handle='forum-member' LIMIT 1")->fetchColumn();
     if(!$boardId||!$roleId)throw new RuntimeException('Expected seeded forum migration fixtures');
-    $pdo->prepare('INSERT INTO ce_users (id,email,name,password_hash) VALUES (?,?,?,?)')->execute([$uid,'thread-ai-fixture@example.invalid','Thread AI Test','!no_login']);
+    $pdo->prepare("INSERT INTO ce_users (id,email,name,password_hash,two_factor_recovery_codes) VALUES (?,?,?,?,'[]')")->execute([$uid,'thread-ai-fixture@example.invalid','Thread AI Test','!no_login']);
     $pdo->prepare('INSERT INTO ce_user_roles(user_id,role_id) VALUES (?,?)')->execute([$uid,$roleId]);
     foreach([$threadId,$otherThread,$privateThread] as $id){$pdo->prepare('INSERT INTO ce_forum_threads(id,board_id,title,author_id) VALUES (?,?,?,?)')->execute([$id,$boardId,'Test discussion',$uid]);}
     for($ordinal=1;$ordinal<=27;$ordinal++){

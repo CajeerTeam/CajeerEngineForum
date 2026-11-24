@@ -22,7 +22,7 @@ if($driver==='sqlite'){
     $pdo=new PDO('sqlite::memory:',null,null,[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION]);
     $pdo->exec('PRAGMA foreign_keys=ON');
     (new ReflectionProperty($db,'pdo'))->setValue($db,$pdo);
-    $pdo->exec('CREATE TABLE ce_users (id TEXT PRIMARY KEY, email TEXT NOT NULL UNIQUE, name TEXT NOT NULL, password_hash TEXT NOT NULL, status TEXT NOT NULL DEFAULT "active")');
+    $pdo->exec('CREATE TABLE ce_users (id TEXT PRIMARY KEY, email TEXT NOT NULL UNIQUE, name TEXT NOT NULL, password_hash TEXT NOT NULL, status TEXT NOT NULL DEFAULT "active", two_factor_recovery_codes TEXT NOT NULL)');
     foreach(['0075_engine_ai_cost_control.sql','0084_forum_ai_chat.sql','0085_forum_thread_ai.sql','0086_forum_ai_search.sql','0090_forum_ai_privacy_abuse.sql','0091_forum_ai_reliability.sql'] as $name)
         $pdo->exec((string)file_get_contents($root.'/migrations/sqlite/'.$name));
 } else {
@@ -52,7 +52,7 @@ $reject=static function(callable $action,int $status,string $label)use($check):v
 };
 $alice='51111111-1111-4111-8111-111111111111';
 $bob='52222222-2222-4222-8222-222222222222';
-foreach([$alice,$bob] as $i=>$id)$pdo->prepare('INSERT INTO ce_users(id,email,name,password_hash) VALUES (?,?,?,?)')
+foreach([$alice,$bob] as $i=>$id)$pdo->prepare("INSERT INTO ce_users (id,email,name,password_hash,two_factor_recovery_codes) VALUES (?,?,?,?,'[]')")
     ->execute([$id,'privacy-'.$i.'@example.invalid','Privacy '.$i,'!test-only']);
 $temp=sys_get_temp_dir().'/forum-ai-privacy-'.bin2hex(random_bytes(8));
 mkdir($temp,0700,true);

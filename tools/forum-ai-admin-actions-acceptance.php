@@ -42,7 +42,7 @@ $reject=static function(callable $fn,int $status,string $label)use($check):void 
 $tmp=sys_get_temp_dir().'/forum-admin-actions-'.bin2hex(random_bytes(6));mkdir($tmp,0700,true);
 $previous=getenv('OPENAI_API_KEY');putenv('OPENAI_API_KEY=sk-forum-admin-actions-acceptance-key');
 try{
-    foreach([$admin,$outsider] as $uid)$pdo->prepare('INSERT INTO ce_users(id,email,name,password_hash) VALUES(?,?,?,?)')->execute([$uid,$uid.'@example.invalid','admin-actions','!']);
+    foreach([$admin,$outsider] as $uid)$pdo->prepare("INSERT INTO ce_users (id,email,name,password_hash,two_factor_recovery_codes) VALUES (?,?,?,?,'[]')")->execute([$uid,$uid.'@example.invalid','admin-actions','!']);
     foreach(['forum-acp-settings','forum-acp-members'] as $handle){
         $q=$pdo->prepare('SELECT id FROM ce_roles WHERE handle=?');$q->execute([$handle]);$role=$q->fetchColumn();
         if(!is_string($role)||$role==='')throw new RuntimeException('Missing test role '.$handle);

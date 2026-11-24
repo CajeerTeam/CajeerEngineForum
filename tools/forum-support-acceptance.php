@@ -52,7 +52,7 @@ try{
     $board=(string)$pdo->query('SELECT id FROM ce_forum_boards ORDER BY id LIMIT 1')->fetchColumn();
     $role=(string)$pdo->query("SELECT id FROM ce_roles WHERE handle='forum-member' LIMIT 1")->fetchColumn();
     if($board===''||$role==='')throw new RuntimeException('Missing seeded forum board/role');
-    $pdo->prepare('INSERT INTO ce_users(id,email,name,password_hash) VALUES(?,?,?,?)')->execute([$uid,'search-acceptance@example.invalid','Search acceptance','!']);
+    $pdo->prepare("INSERT INTO ce_users (id,email,name,password_hash,two_factor_recovery_codes) VALUES (?,?,?,?,'[]')")->execute([$uid,'search-acceptance@example.invalid','Search acceptance','!']);
     $pdo->prepare('INSERT INTO ce_user_roles(user_id,role_id) VALUES (?,?)')->execute([$uid,$role]);
     $pdo->prepare('INSERT INTO ce_forum_threads(id,board_id,author_id,title) VALUES(?,?,?,?)')->execute([$thread,$board,$uid,'Инструкция криптографии и ключей']);
     $pdo->prepare('INSERT INTO ce_forum_posts(id,thread_id,author_id,body,ordinal,read_sequence) VALUES(?,?,?,?,?,?)')->execute([$post,$thread,$uid,'Криптографический ключ хранится отдельно от пользовательского сообщения.',1,1]);
@@ -96,7 +96,7 @@ try{
     $operatorId='fa49ec21-677b-46c4-a14c-0c0d4040b321';
     $otherId='bddca85e-91b6-49a6-9b4f-a887837e417b';
     foreach ([$operatorId,$otherId] as $idx=>$person) {
-        $pdo->prepare('INSERT INTO ce_users(id,email,name,password_hash) VALUES(?,?,?,?)')->execute([$person,'support-'.$idx.'@example.invalid','Support acceptance '.($idx+1),'!']);
+        $pdo->prepare("INSERT INTO ce_users (id,email,name,password_hash,two_factor_recovery_codes) VALUES (?,?,?,?,'[]')")->execute([$person,'support-'.$idx.'@example.invalid','Support acceptance '.($idx+1),'!']);
     }
     $operator=new ForumAccessPolicy($operatorId,['forum:acp:members']);
     $other=new ForumAccessPolicy($otherId,[]);

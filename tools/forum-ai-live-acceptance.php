@@ -38,7 +38,7 @@ try {
     if(!$migrations)throw new RuntimeException('Missing migrations');
     foreach($migrations as $file)$pdo->exec((string)file_get_contents($file));
     $uid='a1400000-0000-4000-8000-000000000001';
-    $pdo->prepare('INSERT INTO ce_users(id,email,name,password_hash) VALUES(?,?,?,?)')->execute([$uid,'ai-release@example.invalid','Synthetic release test','!']);
+    $pdo->prepare("INSERT INTO ce_users (id,email,name,password_hash,two_factor_recovery_codes) VALUES (?,?,?,?,'[]')")->execute([$uid,'ai-release@example.invalid','Synthetic release test','!']);
     $temp=sys_get_temp_dir().'/forum-ai-live-'.bin2hex(random_bytes(8));
     if(!mkdir($temp,0700,true))throw new RuntimeException('Cannot create disposable directory');
     $ai=new AiSettings($temp);

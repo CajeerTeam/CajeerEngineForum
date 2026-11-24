@@ -104,15 +104,22 @@ try {
     check((new ThreadRepository($db))->inBoard('22222222-2222-4222-8222-222222222222',0)[0]['id']===$thread,'board listing after upgrade');
     // Missing applied file is not reported as a healthy migration state.
     $runnerOld=new MigrationRunner($pdo,$old);
-    check(count($runnerOld->status($driver)['failed'])===$pending,'missing applied migration reported');
+    check(count(array_filter($runnerOld->status($driver)['integrity_errors'],static fn(array $row):bool=>$row['reason']==='file_missing'))===$pending,'missing applied migration reported');
+    check(!$runnerOld->verifyApplied($driver)['ok'],'missing applied files fail verification');
     rejects(fn()=>$runnerOld->run($driver),'missing applied migration blocks execution','missing');
     check((int)$pdo->query('SELECT read_sequence FROM ce_forum_posts')->fetchColumn()===1,'existing post sequence backfilled');
     foreach(glob($root.'/migrations/'.$driver.'/*.sql') as $file)copy($file,$old.'/'.$driver.'/'.basename($file));
-    $bad=$old.'/'.$driver.'/0048_failure_test.sql';
-    file_put_contents($bad,'CREATE TABLE forum_rollback_probe(id INTEGER); INSERT INTO nonexistent_forum_probe VALUES (1);');
+    $bad=$old.'/'.$driver.'/9999_failure_test.sql';
+    $originalSql='CREATE TABLE forum_rollback_probe(id INTEGER); INSERT INTO nonexistent_forum_probe VALUES (1);';
+    file_put_contents($bad,$originalSql);
     rejects(fn()=>$runnerOld->run($driver),'broken SQL migration rolls back');
     check(!$db->tableExists('forum_rollback_probe')&&count($runnerOld->status($driver)['failed'])===1,'failed migration ledger and DDL rollback');
     file_put_contents($bad,'CREATE TABLE forum_rollback_probe(id INTEGER);');
-    check($runnerOld->run($driver)['applied']===1&&$db->tableExists('forum_rollback_probe'),'corrected failed migration resumes');
+    rejects(fn()=>$runnerOld->run($driver),'changed failed migration rejected','checksum');
+    check(!$db->tableExists('forum_rollback_probe'),'changed migration did not execute');
+    file_put_contents($bad,$originalSql);
+    $pdo->exec('CREATE TABLE nonexistent_forum_probe(id INTEGER)');
+    check($runnerOld->run($driver)['applied']===1&&$db->tableExists('forum_rollback_probe'),'unchanged failed migration resumes after prerequisite repair');
+    check((int)$pdo->query('SELECT COUNT(*) FROM nonexistent_forum_probe')->fetchColumn()===1,'retry executed original SQL');
     echo "Forum installer regression ($driver) passed\n";
 } finally {unset($pdo,$db,$runner,$runnerOld,$roles);cleanup($tmp);}

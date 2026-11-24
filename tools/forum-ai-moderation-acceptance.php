@@ -47,7 +47,7 @@ try {
     $moderatorRole=(string)$pdo->query("SELECT id FROM ce_roles WHERE handle='forum-moderator'")->fetchColumn();
     $memberRole=(string)$pdo->query("SELECT id FROM ce_roles WHERE handle='forum-member'")->fetchColumn();
     foreach([[$moderator,$moderatorRole,'moderator'],[$member,$memberRole,'member']] as [$uid,$role,$name]){
-        $pdo->prepare('INSERT INTO ce_users(id,email,name,password_hash) VALUES(?,?,?,?)')->execute([$uid,$uid.'@example.invalid',$name,'!']);
+        $pdo->prepare("INSERT INTO ce_users (id,email,name,password_hash,two_factor_recovery_codes) VALUES (?,?,?,?,'[]')")->execute([$uid,$uid.'@example.invalid',$name,'!']);
         $pdo->prepare('INSERT INTO ce_user_roles(user_id,role_id) VALUES(?,?)')->execute([$uid,$role]);
     }
     $pdo->prepare('INSERT INTO ce_forum_threads(id,board_id,author_id,title) VALUES(?,?,?,?)')->execute([$thread,$board,$member,'Обсуждение жалобы']);

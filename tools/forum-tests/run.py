@@ -43,6 +43,18 @@ def unique_email():
     return 'forum-' + uuid.uuid4().hex + '@example.test'
 
 
+class AssuredSession:
+    """Headers for a real isolated browser cookie session, not a bearer credential."""
+    def __init__(self, cookie, csrf):
+        self.headers = {'Cookie': cookie, 'X-CSRF-Token': csrf}
+
+
+def auth_headers(token):
+    if isinstance(token, AssuredSession):
+        return dict(token.headers)
+    return {'Authorization': 'Bearer ' + token} if token else {}
+
+
 class Client:
     def __init__(self, base):
         self.base = base
@@ -56,8 +68,7 @@ class Client:
             raw = json.dumps(body).encode()
         if raw is not None:
             h.setdefault('Content-Type', 'application/json')
-        if token:
-            h['Authorization'] = 'Bearer ' + token
+        h.update(auth_headers(token))
         req = urllib.request.Request(self.base + '/api/v1' + path, data=raw, headers=h, method=method)
         try:
             res = self.opener.open(req, timeout=20)
@@ -86,14 +97,14 @@ class Client:
         return self.call('POST','/forum/attachments',status,token=token,raw=raw,headers={'Content-Type':'multipart/form-data; boundary='+boundary,**(headers or {})})
 
     def download_attachment(self, aid, token=None):
-        h={'Authorization':'Bearer '+token} if token else {}
+        h=auth_headers(token)
         with self.opener.open(urllib.request.Request(self.base+'/api/v1/forum/attachments/'+aid+'/download',headers=h),timeout=20) as res:
             assert res.status==200 and res.headers.get_content_type()=='application/octet-stream'
             assert res.headers['Content-Disposition'].startswith('attachment;') and res.headers['Cache-Control'].find('no-store')>=0
             return res.read()
 
     def image_variant(self, aid, variant='thumbnail', token=None):
-        h={'Authorization':'Bearer '+token} if token else {}
+        h=auth_headers(token)
         with self.opener.open(urllib.request.Request(self.base+'/api/v1/forum/attachments/'+aid+'/image/'+variant,headers=h),timeout=20) as res:
             assert res.status==200 and res.headers.get_content_type() in ('image/png','image/jpeg')
             assert res.headers['Content-Disposition']=='inline' and 'no-store' in res.headers['Cache-Control']
@@ -104,6 +115,20 @@ class Client:
         if code is not None:
             body['two_factor_code'] = code
         return self.request('POST', '/auth/login', status, body, headers={'X-Cajeer-Browser': '1'} if browser else {})
+
+    def assured_login(self, email, password=PASSWORD):
+        # Separate client prevents authenticated cookies from leaking into anonymous
+        # requests and negative bearer/CSRF checks on the original client.
+        session_client = Client(self.base)
+        response, headers = session_client.login(email, password, browser=True)
+        csrf = response['data']['csrf_token']
+        cookie = headers.get('Set-Cookie', '').split(';', 1)[0]
+        assert cookie.startswith('ce_session=') and 'access_token' not in response['data']
+        result = session_client.call('POST', '/auth/assurance/confirm', 200,
+            {'password': password, 'two_factor_code': ''}, headers={'X-CSRF-Token': csrf})
+        assert result['fresh']
+        return AssuredSession(cookie, csrf)
+
 
 
 def mail_link(email, path, base):
@@ -288,7 +313,7 @@ class NetworkTests(unittest.TestCase):
         email, member, token = self.activated(c)
         other = Client(self.base)
         _, _, foreign = self.activated(other)
-        admin = c.login(ADMIN, ADMIN_PASSWORD)[0]['data']['access_token']
+        admin = c.assured_login(ADMIN, ADMIN_PASSWORD)
         board = c.call('GET', '/forum')['boards'][0]['id']
         payload = {'title': 'Network regression topic', 'body': XSS}
         c.call('POST', f'/forum/boards/{board}/threads', 401, payload)
@@ -342,7 +367,7 @@ class NetworkTests(unittest.TestCase):
 
     def test_03_node_management(self):
         c = Client(self.base)
-        admin = c.login(ADMIN, ADMIN_PASSWORD)[0]['data']['access_token']
+        admin = c.assured_login(ADMIN, ADMIN_PASSWORD)
         data = {'name': 'API tree', 'description': ''}
         cat = c.call('POST', '/forum/categories', 201, data, token=admin)['id']
         dest = c.call('POST', '/forum/categories', 201, {'name':'API destination','description':''}, token=admin)['id']
@@ -389,7 +414,7 @@ class NetworkTests(unittest.TestCase):
         c = Client(self.base)
         _, member, token = self.activated(c)
         other_email, other_id, other = self.activated(Client(self.base))
-        admin = c.login(ADMIN, ADMIN_PASSWORD)[0]['data']['access_token']
+        admin = c.assured_login(ADMIN, ADMIN_PASSWORD)
         category = c.call('POST','/forum/categories',201,{'name':'ACL confidential category','description':''},token=admin)['id']
         root = c.call('POST',f'/forum/categories/{category}/boards',201,{'name':'ACL confidential parent','description':'','node_type':'container'},token=admin)['id']
         board = c.call('POST',f'/forum/categories/{category}/boards',201,{'name':'ACL confidential child','description':'','parent_id':root},token=admin)['id']
@@ -478,7 +503,7 @@ class NetworkTests(unittest.TestCase):
     def test_05_group_membership_and_delegation(self):
         c=Client(self.base)
         email,user,token=self.activated(c)
-        admin=c.login(ADMIN,ADMIN_PASSWORD)[0]['data']['access_token']
+        admin=c.assured_login(ADMIN, ADMIN_PASSWORD)
         groups=c.call('GET','/forum/groups',token=admin)
         default=next(g['id'] for g in groups if g['handle']=='forum-member')
         path=f'/forum/members/{user}/groups'
@@ -524,10 +549,10 @@ class NetworkTests(unittest.TestCase):
 
     def test_06_discussion_management(self):
         c=Client(self.base)
-        admin=c.login(ADMIN,ADMIN_PASSWORD)[0]['data']['access_token']
+        admin=c.assured_login(ADMIN, ADMIN_PASSWORD)
         mod_email=unique_email()
         c.call('POST','/users',201,{'email':mod_email,'name':'Discussion moderator','password':PASSWORD,'roles':['forum-moderator']},token=admin)
-        mod=c.login(mod_email)[0]['data']['access_token']
+        mod=c.assured_login(mod_email)
         board=c.call('GET','/forum')['boards'][0]['id']
         category=c.call('POST','/forum/categories',201,{'name':'Discussion management','description':''},token=admin)['id']
         dest=c.call('POST',f'/forum/categories/{category}/boards',201,{'name':'Destination','description':'','rules':'Posting rules for this board.'},token=admin)['id']
@@ -570,7 +595,7 @@ class NetworkTests(unittest.TestCase):
 
     def test_07_member_profiles(self):
         c=Client(self.base)
-        admin=c.login(ADMIN,ADMIN_PASSWORD)[0]['data']['access_token']
+        admin=c.assured_login(ADMIN, ADMIN_PASSWORD)
         email,member,token=self.activated(c)
         _,other,foreign=self.activated(c)
         profile='/forum/members/'+member
@@ -646,7 +671,7 @@ class NetworkTests(unittest.TestCase):
 
     def test_08_read_tracking(self):
         c=Client(self.base)
-        admin=c.login(ADMIN,ADMIN_PASSWORD)[0]['data']['access_token']
+        admin=c.assured_login(ADMIN, ADMIN_PASSWORD)
         email,_,member=self.activated(c)
         second_device=Client(self.base).login(email)[0]['data']['access_token']
         category=c.call('POST','/forum/categories',201,{'name':'Read tracking','description':''},token=admin)['id']
@@ -708,7 +733,7 @@ class NetworkTests(unittest.TestCase):
 
     def test_09_notifications(self):
         c=Client(self.base)
-        admin=c.login(ADMIN,ADMIN_PASSWORD)[0]['data']['access_token']
+        admin=c.assured_login(ADMIN, ADMIN_PASSWORD)
         email,recipient,owner=self.activated(c)
         _,sender,writer=self.activated(c)
         inbox='/forum/notifications'; mark=inbox+'/read'
@@ -774,7 +799,7 @@ class NetworkTests(unittest.TestCase):
         c.call('DELETE',f'/forum/categories/{category}',200,token=admin)
 
     def test_10_watch_delivery(self):
-        c=Client(self.base); admin=c.login(ADMIN,ADMIN_PASSWORD)[0]['data']['access_token']
+        c=Client(self.base); admin=c.assured_login(ADMIN, ADMIN_PASSWORD)
         email,user,subscriber=self.activated(c)
         cat=c.call('POST','/forum/categories',201,{'name':'Mail test category','description':''},token=admin)['id']
         board=c.call('POST',f'/forum/categories/{cat}/boards',201,{'name':'Mail test board','description':''},token=admin)['id']
@@ -830,7 +855,7 @@ class NetworkTests(unittest.TestCase):
         c.call('DELETE',f'/forum/categories/{cat}',200,token=admin)
 
     def test_11_conversations(self):
-        c=Client(self.base);admin=c.login(ADMIN,ADMIN_PASSWORD)[0]['data']['access_token']
+        c=Client(self.base);admin=c.assured_login(ADMIN, ADMIN_PASSWORD)
         ea,a,at=self.activated(c); eb,b,bt=self.activated(c); ec,third,ct=self.activated(c)
         base='/forum/conversations'; settings='/forum/conversation-settings'
         data={'participant_ids':[b],'title':'Private conversation regression','body':XSS,'kind':'group'}
@@ -892,7 +917,7 @@ class NetworkTests(unittest.TestCase):
         c.call('POST',base+'/'+direct+'/invite',403,{'participant_ids':[third]},token=at)
 
     def test_12_activity(self):
-        c=Client(self.base); admin=c.login(ADMIN,ADMIN_PASSWORD)[0]['data']['access_token']
+        c=Client(self.base); admin=c.assured_login(ADMIN, ADMIN_PASSWORD)
         email=unique_email(); author=c.call('POST','/users',201,{'email':email,'name':'Reputation author','password':PASSWORD,'roles':['forum-member']},token=admin)['id']
         writer=c.login(email)[0]['data']['access_token']
         cat=c.call('POST','/forum/categories',201,{'name':'Activity category','description':'test'},token=admin)['id']
@@ -934,7 +959,7 @@ class NetworkTests(unittest.TestCase):
         c.call('DELETE','/forum/boards/'+board,200,token=admin);c.call('DELETE','/forum/categories/'+cat,200,token=admin)
 
     def test_13_conversation_invitation_budget(self):
-        c=Client(self.base); admin=c.login(ADMIN,ADMIN_PASSWORD)[0]['data']['access_token']
+        c=Client(self.base); admin=c.assured_login(ADMIN, ADMIN_PASSWORD)
         email=unique_email(); owner=c.call('POST','/users',201,{'email':email,'name':'Invite quota owner','password':PASSWORD,'roles':['forum-member']},token=admin)['id']
         token=c.login(email)[0]['data']['access_token']; recipients=[]
         for i in range(11):
@@ -949,7 +974,7 @@ class NetworkTests(unittest.TestCase):
         payload['participant_ids']=recipients[:1];c.call('POST',path,429,payload,token=token)
 
     def test_14_rich_content(self):
-        c=Client(self.base); admin=c.login(ADMIN,ADMIN_PASSWORD)[0]['data']['access_token']
+        c=Client(self.base); admin=c.assured_login(ADMIN, ADMIN_PASSWORD)
         board=c.call('GET','/forum')['boards'][0]['id']; source='**Bold** <script>alert(1)</script>'
         preview=c.call('POST','/forum/content/preview',200,{'body':source,'body_format':'markdown'},token=admin)
         self.assertIn('<strong>Bold</strong>',preview['html']); self.assertNotIn('<script>',preview['html'])
@@ -971,7 +996,7 @@ class NetworkTests(unittest.TestCase):
         c.call('POST',path+'/moderate',200,{'action':'delete'},token=admin)
 
     def test_15_attachments(self):
-        c=Client(self.base); admin=c.login(ADMIN,ADMIN_PASSWORD)[0]['data']['access_token']
+        c=Client(self.base); admin=c.assured_login(ADMIN, ADMIN_PASSWORD)
         email=unique_email(); member=c.call('POST','/users',201,{'email':email,'name':'Attachment member','password':PASSWORD,'roles':['forum-member']},token=admin)['id']; other=c.login(email)[0]['data']['access_token']
         raw=b'Attachment test content.\n'; a=c.upload_attachment('report.txt',raw,admin); aid=a['id']; path='/forum/attachments/'+aid
         self.assertEqual(hashlib.sha256(raw).hexdigest(),a['sha256']);self.assertEqual(raw,c.download_attachment(aid,admin))
@@ -994,7 +1019,7 @@ class NetworkTests(unittest.TestCase):
         c.call('POST',url+'/moderate',200,{'action':'delete'},token=admin)
 
     def test_16_media(self):
-        c=Client(self.base);admin=c.login(ADMIN,ADMIN_PASSWORD)[0]['data']['access_token']
+        c=Client(self.base);admin=c.assured_login(ADMIN, ADMIN_PASSWORD)
         email=unique_email();member=c.call('POST','/users',201,{'email':email,'name':'Media member','password':PASSWORD,'roles':['forum-member']},token=admin)['id'];other=c.login(email)[0]['data']['access_token']
         raw=profile_png();aid=c.upload_attachment('photo.png',raw,admin)['id'];path='/forum/attachments/'+aid
         for _ in range(4):
@@ -1019,7 +1044,7 @@ class NetworkTests(unittest.TestCase):
         c.call('POST',url+'/moderate',200,{'action':'delete'},token=admin);c.call('GET',path+'/image/thumbnail',404,token=admin)
 
     def test_17_polls_questions(self):
-        c=Client(self.base);admin=c.login(ADMIN,ADMIN_PASSWORD)[0]['data']['access_token']
+        c=Client(self.base);admin=c.assured_login(ADMIN, ADMIN_PASSWORD)
         email=unique_email();member=c.call('POST','/users',201,{'email':email,'name':'Poll member','password':PASSWORD,'roles':['forum-member']},token=admin)['id'];other=c.login(email)[0]['data']['access_token']
         public=c.call('GET','/forum')['boards'][0]['id'];create='/forum/boards/'+public+'/threads'
         config={'question':'Which release?','options':['First','Second','Third'],'max_choices':2,'allow_change':True,'visibility':'voted'}
@@ -1064,7 +1089,7 @@ class NetworkTests(unittest.TestCase):
         self.assertIn(q,[x['id'] for x in c.call('GET','/forum/questions',token=admin)])
 
     def test_18_drafts_revisions(self):
-        c=Client(self.base);admin=c.login(ADMIN,ADMIN_PASSWORD)[0]['data']['access_token'];email=unique_email();user=c.call('POST','/users',201,{'email':email,'name':'Draft member','password':PASSWORD,'roles':['forum-member']},token=admin)['id'];member=c.login(email)[0]['data']['access_token'];board=c.call('GET','/forum')['boards'][0]['id'];did=str(uuid.uuid4());path='/forum/drafts/'+did
+        c=Client(self.base);admin=c.assured_login(ADMIN, ADMIN_PASSWORD);email=unique_email();user=c.call('POST','/users',201,{'email':email,'name':'Draft member','password':PASSWORD,'roles':['forum-member']},token=admin)['id'];member=c.login(email)[0]['data']['access_token'];board=c.call('GET','/forum')['boards'][0]['id'];did=str(uuid.uuid4());path='/forum/drafts/'+did
         file=c.upload_attachment('draft.txt',b'Draft content',token=member)['id']
         data={'scope':'thread','target_id':board,'revision_number':0,'payload':{'title':'Draft topic','body':'**Draft source**','body_format':'markdown','attachment_ids':[file]}}
         saved=c.call('PUT',path,200,data,token=member);self.assertEqual(1,saved['revision_number']);c.call('GET',path,404,token=admin);c.call('GET',path,401)
@@ -1084,7 +1109,7 @@ class NetworkTests(unittest.TestCase):
         rid=str(uuid.uuid4());rp='/forum/drafts/'+rid;rd={'scope':'reply','target_id':result['id'],'revision_number':0,'payload':{'body':'Pending answer','body_format':'plain','attachment_ids':[]}};c.call('PUT',rp,200,rd,token=member);c.call('POST',topic+'/moderate',200,{'action':'lock'},token=admin);c.call('POST',rp+'/publish',409,{'revision_number':1},token=member);self.assertIsNone(c.call('GET',rp,token=member)['result']);c.call('DELETE',rp,200,{'revision_number':1},token=member)
 
     def test_19_recycle_bin(self):
-        c=Client(self.base);admin=c.login(ADMIN,ADMIN_PASSWORD)[0]['data']['access_token'];email=unique_email()
+        c=Client(self.base);admin=c.assured_login(ADMIN, ADMIN_PASSWORD);email=unique_email()
         c.call('POST','/users',201,{'email':email,'name':'Recycle member','password':PASSWORD,'roles':['forum-member']},token=admin);member=c.login(email)[0]['data']['access_token']
         board=c.call('GET','/forum')['boards'][0]['id'];title='Recycle '+uuid.uuid4().hex;path='/forum/threads/'
         thread=c.call('POST','/forum/boards/'+board+'/threads',201,{'title':title,'body':'Question','kind':'question'},token=member)['id'];path+=thread
@@ -1105,7 +1130,7 @@ class NetworkTests(unittest.TestCase):
         c.call('POST',whole,200,{'action':'delete'},token=admin);recycle_action(c,admin,'thread',thread,'purge');c.call('GET',whole,404,token=admin)
 
     def test_20_moderation_center(self):
-        c=Client(self.base);admin=c.login(ADMIN,ADMIN_PASSWORD)[0]['data']['access_token'];email=unique_email()
+        c=Client(self.base);admin=c.assured_login(ADMIN, ADMIN_PASSWORD);email=unique_email()
         c.call('POST','/users',201,{'email':email,'name':'Review member','password':PASSWORD,'roles':['forum-member']},token=admin);member=c.login(email)[0]['data']['access_token'];uid=c.call('GET','/auth/me',token=member)['user_id']
         admin_id=c.call('GET','/auth/me',token=admin)['user_id'];board=c.call('GET','/forum')['boards'][0]['id'];policy='/forum/boards/'+board+'/review-policy';create='/forum/boards/'+board+'/threads'
         c.call('PUT',policy,403,{'review_required':True},token=member);c.call('PUT',policy,200,{'review_required':True},token=admin)
@@ -1116,7 +1141,7 @@ class NetworkTests(unittest.TestCase):
             c.call('GET','/forum/threads/'+sid,404,token=member);self.assertNotIn(title,[x['title'] for x in c.call('GET','/forum/search?q='+urllib.parse.quote(title))])
             path='/forum/moderation/cases/submission/'+sid;c.call('GET',path,403,token=member);c.call('GET','/forum/attachments/'+file,404,token=admin);c.call('DELETE','/forum/attachments/'+file,409,token=member)
             self.assertTrue(any(x['id']==sid for x in c.call('GET','/forum/submissions',token=member)))
-            with c.opener.open(urllib.request.Request(self.base+'/api/v1/forum/moderation/submissions/'+sid+'/files/'+file,headers={'Authorization':'Bearer '+admin}),timeout=20) as res:self.assertEqual(b'Pending review bytes',res.read())
+            with c.opener.open(urllib.request.Request(self.base+'/api/v1/forum/moderation/submissions/'+sid+'/files/'+file,headers=auth_headers(admin)),timeout=20) as res:self.assertEqual(b'Pending review bytes',res.read())
             r=c.call('POST',path,200,{'action':'assign','assigned_to':admin_id,'revision_number':1},token=admin);self.assertEqual(2,r['revision_number']);c.call('POST',path,409,{'action':'approve','revision_number':1},token=admin)
             r=c.call('POST',path,200,{'action':'priority','priority':2,'revision_number':2},token=admin);r=c.call('POST',path,200,{'action':'note','reason':'Internal note','revision_number':3},token=admin);self.assertEqual(4,r['revision_number']);self.assertEqual('note',c.call('GET',path,token=admin)['history'][0]['action'])
             r=c.call('POST',path,200,{'action':'approve','revision_number':4},token=admin);self.assertEqual('approved',r['status']);tid=r['result_id'];topic='/forum/threads/'+tid;data=c.call('GET',topic);self.assertEqual(uid,data['thread']['author_id']);self.assertEqual('poll',data['interaction']['kind']);self.assertEqual(b'Pending review bytes',c.download_attachment(file));c.call('POST',path,409,{'action':'approve','revision_number':4},token=admin)
@@ -1130,7 +1155,7 @@ class NetworkTests(unittest.TestCase):
         finally:c.call('PUT',policy,200,{'review_required':False},token=admin)
 
     def test_21_sanctions(self):
-        c=Client(self.base);admin=c.login(ADMIN,ADMIN_PASSWORD)[0]['data']['access_token'];email=unique_email()
+        c=Client(self.base);admin=c.assured_login(ADMIN, ADMIN_PASSWORD);email=unique_email()
         c.call('POST','/users',201,{'email':email,'name':'Sanction member','password':PASSWORD,'roles':['forum-member']},token=admin)
         member=c.login(email)[0]['data']['access_token'];uid=c.call('GET','/auth/me',token=member)['user_id'];admin_id=c.call('GET','/auth/me',token=admin)['user_id'];board=c.call('GET','/forum')['boards'][0]['id'];create='/forum/boards/'+board+'/threads';issue='/forum/members/'+uid+'/sanctions';sp='/forum/sanctions/'
         def sanction(kind,**extra):return c.call('POST',issue,201,{'kind':kind,'reason':'Integration restriction','duration_seconds':3600,**extra},token=admin)['id']
@@ -1151,7 +1176,7 @@ class NetworkTests(unittest.TestCase):
         c.call('POST',sp+ban+'/appeal/decision',200,{'status':'accepted','reason':'Restored access'},token=admin);self.assertFalse(c.call('GET','/auth/me',token=member)['suspended']);c.call('POST',topic+'/posts',201,{'body':'Allowed again'},token=member)
 
     def test_22_antispam(self):
-        c=Client(self.base);admin=c.login(ADMIN,ADMIN_PASSWORD)[0]['data']['access_token'];email=unique_email()
+        c=Client(self.base);admin=c.assured_login(ADMIN, ADMIN_PASSWORD);email=unique_email()
         c.call('POST','/users',201,{'email':email,'name':'Spam regression member','password':PASSWORD,'roles':['forum-member']},token=admin)
         member=c.login(email)[0]['data']['access_token'];board=c.call('GET','/forum')['boards'][0]['id'];path='/forum/boards/'+board+'/threads'
         c.call('GET','/forum/antispam/status',403,token=member)
@@ -1194,7 +1219,7 @@ class NetworkTests(unittest.TestCase):
     def test_23_personal_data(self):
         c=Client(self.base); email, member, token=self.activated(c)
         other=Client(self.base); other_email, other_id, foreign=self.activated(other)
-        admin=c.login(ADMIN,ADMIN_PASSWORD)[0]['data']['access_token']
+        admin=c.assured_login(ADMIN, ADMIN_PASSWORD)
         root='/auth/privacy'; export=root+'/export'
         c.call('GET',export,401)
         self.assertIn('posts',c.call('GET',export,token=token)['sections'])
@@ -1224,7 +1249,7 @@ class NetworkTests(unittest.TestCase):
         c.call('GET','/forum/members/'+member,404,token=foreign)
 
     def test_24_trust_personal_safety(self):
-        c=Client(self.base); admin=c.login(ADMIN,ADMIN_PASSWORD)[0]['data']['access_token']
+        c=Client(self.base); admin=c.assured_login(ADMIN, ADMIN_PASSWORD)
         _,a,at=self.activated(c); _,b,bt=self.activated(c)
         settings='/forum/conversation-settings'; conv='/forum/conversations'
         trust=c.call('GET',settings,token=at)['trust']
@@ -1257,7 +1282,7 @@ class NetworkTests(unittest.TestCase):
         c.call('POST',conv,403,payload,token=at) # follow was not restored
 
     def test_25_safety_stable(self):
-        c=Client(self.base); admin=c.login(ADMIN,ADMIN_PASSWORD)[0]['data']['access_token']
+        c=Client(self.base); admin=c.assured_login(ADMIN, ADMIN_PASSWORD)
         _,a,at=self.activated(c); _,b,bt=self.activated(c); _,other,ot=self.activated(c)
         board=c.call('GET','/forum')['boards'][0]['id']; topic=c.call('POST','/forum/boards/'+board+'/threads',201,{'title':'Safety decision '+uuid.uuid4().hex,'body':'Safety report target'},token=at)['id']
         thread='/forum/threads/'+topic; post=c.call('GET',thread)['first_post_id']
@@ -1302,11 +1327,13 @@ class NetworkTests(unittest.TestCase):
     def test_26_production_security_hardening(self):
         # Deliberate adversarial requests against real HTTP, authentication, ACL and persistence.
         c=Client(self.base)
-        admin=c.login(ADMIN,ADMIN_PASSWORD)[0]['data']['access_token']
+        admin=c.assured_login(ADMIN, ADMIN_PASSWORD)
         stranger=Client(self.base)
         _, _, foreign=self.activated(stranger)
         session=stranger.call('GET','/auth/sessions',token=foreign)[0]['id']
         # Even a privileged caller cannot revoke someone else's personal session through /api-tokens.
+        bearer=c.login(ADMIN,ADMIN_PASSWORD)[0]['data']['access_token']
+        c.call('DELETE','/api-tokens/'+session,403,token=bearer)
         self.assertFalse(c.call('DELETE','/api-tokens/'+session,token=admin)['revoked'])
         stranger.call('GET','/auth/me',token=foreign)
         c.call('DELETE','/api-tokens/'+session,403,token=foreign)
@@ -1318,7 +1345,7 @@ class NetworkTests(unittest.TestCase):
         for invalid in ('Bearer invalid', 'Bearer ', 'Basic token'):
             browser.call('GET','/auth/me',401,headers={'Authorization':invalid})
         browser.call('GET','/auth/me',401,headers={'X-API-Token':'invalid'})
-        browser.call('GET','/auth/me',401,headers={'Authorization':'Bearer '+admin,'X-API-Token':'invalid'})
+        browser.call('GET','/auth/me',401,headers={'Authorization':'Bearer '+bearer,'X-API-Token':'invalid'})
         browser.call('GET','/auth/me')
         browser.call('POST','/forum/acp/maintenance',403,{'action':'cleanup_uploads'})
         browser.call('POST','/forum/acp/maintenance',403,{'action':'cleanup_uploads'},headers={'X-CSRF-Token':'0'*64})
@@ -1343,7 +1370,7 @@ class NetworkTests(unittest.TestCase):
         c.call('PATCH','/webhooks/'+webhook['id'],422,{'url':'https://127.0.0.1/'},token=admin)
         self.assertEqual('https://8.8.8.8/hook',next(x for x in c.call('GET','/webhooks',token=admin) if x['id']==webhook['id'])['url'])
         with c.opener.open(urllib.request.Request(self.base+'/api/v1/webhooks/'+webhook['id'],
-                headers={'Authorization':'Bearer '+admin},method='DELETE'),timeout=20) as response:
+                headers=auth_headers(admin),method='DELETE'),timeout=20) as response:
             self.assertEqual(204,response.status)
             self.assertEqual(b'',response.read())
 

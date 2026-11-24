@@ -49,7 +49,7 @@ $priorKey=getenv('OPENAI_API_KEY');putenv('OPENAI_API_KEY=sk-forum-insights-acce
 try {
     $role=(string)$pdo->query("SELECT id FROM ce_roles WHERE handle='forum-acp-settings'")->fetchColumn();
     if($role==='')throw new RuntimeException('Forum ACP settings role absent');
-    foreach([$user,$outsider] as $uid)$pdo->prepare('INSERT INTO ce_users(id,email,name,password_hash) VALUES(?,?,?,?)')->execute([$uid,$uid.'@example.invalid','insights','!']);
+    foreach([$user,$outsider] as $uid)$pdo->prepare("INSERT INTO ce_users (id,email,name,password_hash,two_factor_recovery_codes) VALUES (?,?,?,?,'[]')")->execute([$uid,$uid.'@example.invalid','insights','!']);
     $pdo->prepare('INSERT INTO ce_user_roles(user_id,role_id) VALUES(?,?)')->execute([$user,$role]);
     $now=intdiv(time(),86400)*86400;
     $pdo->prepare('INSERT INTO ce_forum_analytics_daily(day,event_name,total,updated_at) VALUES(?,?,?,?)')

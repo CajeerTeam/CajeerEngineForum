@@ -37,7 +37,8 @@ $check(preg_match('/\A[a-f0-9]{64}\z/D',$plan['schema_sha256'])===1,'schema chec
 $reject(static fn()=> $pdo->exec("INSERT INTO ips_core_groups VALUES (4,'bad')"),'readonly');
 $reject(static fn()=> new InvisionSourceDiscovery($open(),'ips_','4.7.25'),'does not match');
 $reject(static fn()=> new InvisionSourceDiscovery($open(),'bad-prefix!'),'Invalid Invision table prefix');
-$reject(static fn()=> new InvisionSourceDiscovery($open('DROP TABLE ips_forums_posts')),'missing table');
+$reject(static fn()=> new InvisionSourceDiscovery($open('DROP TABLE ips_forums_posts'),'ips_'),'missing table ips_forums_posts');
+$reject(static fn()=> new InvisionSourceDiscovery($open('DROP TABLE ips_forums_posts')),'prefix ambiguous or missing');
 $reject(static fn()=> new InvisionSourceDiscovery($open('ALTER TABLE ips_core_members DROP COLUMN email')),'missing columns email');
 $reject(static fn()=> new InvisionSourceDiscovery($open("UPDATE ips_core_applications SET app_version='3.4.0' WHERE app_directory='core'")),'Unsupported or unrecognized');
 $reject(static fn()=> new InvisionSourceDiscovery($open("DELETE FROM ips_core_applications WHERE app_directory='forums'")),'not installed');

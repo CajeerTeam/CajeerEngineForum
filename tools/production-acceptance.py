@@ -169,6 +169,11 @@ def run(client, version, email, password, report, soak_seconds=0):
     call('/api/v1/auth/logout',403,method='POST',headers=browser)
     call('/api/v1/auth/logout',method='POST',headers={**browser,'X-CSRF-Token':csrf})
     call('/api/v1/auth/me',401,headers=browser); passed('cookie_csrf')
+    # Privileged mutations require an independently confirmed cookie session.
+    h,b=login(email,password,True); session=data(b)
+    auth={'Cookie':h['set-cookie'].split(';',1)[0],'X-CSRF-Token':session['csrf_token']}
+    if tuple(map(int,version.split('-')[0].split('.'))) >= (1,0,8):
+        require(data(call('/api/v1/auth/assurance/confirm',method='POST',headers=auth,data={'password':password,'two_factor_code':''})[1])['fresh'],'administrator step-up')
     # A host smoke runs this full destructive profile twice against persistent DB
     # state (historical baseline, then upgraded candidate). Namespace fixtures by
     # the exact release artifact so neither run reuses another run's email/slug.

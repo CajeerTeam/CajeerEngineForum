@@ -22,7 +22,7 @@ if($driver==='sqlite'){
     $pdo=new PDO('sqlite::memory:',null,null,[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION]);
     $pdo->exec('PRAGMA foreign_keys=ON');
     (new ReflectionProperty($db,'pdo'))->setValue($db,$pdo);
-    $pdo->exec('CREATE TABLE ce_users (id TEXT PRIMARY KEY, email TEXT NOT NULL UNIQUE, name TEXT NOT NULL, password_hash TEXT NOT NULL, status TEXT NOT NULL DEFAULT "active")');
+    $pdo->exec('CREATE TABLE ce_users (id TEXT PRIMARY KEY, email TEXT NOT NULL UNIQUE, name TEXT NOT NULL, password_hash TEXT NOT NULL, status TEXT NOT NULL DEFAULT "active", two_factor_recovery_codes TEXT NOT NULL)');
     foreach(['0075_engine_ai_cost_control.sql','0084_forum_ai_chat.sql','0085_forum_thread_ai.sql','0086_forum_ai_search.sql','0090_forum_ai_privacy_abuse.sql','0091_forum_ai_reliability.sql'] as $name)
         $pdo->exec((string)file_get_contents($root.'/migrations/sqlite/'.$name));
 } else {
@@ -50,7 +50,7 @@ final class ReliabilityProvider extends OpenAiClient {
 }
 $n=0;$check=static function(bool $ok,string $label)use(&$n):void{if(!$ok)throw new RuntimeException('FAIL '.$label);++$n;echo "PASS $label\n";};
 $reject=static function(callable $fn,int $status)use($check):void{try{$fn();}catch(ForumException $e){$check($e->status===$status,'admission rejection '.$status);return;}throw new RuntimeException('Expected rejection');};
-$users=[];for($i=0;$i<6;$i++){$id=sprintf('dd111111-1111-4111-8111-%012d',$i);$users[]=$id;$pdo->prepare('INSERT INTO ce_users(id,email,name,password_hash) VALUES (?,?,?,?)')->execute([$id,"reliability-$i@example.invalid","Reliability $i",'!test']);}
+$users=[];for($i=0;$i<6;$i++){$id=sprintf('dd111111-1111-4111-8111-%012d',$i);$users[]=$id;$pdo->prepare("INSERT INTO ce_users (id,email,name,password_hash,two_factor_recovery_codes) VALUES (?,?,?,?,'[]')")->execute([$id,"reliability-$i@example.invalid","Reliability $i",'!test']);}
 $temp=sys_get_temp_dir().'/forum-ai-reliability-'.bin2hex(random_bytes(8));mkdir($temp,0700,true);$old=getenv('OPENAI_API_KEY');putenv('OPENAI_API_KEY=sk-ai-reliability-acceptance');
 $gate=new ForumAiAdmission($db);$tickets=[];
 try{

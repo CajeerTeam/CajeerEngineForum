@@ -30,7 +30,7 @@ if ($driver === 'sqlite') {
     $pdo = new PDO('sqlite::memory:',null,null,[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION]);
     $pdo->exec('PRAGMA foreign_keys=ON');
     (new ReflectionProperty($db,'pdo'))->setValue($db,$pdo);
-    $pdo->exec('CREATE TABLE ce_users (id TEXT PRIMARY KEY, email TEXT UNIQUE NOT NULL, name TEXT NOT NULL, password_hash TEXT NOT NULL, status TEXT NOT NULL DEFAULT "active")');
+    $pdo->exec('CREATE TABLE ce_users (id TEXT PRIMARY KEY, email TEXT UNIQUE NOT NULL, name TEXT NOT NULL, password_hash TEXT NOT NULL, status TEXT NOT NULL DEFAULT "active", two_factor_recovery_codes TEXT NOT NULL)');
     foreach (['0075_engine_ai_cost_control.sql','0084_forum_ai_chat.sql','0085_forum_thread_ai.sql','0086_forum_ai_search.sql','0090_forum_ai_privacy_abuse.sql','0091_forum_ai_reliability.sql'] as $name) {
         $pdo->exec((string)file_get_contents($root.'/migrations/sqlite/'.$name));
     }
@@ -70,7 +70,7 @@ $expect=static function(callable $run,int $status,string $name)use($check):void 
 $userA='de540148-2730-40de-bbe7-14b149c0aa11';
 $userB='5cfd728f-4d23-43a2-85e8-2c3b196fbb22';
 foreach ([$userA,$userB] as $n=>$id) {
-    $pdo->prepare('INSERT INTO ce_users (id,email,name,password_hash) VALUES (?,?,?,?)')->execute([$id,'forum-ai-acceptance-'.$n.'@example.invalid','Forum AI acceptance '.($n+1),'!test_only']);
+    $pdo->prepare("INSERT INTO ce_users (id,email,name,password_hash,two_factor_recovery_codes) VALUES (?,?,?,?,'[]')")->execute([$id,'forum-ai-acceptance-'.$n.'@example.invalid','Forum AI acceptance '.($n+1),'!test_only']);
 }
 $temp = sys_get_temp_dir().'/forum-ai-acceptance-'.bin2hex(random_bytes(8));
 if (!mkdir($temp,0700,true)) throw new RuntimeException('Unable to create test AI settings directory');

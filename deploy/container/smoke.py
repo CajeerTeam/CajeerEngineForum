@@ -14,7 +14,16 @@ p.add_argument('--version', default='0.9.5'); p.add_argument('--verify-only', ac
 a=p.parse_args(); c=Client(a.domain,a.ca,a.port)
 password=a.password_file.read_text().strip()
 def call(path,status=200,**kw): return expect(c,path,status,**kw)
-def login(email): return {'Authorization':'Bearer '+data(call('/api/v1/auth/login',201,method='POST',data={'email':email,'password':password})[1])['access_token']}
+def login(email, privileged=False):
+    if not privileged:
+        return {'Authorization':'Bearer '+data(call('/api/v1/auth/login',201,method='POST',data={'email':email,'password':password})[1])['access_token']}
+    h,b=call('/api/v1/auth/login',201,method='POST',headers={'X-Cajeer-Browser':'1'},data={'email':email,'password':password})
+    cookie=h.get('set-cookie',''); session=data(b)
+    require('secure' in cookie.lower() and 'httponly' in cookie.lower() and 'access_token' not in session,'secure browser session')
+    auth={'Cookie':cookie.split(';',1)[0],'X-CSRF-Token':session['csrf_token']}
+    if tuple(map(int,a.version.split('-')[0].split('.'))) >= (1,0,8):
+        require(data(call('/api/v1/auth/assurance/confirm',method='POST',headers=auth,data={'password':password,'two_factor_code':''})[1])['fresh'],'administrator step-up')
+    return auth
 for _ in range(90):
     try:
         call('/health/ready'); break
@@ -23,7 +32,7 @@ else: raise RuntimeError('Container gateway not ready')
 h,b=call('/api/v1/health'); require(json.loads(b)['edition_version']==a.version,'edition identity')
 h,b=call('/admin/'); require(b'admin-app.js' in b and 'frame-ancestors' in h.get('content-security-policy',''),'admin shell')
 for path in ('/.env','/install/','/upgrade/','/composer.json','/uploads/shell.php'): call(path,404)
-admin=login(a.email); call('/api/v1/forum/acp?view=overview',headers=admin)
+admin=login(a.email, privileged=True); call('/api/v1/forum/acp?view=overview',headers=admin)
 if a.verify_only:
     state=json.loads(a.state.read_text()); h,b=call('/forum/threads/'+state['thread'])
     require(b'ContainerSmokeReply' in b,'data survived recreation'); print('PASS container persistence'); sys.exit(0)
