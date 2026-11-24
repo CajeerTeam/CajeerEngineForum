@@ -28,7 +28,7 @@ final readonly class AutomaticReleaseDiscovery
     {
         if (!$this->enabled()) return ['ok' => true, 'skipped' => 'disabled'];
         $result = (new UpdateResolver($this->config->get('updates', []), $this->config->rootPath(), $this->monitor))
-            ->check($this->config->string('app.version', '0.0.0'));
+            ->check((new \CajeerEngine\Forum\ForumVersion($this->config->rootPath()))->current());
         // An offline bundled catalog is useful for diagnostics, but it is NOT a
         // successful GitHub poll; retry on the next slot and expose degraded state.
         return [

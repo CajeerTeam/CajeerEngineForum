@@ -101,8 +101,15 @@ jobs:
             [[ -s "$zip" && -s "$checksum" ]] || { echo "Missing archive/checksum: $filename" >&2; exit 1; }
             (cd "$(dirname "$zip")" && sha256sum --strict --check "$(basename "$checksum")")
             unzip -tqq "$zip"
-            files+=("$zip" "$checksum")
+            signature="$zip.sig"
+            manifest="$(dirname "$zip")/cajeerengine-${VERSION}-${mode}.manifest.json"
+            [[ -s "$signature" && -s "$manifest" ]] || { echo "Missing signed release sidecars: $filename" >&2; exit 1; }
+            files+=("$zip" "$checksum" "$signature" "$manifest")
           done
+
+          index="$ARTIFACT_ROOT/cajeerengine-${VERSION}-artifacts.json"
+          [[ -s "$index" ]] || { echo 'Missing release artifact index' >&2; exit 1; }
+          files+=("$index")
 
           # Do not publish a release certified with a disposable CI signing key.
           # Recheck the full signed, staged, migrated and recovered artifact using
@@ -117,13 +124,14 @@ jobs:
           python3 tools/certification-evidence.py verify "$ARTIFACT_ROOT" --trusted-key "$pub"
 
           cat > "$RUNNER_TEMP/forum-release-notes.md" <<'NOTES'
-          ## CajeerEngineForum 1.3.11 — AI Performance & Reliability
+          ## CajeerEngineForum 1.4.0 — AI Assistant Stable
 
-          Forum Edition 1.3.11 on CajeerEngine 2.1.0.
+          Forum Edition 1.4.0 on CajeerEngine 2.1.0.
 
-          - Bounded database-wide FIFO admission, provider cooldown and conservative accounting for ambiguous failures.
-          - Worker recovers abandoned token and monetary leases; older chat turns are trimmed to fit the context limit.
-          - Migration 0091; CI requires real PDO acceptance and SQLite contention regression.
+          - Forum AI chat, contextual assistance, search, support, writing, moderation, insights and confirmed administrator actions.
+          - Source revalidation after queue admission and strict streamed/final response reconciliation.
+          - Signed ZIPs, detached signatures, SHA-256, manifests and artifact index are published together.
+          - No new migrations; mandatory real PDO and browser acceptance remains in place.
 
           Publication of signed artifacts is gated on successful CI, external staging approval,
           independently trusted signing keys and production change-control review.

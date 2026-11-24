@@ -152,7 +152,11 @@ final readonly class ForumModerationAdvisor
         $question='Оцени только приведённый материал дела: признаки спама, травли, угроз, раскрытия данных, фишинга и вредоносных ссылок. Не считай жалобу доказательством нарушения. Учитывай контекст и неопределённость. Верни ТОЛЬКО JSON c полями: risk (low|medium|high|uncertain), recommendation (review|dismiss|remove|escalate), flags (массив из spam|harassment|threats|privacy|phishing|malware|other), rationale (краткое обоснование на русском), evidence (до 4 дословных коротких цитат из предоставленного текста). Никаких санкций или действий не выполняй.';
         // Existing atomic quota/billing system, no extra provider client or long-lived transcript.
         $result=$this->chat->send($actor->userId,null,$question,null,
-            ['search'=>true,'moderation'=>true,'prompt'=>$prompt,'sources'=>[]]);
+            ['search'=>true,'moderation'=>true,'prompt'=>$prompt,'sources'=>[]],function() use($actor,$kind,$id,$case,$includeNonPublic):void {
+                $fresh=$this->snapshot($actor,$kind,$id);
+                if($fresh!==$case || ($fresh['non_public']&&!$includeNonPublic))
+                    throw new ForumException('Материалы дела изменились. Повторите запрос.',409);
+            });
         try {
             $assessment=self::validateAssessment((string)($result['text']??''),$material);
             // Check revision, source content and effective ACL *after* the network call.

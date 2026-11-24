@@ -290,7 +290,7 @@ final readonly class ForumAiChat
     }
 
     /** Real provider call with durable chat, per-user quotas, shared money budgets and failure rollback. */
-    public function send(string $userId,?string $id,string $message,?callable $delta=null,?array $context=null):array
+    public function send(string $userId,?string $id,string $message,?callable $delta=null,?array $context=null,?callable $revalidate=null):array
     {
         $message=trim($message);
         if ($message===''||strlen($message)>6000||!preg_match('//u',$message)) throw new ForumException('Введите сообщение длиной не более 6000 байт UTF-8.',422);
@@ -308,6 +308,8 @@ final readonly class ForumAiChat
             if (!$core['configured']) throw new ForumException('AI-провайдер не настроен.',503);
             $model=$conf['model']!==''?$conf['model']:$core['model'];
             $prices=$this->ai->forModel($model);AiCostControl::rates($prices);
+            // The queue may outlive an ACL or source revision. Revalidate before reserving or sending.
+            if ($revalidate !== null) $revalidate();
             return $this->generate($userId,$id,$message,$delta,$context,$conf,$model,$prices);
         } catch(AiProviderException $e) {
             if($e->retryAfter>0)try{$admission->cooldown($e->retryAfter);}catch(\Throwable){}

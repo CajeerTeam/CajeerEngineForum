@@ -49,7 +49,9 @@ def unpack(artifact, dest, expected):
     with zipfile.ZipFile(artifact) as z:
         z.extractall(dest)
     site = dest / 'cajeerengine'
-    require(version(site) == expected and (site / 'VERSION').read_text().strip() == '1.3.0', 'Wrong forum/upstream identity')
+    metadata=json.loads((site / 'release.json').read_text())
+    upstream=(site / 'VERSION').read_text().strip()
+    require(version(site) == expected and metadata.get('edition') == 'forum' and metadata.get('upstream_version') == upstream and metadata.get('version') == upstream and bool(re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+',upstream)), 'Wrong forum/upstream identity')
     require(not (site / '.env').exists() and not (site / 'storage/app/installed.lock').exists() and not (site / 'tests').exists() and (site / 'vendor/autoload.php').is_file(), 'Dirty or incomplete dist')
     return site
 
@@ -115,7 +117,7 @@ def http(site, env, report, label, port, expected_version):
                                        'edition_version': data.get('edition_version'),
                                        'checks': data.get('checks')}
                         if (data.get('edition_version') == expected_version
-                                and data.get('version') == '1.3.0'
+                                and data.get('version') == (site / 'VERSION').read_text().strip()
                                 and data.get('status') == 'ok'
                                 and all(data.get('checks', {}).values())):
                             break

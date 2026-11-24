@@ -44,6 +44,19 @@ $fallback = [];
 $stream = new OpenAiResponseStream(static function (string $text) use (&$fallback): void { $fallback[]=$text; });
 $stream->feed($completed([$message]));
 $ok($stream->result()['text']==='Готово' && $fallback===['Готово'], 'final-only provider output is streamed to the browser');
+$stream = new OpenAiResponseStream();
+$stream->feed($completed([$message,['type'=>'message','content'=>[['type'=>'output_text','text'=>'!']]]]));
+$ok($stream->result()['text']==='Готово!', 'final-only multiple messages are not silently truncated');
+$reject(static function () use ($completed,$message): void {
+    $stream=new OpenAiResponseStream();
+    $stream->feed('data: '.json_encode(['type'=>'response.output_text.delta','delta'=>'Гото'],JSON_THROW_ON_ERROR)."\n\n".$completed([$message]));
+    $stream->result();
+}, 'missing delta bytes cannot be persisted as a complete answer');
+$reject(static function () use ($completed,$message): void {
+    $stream=new OpenAiResponseStream();
+    $stream->feed('data: '.json_encode(['type'=>'response.output_text.delta','delta'=>'different'],JSON_THROW_ON_ERROR)."\n\n".$completed([$message]));
+    $stream->result();
+}, 'contradictory streamed and final text rejected');
 $tool=['type'=>'function_call','name'=>'cms_content_search','call_id'=>'call_1234','arguments'=>'{}'];
 $stream = new OpenAiResponseStream(); $stream->feed($completed([$tool]));
 $ok(count($stream->result()['calls'])===1 && $stream->result()['calls'][0]['call_id']==='call_1234', 'tool calls extracted from final response');

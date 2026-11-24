@@ -4,7 +4,7 @@
  * This script fails if the selected PDO driver or Composer dependencies are missing.
  */
 declare(strict_types=1);
-use CajeerEngine\AI\{AiSettings,OpenAiClient,AiProviderException};
+use CajeerEngine\AI\{AiSettings,OpenAiClient,AiProviderException,OpenAiResponseStream};
 use CajeerEngine\Database\{DatabaseManager,MigrationRunner};
 use CajeerEngine\Forum\ForumException;
 use CajeerEngine\Forum\Service\{ForumAiChat,ForumAiAdmission};
@@ -35,9 +35,17 @@ final class ReliabilityProvider extends OpenAiClient {
     public int $calls=0;
     public array $lastInput=[];
     public ?AiProviderException $failure=null;
-    public function complete(#[\SensitiveParameter] string $key,string $model,array $input,int $maxOutput,?callable $onDelta=null):array {
+    public bool $badStream=false;
+    protected function request(string $key,string $model,array $input,int $maxOutput,array $tools,?callable $onDelta=null,bool $forceText=false):array {
         ++$this->calls;$this->lastInput=$input;if($this->failure!==null)throw $this->failure;
-        return ['text'=>'ok','usage'=>['input_tokens'=>12,'output_tokens'=>4,'cached_input_tokens'=>0],'response_id'=>'resp_reliability'];
+        // Replace only the HTTP wire. Exercise real OpenAiClient::complete and SSE parser.
+        $stream=new OpenAiResponseStream($onDelta===null?null:\Closure::fromCallable($onDelta));
+        $event=static fn(array $data):string=>'data: '.json_encode($data,JSON_THROW_ON_ERROR)."\r\n\r\n";
+        $wire=$event(['type'=>'response.output_text.delta','delta'=>$this->badStream?'o':'ok']).$event(['type'=>'response.completed','response'=>[
+            'id'=>'resp_reliability','status'=>'completed','usage'=>['input_tokens'=>12,'output_tokens'=>4],
+            'output'=>[['type'=>'message','content'=>[['type'=>'output_text','text'=>'ok']]]]]]);
+        foreach(str_split($wire,3) as $chunk)$stream->feed($chunk);
+        return $stream->result();
     }
 }
 $n=0;$check=static function(bool $ok,string $label)use(&$n):void{if(!$ok)throw new RuntimeException('FAIL '.$label);++$n;echo "PASS $label\n";};
@@ -60,7 +68,10 @@ try{
     $check($gate->cleanup()===1,'crashed admission recovered');
     $provider=new ReliabilityProvider();$chat=new ForumAiChat($db,new AiSettings($temp),$provider);
     $current=$chat->administrator();$chat->configure(['enabled'=>true,'model'=>'gpt-4.1-mini','max_output_tokens'=>128,'daily_request_limit'=>30,'monthly_token_limit'=>100000,'revision'=>$current['revision']]);
-    $u=$users[5];$provider->failure=new AiProviderException('uncertain delivery',503,true,0);
+    $u=$users[5];
+    $reject(fn()=>$chat->send($u,null,'stale evidence',null,null,static function():void{throw new ForumException('Evidence changed',409);}),409);
+    $check($provider->calls===0 && (int)$pdo->query('SELECT COUNT(*) FROM ce_forum_ai_admission')->fetchColumn()===0,'post-admission validation fails before billing and releases slot');
+    $provider->failure=new AiProviderException('uncertain delivery',503,true,0);
     try{$chat->send($u,null,'test uncertain');throw new RuntimeException('Expected provider failure');}catch(AiProviderException){$check(true,'uncertain delivery surfaced');}
     $q=$pdo->prepare("SELECT COUNT(*) FROM ce_ai_cost_events WHERE user_id=? AND state='unverified'");$q->execute([$u]);$check((int)$q->fetchColumn()===1,'ambiguous delivery charged once as unverified');
     $provider->failure=new AiProviderException('rejected',429,false,30);
@@ -70,6 +81,10 @@ try{
     $pdo->exec('UPDATE ce_forum_ai_admission_state SET cooldown_until=0 WHERE id=1');$provider->failure=null;
     $result=$chat->send($u,null,'normal response');$id=$result['conversation_id'];
     $check(count($chat->messages($u,$id))===2,'normal chat resumes');
+    $provider->badStream=true;
+    try{$chat->send($users[0],null,'truncated stream');throw new RuntimeException('Expected stream mismatch');}catch(AiProviderException){$check(true,'real stream parser rejects mismatched completion');}
+    $check($chat->conversations($users[0])===[],'invalid SSE not persisted');
+    $provider->badStream=false;
     $insert=$pdo->prepare('INSERT INTO ce_forum_ai_messages (id,conversation_id,role,content,created_at) VALUES (?,?,?,?,?)');
     $before=(int)(microtime(true)*1000000)-10000000;
     for($i=0;$i<14;$i++)$insert->execute([sprintf('aa222222-2222-4222-8222-%012d',$i),$id,$i%2===0?'user':'assistant',str_repeat('x',4000),$before+$i]);

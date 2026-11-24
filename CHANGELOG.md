@@ -1,3 +1,11 @@
+## [1.4.0] - 2026-11-24
+
+### AI Assistant Stable
+- Revalidate public search and thread evidence after admission, before provider generation. Changed or revoked evidence fails closed.
+- Reconcile streaming output with the authoritative completion snapshot; reject inconsistent/truncated output. Final-only multi-message responses retain all text.
+- Publish detached Ed25519 signatures, checksums, manifests and index alongside verified ZIP artifacts.
+- Mandatory integrated provider-boundary and existing SQL/browser regressions; external CI and staging certification required. No new migrations.
+
 ## [1.3.11] - 2026-11-24
 
 ### AI Performance & Reliability

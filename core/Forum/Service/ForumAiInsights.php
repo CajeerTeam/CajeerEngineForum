@@ -124,7 +124,11 @@ final readonly class ForumAiInsights
             .'От одной до пяти записей. В тексте не повторяй цифры: значения будут отображены сервером из evidence_ids. '
             .'Для каждого утверждения укажи идентификаторы фактов. Не предлагай действий над пользователями. Русский язык.';
         $result=$this->chat->send($actor->userId,null,$question,null,
-            ['search'=>true,'insights'=>true,'prompt'=>$prompt,'sources'=>[]]);
+            ['search'=>true,'insights'=>true,'prompt'=>$prompt,'sources'=>[]],function() use($actor,$from,$until,$focus,$fingerprint):void {
+                $fresh=$this->preview($actor,$from,$until,$focus);
+                if(!hash_equals($fingerprint,hash('sha256',json_encode($fresh,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE))))
+                    throw new ForumException('Показатели изменились. Повторите запрос.',409);
+            });
         try{
             $parsed=self::validate((string)$result['text'],$snapshot['facts']);
             $current=$this->preview($actor,$from,$until,$focus);

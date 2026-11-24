@@ -79,6 +79,10 @@ try {
     $chat->deleteSearch($alice,$once['conversation_id']);
     for($i=0;$i<3;$i++)$chat->send($alice,null,'Try '.$i);
     $before=$provider->calls;
+    // Avoid crossing a minute boundary during the fixture (five successful calls above).
+    $minute=intdiv(time(),60)*60;
+    $pdo->prepare('DELETE FROM ce_forum_ai_request_buckets WHERE user_id=?')->execute([$alice]);
+    $pdo->prepare('INSERT INTO ce_forum_ai_request_buckets(user_id,window_start,requests) VALUES(?,?,5)')->execute([$alice,$minute]);
     $reject(fn()=> $chat->send($alice,null,'Sixth request'),429,'sixth request denied per-minute');
     $check($provider->calls===$before,'throttled request never reaches provider');
     $check(count($chat->conversations($bob))===1,'other account unaffected');

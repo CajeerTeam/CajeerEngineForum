@@ -103,7 +103,10 @@ final readonly class ForumThreadAssistant
             'explain'=>'Объясни суть обсуждения, контекст вопроса, позиции участников и сложные понятия понятным языком. Ссылайся на [N].',
             'question'=>(string)$message,
         };
-        $result=$this->chat->send($actor->userId,$conversationId,$question,$delta,$context);
+        $result=$this->chat->send($actor->userId,$conversationId,$question,$delta,$context,function() use($actor,$id,$context):void {
+            if($this->context($actor,$id)!==$context)
+                throw new ForumException('Обсуждение изменилось. Повторите запрос.',409);
+        });
         // Sources are server-generated from ACL-validated live posts, never AI-generated URLs.
         return $result+['sources'=>$context['sources'],'thread_id'=>$id,'sampled_posts'=>count($context['sources'])];
     }

@@ -39,7 +39,7 @@ final readonly class GitHubReleaseDownloader
                 throw new \RuntimeException('Recovery in progress; do not download updates');
             }
             $resolver = new UpdateResolver($this->config->get('updates', []), $this->rootPath, $this->monitor);
-            $current = trim((string) file_get_contents($this->rootPath . '/VERSION'));
+            $current = (new \CajeerEngine\Forum\ForumVersion($this->rootPath))->current();
             $check = $resolver->check($current);
             if (!in_array($check['metadata_status'] ?? '', ['fresh', 'not_modified'], true)
                 || ($check['metadata_source'] ?? null) !== GitHubEndpoints::RELEASES_URL) {

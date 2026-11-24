@@ -42,7 +42,8 @@ function removeDiscoveryFixtures(string $path): void
 
 $root = sys_get_temp_dir() . '/cajeer-discovery-' . bin2hex(random_bytes(8));
 mkdir($root . '/config', 0700, true);
-file_put_contents($root . '/VERSION', "2.0.1\n");
+file_put_contents($root . '/VERSION', "2.1.0\n");
+file_put_contents($root . '/release.json', json_encode(['edition'=>'forum','edition_version'=>'2.0.1','version'=>'2.1.0','upstream_version'=>'2.1.0'], JSON_THROW_ON_ERROR));
 $payload = json_encode([fixtureRelease('2.0.2'), fixtureRelease('2.1.0-rc.1', true)], JSON_THROW_ON_ERROR);
 $requests = [];
 $mode = 'new';
@@ -111,7 +112,7 @@ try {
     $store = new TaskRunStore($root);
     $now = 1795219200;
     $result = $store->run('updates.discover_releases', $task->intervalSeconds(), fn () => $task->run(), $now);
-    verifyDiscovery($result['ok'] && $result['latest_version'] === '2.0.2', 'scheduler executes real release discovery task');
+    verifyDiscovery($result['ok'] && $result['current_version'] === '2.0.1' && $result['update_available'] && $result['latest_version'] === '2.0.2', 'scheduler executes real release discovery task');
     $again = $store->run('updates.discover_releases', $task->intervalSeconds(), fn () => $task->run(), $now);
     verifyDiscovery(($again['skipped'] ?? '') === 'already run', 'scheduler executes only once per interval slot');
     $mode = 'offline';
@@ -127,7 +128,8 @@ try {
     $runnerRoot = $root . '/runtime-runner';
     mkdir($runnerRoot, 0700);
     mkdir($runnerRoot . '/storage/tmp', 0700, true);
-    file_put_contents($runnerRoot . '/VERSION', "2.0.1\n");
+    file_put_contents($runnerRoot . '/VERSION', "2.1.0\n");
+    copy($root . '/release.json', $runnerRoot . '/release.json');
     $runnerConfig = new ConfigRepository($runnerRoot);
     $runnerConfig->set('updates', ['core' => ['channel' => 'stable', 'releases_url' => GitHubEndpoints::RELEASES_URL,
         'auto_check_enabled' => true, 'auto_check_interval_seconds' => 21600]]);

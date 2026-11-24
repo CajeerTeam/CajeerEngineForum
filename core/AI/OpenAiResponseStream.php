@@ -79,22 +79,31 @@ final class OpenAiResponseStream
             ];
             $output = $response['output'] ?? [];
             if (!is_array($output) || count($output) > 128) throw new AiProviderException('Invalid OpenAI output items.', 502);
+            $finalText = '';
             foreach ($output as $part) {
                 if (!is_array($part)) throw new AiProviderException('Invalid OpenAI output item.', 502);
                 if (($part['type'] ?? null) === 'function_call') {
                     if (count($this->calls) >= 8) throw new AiProviderException('OpenAI function call budget exceeded.', 502);
                     $this->calls[] = $part;
-                } elseif (($part['type'] ?? null) === 'message' && $this->text === '') {
+                } elseif (($part['type'] ?? null) === 'message') {
                     $content = $part['content'] ?? [];
                     if (!is_array($content)) throw new AiProviderException('Invalid OpenAI message content.', 502);
                     foreach ($content as $contentPart) {
                         if (is_array($contentPart) && ($contentPart['type'] ?? null) === 'output_text') {
                             if (!is_string($contentPart['text'] ?? null)) throw new AiProviderException('Invalid OpenAI output text.', 502);
-                            $this->appendText($contentPart['text']);
-                            if ($this->onDelta !== null && $contentPart['text'] !== '') ($this->onDelta)($contentPart['text']);
+                            if (strlen($finalText) + strlen($contentPart['text']) > 65536) throw new AiProviderException('AI response exceeds size limit.', 502);
+                            $finalText .= $contentPart['text'];
                         }
                     }
                 }
+            }
+            // The final snapshot is authoritative. Never persist a truncated or contradictory delta stream.
+            if ($this->text !== '' && $this->text !== $finalText) {
+                throw new AiProviderException('OpenAI streamed text does not match final response.', 502);
+            }
+            if ($this->text === '' && $finalText !== '') {
+                $this->appendText($finalText);
+                if ($this->onDelta !== null) ($this->onDelta)($finalText);
             }
             $this->responseId = $response['id'];
             $this->completed = true;

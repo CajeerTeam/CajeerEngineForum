@@ -7,7 +7,7 @@ namespace CajeerEngine\Update;
 final readonly class UpdateResolver
 {
     /** @param array<string, mixed> $config */
-    public function __construct(private array $config, private ?string $rootPath = null)
+    public function __construct(private array $config, private ?string $rootPath = null, private ?GitHubReleaseMonitor $monitor = null)
     {
     }
 
@@ -53,6 +53,11 @@ final readonly class UpdateResolver
             'channel' => $channel,
             'metadata_source' => $metadata['_source'] ?? 'none',
             'metadata_ready' => ($metadata['_source'] ?? 'empty') !== 'empty',
+            'metadata_status' => $metadata['_status'] ?? 'offline',
+            'github_reachable' => in_array($metadata['_status'] ?? '', ['fresh', 'not_modified'], true),
+            'metadata_fetched_at' => $metadata['_fetched_at'] ?? null,
+            'metadata_failure' => $metadata['_failure'] ?? null,
+            'retry_at' => $metadata['_retry_at'] ?? null,
             'checked_at' => (new \DateTimeImmutable())->format(DATE_ATOM),
             'update_available' => $updateAvailable,
             'latest' => $latest,
@@ -67,7 +72,7 @@ final readonly class UpdateResolver
     public function diagnostics(string $currentVersion): array
     {
         $last = $this->lastCheck();
-        $metadata = $this->metadata();
+        $metadata = $this->metadata(false);
         return [
             'channel' => $this->channel(),
             'current_version' => $currentVersion,
@@ -76,6 +81,11 @@ final readonly class UpdateResolver
             'signature_required' => (bool) ($this->config['registry']['signature_required'] ?? true),
             'metadata_source' => $metadata['_source'] ?? 'empty',
             'metadata_ready' => ($metadata['_source'] ?? 'empty') !== 'empty',
+            'metadata_status' => $metadata['_status'] ?? 'offline',
+            'github_reachable' => in_array($metadata['_status'] ?? '', ['fresh', 'not_modified'], true),
+            'metadata_fetched_at' => $metadata['_fetched_at'] ?? null,
+            'metadata_failure' => $metadata['_failure'] ?? null,
+            'retry_at' => $metadata['_retry_at'] ?? null,
             'release_count' => is_array($metadata['releases'] ?? null) ? count($metadata['releases']) : 0,
             'last_check' => $last,
             'local_metadata_file' => $this->localMetadataPath(),
@@ -84,22 +94,27 @@ final readonly class UpdateResolver
     }
 
     /** @return array<string, mixed> */
-    private function metadata(): array
+    private function metadata(bool $fetch = true): array
     {
         $url = $this->releasesUrl();
-        if ($url !== null) {
-            $data = $this->readJson($url, $url === GitHubEndpoints::RELEASES_URL);
+        if ($url === GitHubEndpoints::RELEASES_URL) {
+            $monitor = $this->monitor ?? new GitHubReleaseMonitor($this->rootPath);
+            $data = $fetch ? $monitor->fetch() : $monitor->snapshot();
+            if ($data !== null && ($data['_source'] ?? 'empty') !== 'empty') return $data;
+            $failure = $data ?? [];
+        } elseif ($url !== null && $fetch) {
+            $data = $this->readJson($url);
             if ($data !== null) { $data['_source'] = $url; return $data; }
         }
 
         foreach ([$this->localMetadataPath(), $this->bundledMetadataPath()] as $path) {
             if ($path !== null && is_file($path)) {
                 $data = $this->readJson($path);
-                if ($data !== null) { $data['_source'] = $path; return $data; }
+                if ($data !== null) { $data['_source'] = $path; return $data + array_diff_key($failure ?? [], ['releases'=>true,'_source'=>true]); }
             }
         }
 
-        return ['releases' => [], '_source' => 'empty'];
+        return ['releases' => [], '_source' => 'empty'] + ($failure ?? []);
     }
 
     /** @return array<string, mixed>|null */

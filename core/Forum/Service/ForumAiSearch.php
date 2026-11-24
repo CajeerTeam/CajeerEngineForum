@@ -227,7 +227,10 @@ final readonly class ForumAiSearch
         foreach($sources as $s){$prompt.='['.$s['number'].'] Тема: '.$s['title'].'; сообщение: '.$s['excerpt']."\n";}
         $context=['search'=>true,'thread_id'=>null,'sources'=>$sources,'prompt'=>$prompt];
         // A search request is a fresh, one-shot generation, never a generic chat continuation.
-        $response=$this->chat->send($actor->userId,null,$question,$delta,$context);
+        $response=$this->chat->send($actor->userId,null,$question,$delta,$context,function() use($actor,$sources,$question):void {
+            if($this->freshPublicSources($actor,$sources,$question)!==$sources)
+                throw new ForumException('Источники изменились. Повторите поиск.',409);
+        });
         try{$this->chat->deleteSearch($actor->userId,$response['conversation_id']);}
         catch(\Throwable $e){
             // Do not silently leave unmanageable search transcripts in ordinary chat history.

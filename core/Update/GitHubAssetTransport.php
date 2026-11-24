@@ -97,7 +97,7 @@ final class GitHubAssetTransport
             throw new \RuntimeException('Untrusted GitHub asset URL');
         }
         if (strtolower((string) ($parts['host'] ?? '')) === 'github.com'
-            && !str_starts_with(strtolower((string) ($parts['path'] ?? '')), '/cajeerteam/cajeerengine/releases/download/')) {
+            && !str_starts_with(strtolower((string) ($parts['path'] ?? '')), '/'.strtolower(GitHubEndpoints::REPOSITORY).'/releases/download/')) {
             throw new \RuntimeException('Untrusted GitHub repository asset path');
         }
     }

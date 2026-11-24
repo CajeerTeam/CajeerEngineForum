@@ -74,6 +74,8 @@ php tools/forum-regression.php
 node --check public/forum-assets/forum.js
 ```
 
+Forum Edition **1.4.0**: AI Assistant Stable; see [AI acceptance and signed release](docs/forum-ai-stable-1.4.0.md). No new database migrations beyond 0091.
+
 Forum Edition **1.3.11**: bounded SQL AI admission, provider cooldown, conservative billing and scheduled recovery; requires migration `0091_forum_ai_reliability.sql`. See [AI Performance & Reliability](docs/forum-ai-reliability-1.3.11.md).
 
 Forum Edition **1.3.10**: self-service export and erasure of AI history, 90-day idle transcript retention, database-backed per-minute and concurrent-generation limits, account-close protection and untrusted-context boundary checks. Requires migration `0090_forum_ai_privacy_abuse.sql`; see [AI Privacy & Abuse Protection](docs/forum-ai-privacy-abuse-1.3.10.md).

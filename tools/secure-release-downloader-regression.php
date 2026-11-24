@@ -29,11 +29,11 @@ function eraseDownloader(string $directory): void
 }
 
 $badUrls = [
-    'http://github.com/CajeerTeam/CajeerEngine/releases/download/v2.0.2/x.zip',
-    'https://github.com.evil.tld/CajeerTeam/CajeerEngine/releases/download/v2.0.2/x.zip',
+    'http://github.com/CajeerTeam/CajeerEngine/releases/download/v1.4.0/x.zip',
+    'https://github.com.evil.tld/CajeerTeam/CajeerEngine/releases/download/v1.4.0/x.zip',
     'https://127.0.0.1/release.zip',
-    'https://github.com/OtherTeam/CajeerEngine/releases/download/v2.0.2/x.zip',
-    'https://user:pass@github.com/CajeerTeam/CajeerEngine/releases/download/v2.0.2/x.zip',
+    'https://github.com/OtherTeam/CajeerEngine/releases/download/v1.4.0/x.zip',
+    'https://user:pass@github.com/CajeerTeam/CajeerEngine/releases/download/v1.4.0/x.zip',
     'https://release-assets.githubusercontent.com:8443/example',
     'https://release-assets.githubusercontent.com/x#fragment',
 ];
@@ -42,7 +42,7 @@ foreach ($badUrls as $url) {
     try { GitHubAssetTransport::validateUrl($url); } catch (RuntimeException) { $denied = true; }
     requireDownloader($denied, 'reject unsafe release URL: ' . parse_url($url, PHP_URL_HOST));
 }
-GitHubAssetTransport::validateUrl(GitHubEndpoints::assetUrl('v2.0.2', 'cajeerengine-2.0.2-dist.zip'));
+GitHubAssetTransport::validateUrl(GitHubEndpoints::assetUrl('v1.4.0', 'cajeerengine-1.4.0-dist.zip'));
 GitHubAssetTransport::validateUrl('https://release-assets.githubusercontent.com/github-production-release-asset/opaque?token=xyz');
 requireDownloader(true, 'canonical GitHub and CDN paths accepted');
 
@@ -51,17 +51,18 @@ $root = $tmp . '/site';
 $keys = $tmp . '/private';
 mkdir($root . '/config', 0700, true);
 mkdir($keys, 0700);
-file_put_contents($root . '/VERSION', "2.0.1\n");
+file_put_contents($root . '/VERSION', "2.1.0\n");
+file_put_contents($root . '/release.json', json_encode(['edition'=>'forum','edition_version'=>'1.3.11','version'=>'2.1.0','upstream_version'=>'2.1.0'], JSON_THROW_ON_ERROR));
 $old = getenv('UPDATE_TRUSTED_PUBLIC_KEY_FILE');
 try {
     ReleaseSignature::generate($keys . '/private.key', $keys . '/public.key');
     putenv('UPDATE_TRUSTED_PUBLIC_KEY_FILE=' . $keys . '/public.key');
     // A real Ed25519-signed ZIP with invalid contents must NEVER become a verified dist.
-    $zipFile = $tmp . '/cajeerengine-2.0.2-dist.zip';
+    $zipFile = $tmp . '/cajeerengine-1.4.0-dist.zip';
     $archive = new PharData($zipFile, 0, null, Phar::ZIP);
     $archive->addFromString('cajeerengine/release-manifest.json', json_encode([
         'format' => 'cajeerengine.release-manifest.v5', 'project' => 'cajeerengine',
-        'version' => '2.0.2', 'mode' => 'dist', 'files' => [], 'checksums' => [],
+        'version' => '1.4.0', 'mode' => 'dist', 'files' => [], 'checksums' => [],
     ], JSON_THROW_ON_ERROR));
     $archive->addFromString('cajeerengine/invalid-payload.txt', str_repeat('x', 1600));
     unset($archive);
@@ -69,7 +70,7 @@ try {
     $name = basename($zipFile);
     $digest = hash_file('sha256', $zipFile);
     $release = [[
-        'tag_name' => 'v2.0.2', 'draft' => false, 'prerelease' => false,
+        'tag_name' => 'v1.4.0', 'draft' => false, 'prerelease' => false,
         'published_at' => '2026-11-21T08:00:00Z', 'body' => 'test',
         'assets' => array_map(static fn ($suffix) => [
             'state' => 'uploaded', 'name' => $name . $suffix,
@@ -97,7 +98,7 @@ try {
     $fail = false;
     try { $downloader->download(); } catch (RuntimeException $error) { $fail = str_contains($error->getMessage(), 'checksum mismatch'); }
     requireDownloader($fail, 'SHA-256 sidecar mismatch blocks release before publication');
-    $final = $root . '/storage/app/updates/downloads/2.0.2';
+    $final = $root . '/storage/app/updates/downloads/1.4.0';
     requireDownloader(!is_file($final . '/verified.json') && !is_file($final . '/' . $name), 'failed download leaves no ready package');
 
     $shaMode = 'correct';
