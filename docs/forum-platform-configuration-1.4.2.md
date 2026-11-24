@@ -1,0 +1,17 @@
+# Platform configuration — Forum Edition 1.4.2
+
+Open `/admin/#/platform-config` as an administrator. `system:read` grants a read-only overview; updates, rollback and explicit network probes require `*`, browser session, CSRF and fresh authentication assurance. Existing module editors retain their own rights and validation. No new database migration.
+
+## Runtime settings
+
+The environment/PHP configuration remains authoritative. Overrides can disable integration execution, reduce connection/payload ceilings and reduce the default queue worker batch. They cannot raise the server ceilings or turn on integration execution disabled by the operator. Explicit queue CLI `--limit` remains a server operator override. Empty values inherit the server settings. Changes take effect on new runtime instances; restart persistent workers and PHP processes after applying. For multiple nodes, use a common durable filesystem with working flock and atomic rename, or apply settings through deployment configuration instead. Do not use independent local override files across nodes.
+
+Each save compares revision and baseline hash. The update and its last 100 before/after records (actor, UTC time, operation) commit as a single atomic file under `storage/app/platform-config/`. Restore before a selected revision creates a new revision and re-applies current server ceilings. Export/import is a JSON object of **only** the four allowlisted overrides. The backup system includes `storage/app`; keep backups encrypted and access restricted. Never place credentials or hostnames in the override file. A malformed state fails closed; recover it from a trusted backup during maintenance rather than deleting it silently.
+
+## Integrations
+
+The center links directly to existing OpenAI, forum AI, SkiF4er ID, tracking, analytics reporting, webhook integrations, privacy and System editors subject to current scopes. OpenAI API keys and integration secrets still use the existing vault. SMTP, Redis, S3 and OIDC infrastructure credentials stay in deployment configuration. Configured status is not connectivity. Explicit checks use only the configured endpoints, not arbitrary URLs: OpenAI model metadata (no generation), SkiF4er discovery and signing keys (not confidential-client login), SMTP TLS/EHLO/authentication (no mail), Redis authenticated PING. S3 configuration presence is shown; existing System diagnostics exercise the active storage driver. Existing Integration Center tests send real requests only on operator request. Analytics reception needs a provider-side test. The center also lists up to 30 recent integration configuration audit entries from a bounded 256 KiB tail of the existing core audit log, exposing only event, actor and time; the per-module audit remains authoritative. No secrets or provider response bodies are included in the new API. Probe failures return sanitized status.
+
+## Upgrade and acceptance
+
+Back up the installation, deploy code and ACP assets together, restart persistent workers. Test a lower payload limit and rollback, ensure an unauthorized account cannot change settings, then explicitly verify configured integrations on staging. Run `php tools/forum-platform-config-regression.php`, `python tools/forum-platform-config-browser-regression.py`, `php bin/cajeer api:lint --strict --json` and the normal signed release pipeline. Actual external provider checks require the deployment's credentials and network. Local tests do not certify production.

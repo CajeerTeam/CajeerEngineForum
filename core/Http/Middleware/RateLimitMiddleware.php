@@ -33,6 +33,10 @@ final readonly class RateLimitMiddleware implements MiddlewareInterface
             $search = $this->limiter->hit('forum_search', $identity, $this->config->int('security.rate_limits.forum_search', 60), $window);
             if (!$search['allowed'] || $search['remaining'] < $hit['remaining']) $hit = $search;
         }
+        if ($hit['allowed'] && $path === '/api/v1/platform/config/probe') {
+            $probe = $this->limiter->hit('platform_config_probe', $identity, 6, 60);
+            if (!$probe['allowed'] || $probe['remaining'] < $hit['remaining']) $hit = $probe;
+        }
         if (!$hit['allowed']) {
             $response = new JsonResponse([
                 'error' => [

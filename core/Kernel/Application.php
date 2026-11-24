@@ -392,6 +392,7 @@ final class Application
         ));
 
         $container->set('controller.health', fn (): HealthController => new HealthController($rootPath));
+        $container->set('controller.platformConfig', fn (ServiceContainer $c) => new \CajeerEngine\Api\Controller\PlatformConfigController($c->get(ConfigRepository::class)));
         $container->set('controller.system', fn (): SystemController => new SystemController($rootPath));
         $container->set('controller.content_types', fn (ServiceContainer $c): ContentTypeController => new ContentTypeController($rootPath,$c->get(DatabaseManager::class)));
         $container->set('controller.content_entries', fn (ServiceContainer $c): ContentEntryController => new ContentEntryController($rootPath,$c->get(DatabaseManager::class)));
@@ -683,7 +684,8 @@ final class Application
         $forumSupport = new \CajeerEngine\Forum\ForumSupportController(
             $forumSupportService, $container->get(AuditLogger::class)
         );
-        $controllers = compact('identity', 'forum', 'forumAi', 'forumSupport', 'aiAnalytics', 'aiAutomations', 'aiMigration', 'support', 'knowledge', 'ai', 'identityAdmin', 'oidc', 'migration', 'analyticsHub', 'tracking', 'analyticsEvents', 'consent', 'integrations', 'health', 'system', 'contentTypes', 'entries', 'runtime', 'search', 'queue', 'scheduler', 'webhooks', 'extensions', 'installer', 'importExport', 'updates', 'rc', 'stable', 'admin', 'media', 'public', 'cms', 'database', 'auth', 'users', 'roles', 'apiTokens', 'security');
+        $platformConfig = $container->get('controller.platformConfig');
+        $controllers = compact('platformConfig', 'identity', 'forum', 'forumAi', 'forumSupport', 'aiAnalytics', 'aiAutomations', 'aiMigration', 'support', 'knowledge', 'ai', 'identityAdmin', 'oidc', 'migration', 'analyticsHub', 'tracking', 'analyticsEvents', 'consent', 'integrations', 'health', 'system', 'contentTypes', 'entries', 'runtime', 'search', 'queue', 'scheduler', 'webhooks', 'extensions', 'installer', 'importExport', 'updates', 'rc', 'stable', 'admin', 'media', 'public', 'cms', 'database', 'auth', 'users', 'roles', 'apiTokens', 'security');
         foreach (\CajeerEngine\Http\RouteRegistry::all() as [$method, $path, $name, $controller, $action, $scopes]) {
             $router->add([$method], $path, $name, [$controllers[$controller], $action], $scopes);
         }

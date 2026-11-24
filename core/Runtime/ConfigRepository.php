@@ -8,10 +8,18 @@ final class ConfigRepository
 {
     /** @var array<string, mixed> */
     private array $items = [];
+    private array $platformBaseline = [];
 
     public function __construct(private readonly string $rootPath)
     {
         $this->loadPhpConfigs();
+        $this->platformBaseline = [
+            'integrations.enabled'=>$this->bool('integrations.enabled',true),
+            'integrations.max_connections'=>$this->int('integrations.max_connections',200),
+            'integrations.max_payload_bytes'=>$this->int('integrations.max_payload_bytes',65536),
+            'queue.workers.default_limit'=>$this->int('queue.workers.default_limit',10),
+        ];
+        (new PlatformConfiguration($rootPath))->apply($this,$this->platformBaseline);
         $this->items['runtime'] = [
             'root_path' => $this->rootPath,
             'booted_at' => (new \DateTimeImmutable())->format(DATE_ATOM),
@@ -20,6 +28,8 @@ final class ConfigRepository
         $this->items['app']['edition_version'] = ($this->release()['edition'] ?? null) === 'forum' ? (new \CajeerEngine\Forum\ForumVersion($rootPath))->current() : $this->items['app']['version'];
         $this->items['app']['engine_api_version'] = (string) ($this->release()['engine_api_version'] ?? $this->get('app.engine_api_version', '1.0'));
     }
+
+    public function platformBaseline(): array { return $this->platformBaseline; }
 
     public function rootPath(): string
     {

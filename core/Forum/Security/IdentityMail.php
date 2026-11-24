@@ -27,15 +27,33 @@ final class IdentityMail
         if (!preg_match('/^[a-zA-Z0-9.-]{1,128}$/D',$messageId) || !preg_match('/^[ -~]{1,120}$/D',$subject)) throw new \RuntimeException('Invalid SMTP message headers');
         $from = (string)getenv('FORUM_SMTP_FROM');
         if (!filter_var($from,FILTER_VALIDATE_EMAIL) || !filter_var($email,FILTER_VALIDATE_EMAIL)) throw new \RuntimeException('Invalid SMTP address');
+        $socket=$this->connect(45);
+        try {
+            $this->command($socket,'MAIL FROM:<'.$from.'>',[250]); $this->command($socket,'RCPT TO:<'.$email.'>',[250,251]); $this->command($socket,'DATA',[354]);
+            $headers="From: <$from>\r\nTo: <$email>\r\nSubject: $subject\r\nDate: ".gmdate('D, d M Y H:i:s').' +0000'."\r\nMessage-ID: <".$messageId."@localhost>\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: base64\r\n\r\n";
+            $this->write($socket,$headers.chunk_split(base64_encode($body)).".\r\n"); $this->reply($socket,[250]);
+            // Delivery accepted; QUIT failure must not invalidate accepted mail.
+            @fwrite($socket,"QUIT\r\n");
+        } finally { fclose($socket); }
+    }
+    /** Authenticate and negotiate TLS without sending a message. */
+    public function probe(): bool
+    {
+        if (!filter_var((string)getenv('FORUM_SMTP_FROM'),FILTER_VALIDATE_EMAIL)) throw new \RuntimeException('Invalid SMTP sender');
+        $socket=$this->connect(10);
+        try { @fwrite($socket,"QUIT\r\n"); return true; } finally { fclose($socket); }
+    }
+    private function connect(int $seconds)
+    {
         $host = (string)getenv('FORUM_SMTP_HOST'); $mode = getenv('FORUM_SMTP_SECURITY') ?: 'starttls';
         $port = (int)(getenv('FORUM_SMTP_PORT') ?: ($mode === 'tls' ? 465 : 587));
         if (!preg_match('/^[a-zA-Z0-9.-]+$/D',$host) || $port<1 || $port>65535 || !in_array($mode,['tls','starttls','plain'],true)
             || ($mode === 'plain' && !in_array($host,['localhost','127.0.0.1'],true))) throw new \RuntimeException('Invalid SMTP configuration');
-        $this->deadline=microtime(true)+45;
+        $this->deadline=microtime(true)+$seconds;
         $context=stream_context_create(['ssl'=>['verify_peer'=>true,'verify_peer_name'=>true,'peer_name'=>$host,'allow_self_signed'=>false]]);
-        $socket=@stream_socket_client(($mode==='tls'?'tls://':'tcp://').$host.':'.$port,$errno,$errstr,10,STREAM_CLIENT_CONNECT,$context);
+        $socket=@stream_socket_client(($mode==='tls'?'tls://':'tcp://').$host.':'.$port,$errno,$errstr,min(10,$seconds),STREAM_CLIENT_CONNECT,$context);
         if (!$socket) throw new \RuntimeException('SMTP connection failed');
-        stream_set_timeout($socket,10);
+        stream_set_timeout($socket,min(10,$seconds));
         try {
             $this->reply($socket,[220]); $this->command($socket,'EHLO localhost',[250]);
             if ($mode==='starttls') {
@@ -48,12 +66,8 @@ final class IdentityMail
                 if ($mode==='plain' || $username==='') throw new \RuntimeException('SMTP authentication requires TLS');
                 $this->command($socket,'AUTH PLAIN '.base64_encode("\0".$username."\0".$password),[235]);
             }
-            $this->command($socket,'MAIL FROM:<'.$from.'>',[250]); $this->command($socket,'RCPT TO:<'.$email.'>',[250,251]); $this->command($socket,'DATA',[354]);
-            $headers="From: <$from>\r\nTo: <$email>\r\nSubject: $subject\r\nDate: ".gmdate('D, d M Y H:i:s').' +0000'."\r\nMessage-ID: <".$messageId."@localhost>\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: base64\r\n\r\n";
-            $this->write($socket,$headers.chunk_split(base64_encode($body)).".\r\n"); $this->reply($socket,[250]);
-            // Delivery accepted; QUIT failure must not invalidate accepted mail.
-            @fwrite($socket,"QUIT\r\n");
-        } finally { fclose($socket); }
+            return $socket;
+        } catch (\Throwable $e) { fclose($socket); throw $e; }
     }
     private function timeout($socket): void
     {

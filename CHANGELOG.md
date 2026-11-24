@@ -1,3 +1,11 @@
+## [1.4.2] - 2026-11-24
+
+### Centralized Configuration & Integrations
+- Revision-checked runtime overrides with server-side ceilings, secret-free import/export and atomic change history/rollback.
+- Central ACP configuration and links to existing authorized module editors.
+- Explicit OpenAI model, OIDC discovery/JWKS, SMTP negotiation/authentication and Redis checks; S3 configuration status and existing System storage diagnostics.
+- No schema migration. Restart persistent workers after changes; external CI/staging required.
+
 ## [1.4.1] - 2026-11-24
 
 ### Unified Administration Center

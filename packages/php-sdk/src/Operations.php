@@ -4362,6 +4362,15 @@ final class Operations {
     ),
     'bodyRequired' => false,
   ),
+  'get_platform_config_index' => 
+  array (
+    'method' => 'GET',
+    'path' => '/platform/config',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => false,
+  ),
   'patch_CmsRedirect' => 
   array (
     'method' => 'PATCH',
@@ -6150,6 +6159,15 @@ final class Operations {
     ),
     'bodyRequired' => false,
   ),
+  'post_platform_config_probe' => 
+  array (
+    'method' => 'POST',
+    'path' => '/platform/config/probe',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => true,
+  ),
   'put_AnalyticsEventConfig' => 
   array (
     'method' => 'PUT',
@@ -6613,6 +6631,15 @@ final class Operations {
   array (
     'method' => 'PUT',
     'path' => '/tracking/counters',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => true,
+  ),
+  'put_platform_config_update' => 
+  array (
+    'method' => 'PUT',
+    'path' => '/platform/config',
     'parameters' => 
     array (
     ),

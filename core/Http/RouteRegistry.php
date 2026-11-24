@@ -19,6 +19,9 @@ final class RouteRegistry
         return [
             ['GET', '/api/v1/health', 'api.v1.health', 'health', 'show', null],
             ['GET', '/api/v1/system', 'api.v1.system', 'system', 'show', ['system:read']],
+            ['GET', '/api/v1/platform/config', 'api.v1.platform.config.index', 'platformConfig', 'index', ['system:read']],
+            ['PUT', '/api/v1/platform/config', 'api.v1.platform.config.update', 'platformConfig', 'update', ['*']],
+            ['POST', '/api/v1/platform/config/probe', 'api.v1.platform.config.probe', 'platformConfig', 'probe', ['*']],
             ['GET', '/api/v1/system/operations', 'api.v1.system.operations', 'system', 'operations', ['system:read']],
             ['GET', '/api/v1/content-types', 'api.v1.content_types.index', 'contentTypes', 'index', ['content:read']],
             ['POST', '/api/v1/content-types', 'api.v1.content_types.store', 'contentTypes', 'store', ['content:write']],

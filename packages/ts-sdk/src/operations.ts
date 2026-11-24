@@ -3387,6 +3387,12 @@ export const operations = {
         "parameters": [],
         "bodyRequired": false
     },
+    "get_platform_config_index": {
+        "method": "GET",
+        "path": "/platform/config",
+        "parameters": [],
+        "bodyRequired": false
+    },
     "patch_CmsRedirect": {
         "method": "PATCH",
         "path": "/cms/redirects/{id}",
@@ -4721,6 +4727,12 @@ export const operations = {
         ],
         "bodyRequired": false
     },
+    "post_platform_config_probe": {
+        "method": "POST",
+        "path": "/platform/config/probe",
+        "parameters": [],
+        "bodyRequired": true
+    },
     "put_AnalyticsEventConfig": {
         "method": "PUT",
         "path": "/tracking/events",
@@ -5083,6 +5095,12 @@ export const operations = {
     "put_TrackingConfig": {
         "method": "PUT",
         "path": "/tracking/counters",
+        "parameters": [],
+        "bodyRequired": true
+    },
+    "put_platform_config_update": {
+        "method": "PUT",
+        "path": "/platform/config",
         "parameters": [],
         "bodyRequired": true
     }

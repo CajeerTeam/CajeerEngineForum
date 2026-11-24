@@ -1,6 +1,8 @@
 # CajeerEngine Forum Edition
 
-**Forum Edition 1.4.1 — Unified Administration Center**, built on CajeerEngine 2.1.0. Publication requires a passing `forum-required` gate and verified signed CI certification tied to the exact commit and release artifacts.
+**Forum Edition 1.4.2 — Centralized Configuration & Integrations**, built on CajeerEngine 2.1.0. Publication requires a passing `forum-required` gate and verified signed CI certification tied to the exact commit and release artifacts.
+
+See [Platform Configuration](docs/forum-platform-configuration-1.4.2.md) for runtime configuration, probes and rollback.
 
 See [Unified Administration Center](docs/forum-unified-administration-1.4.1.md) for navigation, access and deployment.
 

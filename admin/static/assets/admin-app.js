@@ -1,5 +1,5 @@
 const ADMIN_VERSION = '2.1.0'
-const FORUM_EDITION = '1.4.1'
+const FORUM_EDITION = '1.4.2'
 let oidcEnabled = false
 const API_BASE = '/api/v1'
 const TOKEN_KEY = 'cajeerengine.admin.token'
@@ -39,6 +39,7 @@ const nav = [
   ['cms','◉','CMS','Тема, меню, редиректы','CMS','content:read'],
   ['seo','◉','AI SEO Assistant','Аудит страниц','CMS','content:read'],
   ['translations','◉','AI Translation Studio','Локализации','CMS','content:read'],
+  ['platform-config','◉','Настройки платформы','Конфигурация, интеграции и журнал','Настройки','system:read'],
   ['forum/settings','◉','Настройки сообщества','Политика форума','Настройки','forum:acp:settings'],
   ['forum/themes','◉','Оформление форума','Темы и дизайн','Настройки','forum:acp:settings'],
   ['integrations','◉','Интеграции','Подключения и секреты','Настройки','integrations:read'],
@@ -283,6 +284,7 @@ async function routeLoad(route) {
     if (route === 'analytics-hub') {await loadSilent('analyticsHub','/analytics/reports');const previous=dataOf(state.cache.analyticsHubReport,{});if(previous.connection?.id){const r=state.forms.hubPeriod;await loadSilent('analyticsHubReport',`/analytics/reports/${encodeURIComponent(previous.connection.id)}/data${r?'?'+new URLSearchParams(r):''}`)}}
     if (route === 'analytics-events') await Promise.allSettled([loadSilent('analyticsEvents','/tracking/events'),loadSilent('analyticsJournal','/tracking/events/journal')])
     if (route === 'privacy') await loadSilent('privacy', '/privacy/consent')
+    if (route === 'platform-config') await loadSilent('platformConfig','/platform/config')
     if (route === 'integrations') await loadSilent('integrations', '/integrations')
     if (route === 'extensions') await Promise.allSettled([loadSilent('extensions', '/extensions'), loadSilent('extensionsRuntime', '/extensions/runtime'), loadSilent('extensionsDiagnostics', '/extensions/diagnostics')])
     if (route === 'updates') await Promise.allSettled([loadSilent('updates', '/updates'), loadSilent('maintenance', '/updates/maintenance'), loadSilent('updateHistory', '/updates/history'), loadSilent('updateNotifications', '/updates/notifications')])
@@ -364,6 +366,7 @@ function render() {
   else if (state.route === 'analytics-insights') body = analyticsInsightsView()
   else if (state.route === 'analytics-events') body = analyticsEventsView()
   else if (state.route === 'privacy') body = privacyView()
+  else if (state.route === 'platform-config') body = platformConfigView()
   else if (state.route === 'integrations') body = integrationsView()
   else if (state.route === 'extensions') body = extensionsView()
   else if (state.route === 'updates') body = updatesView()
@@ -414,6 +417,28 @@ function bindCommon() {
 function integrationScope(scope) {
   const scopes = state.identity?.scopes || []
   return scopes.includes('*') || scopes.includes(scope)
+}
+
+function platformConfigView() {
+  const cached=state.cache.platformConfig
+  if(!cached||cached.error)return `<div class="notice error">${escapeHtml(cached?.error?.message||'Конфигурация недоступна')}</div>`
+  const c=dataOf(cached),write=integrationScope('*'),d=write?'':'disabled'
+  const labels={'integrations.enabled':'Разрешить отправку интеграций','integrations.max_connections':'Максимум подключений','integrations.max_payload_bytes':'Максимум байт события','queue.workers.default_limit':'Размер пакета worker'}
+  const fields=Object.entries(labels).map(([k,label])=>{const value=c.overrides?.[k]; const baseline=c.baseline[k];const input=k==='integrations.enabled'?`<select name="${k}" ${d}><option value="">Наследовать</option><option value="true" ${value===true?'selected':''}>Разрешить в пределах серверной политики</option><option value="false" ${value===false?'selected':''}>Отключить</option></select>`:`<input class="input" type="number" name="${k}" min="${k==='integrations.max_payload_bytes'?1024:1}" max="${k==='integrations.max_payload_bytes'?1048576:k==='integrations.max_connections'?5000:1000}" value="${escapeHtml(value??'')}" placeholder="Наследовать" ${d}>`;return `<div class="form-row"><label>${label} · сервер: ${escapeHtml(baseline)} · действует: ${escapeHtml(c.effective[k])}</label>${input}</div>`}).join('')
+  const links=['forum/settings','forum/ai','ai','identity','tracking','analytics-hub','integrations','privacy','system','extensions'].filter(routeAllowed).map(route=>`<button class="btn secondary" data-route="${route}">${escapeHtml(nav.find(n=>n[0]===route)[2])}</button>`).join(' ')
+  const providers=Object.entries(c.integrations||{}).map(([id,v])=>`<div class="card"><h3>${escapeHtml(id)}</h3><p>${v.configured?'Настроено (не проверено)':'Не настроено'}${v.active!==undefined?' · '+(v.active?'активно':'неактивно'):''}</p>${write&&['openai','skif4er','redis','smtp'].includes(id)?`<button class="btn secondary" data-platform-probe="${id}">Проверить подключение</button>`:''}<p data-platform-result="${id}" role="status"></p></div>`).join('')
+  const integrationChanges=(c.integration_changes||[]).map(h=>`<p>${escapeHtml(h.created_at)} · ${escapeHtml(h.event)} · ${escapeHtml(h.actor_id)}</p>`).join('')
+  const history=(c.history||[]).map(h=>`<div class="card"><p>Ревизия ${escapeHtml(h.revision)} · ${escapeHtml(h.action)} · ${escapeHtml(h.created_at)} · ${escapeHtml(h.actor_id)}</p><pre>${escapeHtml(JSON.stringify({before:h.before,after:h.after},null,2))}</pre>${write?`<button class="btn secondary" data-platform-rollback="${escapeHtml(h.revision)}">Восстановить состояние до изменения</button>`:''}</div>`).join('')
+  return `<div class="card"><h2>Конфигурация платформы</h2><p>Ревизия ${escapeHtml(c.revision)}. Серверные лимиты являются верхней границей; конфигурация не может расширить серверную политику. Новые процессы читают сохранённые значения. Пустое поле наследует серверное значение.</p><form class="form" data-platform-config>${fields}${write?'<button class="btn" type="submit">Сохранить настройки</button>':''}</form><h3>Экспорт / импорт несекретных переопределений</h3><textarea class="input" rows="5" data-platform-json ${d}>${escapeHtml(JSON.stringify(Object.fromEntries(Object.entries(c.overrides||{})),null,2))}</textarea>${write?'<button class="btn secondary" data-platform-import>Проверить и применить JSON</button>':''}<p>Ключи, пароли, адреса инфраструктуры и разрешённые хосты здесь не хранятся.</p></div><div class="card"><h2>Настройки и интеграции</h2><p>Редакторы используют действующие разрешения и API. SMTP и S3 настраиваются на сервере; проверка хранилища доступна в System.</p><div class="toolbar">${links}</div></div><div class="grid two">${providers}</div><div class="card"><h2>Журнал конфигурации (последние 100 изменений)</h2>${history||'<p>Изменений пока нет.</p>'}</div><div class="card"><h2>Последние изменения интеграций</h2><p>До 30 записей из последних 256 КиБ журнала ядра, без содержимого настроек.</p>${integrationChanges||'<p>Нет доступных записей.</p>'}</div>`
+}
+function bindPlatformConfig(){
+  if(state.route!=='platform-config'||!integrationScope('*'))return
+  const c=dataOf(state.cache.platformConfig),form=document.querySelector('[data-platform-config]');if(!form||!c)return
+  const save=async(body)=>{if(!confirm('Применить изменение конфигурации платформы?'))return;const buttons=[...document.querySelectorAll('[data-platform-config] button,[data-platform-import],[data-platform-rollback]')];buttons.forEach(b=>b.disabled=true);try{await api('/platform/config',{method:'PUT',body:JSON.stringify({revision:c.revision,baseline_hash:c.baseline_hash,...body})});if(state.route==='platform-config'){await loadSilent('platformConfig','/platform/config');setNotice('ok','Конфигурация сохранена.')}}catch(e){if(state.route==='platform-config'){await loadSilent('platformConfig','/platform/config');setNotice('error',e.message)}}finally{buttons.forEach(b=>b.disabled=false)}}
+  form.addEventListener('submit',e=>{e.preventDefault();const overrides={};for(const [k,v] of new FormData(form)){if(v!=='')overrides[k]=k==='integrations.enabled'?v==='true':Number(v)}void save({overrides})})
+  document.querySelector('[data-platform-import]')?.addEventListener('click',()=>{try{const overrides=JSON.parse(document.querySelector('[data-platform-json]').value);if(!overrides||Array.isArray(overrides)||typeof overrides!=='object')throw new Error('Ожидается JSON-объект');void save({overrides})}catch(e){setNotice('error',e.message)}})
+  document.querySelectorAll('[data-platform-rollback]').forEach(b=>b.addEventListener('click',()=>void save({rollback_revision:Number(b.dataset.platformRollback)})))
+  document.querySelectorAll('[data-platform-probe]').forEach(b=>b.addEventListener('click',async()=>{const id=b.dataset.platformProbe;if(!confirm('Выполнить проверку настроенного сервиса?'))return;b.disabled=true;const out=document.querySelector(`[data-platform-result="${id}"]`);out.textContent='Проверка…';try{const r=dataOf(await api('/platform/config/probe',{method:'POST',body:JSON.stringify({provider:id})}));out.textContent=`${r.ok?'Проверка успешна':'Проверка не пройдена'} · ${r.duration_ms} мс · ${r.checked_at}`}catch(e){out.textContent=e.message}finally{b.disabled=false}}))
 }
 
 function trackingView() {
@@ -759,6 +784,7 @@ function bindForms() {
   bindAnalyticsEvents()
   bindAnalyticsHub()
   bindAnalyticsInsights()
+  bindPlatformConfig()
   bindIntegrations()
   bindExtensions()
   bindUpdates()

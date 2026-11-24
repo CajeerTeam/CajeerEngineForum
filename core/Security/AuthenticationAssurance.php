@@ -34,7 +34,7 @@ final readonly class AuthenticationAssurance
         if (self::forumPrivilegeChange($route)) return true;
         // Keep runtime service-to-service delivery/test under existing RBAC, while guarding
         // actual integration creation, configuration, secrets and deletion.
-        return in_array($route, ['api.v1.integrations.store','api.v1.integrations.update',
+        return in_array($route, ['api.v1.platform.config.update','api.v1.platform.config.probe','api.v1.integrations.store','api.v1.integrations.update',
             'api.v1.integrations.delete','api.v1.integrations.secret','api.v1.ai.settings',
             'api.v1.ai.migration.remediation.apply','api.v1.ai.migration.remediation.rollback',
             'api.v1.updates.download','api.v1.updates.apply','api.v1.updates.rollback','api.v1.updates.backup',
