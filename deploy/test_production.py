@@ -458,6 +458,10 @@ class Safety(unittest.TestCase):
                     self.assertEqual(local_request('/api/v1/auth/login')[0],404)
                     self.assertEqual(local_request('/.env')[0],404)
                     p.GATE.unlink(); self.assertEqual(request('/admin/assets/admin-app.js')[0],200)
+                    maintenance=app/'storage/app/maintenance.json'; maintenance.parent.mkdir(parents=True); maintenance.write_text('{}')
+                    self.assertEqual(request('/admin/assets/admin-app.js')[0],503)
+                    self.assertEqual(request('/forum')[0],503)
+                    maintenance.unlink(); self.assertEqual(request('/admin/assets/admin-app.js')[0],200)
                 finally:
                     process.terminate(); process.wait(timeout=10)
 

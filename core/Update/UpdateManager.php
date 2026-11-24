@@ -81,7 +81,7 @@ final class UpdateManager
         $package=$this->resolvePackage($package); $signature=$this->option($options,'signature')??$package.'.sig';
         try { $lock=OperationLock::acquire($this->rootPath,true); }
         catch (OperationBusy $e) { if (!empty($options['autonomous'])) return ['ok'=>false,'deferred'=>true,'reason'=>'operation_busy']; throw $e; }
-        $dir=null; $journalled=false;
+        $dir=null; $journalled=false; $lifecycle=null;
         try {
             if (OperationLock::active($this->rootPath)||is_file($this->rootPath.'/storage/app/backup-restore.json')||is_file($this->rootPath.'/storage/app/extensions/deployment.json')) throw new \RuntimeException('Interrupted operation: recover first');
             if (!is_file($this->rootPath.'/storage/app/installed.lock')) throw new \RuntimeException('Installed forum required');
@@ -108,6 +108,12 @@ final class UpdateManager
             $compatibility=(new \CajeerEngine\Extension\ExtensionRegistry($this->rootPath,$this->config))->targetCompatibility($v['version'],$v['manifest']['engine_api_version']);
             if(!$compatibility['ok'])throw new \RuntimeException('Target release incompatible with enabled extensions: '.implode(', ',array_column($compatibility['blocked'],'name')).'; resolve extension dependencies before updating');
             $this->postCheck(false,true);
+            $lifecycle=ServiceLifecycle::configured();
+            if ($autonomous && $lifecycle===null) return ['ok'=>false,'deferred'=>true,'reason'=>'service_policy_missing'];
+            if ($lifecycle!==null) {
+                try { $lifecycle->preflight($previous); }
+                catch (\Throwable $e) { if ($autonomous) return ['ok'=>false,'deferred'=>true,'reason'=>'service_preflight_failed']; throw $e; }
+            }
             $plan=$this->stage($dir,$v['manifest']);
             if ($autonomous) UpdatePreflight::writablePlan($this->rootPath,$plan);
             $report=['ok'=>true,'id'=>$id,'previous_version'=>$previous,'target_version'=>$v['version'],'sha256'=>$v['sha256'],'copy_plan'=>$plan,'preflight'=>['space'=>$space,'runtime'=>$runtime,'extensions'=>$compatibility,'migration_history'=>'verified','recovery'=>'ready'],'dry_run'=>!empty($options['dry_run'])];
@@ -118,11 +124,18 @@ final class UpdateManager
             }
             if (!empty($options['scheduled_request']) && ($reason=(new UpdatePolicy($this->config))->requestReason('apply',$v['version'],time()))!==null) throw new \RuntimeException('Update policy: '.$reason);
             $journal=['id'=>$id,'state'=>'prepared','previous_version'=>$previous,'target_version'=>$v['version'],'sha256'=>$v['sha256'],'maintenance_was_enabled'=>$this->maintenanceState()['enabled'],'maintenance_before'=>is_file($this->rootPath.'/storage/app/maintenance.json')?OperationFiles::read($this->rootPath.'/storage/app/maintenance.json'):null,'backup'=>null,'child_lock'=>'child-'.bin2hex(random_bytes(8)).'.lock','at'=>gmdate(DATE_ATOM)];
+            if ($lifecycle!==null) $journal['service_lifecycle']=$lifecycle->identity();
+            $journal['mutation_started']=false;
             if (!empty($options['autonomous'])) $journal['authorization']=['type'=>'host_policy','mode'=>(new UpdatePolicy($this->config))->snapshot()['mode']];
             $journalled=true; $this->journal($journal);
             DatabaseBackup::useProcessLock($dir.'/'.$journal['child_lock']);
             try {
                 $this->setMaintenance('Updating to '.$v['version']);
+                if ($lifecycle!==null) {
+                    $journal['service_phase']='stopping'; $this->journal($journal);
+                    $lifecycle->stop();
+                    $journal['service_phase']='stopped'; $this->journal($journal);
+                }
                 $journal['state']='backup'; $this->journal($journal);
                 $journal['backup']=$backup->capture()['id'];
                 if ($autonomous) {
@@ -134,13 +147,14 @@ final class UpdateManager
                     if (($reason=(new UpdatePolicy($this->config))->autonomousReason($previous,$v['version'],$v['security_update'],time()))!==null) {
                         $journal['state']='rolled_back'; $this->journal($journal);
                         $result=['ok'=>false,'deferred'=>true,'reason'=>$reason,'id'=>$id,'state'=>'rolled_back','backup'=>['id'=>$journal['backup']],'recovery_proof'=>$proof];
+                        if ($lifecycle!==null) { $lifecycle->start($previous); $journal['service_phase']='started'; $this->journal($journal); }
                         $this->finish($journal,$result); return $result;
                     }
                 }
                 $journal['state']='backed_up'; $this->journal($journal);
                 // Recovery code is copied from the old release before any replacement.
                 $this->recoveryLauncher($dir,$backup->directory($journal['backup']));
-                $journal['state']='applying'; $this->journal($journal);
+                $journal['state']='applying'; $journal['mutation_started']=true; $this->journal($journal);
                 foreach ($plan['files'] as $relative) {
                     $dest=OperationFiles::path($this->rootPath,$relative);
                     $mode=$relative==='bin/cajeer'?0755:(is_file($dest)?fileperms($dest)&0777:0644);
@@ -151,6 +165,11 @@ final class UpdateManager
                 OperationFiles::json($this->rootPath.'/release-manifest.json',$v['manifest'],0644);
                 $journal['state']='migrating'; $this->journal($journal);
                 $this->clearCaches(); $this->postCheck(true);
+                if ($lifecycle!==null) {
+                    $journal['service_phase']='starting'; $this->journal($journal);
+                    $lifecycle->start($v['version']);
+                    $journal['service_phase']='started'; $this->journal($journal);
+                }
                 $journal['state']='committed'; $this->journal($journal);
                 $result=$report+['applied_files'=>$plan['files'],'removed_files'=>$plan['removed_files'],'backup'=>['id'=>$journal['backup']],'state'=>'committed'];
                 $this->finish($journal,$result);
@@ -159,9 +178,19 @@ final class UpdateManager
             } catch (\Throwable $e) {
                 $journal['failure']='Update failed: '.$e->getMessage();
                 try {
-                    if ($journal['backup']!==null && in_array($journal['state'],['applying','migrating','committed'],true)) {
+                    if ($lifecycle!==null) {
+                        $journal['service_phase']='stopping'; $this->journal($journal);
+                        $lifecycle->stop(); $journal['service_phase']='stopped'; $this->journal($journal);
+                    }
+                    if ($journal['mutation_started'] && empty($journal['restored'])) {
+                        if ($journal['backup']===null) throw new \RuntimeException('Missing recovery backup');
                         $journal['state']='recovering'; $this->journal($journal);
                         $backup->restoreCaptured($journal['backup']); $this->clearCaches(); $this->postCheck(false);
+                        $journal['restored']=true; $this->journal($journal);
+                    }
+                    if ($lifecycle!==null) {
+                        $journal['service_phase']='starting'; $this->journal($journal);
+                        $lifecycle->start($previous); $journal['service_phase']='started'; $this->journal($journal);
                     }
                     $journal['state']='rolled_back'; $this->journal($journal);
                     $result=['ok'=>false,'id'=>$id,'state'=>'rolled_back','error'=>$journal['failure'],'backup'=>['id'=>$journal['backup']]];
@@ -195,12 +224,29 @@ final class UpdateManager
             $j['child_lock']='child-'.bin2hex(random_bytes(8)).'.lock';
             $this->journal($j); DatabaseBackup::useProcessLock($dir.'/'.$j['child_lock']);
             $this->setMaintenance('Recovering update');
+            $lifecycle=ServiceLifecycle::configured();
+            if (isset($j['service_lifecycle'])) {
+                if ($lifecycle===null) throw new \RuntimeException('Restore original service policy before recovery');
+                $lifecycle->assertIdentity($j['service_lifecycle']);
+            } elseif ($lifecycle!==null) {
+                $j['service_lifecycle']=$lifecycle->identity(); $this->journal($j);
+            }
+            if ($lifecycle!==null) {
+                $j['service_phase']='stopping'; $this->journal($j);
+                $lifecycle->stop(); $j['service_phase']='stopped'; $this->journal($j);
+            }
             $state=$j['state'];
-            if (!in_array($state,['prepared','backup','verifying_backup','backed_up'],true)) {
+            $mutated=$j['mutation_started']??!in_array($state,['prepared','backup','verifying_backup','backed_up','rolled_back'],true);
+            if ($mutated && empty($j['restored'])) {
                 if (empty($j['backup'])) throw new \RuntimeException('Missing recovery backup');
                 $j['state']='recovering'; $this->journal($j);
                 (new BackupManager($this->rootPath,$this->config))->restoreCaptured($j['backup']);
                 $this->clearCaches(); $this->postCheck(false);
+                $j['restored']=true; $this->journal($j);
+            }
+            if ($lifecycle!==null) {
+                $j['service_phase']='starting'; $this->journal($j);
+                $lifecycle->start($j['previous_version']); $j['service_phase']='started'; $this->journal($j);
             }
             $j['state']='rolled_back'; $this->journal($j);
             $result=['ok'=>true,'id'=>$j['id'],'state'=>'rolled_back','version'=>$j['previous_version'],'backup'=>['id'=>$j['backup']??null]];
@@ -243,7 +289,7 @@ final class UpdateManager
         }
         return ['ok'=>true,'items'=>array_values($items)];
     }
-    private function publicJournal(array $j): array { return array_intersect_key($j,array_flip(['id','state','previous_version','target_version','sha256','updated_at'])); }
+    private function publicJournal(array $j): array { return array_intersect_key($j,array_flip(['id','state','previous_version','target_version','sha256','updated_at','service_phase'])); }
     public function staged(): array
     {
         $dir=$this->requestDir(); $file=$dir.'/staged.json';

@@ -11,7 +11,11 @@ final class ProbeEndpoint
     {
         $json=['Content-Type'=>'application/json; charset=utf-8','Cache-Control'=>'no-store'];
         if(!in_array($method,['GET','HEAD'],true))return [405,$json+['Allow'=>'GET, HEAD'],json_encode(['status'=>'method_not_allowed'])];
-        if($path==='/health/live')return [200,$json,'{"status":"alive"}'];
+        if($path==='/health/live'){
+            $live=['status'=>'alive'];
+            try{$live['edition_version']=(new \CajeerEngine\Forum\ForumVersion($root))->current();}catch(\Throwable){}
+            return [200,$json,json_encode($live,JSON_THROW_ON_ERROR)];
+        }
         try{
             $config=new ConfigRepository($root);$monitor=new OperationsMonitor($root,$config);
             if($path==='/metrics'){

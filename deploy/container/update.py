@@ -182,7 +182,8 @@ class Deployment:
     def stop(self,site):
         # Stop ingress first, then drain all writers. PostgreSQL/Redis stay running.
         self.dc(site,'stop','gateway')
-        self.dc(site,'stop','worker','scheduler','app')
+        self.dc(site,'stop','worker','scheduler')
+        self.dc(site,'stop','app')
 
     def verify(self):
         if not self.artifact.is_file(): raise ValueError('Run prepare.sh with the approved signed target first')

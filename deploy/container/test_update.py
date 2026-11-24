@@ -19,6 +19,10 @@ class UpdateTests(unittest.TestCase):
         self.new.write_text(self.old.read_text().replace('0.8.2','0.8.3').replace('a'*64,'b'*64))
         self.args=SimpleNamespace(old_env=self.old,new_env=self.new,state_dir=self.root,project='test',ca=None,dry_run=False,yes=False)
     def tearDown(self): self.tmp.cleanup()
+    def test_stop_gateway_then_writers_then_fpm(self):
+        d=u.Deployment(self.args); d.dc=Mock(); d.stop(self.old)
+        self.assertEqual([x.args for x in d.dc.call_args_list],[(self.old,'stop','gateway'),(self.old,'stop','worker','scheduler'),(self.old,'stop','app')])
+
     def test_site_identity(self):
         d=u.Deployment(self.args); self.assertEqual(d.previous,'0.8.2'); self.assertEqual(d.target,'0.8.3')
         for text in [self.new.read_text()+'CE_QUEUE_DRIVER=redis\n',self.new.read_text().replace('forum.test','other.test'),self.new.read_text().replace('0.8.3','0.8.1'),self.new.read_text()+'CE_DOMAIN=duplicate.test\n']:

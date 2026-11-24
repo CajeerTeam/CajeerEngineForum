@@ -147,6 +147,7 @@ User={$user}
 Group={$group}
 WorkingDirectory={$root}
 ExecStart={$php} {$root}/bin/cajeer queue:work --limit=10
+Environment=CE_UPDATE_WAIT_FOR_DRAIN=1
 TimeoutStopSec=150
 KillSignal=SIGTERM
 Restart=always

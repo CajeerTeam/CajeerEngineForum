@@ -1,0 +1,7 @@
+{
+  "schema": 1,
+  "php_fpm": "php8.4-fpm.service",
+  "workers": ["cajeerengine-worker.service"],
+  "probe_port": 8081,
+  "probe_host": "localhost"
+}

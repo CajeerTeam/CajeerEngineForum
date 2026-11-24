@@ -1,3 +1,8 @@
+## [1.5.7] - 2026-11-24
+
+- Host systemd lifecycle: stop scheduler and worker before PHP-FPM, keep an exclusive lease through activation, verify local protected HTTP, and restart services on rollback.
+- Autonomous host apply requires a root-owned service policy; existing manual Compose deployment remains supported. No schema migration.
+
 ## [1.5.6] - 2026-11-24
 
 - Rehearse recovery from the exact freshly captured update backup before replacing live files. Verify database, private file copies, environment and optional encrypted off-site readback.

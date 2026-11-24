@@ -218,7 +218,8 @@ WantedBy=multi-user.target
 Description=CajeerEngine Forum queue worker
 After=network-online.target
 [Service]
-{common}ExecCondition=/usr/bin/test -f {WORKERS_ALLOWED}
+{common}Environment=CE_UPDATE_WAIT_FOR_DRAIN=1
+ExecCondition=/usr/bin/test -f {WORKERS_ALLOWED}
 ExecStart=/bin/sh -c 'while true; do {PHP} {APP}/bin/cajeer queue:work --limit=10 >/dev/null || exit 1; sleep 5; done'
 Restart=on-failure
 RestartSec=5
@@ -294,6 +295,7 @@ server {{
     client_max_body_size 64m;
     open_file_cache off;
     if (-f {GATE}) {{ return 503; }}
+    if (-f {APP}/storage/app/maintenance.json) {{ return 503; }}
     location ~ /\\. {{ return 404; }}
     location ~* ^/(install|upgrade)(/|$) {{ return 404; }}
     location = /index.php {{ {fastcgi} }}
@@ -330,6 +332,7 @@ server {{
     location = /forum {{ limit_except GET {{ deny all; }} {fastcgi} }}
     location = /api/v1/forum {{ limit_except GET {{ deny all; }} {fastcgi} }}
     location = /admin/ {{ limit_except GET {{ deny all; }} try_files /admin/index.html =404; {admin_security} }}
+    location = /health/live {{ limit_except GET {{ deny all; }} {fastcgi} }}
     location = /health/ready {{ limit_except GET {{ deny all; }} {fastcgi} }}
     location = /api/v1/health {{ limit_except GET {{ deny all; }} {fastcgi} }}
     location / {{ return 404; }}
