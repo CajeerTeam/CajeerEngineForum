@@ -1,20 +1,60 @@
-# Forum Edition 1.6.0 — GitHub Automated Updates Stable
+# Forum Edition 1.6.0 — квалификация и публикация
 
-The release implements the final qualification and publication path. A version number, local source build or test signature is not production certification. Do not mark the release Latest until all required evidence passes.
+**GitHub Automated Updates Stable**
 
-## Upgrade and host policy
+[Документация](README.md) / [Релиз 1.6.0](releases/1.6.0.md) / Релизная процедура
 
-The signed minimum source version is 1.5.11. Install earlier versions sequentially first. No new migrations or runtime dependencies are introduced. Keep the independent recovery supervisor, systemd/Polkit service policy, backup key and protected publisher trust configured as in 1.5.6–1.5.10. Autonomy remains opt-in. `UPDATE_POLICY_MODE=automatic_minor` (or `fully_automatic`) allows 1.5.11 → 1.6.0; `automatic_patch` does not. `UPDATE_AUTO_CHECK_ENABLED=false` disables discovery, background staging and autonomous apply. Explicit manual operations remain subject to their existing controls. Unexpected recovery markers fail closed.
+Реализация финального контура квалификации и публикации не равнозначна завершённой production-сертификации. Номер версии, локальная сборка и тестовая подпись не являются доказательствами. Не назначайте `Latest` до прохождения всех обязательных ворот. Перед запуском устраните [расхождение идентичности исходного дерева](releases/1.6.0.md#проверка-идентичности-сборки).
 
-## Release qualification
+## Совместимость и политика хоста
 
-1. On the canonical repository main branch, retain the authentic `v1.5.11` tag as an ancestor. Run `forum-ci.yml` on the candidate commit with the protected official publisher key. Clean install, signed upgrade and rollback use the actual predecessor; SQL/queue and browser matrices remain mandatory. CI re-signs disposable copies for test isolation, not for publication.
-2. Dispatch `forum-long-qualification.yml` with the same successful CI run. Run all physical profiles, including 24-hour soak. Dispatch `forum-chaos-update.yml` separately for both `drained` and `activating` checkpoints with the same exact signed artifact.
-3. Reset an isolated Linux VM to the authentic official 1.5.10 dist, configure the dedicated fixture per `forum-autonomous-qualification-1.5.11.md` but use source 1.5.10 and target 1.5.11. Dispatch `forum-autonomous-qualification.yml`, phase `prepublication`. The runner downloads the signed official baseline and verifies installed managed files before staging. The target comes from the actual public GitHub catalog. Use a fresh VM and valid signed authorizations, protected trusted key and operator policy. No mocked transport or manual approval is accepted.
-4. Dispatch `forum-release.yml` with `ci_run`, `physical_run`, `drained_run`, `activating_run`, `autonomous_run` and no `postpublication_run`. All independent evidence must bind to the same commit, run attempts and signed dist bytes. The workflow creates or resumes a draft, verifies the exact remote asset set and publishes without setting Latest.
-5. Reset a separate disposable VM to the exact official 1.5.11 dist (the SHA-256 observed in step 3), fixture source 1.5.11, target 1.6.0, allow minor updates. Dispatch `forum-autonomous-qualification.yml` with the original CI run and phase `postpublication`. The downloaded GitHub 1.6.0 must match the exact CI dist. The test checks backup recovery proof, maintenance, real service restart, preservation of data, installed integrity, load and absence of duplicate application.
-6. Dispatch `forum-release.yml` again with the original five run IDs plus the independent `postpublication_run`. All original checks are repeated; the postpublication report must match the baseline, publisher key, candidate, commit and successful run attempt. The existing remote release and every asset digest are revalidated; only then is Latest set. No archive is overwritten.
+Минимальная подписанная исходная версия — 1.5.11. Более ранние версии устанавливаются последовательно. Новых миграций и runtime-зависимостей нет. Сохраните независимый recovery supervisor, политику systemd/Polkit, ключ бэкапа и защищённое доверие издателя, предусмотренные 1.5.6–1.5.10. Автономность остаётся opt-in. `UPDATE_POLICY_MODE=automatic_minor` (или `fully_automatic`) допускает переход 1.5.11 → 1.6.0; `automatic_patch` — нет. `UPDATE_AUTO_CHECK_ENABLED=false` отключает обнаружение, staging и автономную установку. Явные ручные операции сохраняют свои проверки. Неожиданные маркеры восстановления блокируют выполнение.
 
-**Visibility:** a published non-Latest stable release is still public, including to existing updater versions that enumerate GitHub Releases. This is not a private canary or an installation embargo. Sites that require postpublication acceptance before installing must block/defer 1.6.0 until that gate passes. Publication itself is only permitted after the prepublication gates. Keep the candidate commit on main during the two phases. If a test fails, do not overwrite an already published version; fix and qualify a new version.
+## Этапы квалификации
 
-The self-hosted runners must be disposable, protected by environment approvals and configured as described in the previous qualification docs. Never execute destructive qualification on a production site. Official signing secrets are not stored in this repository or patch. Local tests do not replace full physical acceptance.
+| Этап | Workflow | Результат |
+| --- | --- | --- |
+| 1. CI | `forum-ci.yml` | Точный подписанный кандидат и проверенная база |
+| 2. Нагрузка | `forum-long-qualification.yml` | Все физические профили, включая 24 часа |
+| 3. Chaos × 2 | `forum-chaos-update.yml` | Отдельные отчёты `drained` и `activating` |
+| 4. До публикации | `forum-autonomous-qualification.yml` | Реальный GitHub-переход 1.5.10 → 1.5.11 |
+| 5. Публикация | `forum-release.yml` | Публичный выпуск без Latest |
+| 6. После публикации | `forum-autonomous-qualification.yml` | Реальный GitHub-переход 1.5.11 → 1.6.0 |
+| 7. Продвижение | `forum-release.yml` | Повторная сверка и назначение Latest |
+
+### 1. CI и точная база
+
+В каноническом репозитории на main сохраните подлинный тег `v1.5.11` как предка candidate commit. Запустите [forum-ci.yml](../.github/workflows/forum-ci.yml) для кандидата с защищённым официальным ключом издателя. Чистая установка, подписанное обновление и откат используют реального предшественника. SQL, очереди и браузерные матрицы обязательны. CI повторно подписывает одноразовые копии для изоляции тестов, а не для публикации.
+
+### 2. Физическая нагрузка и Chaos Testing
+
+Запустите [forum-long-qualification.yml](../.github/workflows/forum-long-qualification.yml) с тем же успешным CI run. Выполните все физические профили, включая 24-часовой soak. Отдельно запустите [forum-chaos-update.yml](../.github/workflows/forum-chaos-update.yml) для обеих контрольных точек `drained` и `activating` с тем же точным подписанным артефактом.
+
+### 3. Реальное автономное обновление до публикации
+
+Сбросьте изолированную Linux VM на подлинный официальный dist 1.5.10. Подготовьте dedicated fixture по [руководству 1.5.11](forum-autonomous-qualification-1.5.11.md), но задайте источник 1.5.10 и цель 1.5.11. Запустите [forum-autonomous-qualification.yml](../.github/workflows/forum-autonomous-qualification.yml), phase `prepublication`.
+
+Runner скачивает подписанную официальную базу и сверяет установленные управляемые файлы до staging. Целевой пакет поступает из реального публичного каталога GitHub. Используйте свежую VM, действующие подписанные авторизации, защищённый доверенный ключ и политику оператора. Mock-транспорт и ручное подтверждение не принимаются.
+
+### 4. Публикация без Latest
+
+Запустите [forum-release.yml](../.github/workflows/forum-release.yml) с параметрами `ci_run`, `physical_run`, `drained_run`, `activating_run`, `autonomous_run` и без `postpublication_run`. Все независимые доказательства должны относиться к одному commit, соответствующим попыткам run и одним и тем же байтам подписанного dist. Workflow создаёт или продолжает draft, сверяет точный набор удалённых assets и публикует, не назначая Latest.
+
+### 5. Реальное автономное обновление после публикации
+
+Сбросьте отдельную одноразовую VM на точный официальный dist 1.5.11 (SHA-256, наблюдавшийся на этапе 3). Fixture: источник 1.5.11, цель 1.6.0; разрешите minor-обновление. Запустите `forum-autonomous-qualification.yml` с исходным CI run и phase `postpublication`.
+
+Скачанный из GitHub 1.6.0 должен совпасть с точным CI dist. Проверяются доказательство восстановления бэкапа, maintenance, реальный перезапуск служб, сохранность данных, целостность установки, нагрузка и отсутствие повторного применения.
+
+### 6. Назначение Latest
+
+Повторно запустите `forum-release.yml` с теми же пятью run ID и независимым `postpublication_run`. Все первоначальные проверки выполняются повторно; postpublication report должен соответствовать базе, ключу издателя, кандидату, commit и успешной попытке. Повторно проверяются существующий удалённый релиз и digest каждого asset. Только после этого назначается Latest. Архивы не перезаписываются.
+
+> [!WARNING]
+> Опубликованный stable-релиз без Latest всё равно является публичным, в том числе для старых updater-клиентов, перечисляющих GitHub Releases. Это не приватный canary и не запрет установки. Сайты, которым нужна postpublication-приёмка до установки, должны блокировать или откладывать 1.6.0 до прохождения ворот. Публикация разрешена только после prepublication-проверок. Сохраняйте candidate commit на main в обеих фазах. При ошибке после публикации не заменяйте уже опубликованную версию; исправьте и квалифицируйте новый выпуск.
+
+## Защита инфраструктуры
+
+Self-hosted runners должны быть одноразовыми, изолированными, защищёнными environment approvals и настроенными по предыдущим руководствам. Никогда не запускайте разрушительную квалификацию на production-сайте. Официальные signing secrets не входят в репозиторий или patch. Локальные тесты не заменяют физическую приёмку.
+
+[Инструкция по обновлению](forum-upgrade-1.6.0.md) · [Безопасность цепочки поставки](forum-update-security-1.5.10.md) · [Физическая квалификация](forum-production-qualification-1.4.11.md)

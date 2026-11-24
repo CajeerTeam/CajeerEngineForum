@@ -1,78 +1,93 @@
+# История изменений CajeerEngine Forum Edition
+
+Выпуски редакции форума имеют собственную нумерацию, независимую от ядра. Текущий цикл 1.5.x–1.6.0 представлен на русском языке. Более ранние технические записи сохранены без сокращений и перевода, чтобы не потерять детали миграций и исправлений.
+
+[Документация](docs/README.md) · [Релиз 1.6.0](docs/releases/1.6.0.md)
+
 ## [1.6.0] — GitHub Automated Updates Stable
 
-- Require exact signed 1.5.11 baseline and 1.6.0 candidate in physical qualification; validate independent pre- and postpublication autonomous update receipts.
-- Publish only after physical and CI gates; promote to Latest only after exact public artifact and live autonomous update verification.
-- Harden autonomous admission and minor upgrade regression coverage. Physical certification remains pending until executed.
+### Изменено
+- Физическая квалификация требует точной подписанной базы 1.5.11 и кандидата 1.6.0; проверяются независимые подтверждения автономного обновления до и после публикации.
+- Публикация разрешена после CI и физических ворот; Latest назначается только после проверки точного публичного артефакта и реального автономного обновления.
+- Усилен автономный допуск и регрессионные проверки minor-перехода.
 
-## [1.5.11] — Automated Updates Qualification & RC
+### Статус
+- Физическая сертификация остаётся неподтверждённой до выполнения всех обязательных проверок. [Процедура выпуска](docs/forum-github-updates-stable-1.6.0.md).
+- Документационная проверка исходного архива выявила расхождение `VERSION` и метаданных ядра; требуется отдельное исправление перед квалификацией.
 
-- Require live canonical GitHub autonomous update evidence and exact-candidate physical load/crash qualification before publication.
-- Correct the predecessor and preserve strict evidence checks for 1.5.11.
-- Add disposable host qualification with HTTP load, backup proof, installed integrity and repeated operator verification.
+## [1.5.11] — Квалификация автоматических обновлений и RC
 
-## [1.5.10] — Update Security & Supply Chain
+- Обязательны реальные доказательства GitHub-обновления и физические нагрузочные/crash-проверки точного кандидата перед публикацией.
+- Исправлен выбор предшественника; сохранены строгие проверки доказательств.
+- Добавлена квалификация на одноразовом хосте: HTTP-нагрузка, доказательство восстановления, целостность установки и повторная проверка оператора.
 
-- Host-owned rotating Ed25519 trust policy, key revocation, signed version and expiry authorization, persistent distribution digest pins and final pre-mutation revalidation.
-- Verified runtime Composer CycloneDX inventory embedded in signed manifest. Existing audit and physical qualification remain mandatory.
+## [1.5.10] — Безопасность обновлений и цепочки поставки
 
-## [1.5.8] - 2026-11-24
+- Политика ротации доверия Ed25519 на стороне хоста, отзыв ключей, подписанная версия и срок авторизации, постоянные digest pins и финальная проверка до изменения установки.
+- Проверенный CycloneDX-инвентарь runtime Composer в подписанном манифесте. Аудит и физическая квалификация обязательны.
 
-- Independent recovery supervisor with bounded persistent retries, child lease checks and authenticated snapshot recovery.
-- Complete terminal journal cleanup without replaying a destructive restore; quarantine failed autonomous releases. No schema migration.
+## [1.5.9] — Единый центр обновлений
 
-## 1.5.9 — Unified Update Center
+- Ревизионное делегирование политик ACP с ограничениями хоста и сериализацией допуска оператора.
+- Выбор точной завершённой транзакции для отката, история политик и защищённый POST с повторной аутентификацией.
+- Требуется физическая квалификация.
 
-- Revisioned host-delegated policy editing in ACP, with host authorization caps and serialized operator admission.
-- Exact committed rollback selection, policy audit history and protected POST with session reauthentication.
-- Full physical qualification remains required.
+## [1.5.8] — 2026-11-24
 
-## [1.5.7] - 2026-11-24
+- Независимый recovery supervisor, ограниченные постоянные повторы, проверка lease дочернего процесса и аутентифицированное восстановление snapshot.
+- Очистка завершённого журнала без повторного разрушительного восстановления; карантин неудачных автономных релизов. Без миграций.
 
-- Host systemd lifecycle: stop scheduler and worker before PHP-FPM, keep an exclusive lease through activation, verify local protected HTTP, and restart services on rollback.
-- Autonomous host apply requires a root-owned service policy; existing manual Compose deployment remains supported. No schema migration.
+## [1.5.7] — 2026-11-24
 
-## [1.5.6] - 2026-11-24
+- Жизненный цикл systemd: остановка scheduler и worker до PHP-FPM, эксклюзивный lease до активации, защищённая локальная HTTP-проверка, перезапуск служб при откате.
+- Автономное применение требует root-owned политики служб; ручное Compose-развёртывание сохранено. Без миграций.
 
-- Rehearse recovery from the exact freshly captured update backup before replacing live files. Verify database, private file copies, environment and optional encrypted off-site readback.
-- Check backup and restore capacity, destination ownership and maintenance policy; reject unsupported autonomous recovery drivers. Preserve manual recovery and signed qualification gates.
-- Correct upstream VERSION identity. No schema migration.
+## [1.5.6] — 2026-11-24
 
-## [1.5.5] - 2026-11-24
+- Репетиция восстановления точной свежей резервной копии до замены рабочих файлов; проверка БД, приватных файлов, окружения и необязательного зашифрованного off-site readback.
+- Контроль ёмкости, владельцев, окна обслуживания; отказ для неподдерживаемых автономных драйверов восстановления. Ручной сценарий и подписанные ворота сохранены.
+- Исправлена идентичность upstream VERSION на данном этапе. Без миграций.
 
-- Opt-in autonomous installation in the dedicated operator; signed staging, fresh release selection and host policy are independently rechecked.
-- Durable private attempt journals prevent replay after failure or interruption. Safe pre-mutation deferrals retry; unknown outcomes block the operator.
-- Preserve existing backup, migration, rollback and qualification gates. No schema migration.
+## [1.5.5] — 2026-11-24
 
-## [1.5.4] - 2026-11-24
+- Opt-in автономная установка выделенным оператором; независимая проверка подписанного staging, свежего каталога и политики.
+- Постоянные приватные журналы предотвращают повтор после ошибки; безопасные отсрочки повторяются, неизвестные исходы блокируют оператора.
+- Сохранены резервирование, миграции, откат и квалификация. Без миграций.
 
-- Host-owned update policies, version blocks and verified security-release classification.
-- Defer approved installations until a timezone-aware maintenance window opens; recheck admission before mutation. No autonomous apply.
-- Preserve legacy defaults and signed release gates. No database migration.
+## [1.5.4] — 2026-11-24
 
-## [1.5.3] - 2026-11-24
+- Политики хоста, блокировки версий и проверенная классификация security-релиза.
+- Отложенная подтверждённая установка в окно с учётом часового пояса; повторный допуск перед изменением. На этом этапе автономной установки ещё нет.
+- Сохранены прежние значения по умолчанию и подписанные ворота. Без миграций.
 
-- Persist digest-bound partial ZIP downloads; validate exact HTTP ranges and restart when ranges are ignored.
-- Opt-in automatic staging in the dedicated operator, with persistent retry cooldown and explicit installation approval.
-- Report transfer progress and staging state in ACP. No database migration. Physical qualification remains required.
+## [1.5.3] — 2026-11-24
 
-## [1.5.2] - 2026-11-24
+- Частичная загрузка ZIP с привязкой к digest, проверка HTTP Range и перезапуск при игнорировании Range.
+- Opt-in автоматический staging, постоянный cooldown и явное подтверждение установки.
+- Прогресс и состояние staging в ACP. Без миграций; физическая квалификация обязательна.
 
-- Ordered update plans, stable promotion from preview channels, and signed minimum source version.
-- Preflight PHP, database, Redis and enabled extension checks before applying.
+## [1.5.2] — 2026-11-24
 
-## [1.5.1] - 2026-11-24
+- Последовательные планы, продвижение из preview-каналов, подписанная минимальная исходная версия.
+- Preflight PHP, БД, Redis и включённых расширений.
 
-- Synchronize all bounded GitHub release pages with per-page ETags, atomic publication, persistent rate-limit and transient-failure cooldown, and exclusive discovery lock.
-- Keep last complete catalog on failure; reject ambiguous versions/assets and untrusted pagination. Optional protected GitHub API token; signed downloads retain independent trust checks.
-- Expose page count, last successful synchronization and retry deadline; preserve physical release admission. No schema migration.
+## [1.5.1] — 2026-11-24
 
-## [1.5.0] - 2026-11-24
+- Ограниченная пагинация GitHub, ETag для каждой страницы, атомарная публикация каталога, постоянный cooldown и эксклюзивная блокировка.
+- Последний полный каталог сохраняется при ошибке; неоднозначные версии/артефакты и недоверенная пагинация отклоняются. Необязательный защищённый GitHub token; самостоятельная проверка доверия загрузки.
+- Диагностика числа страниц, времени успешной синхронизации и срока retry. Физический допуск сохранён. Без миграций.
 
-- Bind physical tests to the same signed CI artifact and workflow attempt used for publication.
-- Verify live deployment manifests and app/worker/scheduler identity before qualifying.
-- Verify 1.4.11 → 1.5.0 interrupted update recovery, including the independently signed rollback baseline.
-- Resume an exact incomplete release draft without replacing assets; reject mismatched tags, assets or moving main.
-- Disable direct publication bypass; production certification remains pending until actual qualification passes. No schema migration.
+## [1.5.0] — 2026-11-24
+
+- Физические испытания привязаны к подписанному CI-артефакту и попытке workflow, используемым для публикации.
+- Проверка манифестов развёртывания и идентичности app/worker/scheduler перед квалификацией.
+- Проверка восстановления прерванного обновления 1.4.11 → 1.5.0, включая независимо подписанную базу отката.
+- Продолжение точного незавершённого draft без замены assets; отказ при несовпадении тегов, артефактов или изменении main.
+- Запрещён обход допуска публикации. Production-сертификация требует фактической квалификации. Без миграций.
+
+---
+
+## Архив технической истории (1.4.11 и ранее)
 
 ## [1.4.11] - 2026-11-24
 
