@@ -936,6 +936,48 @@ final class Operations {
     ),
     'bodyRequired' => true,
   ),
+  'api_v1_forum_moderation_ai_assess' => 
+  array (
+    'method' => 'POST',
+    'path' => '/forum/moderation/cases/{kind}/{id}/ai',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'kind',
+        'in' => 'path',
+        'required' => true,
+      ),
+      1 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => true,
+  ),
+  'api_v1_forum_moderation_ai_read' => 
+  array (
+    'method' => 'GET',
+    'path' => '/forum/moderation/cases/{kind}/{id}/ai',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'kind',
+        'in' => 'path',
+        'required' => true,
+      ),
+      1 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
   'api_v1_forum_support_create' => 
   array (
     'method' => 'POST',

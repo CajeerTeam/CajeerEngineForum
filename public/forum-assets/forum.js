@@ -940,11 +940,36 @@ async function moderationPage(){
  const rows=await f('/moderation/queue?'+new URLSearchParams({kind,status,page:String(page),...(assigned?{assigned}:{})})),listEl=panel();if(!rows.length)add(listEl,node('p','Нет дел.'));
  for(const r of rows){const box=node('div',undefined,'entry');add(box,node('h3',kind==='report'?r.title:r.payload.title||'Ответ'),node('p',`Приоритет: ${['Низкий','Обычный','Высокий'][r.priority]} · ${r.status} · ${r.assigned_to||'Не назначен'}`,'meta'),button('Открыть дело',async()=>{const preview=node('div',undefined,'case-detail');box.querySelector('.case-detail')?.remove();await showModerationCase(preview,kind,r.id);add(box,preview)}));add(listEl,box)}add(app,listEl,paging(rows.length));
 }
+const aiModerationLabels={
+ low:'Низкий',medium:'Средний',high:'Высокий',uncertain:'Неопределённый',
+ review:'Проверить вручную',dismiss:'Рассмотреть отклонение',remove:'Рассмотреть удаление',escalate:'Передать старшему модератору',
+ spam:'Спам',harassment:'Травля',threats:'Угрозы',privacy:'Персональные данные',phishing:'Фишинг',malware:'Вредоносный контент',other:'Другое'
+};
+function aiModerationCard(box,path,revision){
+ const card=node('div',undefined,'panel'),content=node('div');add(card,node('h4','AI-советник модератора'),node('p','Рекомендация AI не является доказательством нарушения. Решение и санкции принимает модератор.','meta'),content);
+ const render=async()=>{const data=await f(path+'/ai');content.replaceChildren();
+  if(!data.available){add(content,node('p','Актуальная оценка ещё не создана.','meta'));return;}
+  if(data.revision_number!==revision){add(content,node('p','Дело изменилось; обновите страницу.','meta'));return;}
+  const a=data.assessment;add(content,node('p','Риск: '+(aiModerationLabels[a.risk]||a.risk)+' · Рекомендация: '+(aiModerationLabels[a.recommendation]||a.recommendation)),node('p',a.rationale),node('p','Признаки: '+(a.flags||[]).map(k=>aiModerationLabels[k]||k).join(', ')));
+  if(a.evidence?.length){add(content,node('h5','Проверенные цитаты'));for(const quote of a.evidence)add(content,node('blockquote',quote));}
+  add(content,node('p','Оценка от '+new Date(data.created_at*1000).toLocaleString('ru-RU')+' · '+data.model,'meta'));
+ };
+ add(card,button('Провести AI-анализ',async()=>{
+   if(!confirm('Материалы дела могут включать закрытые или неопубликованные сообщения. Передать их внешнему OpenAI для анализа? AI не принимает решений и не назначает санкции.'))return;
+   const r=await f(path+'/ai','POST',{acknowledge_external_processing:true,include_non_public:true});
+   if(r.revision_number!==revision){say('Дело было изменено. Обновите страницу.',true);return;}
+   await render();
+ }));
+ run(render);
+ add(box,card);
+}
+
 async function showModerationCase(box,kind,id){
  const path='/moderation/cases/'+kind+'/'+id,d=await f(path),r=d.item;box.replaceChildren();
  if(kind==='report'){add(box,node('p','Жалоба: '+r.reason),node('p',`Категория: ${r.category||'other'} · Открытых жалоб на сообщение: ${r.related_open??1}`,'meta'),node('h4','Снимок при создании жалобы'),node('pre',r.snapshot_body??'Снимок отсутствует (старая жалоба).','body'),node('h4','Текущий текст'),node('pre',r.current_body,'body'),link('Тема','/forum/threads/'+r.thread_id));}
  else{add(box,node('pre',r.payload.body,'body'),node('p','Автор: '+r.author_id,'meta'));if(r.status==='pending')for(const file of r.payload.attachment_ids||[])add(box,link('Скачать файл '+file,'/api/v1/forum/moderation/submissions/'+id+'/files/'+file));}
  if(r.decision)add(box,node('p','Решение: '+r.decision));
+ if(r.status===(kind==='report'?'open':'pending'))aiModerationCard(box,path,r.revision_number);
  if(r.status===(kind==='report'?'open':'pending')){
   const action=async(a,extra={})=>{await f(path,'POST',{action:a,revision_number:r.revision_number,...extra});await showModerationCase(box,kind,id)};
   const reason=()=>prompt('Причина или заметка')||'';

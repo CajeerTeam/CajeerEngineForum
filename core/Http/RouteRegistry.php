@@ -365,6 +365,8 @@ final class RouteRegistry
             ['POST', '/api/v1/forum/sanctions/{id}/appeal', 'api.v1.forum.appealSanction', 'forum', 'appealSanction', []],
             ['GET', '/api/v1/forum/moderation/appeals', 'api.v1.forum.sanctionAppeals', 'forum', 'sanctionAppeals', ['forum:moderate']],
             ['POST', '/api/v1/forum/sanctions/{id}/appeal/decision', 'api.v1.forum.decideSanctionAppeal', 'forum', 'decideSanctionAppeal', ['forum:moderate']],
+            ['GET', '/api/v1/forum/moderation/cases/{kind}/{id}/ai', 'api.v1.forum.ai.moderation.read', 'forumAi', 'moderationAdvice', ['forum:moderate']],
+            ['POST', '/api/v1/forum/moderation/cases/{kind}/{id}/ai', 'api.v1.forum.ai.moderation.assess', 'forumAi', 'moderationAssess', ['forum:moderate']],
             ['GET', '/api/v1/forum/moderation/queue', 'api.v1.forum.moderationQueue', 'forum', 'moderationQueue', ['forum:moderate']],
             ['GET', '/api/v1/forum/moderation/cases/{kind}/{id}', 'api.v1.forum.moderationDetail', 'forum', 'moderationDetail', ['forum:moderate']],
             ['POST', '/api/v1/forum/moderation/cases/{kind}/{id}', 'api.v1.forum.moderationAction', 'forum', 'moderationAction', ['forum:moderate']],

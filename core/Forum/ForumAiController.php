@@ -6,13 +6,13 @@ namespace CajeerEngine\Forum;
 
 use CajeerEngine\AI\AiProviderException;
 use CajeerEngine\Audit\AuditLogger;
-use CajeerEngine\Forum\Service\{ForumAiChat,ForumThreadAssistant,ForumAiSearch,ForumWritingAssistant};
+use CajeerEngine\Forum\Service\{ForumAiChat,ForumThreadAssistant,ForumAiSearch,ForumWritingAssistant,ForumModerationAdvisor};
 use Symfony\Component\HttpFoundation\{JsonResponse,Request,Response,StreamedResponse};
 
 /** Cookie-session protected member AI; never exposes CMS chat or credentials. */
 final readonly class ForumAiController
 {
-    public function __construct(private ForumAiChat $chat, private AuditLogger $audit, private ForumThreadAssistant $threadAssistant, private ForumAiSearch $search, private ForumWritingAssistant $writing) {}
+    public function __construct(private ForumAiChat $chat, private AuditLogger $audit, private ForumThreadAssistant $threadAssistant, private ForumAiSearch $search, private ForumWritingAssistant $writing, private ForumModerationAdvisor $moderationAdvisor) {}
 
     private function user(Request $request): string
     {
@@ -56,6 +56,24 @@ final readonly class ForumAiController
     public function delete(Request $r,array $p):JsonResponse {return $this->wrap(function()use($r,$p){if($this->input($r,[])!==[])throw new ForumException('Неверный запрос.',422);$this->chat->delete($this->user($r),(string)$p['id']);return ['deleted'=>true];});}
     public function adminStatus(Request $r):JsonResponse {return $this->wrap(function()use($r){$this->user($r);\CajeerEngine\Forum\Security\ForumAccessPolicy::fromAuth($r->attributes->get('auth'))->require('forum:acp:settings');return $this->chat->administrator();});}
     public function adminConfigure(Request $r):JsonResponse {return $this->wrap(function()use($r){$uid=$this->user($r);\CajeerEngine\Forum\Security\ForumAccessPolicy::fromAuth($r->attributes->get('auth'))->require('forum:acp:settings');$settings=$this->chat->configure($this->input($r,['enabled','model','max_output_tokens','daily_request_limit','monthly_token_limit','revision']));$this->audit->record('forum.ai.settings.updated',$uid,['enabled'=>$settings['enabled'],'model'=>$settings['model'],'revision'=>$settings['revision']]);return $settings;});}
+
+    /** Advisory read is never sent to OpenAI. Permission and revision are rechecked. */
+    public function moderationAdvice(Request $r,array $p):JsonResponse
+    {
+        return $this->wrap(fn()=> $this->moderationAdvisor->get($this->actor($r),(string)$p['kind'],(string)$p['id']));
+    }
+
+    /** Explicit disclosure and server-side ACL checks before billed provider generation. */
+    public function moderationAssess(Request $r,array $p):JsonResponse
+    {
+        return $this->wrap(function()use($r,$p):array {
+            $body=$this->input($r,['acknowledge_external_processing','include_non_public']);
+            if(!is_bool($body['acknowledge_external_processing']??null) || !is_bool($body['include_non_public']??null))
+                throw new ForumException('Неверное подтверждение AI-модерации.',422);
+            return $this->moderationAdvisor->assess($this->actor($r),(string)$p['kind'],(string)$p['id'],
+                $body['acknowledge_external_processing'],$body['include_non_public']);
+        });
+    }
 
     /** Server-side session, scope and strict payload checks precede any OpenAI call. */
     public function writingSuggest(Request $r):JsonResponse

@@ -1,3 +1,11 @@
+## [1.3.7] - 2026-11-24
+
+### AI Moderation Advisor
+- Existing report/premoderation cases receive moderator-initiated, human-only AI risk assessment and suggested next steps in Forum Moderation and ACP.
+- Reviews use actual current case content with strict ACL, explicit disclosure for unpublished/private material, secret and email redaction, and the shared billed OpenAI Responses API/quotas.
+- Persisted structured suggestions validate evidence quotes, expire after 30 days, and are invalidated by case revisions, edits, resolved status or permission changes; no sanctions or decisions are automated.
+- Migration 0088 for PostgreSQL, MySQL/MariaDB and SQLite, real SQL/provider-boundary CI tests, and browser regression.
+
 ## [1.3.6] - 2026-11-23
 
 - AI Writing Assistant: явные предложения исправления ошибок, улучшения текста, форматирования и заголовков прямо в редакторах новых тем, ответов и правок.

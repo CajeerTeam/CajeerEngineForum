@@ -72762,6 +72762,462 @@
           }
         }
       }
+    },
+    "/forum/moderation/cases/{kind}/{id}/ai": {
+      "get": {
+        "tags": [
+          "Forum",
+          "AI"
+        ],
+        "operationId": "api_v1_forum_moderation_ai_read",
+        "summary": "Read a current cached AI moderation recommendation without provider call",
+        "x-cajeer-route": "api.v1.forum.ai.moderation.read",
+        "x-cajeer-required-scopes": [
+          "forum:moderate"
+        ],
+        "security": [
+          {
+            "BrowserSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "report",
+                "submission"
+              ]
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current recommendation or absent assessment",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "properties": {
+                        "available": {
+                          "type": "boolean"
+                        },
+                        "advisory_only": {
+                          "type": "boolean"
+                        },
+                        "non_public": {
+                          "type": "boolean"
+                        },
+                        "revision_number": {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        "assessment": {
+                          "type": "object",
+                          "properties": {
+                            "risk": {
+                              "type": "string",
+                              "enum": [
+                                "low",
+                                "medium",
+                                "high",
+                                "uncertain"
+                              ]
+                            },
+                            "recommendation": {
+                              "type": "string",
+                              "enum": [
+                                "review",
+                                "dismiss",
+                                "remove",
+                                "escalate"
+                              ]
+                            },
+                            "flags": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "rationale": {
+                              "type": "string"
+                            },
+                            "evidence": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Forum",
+          "AI"
+        ],
+        "operationId": "api_v1_forum_moderation_ai_assess",
+        "summary": "Request billed AI assessment of a report or queued submission (human advice only)",
+        "x-cajeer-route": "api.v1.forum.ai.moderation.assess",
+        "x-cajeer-required-scopes": [
+          "forum:moderate"
+        ],
+        "security": [
+          {
+            "BrowserSession": [],
+            "CsrfToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "report",
+                "submission"
+              ]
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current recommendation or absent assessment",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "properties": {
+                        "available": {
+                          "type": "boolean"
+                        },
+                        "advisory_only": {
+                          "type": "boolean"
+                        },
+                        "non_public": {
+                          "type": "boolean"
+                        },
+                        "revision_number": {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        "assessment": {
+                          "type": "object",
+                          "properties": {
+                            "risk": {
+                              "type": "string",
+                              "enum": [
+                                "low",
+                                "medium",
+                                "high",
+                                "uncertain"
+                              ]
+                            },
+                            "recommendation": {
+                              "type": "string",
+                              "enum": [
+                                "review",
+                                "dismiss",
+                                "remove",
+                                "escalate"
+                              ]
+                            },
+                            "flags": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "rationale": {
+                              "type": "string"
+                            },
+                            "evidence": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "acknowledge_external_processing",
+                  "include_non_public"
+                ],
+                "properties": {
+                  "acknowledge_external_processing": {
+                    "type": "boolean",
+                    "const": true
+                  },
+                  "include_non_public": {
+                    "type": "boolean",
+                    "description": "Explicitly permit sending unpublished/closed content to configured OpenAI provider"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {

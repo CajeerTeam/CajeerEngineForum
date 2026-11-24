@@ -712,6 +712,40 @@ export const operations = {
         "parameters": [],
         "bodyRequired": true
     },
+    "api_v1_forum_moderation_ai_assess": {
+        "method": "POST",
+        "path": "/forum/moderation/cases/{kind}/{id}/ai",
+        "parameters": [
+            {
+                "name": "kind",
+                "in": "path",
+                "required": true
+            },
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
+    },
+    "api_v1_forum_moderation_ai_read": {
+        "method": "GET",
+        "path": "/forum/moderation/cases/{kind}/{id}/ai",
+        "parameters": [
+            {
+                "name": "kind",
+                "in": "path",
+                "required": true
+            },
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": false
+    },
     "api_v1_forum_support_create": {
         "method": "POST",
         "path": "/forum/support/tickets",
