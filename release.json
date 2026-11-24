@@ -17,10 +17,10 @@
     "docs": "GitHub repository docs/",
     "updates": "GitHub Releases",
     "release_builder": "tools/build-release.php",
-    "source_artifact": "storage/releases/cajeerengine-1.5.10-source.zip",
-    "dist_artifact": "storage/releases/cajeerengine-1.5.10-dist.zip",
+    "source_artifact": "storage/releases/cajeerengine-1.5.11-source.zip",
+    "dist_artifact": "storage/releases/cajeerengine-1.5.11-dist.zip",
     "checksums": "storage/releases/*.sha256",
-    "artifact_index": "storage/releases/cajeerengine-1.5.10-artifacts.json",
+    "artifact_index": "storage/releases/cajeerengine-1.5.11-artifacts.json",
     "support_bundle": "storage/app/support",
     "backup": "storage/app/backups/production",
     "server_reports": "storage/app/reports",
@@ -36,6 +36,7 @@
     "engine_api_version": "1.1"
   },
   "product_changes": [
+    "Forum Edition 1.5.11: live canonical GitHub autonomous update qualification, exact signed candidate physical load and crash evidence, mandatory release admission. Production certification pending.",
     "Forum Edition 1.5.10: external rotating trust policy, revocation, signed release authorization expiry, immutable per-version dist pins, revalidation before mutation and verified Composer SBOM. Physical qualification required.",
     "Forum Edition 1.5.9: host-delegated ACP update policy management with revisioned persistence, effective host restrictions, protected mutation route, operator serialization and exact rollback selection. Physical qualification required.",
     "Forum Edition 1.5.8: independent host recovery supervisor, bounded crash retries, terminal journal reconciliation without destructive replay and release quarantine. Physical qualification required.",
@@ -218,13 +219,13 @@
     "1.4.11": "Production Qualification & Release Candidate: strict physical evidence and recovery gates.",
     "1.5.0": "Unified Platform & Production Stable: verified deployment and protected release publication; physical certification required."
   },
-  "stability": "production-stable-gated",
+  "stability": "release-candidate-gated",
   "edition": "forum",
-  "edition_version": "1.5.10",
+  "edition_version": "1.5.11",
   "upstream_version": "2.1.0",
   "upgrade_compatibility": {
     "schema": 1,
-    "min_from": "1.5.9",
+    "min_from": "1.5.10",
     "php": ">=8.4.1 <9.0",
     "extensions": [
       "json",
@@ -242,5 +243,5 @@
     },
     "redis_min": "7.0"
   },
-  "security_update": true
+  "security_update": false
 }

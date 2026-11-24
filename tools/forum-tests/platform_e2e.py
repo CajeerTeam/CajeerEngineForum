@@ -99,6 +99,45 @@ class PlatformJourney(unittest.TestCase):
                 login(member, member_email, PASSWORD)
                 login(outsider, outsider_email, PASSWORD)
                 self.assertTrue(api(admin, '/auth/assurance/confirm', 200, 'POST', {'password': ADMIN_PASSWORD, 'two_factor_code': ''})['fresh'])
+                # Live Update Center: same browser cookie, real RBAC, CSRF, assurance,
+                # host restrictions and durable policy file. No API interception.
+                admin.goto(self.base + '/admin/#/updates')
+                center = api(admin, '/updates')['center_policy']
+                self.assertTrue(center['editable'])
+                self.assertEqual(center['revision'], 0)
+                self.assertFalse(center['host']['auto_apply'])
+                proposal = dict(center['settings'], mode='notify_only', timezone='Europe/Warsaw',
+                                window_start='23:00', window_end='02:00')
+                payload = {'revision': 0, 'baseline_hash': center['baseline_hash'],
+                           'settings': proposal, 'confirm': True}
+                api(member, '/updates/policy', 403, 'POST', payload)
+                api(admin, '/updates/policy', 403, 'POST', payload, False)
+                api(admin, '/updates/policy', 422, 'POST', dict(payload, settings=dict(proposal, auto_apply=True)))
+                admin.locator('[data-update-policy-editor] summary').click()
+                editor = admin.locator('[data-update-policy-form]')
+                expect(editor.locator('[name=auto_apply]')).to_be_disabled()
+                expect(editor.locator('[name=sequential]')).to_be_disabled()
+                editor.locator('[name=mode]').select_option('notify_only')
+                editor.locator('[name=timezone]').fill('Europe/Warsaw')
+                editor.locator('[name=window_start]').fill('23:00')
+                editor.locator('[name=window_end]').fill('02:00')
+                editor.get_by_role('button', name='Сохранить политику').click()
+                expect(admin.get_by_text('Ревизия 1.', exact=False)).to_be_visible()
+                stored = json.loads((self.site/'storage/app/update-requests/center-policy.json').read_text())
+                self.assertEqual(stored['revision'], 1)
+                self.assertEqual(stored['settings'], proposal)
+                self.assertEqual(stored['history'][-1]['actor'], admin_id)
+                api(admin, '/updates/policy', 409, 'POST', payload)
+                admin.reload()
+                effective = api(admin, '/updates')['policy']
+                self.assertEqual(effective['mode'], 'notify_only')
+                self.assertEqual(effective['timezone'], 'Europe/Warsaw')
+                self.assertFalse(effective['autonomous_apply_enabled'])
+                admin.locator('[data-update-policy-editor] summary').click()
+                admin.locator('[data-update-policy-reset]').click()
+                expect(admin.get_by_text('Ревизия 2.', exact=False)).to_be_visible()
+                self.assertEqual(api(admin, '/updates')['policy']['mode'], 'disabled')
+                self.assertIsNone(json.loads((self.site/'storage/app/update-requests/center-policy.json').read_text())['settings'])
                 # Same cookie works in both ACP and forum, including its published module assets.
                 admin.goto(self.base + '/admin/#/platform-workflows')
                 expect(admin.locator('.brand-sub')).to_contain_text('Forum ' + version)
@@ -209,7 +248,7 @@ def main():
     import os
     if os.environ.get('FORUM_TEST_DRIVER', 'sqlite') != 'sqlite':
         raise RuntimeError('Platform browser journey requires disposable SQLite')
-    with server(report, include_site=True) as (base, site, env):
+    with server(report, include_site=True, update_policy_fixture=True) as (base, site, env):
         PlatformJourney.base, PlatformJourney.site, PlatformJourney.env = base, site, env
         PlatformJourney.report, PlatformJourney.browser_name = report, args.browser
         result = unittest.TextTestRunner(verbosity=2, resultclass=JUnitResult).run(

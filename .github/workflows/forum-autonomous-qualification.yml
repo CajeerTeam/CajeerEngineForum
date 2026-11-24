@@ -1,0 +1,63 @@
+name: Forum live GitHub autonomous update qualification
+on:
+  workflow_dispatch:
+    inputs:
+      ci_run:
+        description: Successful main CI run ID for the exact 1.5.11 candidate
+        required: true
+        type: string
+      phase:
+        description: Historical prepublication qualification or exact published candidate acceptance
+        type: choice
+        required: true
+        default: prepublication
+        options: [prepublication, postpublication]
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: forum-physical-certification
+  cancel-in-progress: false
+jobs:
+  autonomous:
+    # Dedicated disposable VM, running the runner as the non-root updater UID.
+    runs-on: [self-hosted, linux, x64, forum-autonomous-benchmark]
+    environment: forum-load-certification
+    timeout-minutes: 35
+    env:
+      GH_TOKEN: ${{ github.token }}
+      QUALIFICATION_CI_RUN: ${{ inputs.ci_run }}
+      TRUSTED_KEY: ${{ vars.CE_AUTONOMOUS_TRUSTED_PUB }}
+      FIXTURE: /etc/cajeerengine/qualification-fixture.json
+      QUALIFICATION_PHASE: ${{ inputs.phase }}
+      CANDIDATE_DIR: ${{ runner.temp }}/forum-auto-candidate-${{ github.run_id }}-${{ github.run_attempt }}
+      REPORT_DIR: ${{ runner.temp }}/forum-auto-report-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Fetch and verify exact signed candidate from independent CI
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$QUALIFICATION_CI_RUN" =~ ^[1-9][0-9]*$ ]]
+          python3 tools/qualification-run.py fetch --ci-run "$QUALIFICATION_CI_RUN" --directory "$CANDIDATE_DIR" --trusted-key "$TRUSTED_KEY" --version 1.5.11
+      - name: Real published GitHub release via autonomous host operator, backup and HTTP load
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -m 700 "$REPORT_DIR"
+          extra=()
+          if [[ "$QUALIFICATION_PHASE" == postpublication ]]; then extra+=(--published-candidate); fi
+          python3 tools/qualify-autonomous-update.py "${extra[@]}" --fixture "$FIXTURE" --trusted-key "$TRUSTED_KEY" \
+            --candidate "$CANDIDATE_DIR/cajeerengine-1.5.11-dist.zip" --disposable destroy-test-services --report "$REPORT_DIR/autonomous.json"
+          if [[ "$QUALIFICATION_PHASE" == prepublication ]]; then
+            python3 tools/qualification-run.py receipt --kind autonomous --directory "$CANDIDATE_DIR" --version 1.5.11 --reports "$REPORT_DIR"
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ${{ inputs.phase == 'prepublication' && 'forum-autonomous-github-evidence' || 'forum-autonomous-postpublication-evidence' }}
+          path: ${{ env.REPORT_DIR }}/*.json
+          if-no-files-found: error
+          retention-days: 90

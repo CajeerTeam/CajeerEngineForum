@@ -16,6 +16,7 @@ WORKFLOWS = {
     'physical': ('forum-long-qualification.yml', 'workflow_dispatch'),
     'drained': ('forum-chaos-update.yml', 'workflow_dispatch'),
     'activating': ('forum-chaos-update.yml', 'workflow_dispatch'),
+    'autonomous': ('forum-autonomous-qualification.yml', 'workflow_dispatch'),
 }
 
 
@@ -29,7 +30,7 @@ def read(path):
 
 
 REPORTS = {'physical': ('10k.json','100k.json','1m-soak.json'),
-           'drained': ('recovery.json',), 'activating': ('recovery.json',)}
+           'drained': ('recovery.json',), 'activating': ('recovery.json',), 'autonomous': ('autonomous.json',)}
 
 
 def validate_ci_run(row, repo, commit):
@@ -96,7 +97,7 @@ def validate_recovery(row, checkpoint, commit, version, digest):
             and row['source_sha256'] != digest, checkpoint+': invalid source digest')
     require(row.get('recovery_state') == ('rolled_back' if checkpoint == 'drained' else 'committed'), checkpoint+': incorrect recovery state')
     require(row.get('preserved_fixture') is True and row.get('recovered_version') == (previous if checkpoint == 'drained' else version), checkpoint+': missing verified HTTP data recovery')
-    if version in ('1.5.0','1.5.1','1.5.2','1.5.3','1.5.4','1.5.5','1.5.6','1.5.7','1.5.8','1.5.9','1.5.10'):
+    if version in ('1.5.0','1.5.1','1.5.2','1.5.3','1.5.4','1.5.5','1.5.6','1.5.7','1.5.8','1.5.9','1.5.10','1.5.11'):
         identity=row.get('deployment_identity',{})
         require(row.get('signed_deployment_verified') is True
                 and re.fullmatch(r'sha256:[a-f0-9]{64}',identity.get('image','')) is not None
@@ -107,6 +108,41 @@ def validate_recovery(row, checkpoint, commit, version, digest):
             checkpoint+': recovery exceeded time budget')
 
 
+def validate_autonomous(row, commit, digest):
+    require(row.get('schema') == 1 and row.get('ok') is True and row.get('commit') == commit
+            and row.get('candidate_sha256') == digest and row.get('source_version') == '1.5.9'
+            and row.get('target_version') == '1.5.10', 'autonomous: wrong candidate or published transition')
+    require(all(row.get(k) is True for k in ('actual_autonomous_update','canonical_github','backup_rehearsed',
+            'installed_integrity','preserved_fixture','no_duplicate_apply')), 'autonomous: missing live proof')
+    require(type(row.get('manual_requests')) is int and row['manual_requests'] == 0, 'autonomous: manual approval present')
+    for k in ('github_dist_sha256','key_id'):
+        require(isinstance(row.get(k),str) and re.fullmatch(r'[a-f0-9]{64}',row[k]) is not None, 'autonomous: invalid '+k)
+    require(row['github_dist_sha256'] != digest, 'autonomous: published baseline must differ from unpublished candidate')
+    require(isinstance(row.get('transaction_id'),str) and re.fullmatch(r'\d{8}-\d{6}-[a-f0-9]{16}',row['transaction_id']), 'autonomous: invalid transaction')
+    sec=row.get('seconds')
+    require(type(sec) in (int,float) and math.isfinite(sec) and 0<sec<=900, 'autonomous: update duration')
+    during=row.get('during',{})
+    require(set(during)=={'ok','maintenance','errors'} and all(type(v) is int and v>=0 for v in during.values())
+            and during['ok']>0 and during['maintenance']>0 and during['errors']==0, 'autonomous: maintenance/availability failure')
+    for phase in ('before','after'):
+        load=row.get(phase,{})
+        elapsed=load.get('elapsed_seconds'); requests=load.get('requests'); rps=load.get('requests_per_second')
+        require(type(elapsed) in (int,float) and math.isfinite(elapsed) and 60<=elapsed<=90
+                and type(requests) is int and requests>=300 and type(rps) in (int,float) and math.isfinite(rps)
+                and rps>=5 and abs(requests/elapsed-rps)<=0.01, 'autonomous: insufficient '+phase+' load')
+        operations=load.get('operations',{})
+        require(set(operations)=={'thread','page'}, 'autonomous: missing routes')
+        total=0
+        for op in operations.values():
+            n=op.get('requests'); errors=op.get('errors'); p95=op.get('p95_upper_ms'); types=op.get('error_types',{})
+            require(type(n) is int and n>=150 and type(errors) is int and 0<=errors<=n and errors/n<=.001
+                    and type(p95) in (int,float) and math.isfinite(p95) and 0<p95<=500
+                    and isinstance(types,dict) and all(type(v) is int and v>=0 for v in types.values())
+                    and sum(types.values())==errors and not types.get('semantic_mismatch'), 'autonomous: SLO failed')
+            total+=n
+        require(total==requests, 'autonomous: inconsistent request counts')
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     for name in ('repo','commit','version'):
@@ -114,6 +150,7 @@ def main():
     for name in ('metadata','physical','drained','activating','dist'):
         p.add_argument('--'+name, type=Path, required=True)
     p.add_argument('--load-directory', type=Path)
+    p.add_argument('--autonomous', type=Path, required=True)
     a = p.parse_args()
     rows = {name:read(a.metadata/(name+'.json')) for name in WORKFLOWS}
     validate_runs(rows,a.repo,a.commit)
@@ -123,15 +160,19 @@ def main():
     require(physical.get('schema') == 1 and physical.get('ok') is True and physical.get('edition_version') == a.version
             and physical.get('commit') == a.commit and physical.get('dist_sha256') == digest
             and set(physical.get('profiles',{})) == {'10k','100k','1m-soak'}, 'physical certificate identity mismatch')
-    if a.version in ('1.5.0','1.5.1','1.5.2','1.5.3','1.5.4','1.5.5','1.5.6','1.5.7','1.5.8','1.5.9','1.5.10'):
+    if a.version in ('1.5.0','1.5.1','1.5.2','1.5.3','1.5.4','1.5.5','1.5.6','1.5.7','1.5.8','1.5.9','1.5.10','1.5.11'):
         validate_ci_run(rows['ci'],a.repo,a.commit)
         require(a.load_directory is not None, 'raw physical evidence directory required')
         for kind, directory in (('physical',a.load_directory),('drained',a.drained.parent),('activating',a.activating.parent)):
             validate_receipt(directory,kind,rows,a.repo,a.commit,a.version,digest)
+    validate_receipt(a.autonomous.parent,'autonomous',rows,a.repo,a.commit,a.version,digest)
+    autonomous = read(a.autonomous)
+    validate_autonomous(autonomous,a.commit,digest)
     drained, activating = read(a.drained), read(a.activating)
     validate_recovery(drained,'drained',a.commit,a.version,digest)
     validate_recovery(activating,'activating',a.commit,a.version,digest)
-    require(drained['source_sha256'] == activating['source_sha256'], 'different signed rollback baseline')
+    require(drained['source_sha256'] == activating['source_sha256'] == autonomous['github_dist_sha256'], 'different published signed rollback baseline')
+    require(autonomous['key_id'] == read(Path(str(a.dist)+'.sig')).get('key_id'), 'different publisher key')
     print('PASS: physical load and both crash recovery checkpoints bound to the exact release')
 
 

@@ -6,7 +6,7 @@ on:
 permissions:
   contents: read
 env:
-  FORUM_CURRENT_VERSION: ${{ '1.5.10' }}
+  FORUM_CURRENT_VERSION: ${{ '1.5.11' }}
 concurrency:
   group: forum-ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -238,6 +238,8 @@ jobs:
         run: python deploy/container/test_rc_1411.py
       - name: Production stable release, deployment identity and draft resume regressions
         run: python tools/forum-tests/test_production_stable_150.py
+      - name: Mandatory autonomous update evidence and SLO rejection tests
+        run: python tools/forum-tests/test_autonomous_qualification.py
       - run: python tools/forum-tests/observability_sql_regression.py
       - run: php tools/forum-installer-regression.php
       - name: Network API and security regression (SQLite)
@@ -1148,8 +1150,8 @@ jobs:
           if [ "$FORUM_CURRENT_VERSION" = 1.0.0-rc.1 ]; then
             ref=refs/tags/v0.9.9; baseline_version=0.9.9
           fi
-          if [ "$FORUM_CURRENT_VERSION" = 1.5.10 ]; then
-            ref=refs/tags/v1.5.9; baseline_version=1.5.9
+          if [ "$FORUM_CURRENT_VERSION" = 1.5.11 ]; then
+            ref=refs/tags/v1.5.10; baseline_version=1.5.10
           fi
           echo "FORUM_COMPOSE_BASELINE=$baseline_version" >> "$GITHUB_ENV"
           if [ "$ref" = v0.8.7 ]; then

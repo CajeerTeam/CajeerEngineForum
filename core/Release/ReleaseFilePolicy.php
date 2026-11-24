@@ -17,6 +17,8 @@ final class ReleaseFilePolicy
     /** Explicit source-only qualification tools; never include operator credentials or runtime data. */
     public const QUALIFICATION_SOURCE = [
         'deploy/container/operations.py',
+        'tools/qualify-autonomous-update.py',
+        'tools/forum-tests/test_autonomous_qualification.py',
         'deploy/container/operator-compat-prepend.php',
         'deploy/container/release_identity.py',
         'deploy/container/test_operations.py',

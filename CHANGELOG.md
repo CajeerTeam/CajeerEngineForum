@@ -1,3 +1,9 @@
+## [1.5.11] — Automated Updates Qualification & RC
+
+- Require live canonical GitHub autonomous update evidence and exact-candidate physical load/crash qualification before publication.
+- Correct the predecessor and preserve strict evidence checks for 1.5.11.
+- Add disposable host qualification with HTTP load, backup proof, installed integrity and repeated operator verification.
+
 ## [1.5.10] — Update Security & Supply Chain
 
 - Host-owned rotating Ed25519 trust policy, key revocation, signed version and expiry authorization, persistent distribution digest pins and final pre-mutation revalidation.

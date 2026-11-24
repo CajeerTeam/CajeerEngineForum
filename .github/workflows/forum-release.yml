@@ -15,6 +15,10 @@ on:
         description: Successful interrupted update at drained checkpoint run ID
         type: string
         required: true
+      autonomous_run:
+        description: Successful live GitHub autonomous update qualification run ID
+        type: string
+        required: true
       activating_run:
         description: Successful interrupted update at activating checkpoint run ID
         type: string
@@ -42,6 +46,7 @@ jobs:
       PHYSICAL_RUN_ID: ${{ inputs.physical_run }}
       DRAINED_RUN_ID: ${{ inputs.drained_run }}
       ACTIVATING_RUN_ID: ${{ inputs.activating_run }}
+      AUTONOMOUS_RUN_ID: ${{ inputs.autonomous_run }}
     steps:
       - name: Check out the exact passing commit
         uses: actions/checkout@v4
@@ -92,14 +97,15 @@ jobs:
         run: |
           set -euo pipefail
           root="$RUNNER_TEMP/forum-physical"
-          mkdir -p "$root/meta" "$root/load" "$root/drained" "$root/activating"
-          for id in "$RELEASE_RUN_ID" "$PHYSICAL_RUN_ID" "$DRAINED_RUN_ID" "$ACTIVATING_RUN_ID"; do
+          mkdir -p "$root/meta" "$root/load" "$root/drained" "$root/activating" "$root/autonomous"
+          for id in "$RELEASE_RUN_ID" "$PHYSICAL_RUN_ID" "$DRAINED_RUN_ID" "$ACTIVATING_RUN_ID" "$AUTONOMOUS_RUN_ID"; do
             [[ "$id" =~ ^[1-9][0-9]*$ ]] || { echo 'Invalid workflow run ID' >&2; exit 1; }
           done
           gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RELEASE_RUN_ID" > "$root/meta/ci.json"
           gh api "repos/$GITHUB_REPOSITORY/actions/runs/$PHYSICAL_RUN_ID" > "$root/meta/physical.json"
           gh api "repos/$GITHUB_REPOSITORY/actions/runs/$DRAINED_RUN_ID" > "$root/meta/drained.json"
           gh api "repos/$GITHUB_REPOSITORY/actions/runs/$ACTIVATING_RUN_ID" > "$root/meta/activating.json"
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$AUTONOMOUS_RUN_ID" > "$root/meta/autonomous.json"
           # Check repository/ref/commit/workflow/status before downloading any evidence.
           python3 - "$root/meta" "$GITHUB_REPOSITORY" "$RELEASE_SHA" <<'PY'
           import importlib.util, json, sys
@@ -111,6 +117,7 @@ jobs:
           gh run download "$PHYSICAL_RUN_ID" --repo "$GITHUB_REPOSITORY" --name forum-physical-soak-evidence --dir "$root/load"
           gh run download "$DRAINED_RUN_ID" --repo "$GITHUB_REPOSITORY" --name forum-physical-interrupted-update-drained --dir "$root/drained"
           gh run download "$ACTIVATING_RUN_ID" --repo "$GITHUB_REPOSITORY" --name forum-physical-interrupted-update-activating --dir "$root/activating"
+          gh run download "$AUTONOMOUS_RUN_ID" --repo "$GITHUB_REPOSITORY" --name forum-autonomous-github-evidence --dir "$root/autonomous"
 
       - name: Download packages built by the passing CI run
         if: steps.version.outputs.should_publish == 'true'
@@ -176,13 +183,13 @@ jobs:
             --small "$physical/load/10k.json" --medium "$physical/load/100k.json" --soak "$physical/load/1m-soak.json" --output "$physical/verified.json"
           python3 tools/release-candidate-gate.py --repo "$GITHUB_REPOSITORY" --commit "$RELEASE_SHA" --version "$VERSION" \
             --metadata "$physical/meta" --load-directory "$physical/load" --physical "$physical/verified.json" --drained "$physical/drained/recovery.json" \
-            --activating "$physical/activating/recovery.json" --dist "$ARTIFACT_ROOT/cajeerengine-${VERSION}-dist.zip"
+            --activating "$physical/activating/recovery.json" --autonomous "$physical/autonomous/autonomous.json" --dist "$ARTIFACT_ROOT/cajeerengine-${VERSION}-dist.zip"
           test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')" = "$RELEASE_SHA"
 
           cat > "$RUNNER_TEMP/forum-release-notes.md" <<'NOTES'
-          ## CajeerEngineForum 1.5.10 — Update Security & Supply Chain
+          ## CajeerEngineForum 1.5.11 — Automated Updates Qualification & RC
 
-          Forum Edition 1.5.10 on CajeerEngine 2.1.0.
+          Forum Edition 1.5.11 on CajeerEngine 2.1.0.
 
           - Host-owned release key rotation and revocation, signed time-bounded authorization, immutable dist digest pins and verified runtime dependency SBOM.
           - Physical 10k/100k/1M workload and 24-hour soak with fixed SLOs.
@@ -195,6 +202,7 @@ jobs:
           files+=("$ARTIFACT_ROOT/certification.json")
           cp "$physical/verified.json" "$physical/qualification.json"
           files+=("$physical/qualification.json")
+          files+=("$physical/autonomous/autonomous.json")
           # Stage the exact verified candidate and resume only an identical draft.
           python3 tools/publish-qualified-release.py --repo "$GITHUB_REPOSITORY" --tag "$TAG" --commit "$RELEASE_SHA" \
             --notes "$RUNNER_TEMP/forum-release-notes.md" "${files[@]}"

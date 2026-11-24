@@ -133,7 +133,7 @@ def totp(secret):
 
 
 @contextmanager
-def server(report, workers=1, *, include_site=False):
+def server(report, workers=1, *, include_site=False, update_policy_fixture=False):
     if not (ROOT / 'vendor/autoload.php').is_file():
         raise RuntimeError('Run composer install first')
     # Copy only source/configuration. Never copy .env, storage, uploads or a database.
@@ -170,6 +170,13 @@ def server(report, workers=1, *, include_site=False):
             subprocess.run(['php', str(HERE / 'install.php'), str(site), base], cwd=site, env=env, stdout=log, stderr=subprocess.STDOUT, check=True, timeout=180)
         # Server loads the fixture .env; no external DB credentials or app overrides.
         server_env = {k:v for k,v in env.items() if not k.startswith('DB_')}
+        if update_policy_fixture:
+            # Delegate only non-secret policy editing on this fresh installation.
+            # No network updater, system services or autonomous mutation are enabled.
+            server_env.update(UPDATE_ACP_POLICY_ENABLED='true', UPDATE_POLICY_MODE='disabled',
+                              UPDATE_CHANNEL='stable', UPDATE_SEQUENTIAL='true',
+                              UPDATE_AUTO_APPLY_ENABLED='false', UPDATE_OPERATOR_ENABLED='false',
+                              UPDATE_WEB_UPGRADE_ENABLED='false', UPDATE_AUTO_CHECK_ENABLED='false')
         if workers > 1:
             if os.name != 'posix':
                 raise RuntimeError('Multi-worker PHP test requires POSIX')
