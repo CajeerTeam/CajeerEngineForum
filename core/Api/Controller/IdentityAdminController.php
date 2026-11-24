@@ -32,9 +32,27 @@ final readonly class IdentityAdminController
     public function sessions(Request $request, array $parameters): JsonResponse
     {
         if (($denied = $this->browser($request)) !== null) return $denied;
-        try { return $this->ok($this->center->sessions((string) ($parameters['id'] ?? ''))); }
+        try { return $this->ok($this->center->sessions((string) ($parameters['id'] ?? ''), ($request->query->all()['provider'] ?? '') === 'all')); }
         catch (\InvalidArgumentException $e) { return $this->error('validation_failed', $e->getMessage(), 422); }
         catch (\DomainException $e) { return $this->error('user_not_found', $e->getMessage(), 404); }
+    }
+
+    public function access(Request $request, array $parameters): JsonResponse
+    {
+        if (($denied = $this->browser($request)) !== null) return $denied;
+        try { return $this->ok($this->center->unified()->inspect((string)($parameters['id'] ?? ''))); }
+        catch (\InvalidArgumentException $e) { return $this->error('validation_failed',$e->getMessage(),422); }
+        catch (\DomainException $e) { return $this->error('user_not_found',$e->getMessage(),404); }
+    }
+
+    public function assignAccess(Request $request, array $parameters): JsonResponse
+    {
+        if (($denied = $this->browser($request)) !== null) return $denied;
+        $id=(string)($parameters['id'] ?? ''); $data=$this->body($request);
+        if (($data['confirm_user_id'] ?? null)!==$id) return $this->error('confirmation_required','Подтвердите UUID пользователя.',422);
+        try { return $this->ok($this->center->unified()->assign($this->actor($request),$id,$data['revision']??null,$data['roles']??null)); }
+        catch (\InvalidArgumentException $e) { return $this->error('validation_failed',$e->getMessage(),422); }
+        catch (\DomainException $e) { return $this->error('access_conflict',$e->getMessage(),409); }
     }
 
     public function link(Request $request, array $parameters): JsonResponse
@@ -67,7 +85,8 @@ final readonly class IdentityAdminController
     public function revokeSession(Request $request, array $parameters): JsonResponse
     {
         if (($denied = $this->browser($request)) !== null) return $denied;
-        try { return $this->ok(['revoked' => $this->center->revokeSession($this->actor($request),
+        try { if (($request->query->all()['provider'] ?? '') === 'all') return $this->ok(['revoked'=>$this->center->unified()->revoke($this->actor($request),(string)($parameters['id']??''),(string)($parameters['session']??''))===1]);
+            return $this->ok(['revoked' => $this->center->revokeSession($this->actor($request),
             (string) ($parameters['id'] ?? ''), (string) ($parameters['session'] ?? ''))]); }
         catch (\InvalidArgumentException $e) { return $this->error('validation_failed', $e->getMessage(), 422); }
         catch (\DomainException $e) { return $this->error('session_not_found', $e->getMessage(), 409); }
@@ -78,7 +97,8 @@ final readonly class IdentityAdminController
         if (($denied = $this->browser($request)) !== null) return $denied;
         $id = (string) ($parameters['id'] ?? '');
         if (($this->body($request)['confirm_user_id'] ?? null) !== $id) return $this->error('confirmation_required', 'Подтвердите UUID пользователя.', 422);
-        try { return $this->ok(['revoked_sessions' => $this->center->revokeAllSessions($this->actor($request), $id)]); }
+        try { if (($this->body($request)['provider'] ?? '') === 'all') return $this->ok(['revoked_sessions'=>$this->center->unified()->revoke($this->actor($request),$id,null)]);
+            return $this->ok(['revoked_sessions' => $this->center->revokeAllSessions($this->actor($request), $id)]); }
         catch (\InvalidArgumentException $e) { return $this->error('validation_failed', $e->getMessage(), 422); }
         catch (\DomainException $e) { return $this->error('session_not_found', $e->getMessage(), 409); }
     }

@@ -259,6 +259,8 @@ final class RouteRegistry
             ['PATCH', '/api/v1/ai/conversations/{id}', 'api.v1.ai.conversation.rename', 'ai', 'rename', ['content:read']],
             ['DELETE', '/api/v1/ai/conversations/{id}', 'api.v1.ai.conversation.delete', 'ai', 'delete', ['content:read']],
             ['GET', '/api/v1/identity/admin/users', 'api.v1.identity.admin.users', 'identityAdmin', 'users', ['users:read']],
+            ['GET', '/api/v1/identity/admin/users/{id}/access', 'api.v1.identity.admin.access', 'identityAdmin', 'access', ['*']],
+            ['PUT', '/api/v1/identity/admin/users/{id}/access', 'api.v1.identity.admin.access.assign', 'identityAdmin', 'assignAccess', ['*']],
             ['GET', '/api/v1/identity/admin/users/{id}/sessions', 'api.v1.identity.admin.sessions', 'identityAdmin', 'sessions', ['users:read']],
             ['POST', '/api/v1/identity/admin/users/{id}/link', 'api.v1.identity.admin.link', 'identityAdmin', 'link', ['*']],
             ['DELETE', '/api/v1/identity/admin/users/{id}/link', 'api.v1.identity.admin.unlink', 'identityAdmin', 'unlink', ['*']],

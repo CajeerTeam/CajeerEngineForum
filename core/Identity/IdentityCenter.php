@@ -53,10 +53,10 @@ final readonly class IdentityCenter
             $items = array_map(static fn (array $row): array => [
                 'id' => (string) $row['id'], 'email' => (string) $row['email'],
                 'name' => (string) $row['name'], 'status' => (string) $row['status'],
-                'two_factor_enabled' => (bool) $row['two_factor_enabled'],
+                'two_factor_enabled' => filter_var($row['two_factor_enabled'], FILTER_VALIDATE_BOOLEAN),
                 'last_login_at' => $row['last_login_at'], 'linked' => $row['subject'] !== null,
                 'subject' => $row['subject'] === null ? null : (string) $row['subject'],
-                'provisioned' => (bool) ($row['provisioned'] ?? false),
+                'provisioned' => filter_var($row['provisioned'] ?? false,FILTER_VALIDATE_BOOLEAN),
                 'linked_at' => $row['linked_at'],
             ], $page->fetchAll(PDO::FETCH_ASSOC));
             return compact('items', 'total', 'limit', 'offset');
@@ -101,7 +101,7 @@ final readonly class IdentityCenter
             $find->execute(['issuer' => self::ISSUER, 'uid' => $target]);
             $row = $find->fetch(PDO::FETCH_ASSOC);
             if (!is_array($row)) throw new \DomainException('Привязка SkiF4er ID отсутствует.');
-            if ((bool) $row['provisioned']) throw new \DomainException('Нельзя отвязать OIDC-only аккаунт без проверенного локального входа.');
+            if (filter_var($row['provisioned'], FILTER_VALIDATE_BOOLEAN)) throw new \DomainException('Нельзя отвязать OIDC-only аккаунт без проверенного локального входа.');
             $delete = $pdo->prepare('DELETE FROM ce_oidc_identities WHERE issuer = :issuer AND user_id = :uid');
             $delete->execute(['issuer' => self::ISSUER, 'uid' => $target]);
             $count = $this->revokeSsoSessions($pdo, $target);
@@ -111,12 +111,14 @@ final readonly class IdentityCenter
         });
     }
 
+    public function unified(): UnifiedAccess { return new UnifiedAccess($this->database,$this->sessions,$this->audit); }
+
     /** @return list<array<string,mixed>> */
-    public function sessions(string $target): array
+    public function sessions(string $target, bool $all = false): array
     {
         $this->checkTarget($target);
         $this->existingUser($this->database->connection(), $target);
-        return $this->sessions->activeForUser($target, null, 720, 'skif4er');
+        return $this->sessions->activeForUser($target, null, max(5,$this->database->config()->int('security.sessions.idle_minutes',720)), $all ? null : 'skif4er');
     }
 
     public function revokeSession(string $actor, string $target, string $tokenId): bool

@@ -1,6 +1,8 @@
 # CajeerEngine Forum Edition
 
-**Forum Edition 1.4.2 — Centralized Configuration & Integrations**, built on CajeerEngine 2.1.0. Publication requires a passing `forum-required` gate and verified signed CI certification tied to the exact commit and release artifacts.
+**Forum Edition 1.4.3 — Unified Identity & Access Management**, built on CajeerEngine 2.1.0. Publication requires a passing `forum-required` gate and verified signed CI certification tied to the exact commit and release artifacts.
+
+See [Unified Identity](docs/forum-unified-identity-1.4.3.md) for account access management.
 
 See [Platform Configuration](docs/forum-platform-configuration-1.4.2.md) for runtime configuration, probes and rollback.
 

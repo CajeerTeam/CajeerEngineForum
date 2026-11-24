@@ -1230,6 +1230,36 @@ final class Operations {
     ),
     'bodyRequired' => true,
   ),
+  'api_v1_identity_admin_access' => 
+  array (
+    'method' => 'GET',
+    'path' => '/identity/admin/users/{id}/access',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
+  'api_v1_identity_admin_access_assign' => 
+  array (
+    'method' => 'PUT',
+    'path' => '/identity/admin/users/{id}/access',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => true,
+  ),
   'api_v1_identity_admin_link' => 
   array (
     'method' => 'POST',
@@ -1278,6 +1308,12 @@ final class Operations {
         'in' => 'path',
         'required' => true,
       ),
+      2 => 
+      array (
+        'name' => 'provider',
+        'in' => 'query',
+        'required' => false,
+      ),
     ),
     'bodyRequired' => false,
   ),
@@ -1292,6 +1328,12 @@ final class Operations {
         'name' => 'id',
         'in' => 'path',
         'required' => true,
+      ),
+      1 => 
+      array (
+        'name' => 'provider',
+        'in' => 'query',
+        'required' => false,
       ),
     ),
     'bodyRequired' => false,

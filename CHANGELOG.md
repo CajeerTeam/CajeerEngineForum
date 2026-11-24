@@ -1,3 +1,10 @@
+## [1.4.3] - 2026-11-24
+
+### Unified Identity & Access Management
+- Unified account card with effective scopes, managed forum roles, MFA status, ACL inspector, group and delegation editors.
+- Revision-checked system role assignment preserving forum memberships, live actor checks, browser session revocation and transactional audit.
+- Optional all-provider session management, retaining legacy SSO-only API behavior. No schema changes.
+
 ## [1.4.2] - 2026-11-24
 
 ### Centralized Configuration & Integrations

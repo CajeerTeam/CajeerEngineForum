@@ -940,6 +940,30 @@ export const operations = {
         ],
         "bodyRequired": true
     },
+    "api_v1_identity_admin_access": {
+        "method": "GET",
+        "path": "/identity/admin/users/{id}/access",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": false
+    },
+    "api_v1_identity_admin_access_assign": {
+        "method": "PUT",
+        "path": "/identity/admin/users/{id}/access",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
+    },
     "api_v1_identity_admin_link": {
         "method": "POST",
         "path": "/identity/admin/users/{id}/link",
@@ -977,6 +1001,11 @@ export const operations = {
                 "name": "session",
                 "in": "path",
                 "required": true
+            },
+            {
+                "name": "provider",
+                "in": "query",
+                "required": false
             }
         ],
         "bodyRequired": false
@@ -989,6 +1018,11 @@ export const operations = {
                 "name": "id",
                 "in": "path",
                 "required": true
+            },
+            {
+                "name": "provider",
+                "in": "query",
+                "required": false
             }
         ],
         "bodyRequired": false

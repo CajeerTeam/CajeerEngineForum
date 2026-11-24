@@ -6,7 +6,7 @@ on:
 permissions:
   contents: read
 env:
-  FORUM_CURRENT_VERSION: ${{ '1.4.2' }}
+  FORUM_CURRENT_VERSION: ${{ '1.4.3' }}
 concurrency:
   group: forum-ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -306,6 +306,10 @@ jobs:
         env:
           FORUM_TEST_DRIVER: sqlite
         run: php tools/forum-ai-reliability-acceptance.php
+      - name: Unified Identity real PDO (sqlite)
+        env:
+          FORUM_TEST_DRIVER: sqlite
+        run: php tools/forum-unified-identity-acceptance.php
       - run: php tools/forum-analytics-dashboard-regression.php
       - run: php tools/forum-engagement-regression.php
       - run: php tools/forum-analytics-hardening-regression.php
@@ -501,6 +505,10 @@ jobs:
         env:
           FORUM_TEST_DRIVER: pgsql
         run: php tools/forum-ai-reliability-acceptance.php
+      - name: Unified Identity real PDO (pgsql)
+        env:
+          FORUM_TEST_DRIVER: pgsql
+        run: php tools/forum-unified-identity-acceptance.php
       - name: Knowledge sync real PostgreSQL FTS repair and search acceptance
         env:
           FORUM_TEST_DRIVER: pgsql
@@ -604,6 +612,10 @@ jobs:
         env:
           FORUM_TEST_DRIVER: mysql
         run: php tools/forum-ai-reliability-acceptance.php
+      - name: Unified Identity real PDO (mysql)
+        env:
+          FORUM_TEST_DRIVER: mysql
+        run: php tools/forum-unified-identity-acceptance.php
       - name: Knowledge sync real MySQL/MariaDB FTS repair and search acceptance
         env:
           FORUM_TEST_DRIVER: mysql
@@ -659,6 +671,7 @@ jobs:
       - run: python tools/forum-ai-search-browser-regression.py --browser ${{ matrix.browser }}
       - run: python tools/forum-support-browser-regression.py --browser ${{ matrix.browser }}
       - run: python tools/forum-platform-config-browser-regression.py --browser ${{ matrix.browser }}
+      - run: python tools/forum-unified-identity-browser-regression.py --browser ${{ matrix.browser }}
       - run: python tools/forum-unified-admin-browser-regression.py --browser ${{ matrix.browser }}
       - name: Real browser E2E with SMTP
         run: python tools/forum-tests/run.py --suite browser --browser ${{ matrix.browser }} --report storage/tmp/forum-ci/browser
