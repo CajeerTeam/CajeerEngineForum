@@ -34,7 +34,7 @@ final readonly class ApiTokenRepository
         $prefix = substr($plain, 0, 10);
         $scopes = $this->normalizeScopes($scopes);
         $scopesJson = json_encode($scopes, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
-        $expires = $expiresAt?->format('Y-m-d H:i:s');
+        $expires = $expiresAt?->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d H:i:s');
         $driver = $this->database->driver();
         $sql = $driver === 'pgsql'
             ? 'INSERT INTO ce_api_tokens (id, user_id, name, token_hash, token_prefix, scopes, expires_at, created_at) VALUES (:id, :user_id, :name, :token_hash, :token_prefix, CAST(:scopes AS jsonb), :expires_at, CURRENT_TIMESTAMP)'
@@ -51,6 +51,17 @@ final readonly class ApiTokenRepository
         ]);
 
         return ['plain_token' => $plain, 'id' => $id, 'prefix' => $prefix, 'expires_at' => $expires];
+    }
+
+    /** Parse SQL timestamps in UTC (explicit database offsets take precedence). Invalid or missing expiry fails closed. */
+    public static function expiryTimestamp(mixed $value): int
+    {
+        if (!is_string($value) || !preg_match('/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}(?::?\d{2})?)?$/D', $value)) return 0;
+        try {
+            $date = new \DateTimeImmutable($value, new \DateTimeZone('UTC'));
+            $errors = \DateTimeImmutable::getLastErrors();
+            return $errors !== false && ($errors['warning_count'] || $errors['error_count']) ? 0 : $date->getTimestamp();
+        } catch (\Exception) { return 0; }
     }
 
     public function count(): int
@@ -98,7 +109,7 @@ final readonly class ApiTokenRepository
         if (!empty($row['revoked_at'])) {
             return null;
         }
-        if (!empty($row['expires_at']) && (strtotime((string) $row['expires_at']) === false || strtotime((string) $row['expires_at']) <= time())) {
+        if ($row['expires_at'] !== null && self::expiryTimestamp($row['expires_at']) <= time()) {
             return null;
         }
         return $this->normalize($row);

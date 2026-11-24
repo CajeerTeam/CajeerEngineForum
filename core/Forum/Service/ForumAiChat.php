@@ -429,6 +429,7 @@ final readonly class ForumAiChat
                 return ['input'=>$input,'reserve'=>$reserve];
             });
         } catch(\Throwable $e){if(function_exists('sodium_memzero'))sodium_memzero($key);throw $e;}
+        $result=null;
         try {
             $result=$this->client->complete($key,$model,$prepared['input'],(int)$conf['max_output_tokens'],$delta);
             $used=(int)$result['usage']['input_tokens']+(int)$result['usage']['output_tokens'];
@@ -450,15 +451,15 @@ final readonly class ForumAiChat
         } catch(\Throwable $e){
             // Completed requests are billable even if persistence fails. Keep the lease for
             // crash recovery if a reservation could not be settled atomically.
-            $unknown=!isset($result) && !($e instanceof AiProviderException && !$e->possiblyBilled);
-            try {$this->db->transaction(function(PDO $pdo) use($userId,$id,$busy,$month,$prepared,$job,$new,$cost,$threadId,&$result,$unknown):void {
+            $unknown=$result===null && !($e instanceof AiProviderException && !$e->possiblyBilled);
+            try {$this->db->transaction(function(PDO $pdo) use($userId,$id,$busy,$month,$prepared,$job,$new,$cost,$result,$unknown):void {
                 $q=$pdo->prepare('UPDATE ce_forum_ai_conversations SET busy_until = 0, reserved_tokens = 0, reservation_period = NULL WHERE id = ? AND user_id = ? AND busy_until = ?');
                 $q->execute([$id,$userId,$busy]);
                 if($q->rowCount()!==1)return;
-                $used=isset($result)?(int)$result['usage']['input_tokens']+(int)$result['usage']['output_tokens']:($unknown?$prepared['reserve']:0);
+                $used=$result!==null?(int)$result['usage']['input_tokens']+(int)$result['usage']['output_tokens']:($unknown?$prepared['reserve']:0);
                 $pdo->prepare('UPDATE ce_forum_ai_usage SET reserved_tokens = CASE WHEN reserved_tokens >= ? THEN reserved_tokens - ? ELSE 0 END, used_tokens = used_tokens + ? WHERE user_id = ? AND period = ?')
                     ->execute([$prepared['reserve'],$prepared['reserve'],$used,$userId,$month]);
-                if(isset($result))$cost->settle($pdo,$job,$result['usage']);elseif($unknown)$cost->chargeUnverified($pdo,$job);else $cost->release($pdo,$job);
+                if($result!==null)$cost->settle($pdo,$job,$result['usage']);elseif($unknown)$cost->chargeUnverified($pdo,$job);else $cost->release($pdo,$job);
                 if($new){$pdo->prepare('DELETE FROM ce_forum_ai_messages WHERE conversation_id = ?')->execute([$id]);$pdo->prepare('DELETE FROM ce_forum_ai_conversations WHERE id = ? AND user_id = ?')->execute([$id,$userId]);}
             });}catch(\Throwable){}
             throw $e;

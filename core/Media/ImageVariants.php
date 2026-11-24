@@ -15,7 +15,8 @@ final readonly class ImageVariants
     {
         $p=getenv('MEDIA_CONVERT_BINARY');return is_string($p)&&str_starts_with($p,'/')&&is_file($p)&&is_executable($p)?$p:null;
     }
-    public function create(string $source,array $item): array
+    /** @param list<string>|null $names Requested variants; null preserves the full default set. */
+    public function create(string $source,array $item,?array $names=null): array
     {
         if(!in_array($item['mime_type'],['image/jpeg','image/png','image/webp','image/gif'],true)||!$this->available())return [];
         $w=(int)$item['width'];$h=(int)$item['height'];$variants=[];
@@ -25,7 +26,9 @@ final readonly class ImageVariants
         $base='variants/'.$item['id'].'/'.$item['checksum'];
         $prefix=($item['visibility']??'public')==='private'?'storage/app/media-private/':'public/uploads/';
         $dir=F::path($this->root,$prefix.$base);F::dir($dir,$prefix==='public/uploads/'?0755:0770);
+        if ($names !== null && array_diff($names, array_keys(self::SIZES)) !== []) throw new \InvalidArgumentException('Unknown image variant');
         foreach(self::SIZES as $name=>$max){
+            if ($names !== null && !in_array($name,$names,true)) continue;
             $ext=$name==='webp'?'webp':$defaultExt;if($ext==='webp'&&function_exists('imagecreatetruecolor')&&!function_exists('imagewebp'))continue;
             $ratio=min(1,$max/max($w,$h));$tw=max(1,(int)round($w*$ratio));$th=max(1,(int)round($h*$ratio));
             $relative=$base.'/'.$name.'.'.$ext;$dest=F::path($this->root,$prefix.$relative);

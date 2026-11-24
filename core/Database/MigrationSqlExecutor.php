@@ -35,9 +35,20 @@ final class MigrationSqlExecutor
         $buffer = '';
         $state = 'normal';
         $length = strlen($sql);
+        $dollar = null;
         for ($i = 0; $i < $length; $i++) {
             $ch = $sql[$i];
             $next = $i + 1 < $length ? $sql[$i + 1] : '';
+            if ($dollar !== null) {
+                if (substr_compare($sql, $dollar, $i, strlen($dollar)) === 0) {
+                    $buffer .= $dollar;
+                    $i += strlen($dollar) - 1;
+                    $dollar = null;
+                } else {
+                    $buffer .= $ch;
+                }
+                continue;
+            }
             if ($state === 'line') {
                 if ($ch === "\n" || $ch === "\r") {
                     $state = 'normal';
@@ -87,7 +98,21 @@ final class MigrationSqlExecutor
                 $buffer .= $ch;
                 continue;
             }
+            // PostgreSQL function bodies can contain arbitrary semicolons and comments.
+            if ($ch === '$' && ($i === 0 || !preg_match('/[a-zA-Z0-9_$\x80-\xff]/', $sql[$i - 1]))
+                && preg_match('/\G\$(?:[a-zA-Z_][a-zA-Z0-9_]*)?\$/', $sql, $match, 0, $i)) {
+                $dollar = $match[0];
+                $buffer .= $dollar;
+                $i += strlen($dollar) - 1;
+                continue;
+            }
             if ($ch === ';') {
+                // SQLite triggers are one statement, including their BEGIN ... END body.
+                if (preg_match('/^\s*CREATE\s+(?:(?:TEMP|TEMPORARY)\s+)?TRIGGER\b.*\bBEGIN\b/is', $buffer)
+                    && !preg_match('/;\s*END\s*$/iD', $buffer)) {
+                    $buffer .= ';';
+                    continue;
+                }
                 if (trim($buffer) !== '') {
                     $result[] = trim($buffer);
                 }
@@ -96,7 +121,7 @@ final class MigrationSqlExecutor
             }
             $buffer .= $ch;
         }
-        if ($state !== 'normal' && $state !== 'line') {
+        if ($dollar !== null || ($state !== 'normal' && $state !== 'line')) {
             throw new \RuntimeException('Unterminated SQL string/comment in migration');
         }
         if (trim($buffer) !== '') {

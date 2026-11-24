@@ -35,10 +35,23 @@ final class ForumIdentityTest extends TestCase
         self::assertNotSame(AuthService::csrfToken('first'),AuthService::csrfToken('second'));
     }
 
+    public function testTokenExpiryUsesUtcAndFailsClosed(): void
+    {
+        $old = date_default_timezone_get();
+        try {
+            date_default_timezone_set('Europe/Warsaw');
+            $parse = \CajeerEngine\Database\Repository\ApiTokenRepository::expiryTimestamp(...);
+            self::assertSame(1767225600, $parse('2026-01-01 00:00:00'));
+            self::assertSame(1767225600, $parse('2026-01-01 01:00:00+01'));
+            self::assertSame(1767225600, $parse('2026-01-01 00:00:00.123456+00:00'));
+            foreach ([null, '', 'tomorrow', '2026-02-30 00:00:00'] as $invalid) self::assertSame(0, $parse($invalid));
+        } finally { date_default_timezone_set($old); }
+    }
+
     public function testIndependentReleaseIdentity(): void
     {
         $version=new ForumVersion(dirname(__DIR__,2));
-        self::assertSame('1.0.9',$version->current());
+        self::assertSame('1.6.0',$version->current());
         self::assertSame('2.1.0',$version->upstream());
     }
 }

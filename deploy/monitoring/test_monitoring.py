@@ -114,6 +114,8 @@ def integration():
         run('php','-r','require "core/Console/NativeCli.php"; (new CajeerEngine\\Observability\\Metrics(getcwd()))->observe("http","api.v1.forum.search","2xx",0.7);',cwd=site)
         php_log=(d/'php.log').open('w');php=subprocess.Popen(['php','-S',f'127.0.0.1:{php_port}','-t',str(site/'public')],cwd=site,stdout=php_log,stderr=subprocess.STDOUT)
         events=[]
+        # These endpoints are local disposable fixtures, never HTTP proxy targets.
+        local_http=urllib.request.build_opener(urllib.request.ProxyHandler({}))
         class Handler(http.server.BaseHTTPRequestHandler):
             def log_message(self,*args): pass
             def do_GET(self):
@@ -121,7 +123,7 @@ def integration():
                     self.send_response(200);self.send_header('Content-Length','2');self.end_headers();self.wfile.write(b'OK');return
                 if self.path!='/metrics': self.send_error(404);return
                 req=urllib.request.Request(f'http://127.0.0.1:{php_port}/metrics',headers={'Authorization':self.headers.get('Authorization','')})
-                try: response=urllib.request.urlopen(req,timeout=15)
+                try: response=local_http.open(req,timeout=15)
                 except urllib.error.HTTPError as err: response=err
                 with response:
                     body=response.read();self.send_response(response.code);self.send_header('Content-Type',response.headers.get('Content-Type','text/plain'));self.end_headers();self.wfile.write(body)
@@ -146,9 +148,13 @@ def integration():
             compose=['docker','compose','-p',project,'-f',str(HERE/'compose.yaml'),'-f',str(overlay)]
             run(*compose,'config','--quiet',env=env);run(*compose,'up','-d',env=env)
             def get_json(url,headers=None):
-                with urllib.request.urlopen(urllib.request.Request(url,headers=headers or {}),timeout=5) as response:return json.load(response)
+                with local_http.open(urllib.request.Request(url,headers=headers or {}),timeout=5) as response:return json.load(response)
             def query(expr):
                 return get_json(f'http://127.0.0.1:{pp}/api/v1/query?'+urllib.parse.urlencode({'query':expr}))['data']['result']
+            def local_metrics():
+                with local_http.open(urllib.request.Request(f'http://127.0.0.1:{php_port}/metrics', headers={'Authorization':'Bearer '+token}), timeout=10) as response:
+                    return b'cajeer_forum_queue_items' in response.read()
+            wait_until(local_metrics)
             wait_until(lambda: any(x['value'][1]=='1' for x in query('up{job="cajeerengine"}')))
             wait_until(lambda:any(x['value'][1]=='1' for x in query('probe_success{job="forum-tls"}')))
             assert int(float(query('probe_ssl_earliest_cert_expiry{job="forum-tls"}')[0]['value'][1]))>int(time.time())
@@ -169,11 +175,17 @@ def integration():
             print('PASS real authenticated TLS scrape, SQL metrics, Grafana provisioning and Alertmanager firing/resolved delivery')
         finally:
             if compose is not None:
+                try:
+                    with local_http.open(f'http://127.0.0.1:{pp}/api/v1/targets',timeout=5) as response:
+                        for target in json.load(response).get('data',{}).get('activeTargets',[]):
+                            print('Scrape target:',target.get('labels',{}).get('job'),target.get('health'),target.get('lastError'))
+                except (OSError,ValueError,urllib.error.URLError): pass
                 subprocess.run([*compose,'logs','--tail','100'],env=env,check=False)
                 subprocess.run([*compose,'down','-v','--remove-orphans'],env=env,check=False)
             if server: server.shutdown();server.server_close()
             if thread: thread.join(timeout=5)
             php.terminate();php.wait(timeout=10);php_log.close()
+            print((d/'php.log').read_text()[-12000:])
 
 
 if __name__=='__main__':

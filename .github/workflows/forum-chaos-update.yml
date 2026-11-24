@@ -31,12 +31,15 @@ jobs:
       CE_CHAOS_CA: ${{ vars.CE_CHAOS_CA }}
       CE_CHAOS_SMOKE_STATE: ${{ vars.CE_CHAOS_SMOKE_STATE }}
       CE_CHAOS_STATE_DIR: ${{ vars.CE_CHAOS_STATE_DIR }}
-      CE_CHAOS_SIGNED_DIR: ${{ runner.temp }}/forum-canonical-candidate
       GH_TOKEN: ${{ github.token }}
       QUALIFICATION_CI_RUN: ${{ inputs.ci_run }}
       CE_CHAOS_BASELINE_DIST: ${{ vars.CE_CHAOS_BASELINE_DIST }}
       CE_CHAOS_TRUSTED_PUB: ${{ vars.CE_CHAOS_TRUSTED_PUB }}
     steps:
+      - name: Initialize runner-local qualification paths
+        shell: bash
+        run: |
+          echo "CE_CHAOS_SIGNED_DIR=$RUNNER_TEMP/forum-canonical-candidate" >> "$GITHUB_ENV"
       - uses: actions/checkout@v4
         with:
           persist-credentials: false

@@ -77,6 +77,26 @@ try {
 } catch (RuntimeException $e) {
     ensure(str_contains($e->getMessage(), 'Unterminated'), $e->getMessage());
 }
+$routine = <<<'SQL'
+CREATE FUNCTION test_fn() RETURNS trigger LANGUAGE plpgsql AS $body$
+BEGIN
+  PERFORM ';'; -- preserve body comment
+  RETURN NULL;
+END;
+$body$;
+SELECT 1;
+SQL;
+$parts = MigrationSqlExecutor::statements($routine);
+ensure(count($parts) === 2 && str_contains($parts[0], 'RETURN NULL;') && $parts[1] === 'SELECT 1', 'PostgreSQL routine split incorrectly');
+$trigger = "CREATE TRIGGER t AFTER INSERT ON a BEGIN UPDATE b SET n=CASE WHEN n=0 THEN 1 ELSE n END; INSERT INTO b VALUES (2); END; SELECT 1;";
+$parts = MigrationSqlExecutor::statements($trigger);
+ensure(count($parts) === 2 && str_contains($parts[0], 'VALUES (2); END') && $parts[1] === 'SELECT 1', 'SQLite trigger split incorrectly');
+try {
+    MigrationSqlExecutor::statements('SELECT $tag$unfinished;');
+    throw new RuntimeException('Unclosed dollar quote accepted');
+} catch (RuntimeException $e) {
+    ensure(str_contains($e->getMessage(), 'Unterminated'), $e->getMessage());
+}
 foreach (['0005_queue_search_webhooks.sql', '0007_queue_runtime_columns.sql'] as $migration) {
     $sql = file_get_contents($root . '/migrations/mysql/' . $migration);
     ensure(is_string($sql), 'Missing legacy migration');
@@ -95,7 +115,7 @@ foreach (['0005_queue_search_webhooks.sql', '0007_queue_runtime_columns.sql'] as
 }
 // Immutable AI tool call migration must inherit the referenced parent collation,
 // not the database default (which differs on MariaDB).
-$aiSql = file_get_contents($root . '/migrations/mysql/0037_ai_tools.sql');
+$aiSql = file_get_contents($root . '/migrations/mysql/0072_engine_ai_tools.sql');
 ensure(is_string($aiSql), 'Missing AI tool calls migration');
 foreach (['utf8mb4_general_ci', 'utf8mb4_unicode_ci'] as $collation) {
     $fixture = new CompatPDO('mysql', false, $collation);

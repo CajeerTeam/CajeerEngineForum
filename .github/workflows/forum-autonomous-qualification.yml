@@ -30,10 +30,13 @@ jobs:
       TRUSTED_KEY: ${{ vars.CE_AUTONOMOUS_TRUSTED_PUB }}
       FIXTURE: /etc/cajeerengine/qualification-fixture.json
       QUALIFICATION_PHASE: ${{ inputs.phase }}
-      CANDIDATE_DIR: ${{ runner.temp }}/forum-auto-candidate-${{ github.run_id }}-${{ github.run_attempt }}
-      BASELINE_DIR: ${{ runner.temp }}/forum-auto-baseline-${{ github.run_id }}-${{ github.run_attempt }}
-      REPORT_DIR: ${{ runner.temp }}/forum-auto-report-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
+      - name: Initialize runner-local qualification paths
+        shell: bash
+        run: |
+          echo "CANDIDATE_DIR=$RUNNER_TEMP/forum-auto-candidate-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_ENV"
+          echo "BASELINE_DIR=$RUNNER_TEMP/forum-auto-baseline-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_ENV"
+          echo "REPORT_DIR=$RUNNER_TEMP/forum-auto-report-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_ENV"
       - uses: actions/checkout@v4
         with:
           persist-credentials: false

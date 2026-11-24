@@ -68,9 +68,7 @@ final class AiBackgroundAutomationTest extends TestCase
         $config=new ConfigRepository(dirname(__DIR__,2));
         $db=new DatabaseManager($config);
         $pdo=$db->connection();
-        foreach (['0001_initial_schema','0031_ai_chat','0037_ai_tools','0040_ai_cost_control','0041_ai_background_automation','0042_ai_automation_delivery_acceptance','0043_ai_automation_ga'] as $name) {
-            $pdo->exec((string)file_get_contents(dirname(__DIR__,2).'/migrations/sqlite/'.$name.'.sql'));
-        }
+        (new \CajeerEngine\Database\MigrationRunner($pdo, dirname(__DIR__,2).'/migrations'))->run('sqlite');
         $user=Uuid::v4(); $other=Uuid::v4(); $role=Uuid::v4();
         foreach ([$user,$other] as $id) {
             $pdo->prepare('INSERT INTO ce_users (id,email,name,password_hash) VALUES (?,?,?,?)')->execute([$id,$id.'@example.test','Admin','hash']);
