@@ -202,7 +202,7 @@ def qualify(a):
             require(re.fullmatch(r'[a-f0-9]{64}', cid) is not None, 'unique running app required')
             actual = json.loads(subprocess.check_output(['docker','inspect',cid], text=True, timeout=30, env=dc.env))[0]
             require(actual['Config']['Image'] == f"cajeerengine-forum:{a.version}-{site['CE_RELEASE_SHA256']}" and actual['Image'].removeprefix('sha256:').startswith(image.removeprefix('sha256:')), 'running image differs from approved artifact')
-        if a.profile != 'smoke' and a.version in ('1.5.0','1.5.1','1.5.2','1.5.3','1.5.4','1.5.5','1.5.6','1.5.7'):
+        if a.profile != 'smoke' and a.version in ('1.5.0','1.5.1','1.5.2','1.5.3','1.5.4','1.5.5','1.5.6','1.5.7','1.5.8'):
             from release_identity import verify_running
             report['deployment_identity'] = verify_running(dc,site,a.signed_dist,a.trusted_key)
             require(report['deployment_identity']['image'].removeprefix('sha256:').startswith(image.removeprefix('sha256:')), 'qualified image differs from signed deployment')
@@ -385,7 +385,7 @@ def main():
     minimum={'smoke':(0,5),'10k':(10000,300),'100k':(100000,1800),'1m-soak':(1000000,86400)}[a.profile]
     if a.profile!='smoke':
         require(a.seed_posts==minimum[0] and a.seconds>=minimum[1], 'certification profile corpus/duration mismatch')
-    if a.profile != 'smoke' and a.version in ('1.5.0','1.5.1','1.5.2','1.5.3','1.5.4','1.5.5','1.5.6','1.5.7'):
+    if a.profile != 'smoke' and a.version in ('1.5.0','1.5.1','1.5.2','1.5.3','1.5.4','1.5.5','1.5.6','1.5.7','1.5.8'):
         require(a.signed_dist is not None and a.trusted_key is not None, 'signed deployment verification required')
     if a.profile != 'smoke' and current_policy(a.version):
         validate_thresholds(a.profile, {'clients':a.clients,'target_rps':a.rate,'minimum_rps':a.min_rps,'max_p95_ms':a.max_p95_ms,'max_error_rate':a.max_error_rate,'max_memory_growth_mib':a.max_growth_mib,'max_queue_p95_ms':a.max_queue_p95_ms})

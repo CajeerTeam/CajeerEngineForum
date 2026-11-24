@@ -2,7 +2,6 @@
 Description=CajeerEngine verified update operator (one approved or policy-authorized operation)
 After=local-fs.target network-online.target
 Wants=network-online.target
-ConditionPathExists=/var/www/cajeerengine/bin/cajeer
 
 [Service]
 Type=oneshot
@@ -10,7 +9,8 @@ User=cajeer-updater
 Group=cajeer-updater
 SupplementaryGroups=cajeer-update-requests
 WorkingDirectory=/var/www/cajeerengine
-ExecStart=/usr/bin/php /var/www/cajeerengine/bin/cajeer update:operator:once
+EnvironmentFile=-/etc/cajeerengine/update-recovery.env
+ExecStart=/usr/bin/php /etc/cajeerengine/update-supervisor.php /var/www/cajeerengine
 UMask=0027
 TimeoutStartSec=0
 NoNewPrivileges=true

@@ -57,7 +57,7 @@ final class OperationsCli
                     'update:download'=>(new \CajeerEngine\Update\GitHubReleaseDownloader($root,$config))->download(isset($o['version']) ? $required('version') : null),
                     'update:operator:once'=>(new \CajeerEngine\Update\UpdateOperator($root,$config))->runOnce(),
                     'update:apply','update'=>$m->apply(array_combine(array_map(static fn($k)=>str_replace('-','_',$k),array_keys($o)),array_values($o))),
-                    'update:rollback'=>$m->rollback($o['backup']??null,isset($o['yes'])),
+                    'update:rollback'=>$m->rollback($o['backup']??null,isset($o['yes']),isset($o['transaction'])?$required('transaction'):null),
                     'update:stage'=>$m->publish($required('package'),$o['signature']??null),
                     'update:requests'=>['ok'=>true,'requests'=>$m->pending()],
                     'update:run'=>$m->runRequest($required('id')),

@@ -53,11 +53,11 @@ final readonly class AutonomousUpdate
             if ($r['state']!=='running') continue;
             $last=OperationFiles::path($this->root,'storage/app/updates/last-update.json');
             if (!is_file($last)) return false;
-            $report=OperationFiles::read($last);
+            $report=$this->privateRead($last);
             if (($report['state']??null)==='rolled_back' && $this->current()===$c['from_version'] && is_string($report['id']??null) && preg_match('/^\d{8}-\d{6}-[a-f0-9]{16}$/D',$report['id'])) {
                 $tx=OperationFiles::path($this->root,'storage/app/updates/transactions/'.$report['id'].'/journal.json');
                 if (is_file($tx)) {
-                    $j=OperationFiles::read($tx);
+                    $j=$this->privateRead($tx);
                     if (($j['id']??null)===$report['id'] && ($j['state']??null)==='rolled_back' && ($j['previous_version']??null)===$c['from_version'] && ($j['target_version']??null)===$c['version'] && ($j['sha256']??null)===$c['sha256'] && strtotime((string)($j['at']??''))>=strtotime($r['started_at']) && !OperationLock::active($this->root)) {
                         $r['state']='failed'; $r['transaction_id']=$report['id']; $r['finished_at']=gmdate(DATE_ATOM);
                         OperationFiles::json($file,$r); continue;
@@ -65,12 +65,29 @@ final readonly class AutonomousUpdate
                 }
             }
             if (($report['ok']??false)!==true || ($report['state']??null)!=='committed' || ($report['previous_version']??null)!==$c['from_version'] || ($report['target_version']??null)!==$c['version'] || ($report['sha256']??null)!==$c['sha256'] || $this->current()!==$c['version'] || !is_string($report['id']??null) || !preg_match('/^\d{8}-\d{6}-[a-f0-9]{16}$/D',$report['id'])) return false;
+            $tx=OperationFiles::path($this->root,'storage/app/updates/transactions/'.$report['id'].'/journal.json');
+            if (!is_file($tx) || OperationLock::active($this->root)) return false;
+            $j=$this->privateRead($tx);
+            if (($j['id']??null)!==$report['id'] || ($j['state']??null)!=='committed' || ($j['previous_version']??null)!==$c['from_version'] || ($j['target_version']??null)!==$c['version'] || ($j['sha256']??null)!==$c['sha256'] || strtotime((string)($j['at']??''))<strtotime($r['started_at'])) return false;
             $r['state']='completed'; $r['transaction_id']=$report['id']; $r['finished_at']=gmdate(DATE_ATOM);
             OperationFiles::json($file,$r);
         }
         return true;
     }
     private function attemptPath(array $c): string { return $this->directory().'/attempt-'.hash('sha256',$c['from_version'].'>'.$c['version']).'.json'; }
+    /** A failed target remains quarantined even if GitHub republishes its digest or the source changes. */
+    public function quarantined(string $version): bool
+    {
+        ForumVersion::validate($version);
+        $dir=OperationFiles::path($this->root,'storage/app/updates/autonomous');
+        if (!is_dir($dir)) return false;
+        foreach (glob($this->directory().'/attempt-*.json')?:[] as $file) {
+            $old=$this->privateRead($file); $identity=$this->candidate($old);
+            if ($file!==$this->attemptPath($identity) || !in_array($old['state']??null,['running','completed','failed'],true)) throw new \RuntimeException('Invalid quarantine identity');
+            if ($old['state']==='failed' && $identity['version']===$version) return true;
+        }
+        return false;
+    }
     /** Called only while UpdateOperator owns the exclusive operator lock. */
     public function run(): array
     {
@@ -87,6 +104,7 @@ final readonly class AutonomousUpdate
         if (($reason=$policy->autonomousReason($c['from_version'],$c['version'],null,time()))!==null) return $base+['state'=>'deferred','reason'=>$reason];
         $attempt=$this->attemptPath($c);
         if (is_file($attempt)) return $base+['state'=>'blocked','reason'=>'transition_already_attempted'];
+        if ($this->quarantined($c['version'])) return $base+['state'=>'blocked','reason'=>'release_quarantined'];
         $retry=$this->directory().'/retry.json';
         if (is_file($retry)) { $r=$this->privateRead($retry); if (($r['id']??null)===$c['id'] && (int)($r['next_attempt_at']??0)>time()) return $base+['state'=>'deferred','reason'=>'retry_cooldown']; }
         $dir=OperationFiles::path($this->root,'storage/app/update-requests');

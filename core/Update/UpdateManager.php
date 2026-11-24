@@ -123,7 +123,7 @@ final class UpdateManager
                 if (($reason=(new UpdatePolicy($this->config))->autonomousReason($previous,$v['version'],$v['security_update'],time()))!==null) return ['ok'=>false,'deferred'=>true,'reason'=>$reason];
             }
             if (!empty($options['scheduled_request']) && ($reason=(new UpdatePolicy($this->config))->requestReason('apply',$v['version'],time()))!==null) throw new \RuntimeException('Update policy: '.$reason);
-            $journal=['id'=>$id,'state'=>'prepared','previous_version'=>$previous,'target_version'=>$v['version'],'sha256'=>$v['sha256'],'maintenance_was_enabled'=>$this->maintenanceState()['enabled'],'maintenance_before'=>is_file($this->rootPath.'/storage/app/maintenance.json')?OperationFiles::read($this->rootPath.'/storage/app/maintenance.json'):null,'backup'=>null,'child_lock'=>'child-'.bin2hex(random_bytes(8)).'.lock','at'=>gmdate(DATE_ATOM)];
+            $journal=['id'=>$id,'state'=>'prepared','recovery_protocol'=>2,'previous_version'=>$previous,'target_version'=>$v['version'],'sha256'=>$v['sha256'],'maintenance_was_enabled'=>$this->maintenanceState()['enabled'],'maintenance_before'=>is_file($this->rootPath.'/storage/app/maintenance.json')?OperationFiles::read($this->rootPath.'/storage/app/maintenance.json'):null,'backup'=>null,'child_lock'=>'child-'.bin2hex(random_bytes(8)).'.lock','at'=>gmdate(DATE_ATOM)];
             if ($lifecycle!==null) $journal['service_lifecycle']=$lifecycle->identity();
             $journal['mutation_started']=false;
             if (!empty($options['autonomous'])) $journal['authorization']=['type'=>'host_policy','mode'=>(new UpdatePolicy($this->config))->snapshot()['mode']];
@@ -145,9 +145,9 @@ final class UpdateManager
                     $report['recovery_proof']=$proof;
                     // The drill may exceed the permitted window. Do not replace any live files.
                     if (($reason=(new UpdatePolicy($this->config))->autonomousReason($previous,$v['version'],$v['security_update'],time()))!==null) {
-                        $journal['state']='rolled_back'; $this->journal($journal);
                         $result=['ok'=>false,'deferred'=>true,'reason'=>$reason,'id'=>$id,'state'=>'rolled_back','backup'=>['id'=>$journal['backup']],'recovery_proof'=>$proof];
                         if ($lifecycle!==null) { $lifecycle->start($previous); $journal['service_phase']='started'; $this->journal($journal); }
+                        $journal['state']='rolled_back'; $journal['deferred_reason']=$reason; $this->journal($journal);
                         $this->finish($journal,$result); return $result;
                     }
                 }
@@ -176,6 +176,8 @@ final class UpdateManager
                 \CajeerEngine\Observability\OperationsMonitor::marker($this->rootPath,'update');
                 return $result;
             } catch (\Throwable $e) {
+                // A durable terminal decision must never be converted into a destructive rollback.
+                if (in_array($journal['state'],['committed','rolled_back'],true)) throw $e;
                 $journal['failure']='Update failed: '.$e->getMessage();
                 try {
                     if ($lifecycle!==null) {
@@ -209,7 +211,10 @@ final class UpdateManager
         $this->cliOnly(); $lock=OperationLock::acquire($this->rootPath,true); $child=null;
         try {
             $active=OperationLock::active($this->rootPath);
-            if ($active) $j=OperationFiles::read($this->path('active.json'));
+            if ($active) {
+                $j=OperationFiles::read($this->path('active.json'));
+                if (($j['recovery_protocol']??null)===2) $j=RecoveryJournal::active($this->rootPath);
+            }
             else {
                 if (!$confirmed) throw new \RuntimeException('Rollback after a committed update discards subsequent writes; pass --yes');
                 $last=OperationFiles::read($this->path('last-update.json'));
@@ -221,6 +226,17 @@ final class UpdateManager
             if ($backup!==null && $backup!==($j['backup']??null)) throw new \RuntimeException('Backup must match active/latest update');
             $dir=$this->transactionDir($j['id']);
             if (isset($j['child_lock'])) { if (!preg_match('/^child-[a-f0-9]{16}\.lock$/D',$j['child_lock'])) throw new \RuntimeException('Invalid child lease'); $child=OperationLock::childGuard($dir.'/'.$j['child_lock']); }
+            // A terminal transaction may have crashed between journal, report and gate cleanup.
+            // Do not restore a snapshot or restart writers after the durable decision.
+            if ($active && ($j['recovery_protocol']??null)===2 && in_array($j['state'],['committed','rolled_back'],true)) {
+                $version=$j['state']==='committed'?$j['target_version']:$j['previous_version'];
+                if ($this->currentVersion()!==$version || (isset($j['service_lifecycle']) && ($j['service_phase']??null)!=='started')) throw new \RuntimeException('Terminal recovery identity mismatch');
+                $result=['ok'=>true,'id'=>$j['id'],'state'=>$j['state'],'version'=>$version,'previous_version'=>$j['previous_version'],'target_version'=>$j['target_version'],'sha256'=>$j['sha256'],'backup'=>['id'=>$j['backup']??null],'reconciled'=>true];
+                $this->finish($j,$result); return $result;
+            }
+            // Explicit rollback of a committed update is a new destructive intent.
+            // Persist it before stopping services so a later crash cannot be mistaken for commit cleanup.
+            if (!$active) { $j['state']='recovering'; $j['mutation_started']=true; $j['restored']=false; }
             $j['child_lock']='child-'.bin2hex(random_bytes(8)).'.lock';
             $this->journal($j); DatabaseBackup::useProcessLock($dir.'/'.$j['child_lock']);
             $this->setMaintenance('Recovering update');
@@ -551,10 +567,10 @@ final class UpdateManager
         // Backup contains the old core and its dependencies. Recovery entrypoint remains outside replaced tree.
         $source=$this->rootPath.'/tools/update-recovery.php';
         OperationFiles::copy($source,$dir.'/recover.php');
-        OperationFiles::json($dir.'/recovery.json',['root'=>$this->rootPath,'backup'=>$backup]);
+        OperationFiles::json($dir.'/recovery.json',['root'=>$this->rootPath,'backup'=>$backup,'transaction'=>basename($dir)]);
     }
     private function journal(array $j): void { $j['updated_at']=gmdate(DATE_ATOM); OperationFiles::json($this->transactionDir($j['id']).'/journal.json',$j); OperationFiles::json($this->path('active.json'),$j); OperationFiles::json($this->requestDir().'/progress.json',$this->publicJournal($j),0644); }
-    private function finish(array $j,array $report): void { $this->report($report); if (!$j['maintenance_was_enabled']) OperationFiles::remove($this->rootPath.'/storage/app/maintenance.json'); elseif (is_array($j['maintenance_before']??null)) OperationFiles::json($this->rootPath.'/storage/app/maintenance.json',$j['maintenance_before'],0644); OperationFiles::remove($this->path('active.json')); OperationFiles::remove($this->requestDir().'/progress.json'); }
+    private function finish(array $j,array $report): void { $this->report($report+['previous_version'=>$j['previous_version'],'target_version'=>$j['target_version'],'sha256'=>$j['sha256']]); if (!$j['maintenance_was_enabled']) OperationFiles::remove($this->rootPath.'/storage/app/maintenance.json'); elseif (is_array($j['maintenance_before']??null)) OperationFiles::json($this->rootPath.'/storage/app/maintenance.json',$j['maintenance_before'],0644); OperationFiles::remove($this->requestDir().'/progress.json'); OperationFiles::remove($this->path('active.json')); }
     private function report(array $report): void { OperationFiles::json($this->path('last-update.json'),$report,0600); OperationFiles::json($this->requestDir().'/last-report.json',array_intersect_key($report,array_flip(['ok','id','state','previous_version','target_version','version'])),0644); }
     private function setMaintenance(string $message): void { OperationFiles::json($this->rootPath.'/storage/app/maintenance.json',['enabled'=>true,'message'=>$message,'since'=>gmdate(DATE_ATOM)],0644); }
     private function transactionDir(string $id): string { if (!preg_match('/^\d{8}-\d{6}-[a-f0-9]{16}$/D',$id)) throw new \RuntimeException('Invalid transaction ID'); return $this->path('transactions/'.$id); }

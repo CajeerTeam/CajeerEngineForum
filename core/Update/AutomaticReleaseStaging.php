@@ -37,6 +37,7 @@ final readonly class AutomaticReleaseStaging
                 $check=(new UpdateResolver($this->config->get('updates',[]),$this->root))->check((new \CajeerEngine\Forum\ForumVersion($this->root))->current());
                 if (!in_array($check['metadata_status']??null,['fresh','not_modified'],true) || ($check['metadata_source']??null)!==GitHubEndpoints::RELEASES_URL) throw new \RuntimeException('Fresh metadata required');
                 if (!($check['update_available']??false)) $result=['state'=>'up_to_date'];
+                elseif ((new AutonomousUpdate($this->root,$this->config))->quarantined($check['next']['version'])) $result=['state'=>'policy_blocked','version'=>$check['next']['version'],'reason'=>'release_quarantined'];
                 elseif (($reason=(new UpdatePolicy($this->config))->stageReason($check['current_version'],$check['next']['version']))!==null) $result=['state'=>'policy_blocked','version'=>$check['next']['version'],'reason'=>$reason];
                 else {
                     $download=(new GitHubReleaseDownloader($this->root,$this->config))->download($check['next']['version']);

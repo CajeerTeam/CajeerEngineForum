@@ -1,3 +1,8 @@
+## [1.5.8] - 2026-11-24
+
+- Independent recovery supervisor with bounded persistent retries, child lease checks and authenticated snapshot recovery.
+- Complete terminal journal cleanup without replaying a destructive restore; quarantine failed autonomous releases. No schema migration.
+
 ## [1.5.7] - 2026-11-24
 
 - Host systemd lifecycle: stop scheduler and worker before PHP-FPM, keep an exclusive lease through activation, verify local protected HTTP, and restart services on rollback.

@@ -32,7 +32,9 @@ try {
     chdir($root);
     CajeerEngine\Console\OperationsCli::loadEnv($root);
     $config=new CajeerEngine\Runtime\ConfigRepository($snapshot);
-    $result=(new CajeerEngine\Update\UpdateManager($root,$config))->rollback(null,false);
+    $transaction=basename(__DIR__);
+    if (isset($metadata['transaction']) && $metadata['transaction']!==$transaction) throw new RuntimeException('Recovery transaction mismatch');
+    $result=(new CajeerEngine\Update\UpdateManager($root,$config))->rollback(null,false,$transaction);
     echo json_encode($result,JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR)."\n";
     exit(($result['ok']??false)?0:1);
 } catch (Throwable $e) { fwrite(STDERR,$e->getMessage()."\n"); exit(1); }

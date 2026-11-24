@@ -31,6 +31,7 @@ try {
         if ($outcome==='failed')return ['ok'=>false];
         if ($outcome==='unknown') {F::json($root.'/storage/app/updates/active.json',['state'=>'applying']);throw new RuntimeException('interrupted');}
         version($root,'1.5.6');$id='20261124-010101-'.str_repeat('c',16);
+        F::json($root.'/storage/app/updates/transactions/'.$id.'/journal.json',['id'=>$id,'state'=>'committed','previous_version'=>'1.5.5','target_version'=>'1.5.6','sha256'=>$stage['sha256'],'at'=>gmdate(DATE_ATOM)]);
         F::json($root.'/storage/app/updates/last-update.json',['ok'=>true,'state'=>'committed','previous_version'=>'1.5.5','target_version'=>'1.5.6','sha256'=>$stage['sha256'],'id'=>$id]);return ['ok'=>true,'id'=>$id];
     });
     test($engine->run()['state']==='waiting_for_stage'&&$executes===0,'public staged receipt alone cannot authorize auto apply');
@@ -50,6 +51,7 @@ try {
     $lease=L::acquire($root,false);try {test($engine->run()['reason']==='operation_busy'&&$executes===1&&glob($private.'/attempt-*.json')===[],'actual busy operation lease yields safe retry without mutation');}finally{L::release($lease);}F::remove($private.'/retry.json');
     $outcome='failed';test($engine->run()['state']==='failed'&&$executes===2,'definite failure is durably recorded');
     test($engine->run()['reason']==='transition_already_attempted'&&$executes===2,'failed transition never loops');
+    test($engine->quarantined('1.5.6')&&!$engine->quarantined('1.5.7'),'quarantine blocks target version independently of source or digest');
     $attempt=glob($private.'/attempt-*.json')[0];F::remove($attempt);F::remove($private.'/retry.json');
     $outcome='unknown';test($engine->run()['state']==='recovery_required'&&$executes===3,'interrupted apply requires recovery');
     $operator=new O($root,$cfg);test($operator->runOnce()['status']==='recovery_required','actual operator blocks while active marker exists');F::remove($root.'/storage/app/updates/active.json');

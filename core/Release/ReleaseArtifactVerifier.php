@@ -151,6 +151,10 @@ final class ReleaseArtifactVerifier
             $required=array_merge($required,['core/Update/ServiceLifecycle.php','core/Update/UpdateManager.php','core/Observability/ProbeEndpoint.php']);
             if ($mode==='source') $required[]='tools/update-service-lifecycle-regression.php';
         }
+        if (($manifest['edition']??null)==='forum' && version_compare($version,'1.5.8','>=')) {
+            $required=array_merge($required,['core/Update/RecoveryJournal.php','tools/update-supervisor.php']);
+            if ($mode==='source') $required[]='tools/update-crash-recovery-regression.php';
+        }
         foreach ($required as $file) if (!in_array($file, $files, true)) throw new \RuntimeException('Required ZIP entry missing: ' . $file);
         foreach (['pgsql', 'mysql', 'sqlite'] as $driver) {
             if (!array_filter($files, static fn ($file) => str_starts_with($file, 'migrations/' . $driver . '/') && str_ends_with($file, '.sql'))) throw new \RuntimeException('Missing migrations: ' . $driver);

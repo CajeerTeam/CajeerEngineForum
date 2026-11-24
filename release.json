@@ -17,10 +17,10 @@
     "docs": "GitHub repository docs/",
     "updates": "GitHub Releases",
     "release_builder": "tools/build-release.php",
-    "source_artifact": "storage/releases/cajeerengine-1.5.7-source.zip",
-    "dist_artifact": "storage/releases/cajeerengine-1.5.7-dist.zip",
+    "source_artifact": "storage/releases/cajeerengine-1.5.8-source.zip",
+    "dist_artifact": "storage/releases/cajeerengine-1.5.8-dist.zip",
     "checksums": "storage/releases/*.sha256",
-    "artifact_index": "storage/releases/cajeerengine-1.5.7-artifacts.json",
+    "artifact_index": "storage/releases/cajeerengine-1.5.8-artifacts.json",
     "support_bundle": "storage/app/support",
     "backup": "storage/app/backups/production",
     "server_reports": "storage/app/reports",
@@ -36,6 +36,7 @@
     "engine_api_version": "1.1"
   },
   "product_changes": [
+    "Forum Edition 1.5.8: independent host recovery supervisor, bounded crash retries, terminal journal reconciliation without destructive replay and release quarantine. Physical qualification required.",
     "Forum Edition 1.5.7: systemd-controlled autonomous deployments with durable service phases, drained writers, fresh PHP-FPM, protected HTTP gate and service-aware rollback. Compose ordered shutdown; physical qualification required.",
     "Forum Edition 1.5.6: mandatory exact-snapshot recovery rehearsal for autonomous updates, backup capacity and destination checks, optional encrypted off-site readback and policy recheck before mutation. SQLite/PostgreSQL only for autonomous recovery; physical qualification required.",
     "Forum Edition 1.5.5: opt-in autonomous signed updates under host policy, private stage and attempt receipts, fresh catalog admission, durable mutation boundary, safe busy retries and fail-closed reconciliation. Physical qualification required.",
@@ -217,11 +218,11 @@
   },
   "stability": "production-stable-gated",
   "edition": "forum",
-  "edition_version": "1.5.7",
+  "edition_version": "1.5.8",
   "upstream_version": "2.1.0",
   "upgrade_compatibility": {
     "schema": 1,
-    "min_from": "1.5.6",
+    "min_from": "1.5.7",
     "php": ">=8.4.1 <9.0",
     "extensions": [
       "json",
