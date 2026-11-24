@@ -672,7 +672,8 @@ final class Application
             $forumAiChat,
             $container->get(AuditLogger::class),
             new \CajeerEngine\Forum\Service\ForumThreadAssistant($forumDb,$forumTx,$forumAiChat),
-            new \CajeerEngine\Forum\Service\ForumAiSearch($forumDb,$forumTx,$forumAiChat)
+            new \CajeerEngine\Forum\Service\ForumAiSearch($forumDb,$forumTx,$forumAiChat),
+            new \CajeerEngine\Forum\Service\ForumWritingAssistant($forumAiChat)
         );
         $forumSupport = new \CajeerEngine\Forum\ForumSupportController(
             new \CajeerEngine\Forum\Service\ForumSupportAssistant($forumDb, new \CajeerEngine\Forum\Service\ForumAiSearch($forumDb,$forumTx,$forumAiChat)),

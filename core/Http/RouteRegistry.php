@@ -326,6 +326,7 @@ final class RouteRegistry
             ['GET', '/api/v1/forum/ai/conversations/{id}', 'api.v1.forum.ai.conversation.show', 'forumAi', 'show', []],
             ['PATCH', '/api/v1/forum/ai/conversations/{id}', 'api.v1.forum.ai.conversation.rename', 'forumAi', 'rename', []],
             ['DELETE', '/api/v1/forum/ai/conversations/{id}', 'api.v1.forum.ai.conversation.delete', 'forumAi', 'delete', []],
+            ['POST', '/api/v1/forum/ai/writing/suggest', 'api.v1.forum.ai.writing.suggest', 'forumAi', 'writingSuggest', ['forum:write']],
             ['POST', '/api/v1/forum/ai/chat', 'api.v1.forum.ai.chat', 'forumAi', 'send', []],
             ['POST', '/api/v1/forum/ai/chat/stream', 'api.v1.forum.ai.chat.stream', 'forumAi', 'stream', []],
             ['GET', '/api/v1/forum/acp/ai', 'api.v1.forum.acp.ai.status', 'forumAi', 'adminStatus', ['forum:acp:settings']],

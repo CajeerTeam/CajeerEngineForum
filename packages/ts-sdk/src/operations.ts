@@ -544,6 +544,298 @@ export const operations = {
         "parameters": [],
         "bodyRequired": true
     },
+    "api_v1_forum_acp_ai_configure": {
+        "method": "PUT",
+        "path": "/forum/acp/ai",
+        "parameters": [],
+        "bodyRequired": true
+    },
+    "api_v1_forum_acp_ai_status": {
+        "method": "GET",
+        "path": "/forum/acp/ai",
+        "parameters": [],
+        "bodyRequired": false
+    },
+    "api_v1_forum_acp_support_action": {
+        "method": "POST",
+        "path": "/forum/acp/support/tickets/{id}/action",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
+    },
+    "api_v1_forum_acp_support_faqs": {
+        "method": "GET",
+        "path": "/forum/acp/support/faqs",
+        "parameters": [],
+        "bodyRequired": false
+    },
+    "api_v1_forum_acp_support_faqs_create": {
+        "method": "POST",
+        "path": "/forum/acp/support/faqs",
+        "parameters": [],
+        "bodyRequired": true
+    },
+    "api_v1_forum_acp_support_faqs_delete": {
+        "method": "DELETE",
+        "path": "/forum/acp/support/faqs/{id}",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
+    },
+    "api_v1_forum_acp_support_faqs_update": {
+        "method": "PUT",
+        "path": "/forum/acp/support/faqs/{id}",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
+    },
+    "api_v1_forum_acp_support_queue": {
+        "method": "GET",
+        "path": "/forum/acp/support/tickets",
+        "parameters": [],
+        "bodyRequired": false
+    },
+    "api_v1_forum_acp_support_reply": {
+        "method": "POST",
+        "path": "/forum/acp/support/tickets/{id}/reply",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
+    },
+    "api_v1_forum_ai_chat": {
+        "method": "POST",
+        "path": "/forum/ai/chat",
+        "parameters": [],
+        "bodyRequired": true
+    },
+    "api_v1_forum_ai_chat_stream": {
+        "method": "POST",
+        "path": "/forum/ai/chat/stream",
+        "parameters": [],
+        "bodyRequired": true
+    },
+    "api_v1_forum_ai_conversation_delete": {
+        "method": "DELETE",
+        "path": "/forum/ai/conversations/{id}",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": false
+    },
+    "api_v1_forum_ai_conversation_rename": {
+        "method": "PATCH",
+        "path": "/forum/ai/conversations/{id}",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
+    },
+    "api_v1_forum_ai_conversation_show": {
+        "method": "GET",
+        "path": "/forum/ai/conversations/{id}",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": false
+    },
+    "api_v1_forum_ai_conversations": {
+        "method": "GET",
+        "path": "/forum/ai/conversations",
+        "parameters": [],
+        "bodyRequired": false
+    },
+    "api_v1_forum_ai_search_answer": {
+        "method": "POST",
+        "path": "/forum/ai/search",
+        "parameters": [],
+        "bodyRequired": true
+    },
+    "api_v1_forum_ai_search_sources": {
+        "method": "GET",
+        "path": "/forum/ai/search",
+        "parameters": [
+            {
+                "name": "q",
+                "in": "query",
+                "required": true
+            }
+        ],
+        "bodyRequired": false
+    },
+    "api_v1_forum_ai_search_stream": {
+        "method": "POST",
+        "path": "/forum/ai/search/stream",
+        "parameters": [],
+        "bodyRequired": true
+    },
+    "api_v1_forum_ai_status": {
+        "method": "GET",
+        "path": "/forum/ai/status",
+        "parameters": [],
+        "bodyRequired": false
+    },
+    "api_v1_forum_ai_writing_suggest": {
+        "method": "POST",
+        "path": "/forum/ai/writing/suggest",
+        "parameters": [],
+        "bodyRequired": true
+    },
+    "api_v1_forum_support_create": {
+        "method": "POST",
+        "path": "/forum/support/tickets",
+        "parameters": [],
+        "bodyRequired": true
+    },
+    "api_v1_forum_support_faqs": {
+        "method": "GET",
+        "path": "/forum/support/faqs",
+        "parameters": [],
+        "bodyRequired": false
+    },
+    "api_v1_forum_support_handoff": {
+        "method": "POST",
+        "path": "/forum/support/tickets/{id}/handoff",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
+    },
+    "api_v1_forum_support_mine": {
+        "method": "GET",
+        "path": "/forum/support/tickets",
+        "parameters": [],
+        "bodyRequired": false
+    },
+    "api_v1_forum_support_reply": {
+        "method": "POST",
+        "path": "/forum/support/tickets/{id}/reply",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
+    },
+    "api_v1_forum_support_show": {
+        "method": "GET",
+        "path": "/forum/support/tickets/{id}",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": false
+    },
+    "api_v1_forum_thread_ai_conversation": {
+        "method": "GET",
+        "path": "/forum/threads/{id}/ai/conversations/{conversation_id}",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            },
+            {
+                "name": "conversation_id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": false
+    },
+    "api_v1_forum_thread_ai_delete": {
+        "method": "DELETE",
+        "path": "/forum/threads/{id}/ai/conversations/{conversation_id}",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            },
+            {
+                "name": "conversation_id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": false
+    },
+    "api_v1_forum_thread_ai_overview": {
+        "method": "GET",
+        "path": "/forum/threads/{id}/ai",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": false
+    },
+    "api_v1_forum_thread_ai_send": {
+        "method": "POST",
+        "path": "/forum/threads/{id}/ai",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
+    },
+    "api_v1_forum_thread_ai_stream": {
+        "method": "POST",
+        "path": "/forum/threads/{id}/ai/stream",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
+    },
     "api_v1_identity_admin_link": {
         "method": "POST",
         "path": "/identity/admin/users/{id}/link",
@@ -1648,6 +1940,21 @@ export const operations = {
             },
             {
                 "name": "job",
+                "in": "query",
+                "required": false
+            },
+            {
+                "name": "from",
+                "in": "query",
+                "required": false
+            },
+            {
+                "name": "until",
+                "in": "query",
+                "required": false
+            },
+            {
+                "name": "days",
                 "in": "query",
                 "required": false
             }
@@ -3558,6 +3865,12 @@ export const operations = {
             }
         ],
         "bodyRequired": false
+    },
+    "post_Forum_Native_Analytics_PageView": {
+        "method": "POST",
+        "path": "/forum/analytics/page-view",
+        "parameters": [],
+        "bodyRequired": true
     },
     "post_Forum_acp_maintenance": {
         "method": "POST",

@@ -708,6 +708,393 @@ final class Operations {
     ),
     'bodyRequired' => true,
   ),
+  'api_v1_forum_acp_ai_configure' => 
+  array (
+    'method' => 'PUT',
+    'path' => '/forum/acp/ai',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => true,
+  ),
+  'api_v1_forum_acp_ai_status' => 
+  array (
+    'method' => 'GET',
+    'path' => '/forum/acp/ai',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => false,
+  ),
+  'api_v1_forum_acp_support_action' => 
+  array (
+    'method' => 'POST',
+    'path' => '/forum/acp/support/tickets/{id}/action',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => true,
+  ),
+  'api_v1_forum_acp_support_faqs' => 
+  array (
+    'method' => 'GET',
+    'path' => '/forum/acp/support/faqs',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => false,
+  ),
+  'api_v1_forum_acp_support_faqs_create' => 
+  array (
+    'method' => 'POST',
+    'path' => '/forum/acp/support/faqs',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => true,
+  ),
+  'api_v1_forum_acp_support_faqs_delete' => 
+  array (
+    'method' => 'DELETE',
+    'path' => '/forum/acp/support/faqs/{id}',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => true,
+  ),
+  'api_v1_forum_acp_support_faqs_update' => 
+  array (
+    'method' => 'PUT',
+    'path' => '/forum/acp/support/faqs/{id}',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => true,
+  ),
+  'api_v1_forum_acp_support_queue' => 
+  array (
+    'method' => 'GET',
+    'path' => '/forum/acp/support/tickets',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => false,
+  ),
+  'api_v1_forum_acp_support_reply' => 
+  array (
+    'method' => 'POST',
+    'path' => '/forum/acp/support/tickets/{id}/reply',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => true,
+  ),
+  'api_v1_forum_ai_chat' => 
+  array (
+    'method' => 'POST',
+    'path' => '/forum/ai/chat',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => true,
+  ),
+  'api_v1_forum_ai_chat_stream' => 
+  array (
+    'method' => 'POST',
+    'path' => '/forum/ai/chat/stream',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => true,
+  ),
+  'api_v1_forum_ai_conversation_delete' => 
+  array (
+    'method' => 'DELETE',
+    'path' => '/forum/ai/conversations/{id}',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
+  'api_v1_forum_ai_conversation_rename' => 
+  array (
+    'method' => 'PATCH',
+    'path' => '/forum/ai/conversations/{id}',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => true,
+  ),
+  'api_v1_forum_ai_conversation_show' => 
+  array (
+    'method' => 'GET',
+    'path' => '/forum/ai/conversations/{id}',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
+  'api_v1_forum_ai_conversations' => 
+  array (
+    'method' => 'GET',
+    'path' => '/forum/ai/conversations',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => false,
+  ),
+  'api_v1_forum_ai_search_answer' => 
+  array (
+    'method' => 'POST',
+    'path' => '/forum/ai/search',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => true,
+  ),
+  'api_v1_forum_ai_search_sources' => 
+  array (
+    'method' => 'GET',
+    'path' => '/forum/ai/search',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'q',
+        'in' => 'query',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
+  'api_v1_forum_ai_search_stream' => 
+  array (
+    'method' => 'POST',
+    'path' => '/forum/ai/search/stream',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => true,
+  ),
+  'api_v1_forum_ai_status' => 
+  array (
+    'method' => 'GET',
+    'path' => '/forum/ai/status',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => false,
+  ),
+  'api_v1_forum_ai_writing_suggest' => 
+  array (
+    'method' => 'POST',
+    'path' => '/forum/ai/writing/suggest',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => true,
+  ),
+  'api_v1_forum_support_create' => 
+  array (
+    'method' => 'POST',
+    'path' => '/forum/support/tickets',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => true,
+  ),
+  'api_v1_forum_support_faqs' => 
+  array (
+    'method' => 'GET',
+    'path' => '/forum/support/faqs',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => false,
+  ),
+  'api_v1_forum_support_handoff' => 
+  array (
+    'method' => 'POST',
+    'path' => '/forum/support/tickets/{id}/handoff',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => true,
+  ),
+  'api_v1_forum_support_mine' => 
+  array (
+    'method' => 'GET',
+    'path' => '/forum/support/tickets',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => false,
+  ),
+  'api_v1_forum_support_reply' => 
+  array (
+    'method' => 'POST',
+    'path' => '/forum/support/tickets/{id}/reply',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => true,
+  ),
+  'api_v1_forum_support_show' => 
+  array (
+    'method' => 'GET',
+    'path' => '/forum/support/tickets/{id}',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
+  'api_v1_forum_thread_ai_conversation' => 
+  array (
+    'method' => 'GET',
+    'path' => '/forum/threads/{id}/ai/conversations/{conversation_id}',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+      1 => 
+      array (
+        'name' => 'conversation_id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
+  'api_v1_forum_thread_ai_delete' => 
+  array (
+    'method' => 'DELETE',
+    'path' => '/forum/threads/{id}/ai/conversations/{conversation_id}',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+      1 => 
+      array (
+        'name' => 'conversation_id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
+  'api_v1_forum_thread_ai_overview' => 
+  array (
+    'method' => 'GET',
+    'path' => '/forum/threads/{id}/ai',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
+  'api_v1_forum_thread_ai_send' => 
+  array (
+    'method' => 'POST',
+    'path' => '/forum/threads/{id}/ai',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => true,
+  ),
+  'api_v1_forum_thread_ai_stream' => 
+  array (
+    'method' => 'POST',
+    'path' => '/forum/threads/{id}/ai/stream',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => true,
+  ),
   'api_v1_identity_admin_link' => 
   array (
     'method' => 'POST',
@@ -2130,6 +2517,24 @@ final class Operations {
       7 => 
       array (
         'name' => 'job',
+        'in' => 'query',
+        'required' => false,
+      ),
+      8 => 
+      array (
+        'name' => 'from',
+        'in' => 'query',
+        'required' => false,
+      ),
+      9 => 
+      array (
+        'name' => 'until',
+        'in' => 'query',
+        'required' => false,
+      ),
+      10 => 
+      array (
+        'name' => 'days',
         'in' => 'query',
         'required' => false,
       ),
@@ -4601,6 +5006,15 @@ final class Operations {
       ),
     ),
     'bodyRequired' => false,
+  ),
+  'post_Forum_Native_Analytics_PageView' => 
+  array (
+    'method' => 'POST',
+    'path' => '/forum/analytics/page-view',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => true,
   ),
   'post_Forum_acp_maintenance' => 
   array (
