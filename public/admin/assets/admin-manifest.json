@@ -14,8 +14,8 @@
     "assets/admin-app.js": {
       "path": "/admin/assets/admin-app.js",
       "exists": true,
-      "size": 389456,
-      "sha256": "7eae6f7fc56595684e6d4ac9f8403ad7c96517d410d5737954b8961ff87c5b71"
+      "size": 394685,
+      "sha256": "a9635320647195fe80896e610535b178421474321505f9949f0d07b45a5e5a31"
     },
     "assets/admin-app.css": {
       "path": "/admin/assets/admin-app.css",

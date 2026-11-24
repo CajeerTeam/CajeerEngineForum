@@ -329,6 +329,8 @@ final class RouteRegistry
             ['POST', '/api/v1/forum/ai/writing/suggest', 'api.v1.forum.ai.writing.suggest', 'forumAi', 'writingSuggest', ['forum:write']],
             ['POST', '/api/v1/forum/ai/chat', 'api.v1.forum.ai.chat', 'forumAi', 'send', []],
             ['POST', '/api/v1/forum/ai/chat/stream', 'api.v1.forum.ai.chat.stream', 'forumAi', 'stream', []],
+            ['GET', '/api/v1/forum/acp/ai/insights', 'api.v1.forum.acp.ai.insights.preview', 'forumAi', 'insightsPreview', ['forum:acp:settings']],
+            ['POST', '/api/v1/forum/acp/ai/insights', 'api.v1.forum.acp.ai.insights.explain', 'forumAi', 'insightsExplain', ['forum:acp:settings']],
             ['GET', '/api/v1/forum/acp/ai', 'api.v1.forum.acp.ai.status', 'forumAi', 'adminStatus', ['forum:acp:settings']],
             ['PUT', '/api/v1/forum/acp/ai', 'api.v1.forum.acp.ai.configure', 'forumAi', 'adminConfigure', ['forum:acp:settings']],
             ['POST', '/api/v1/forum/analytics/page-view', 'api.v1.forum.analytics.native.page', 'forum', 'nativePageView', null],

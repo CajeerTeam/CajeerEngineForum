@@ -717,6 +717,42 @@ final class Operations {
     ),
     'bodyRequired' => true,
   ),
+  'api_v1_forum_acp_ai_insights_explain' => 
+  array (
+    'method' => 'POST',
+    'path' => '/forum/acp/ai/insights',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => true,
+  ),
+  'api_v1_forum_acp_ai_insights_preview' => 
+  array (
+    'method' => 'GET',
+    'path' => '/forum/acp/ai/insights',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'from',
+        'in' => 'query',
+        'required' => false,
+      ),
+      1 => 
+      array (
+        'name' => 'until',
+        'in' => 'query',
+        'required' => false,
+      ),
+      2 => 
+      array (
+        'name' => 'focus',
+        'in' => 'query',
+        'required' => false,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
   'api_v1_forum_acp_ai_status' => 
   array (
     'method' => 'GET',

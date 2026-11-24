@@ -1,12 +1,14 @@
 # CajeerEngine Forum Edition
 
-**Forum Edition 1.3.7 — AI Moderation Advisor (complaint/queued-post triage, reviewer-only decisions, real OpenAI budgeting)**, built on CajeerEngine 2.1.0. Publication requires a passing `forum-required` gate and verified signed CI certification tied to the exact commit and release artifacts.
+**Forum Edition 1.3.8 — AI ACP Insights (verified anonymous analytics, on-demand OpenAI explanations, interactive charts and source-based CSV)**, built on CajeerEngine 2.1.0. Publication requires a passing `forum-required` gate and verified signed CI certification tied to the exact commit and release artifacts.
 
 Self-hosted forum platform by CajeerTeam. PHP 8.4.1+, CajeerEngine kernel, Symfony Components, REST API, Apache-2.0.
 
 Repository: https://github.com/CajeerTeam/CajeerEngineForum · Upstream: https://github.com/CajeerTeam/CajeerEngine
 
 **Upgrade 1.3.3 → 1.3.4:** [Knowledge Sync & Search Quality guide](docs/forum-knowledge-sync-1.3.4.md). No new migration. Deploy the updated PHP sources, run the mandatory FTS and AI search regressions, then `php bin/cajeer forum:search:check --json` before reopening traffic. `forum:search:repair` repairs drift while indexing is paused. Full CI/staging checks are still required.
+
+**Upgrade 1.3.7 → 1.3.8:** [AI ACP Insights guide](docs/forum-ai-insights-1.3.8.md). No migration; deploy PHP and both ACP assets together, confirm OpenAI quotas and complete CI and staging acceptance.
 
 **Upgrade 1.3.6 → 1.3.7:** [AI Moderation Advisor guide](docs/forum-ai-moderation-1.3.7.md). Apply migration 0088, deploy PHP and both forum/ACP assets, then pass CI and staging.
 

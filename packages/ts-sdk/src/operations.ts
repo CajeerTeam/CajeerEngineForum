@@ -550,6 +550,34 @@ export const operations = {
         "parameters": [],
         "bodyRequired": true
     },
+    "api_v1_forum_acp_ai_insights_explain": {
+        "method": "POST",
+        "path": "/forum/acp/ai/insights",
+        "parameters": [],
+        "bodyRequired": true
+    },
+    "api_v1_forum_acp_ai_insights_preview": {
+        "method": "GET",
+        "path": "/forum/acp/ai/insights",
+        "parameters": [
+            {
+                "name": "from",
+                "in": "query",
+                "required": false
+            },
+            {
+                "name": "until",
+                "in": "query",
+                "required": false
+            },
+            {
+                "name": "focus",
+                "in": "query",
+                "required": false
+            }
+        ],
+        "bodyRequired": false
+    },
     "api_v1_forum_acp_ai_status": {
         "method": "GET",
         "path": "/forum/acp/ai",

@@ -1,3 +1,12 @@
+## [1.3.8] - 2026-11-24
+
+### AI ACP Insights
+- On-demand AI analysis of real first-party forum rollups: per-day trends, event comparisons, verified facts and interactive ACP charts with CSV exports.
+- Explicit disclosure approval for external OpenAI; operator browser session and live ACL validated before and after provider call, no personal identifiers or raw event payloads sent.
+- Reuses existing OpenAI Responses API, atomic quotas/budget ledger and ephemeral search-purpose conversation with mandatory deletion after generation.
+- Grounded JSON evidence identifiers, server-resolved factual values, numeric claim rejection and report-change detection; no automated actions or guessed unique-visitor measures.
+- No database migration. Unit/real-PDO provider-boundary/browser regressions added to CI; production certification still requires successful CI and staging checks.
+
 ## [1.3.7] - 2026-11-24
 
 ### AI Moderation Advisor

@@ -1784,6 +1784,66 @@ const forumAcp = (() => {
     const chartBody=el('div');
     seriesSelect.addEventListener('change',()=>{nativeFocus=seriesSelect.value;chartBody.replaceChildren(nativeChart(d,nativeFocus))});
     trend.append(field('Ряд на графике',seriesSelect));chartBody.append(nativeChart(d,nativeFocus));trend.append(chartBody);
+    // 1.3.8: AI explains a read-only, independently verifiable aggregate snapshot.
+    // Charts remain authoritative even when the external model fails.
+    const insightsPanel=card('AI ACP Insights · объяснение статистики');body.append(insightsPanel);
+    insightsPanel.append(el('p','AI-анализ запускается только по запросу. OpenAI получает анонимные агрегированные показатели, без пользователей, IP, текстов сообщений или сырых событий. Интерпретации не доказывают причину изменений.','muted'));
+    const insightAck=input('insight_ack','','checkbox');
+    const insightConsent=el('label');insightConsent.append(insightAck,document.createTextNode(' Разрешаю передать агрегированные данные OpenAI для этого отчёта.'));
+    insightsPanel.append(insightConsent);
+    const insightActions=el('div',null,'toolbar'),insightContent=el('div');insightsPanel.append(insightActions,insightContent);
+    let insightResult=null;
+    const insightFocus=()=>['total','views','actions'].includes(nativeFocus)?nativeFocus:'event:'+nativeFocus;
+    const insightParams=()=>({from:d.from,until:d.until,focus:insightFocus()});
+    const insightFacts=(report)=>{
+      const wrapper=el('section');wrapper.append(el('h3','Проверяемые показатели · '+report.from+' — '+report.until),
+        el('p',report.methodology,'muted'));
+      wrapper.append(tableDom(['Источник','Значение'],report.facts.map(f=>[f.label+' ('+f.id+')',nativeNumber(f.value)+' '+f.unit])));
+      return wrapper;
+    };
+    const insightExport=(result)=>{
+      const lines=[['type','statement','evidence_id','verified_value'],['headline',result.headline,'','']];
+      for(const item of result.observations)for(const fact of item.evidence)
+        lines.push([item.kind,item.text,fact.id,String(fact.value)]);
+      const csvCell=x=>{let v=String(x);if(/^[\s]*[=+\-@]/u.test(v))v="'"+v;return '"'+v.replaceAll('"','""')+'"'};
+      const csv='\ufeff'+lines.map(row=>row.map(csvCell).join(',')).join('\r\n');
+      const url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
+      const a=document.createElement('a');a.href=url;a.download='forum-ai-insights-'+d.from+'_'+d.until+'.csv';document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
+    };
+    const renderInsight=(result)=>{
+      insightContent.replaceChildren();
+      if(!result){insightContent.append(el('p','AI-отчёт ещё не запрошен. Показатели и графики доступны без OpenAI.','muted'));return;}
+      insightContent.append(el('h3',result.headline),el('p','Модель: '+result.model+' · '+new Date(result.generated_at*1000).toLocaleString('ru-RU'),'muted'));
+      const labels={observation:'Наблюдение',hypothesis:'Гипотеза',caveat:'Ограничение данных'};
+      for(const item of result.observations){
+        const block=el('section',null,'card');block.append(el('h4',labels[item.kind]||item.kind),el('p',item.text));
+        const sources=el('ul');
+        for(const fact of item.evidence){
+          const line=el('li');line.append(el('strong',fact.label+': '+nativeNumber(fact.value)+' '+fact.unit+' '));
+          const key=fact.id.startsWith('event.')?fact.id.slice(6):fact.id==='events.views'?'views':fact.id==='events.actions'?'actions':null;
+          if(key && [...seriesSelect.options].some(o=>o.value===key)){
+            line.append(action('Показать на графике',()=>{nativeFocus=key;seriesSelect.value=key;chartBody.replaceChildren(nativeChart(d,key));trend.scrollIntoView({behavior:'smooth',block:'start'})}));
+          }
+          sources.append(line);
+        }
+        block.append(sources);insightContent.append(block);
+      }
+      insightContent.append(insightFacts(result.report),el('p','AI-комментарий является рекомендацией для проверки, а не подтверждением причинно-следственной связи.','muted'));
+      insightContent.append(action('Экспорт AI-отчёта CSV',()=>insightExport(result)));
+    };
+    insightActions.append(action('Показать проверяемые факты',async()=>{
+      const report=await call('/acp/ai/insights?'+new URLSearchParams(insightParams()));
+      if(ticket!==serial)return;
+      insightResult=null;insightContent.replaceChildren(insightFacts(report));
+    }),action('Сгенерировать AI-объяснение',async()=>{
+      if(!insightAck.checked)throw new Error('Сначала подтвердите передачу агрегатов внешнему AI.');
+      insightContent.replaceChildren(el('p','Формирование отчёта…','muted'));
+      const result=await call('/acp/ai/insights','POST',{...insightParams(),acknowledge_external_processing:true});
+      if(ticket!==serial)return;
+      insightResult=result;renderInsight(result);
+    },'primary'));
+    renderInsight(null);
+
 
     const overview=card('События по категориям');body.append(overview);
     const all=summary.total||0;
