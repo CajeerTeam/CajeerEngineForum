@@ -73,7 +73,7 @@ final class UpdatePolicy
 
     public function stagingEnabled(): bool
     {
-        return $this->error===null && match($this->mode) {
+        return $this->discoveryEnabled() && match($this->mode) {
             'legacy' => $this->config->bool('updates.core.auto_stage_enabled'),
             'disabled','notify_only' => false,
             default => true,

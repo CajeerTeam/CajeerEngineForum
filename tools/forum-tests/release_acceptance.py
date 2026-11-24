@@ -1013,7 +1013,7 @@ def main():
         initial=current
         if previous:
             with zipfile.ZipFile(previous) as z: initial=json.loads(z.read('cajeerengine/release.json'))['edition_version']
-            require(initial in ('0.5.5','0.5.6','0.6.0','0.6.1','0.6.2','0.6.3','0.6.4','0.6.5','0.6.6','0.7.0','0.7.1','0.7.2','0.7.3','0.7.4','0.7.5','0.7.6','0.7.7','0.8.0','0.8.1','0.8.2','0.8.3','0.8.4','0.8.5','0.8.6','0.8.7','0.9.0','0.9.1','0.9.2','0.9.3','0.9.4','0.9.5','0.9.6','0.9.7','0.9.8','0.9.9'),'Unsupported authentic baseline')
+            require(initial in ('0.5.5','0.5.6','0.6.0','0.6.1','0.6.2','0.6.3','0.6.4','0.6.5','0.6.6','0.7.0','0.7.1','0.7.2','0.7.3','0.7.4','0.7.5','0.7.6','0.7.7','0.8.0','0.8.1','0.8.2','0.8.3','0.8.4','0.8.5','0.8.6','0.8.7','0.9.0','0.9.1','0.9.2','0.9.3','0.9.4','0.9.5','0.9.6','0.9.7','0.9.8','0.9.9','1.5.11'),'Unsupported authentic baseline')
         stages=[]
         require(previous is not None or not args.intermediate, 'Intermediate releases require --previous')
         for intermediate in args.intermediate:
@@ -1022,9 +1022,11 @@ def main():
                 stage=json.loads(z.read('cajeerengine/release.json'))['edition_version']
             stages.append((intermediate,stage))
         releases=[initial,*[v for _,v in stages],current] if previous else [current]
-        if previous: verify_release_sequence(releases)
+        if previous:
+            verify_release_sequence(releases)
+            if current == "1.6.0": require(releases[-2] == "1.5.11", "Actual 1.5.11 predecessor is required")
         site=unpack(previous or artifact,work/'live',initial)
-        if previous and args.driver == 'pgsql':
+        if previous and args.driver == 'pgsql' and tuple(map(int,initial.split('.'))) < (1,0,0):
             enable_legacy_pgsql_fts_compat(work,env)
         install(site,env,report,'initial',port,args.driver)
         ecosystem=None
@@ -1157,9 +1159,16 @@ def main():
             # Inject actual failing SQL into a separately built, correctly signed target.
             broken=unpack(artifact,work/'broken',current)
             (broken/'migrations'/args.driver/'9999_acceptance_failure.sql').write_text('CREATE TABLE ce_acceptance_failure(id INTEGER); THIS IS INVALID SQL;\n')
+            # Never reuse the pinned version with a different package digest.
+            failure_version = '1.6.1' if current == '1.6.0' else current
+            if failure_version != current:
+                metadata = json.loads((broken/'release.json').read_text())
+                metadata['edition_version'] = failure_version
+                metadata['upgrade_compatibility']['min_from'] = rollback_version
+                (broken/'release.json').write_text(json.dumps(metadata).replace('cajeerengine-'+current+'-', 'cajeerengine-'+failure_version+'-')+'\n')
             out=work/'broken-artifacts'; out.mkdir()
             run(broken,env,report,'build-broken',['php','tools/build-release.php','--dist','--target-dir='+str(out),'--json'])
-            pkg=out/f'cajeerengine-{current}-dist.zip'
+            pkg=out/f'cajeerengine-{failure_version}-dist.zip'
             run(site,env,report,'sign-broken',['php','bin/cajeer','release:sign','--package='+str(pkg),'--secret-key='+str(secret)])
             failed=json.loads(run(site,env,report,'failed-upgrade',['php','bin/cajeer','update:apply','--package='+str(pkg),'--json'],expected=1,timeout=600))
             require(failed['state']=='rolled_back' and version(site)==rollback_version and not (site/'storage/app/updates/active.json').exists(), 'Automatic rollback failed')

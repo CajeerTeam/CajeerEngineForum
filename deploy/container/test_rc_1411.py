@@ -94,7 +94,7 @@ class CandidateTests(unittest.TestCase):
         self.assertEqual(sum(row['errors'] for row in result['operations'].values()),0)
 
     def test_run_identity_and_recovery_receipts(self):
-        rows={name:{'id':i+1,'path':'.github/workflows/'+workflow,'event':event,'head_sha':COMMIT,'head_branch':'main','repository':{'full_name':REPO},'head_repository':{'full_name':REPO},'status':'completed','conclusion':'success'} for i,(name,(workflow,event)) in enumerate(gate.WORKFLOWS.items())}
+        rows={name:{'id':i+1,'run_attempt':1,'path':'.github/workflows/'+workflow,'event':event,'head_sha':COMMIT,'head_branch':'main','repository':{'full_name':REPO},'head_repository':{'full_name':REPO},'status':'completed','conclusion':'success'} for i,(name,(workflow,event)) in enumerate(gate.WORKFLOWS.items())}
         gate.validate_runs(rows,REPO,COMMIT)
         for key,value in (('head_sha','c'*40),('conclusion','failure'),('path','.github/workflows/other.yml'),('event','pull_request'),('id',rows['ci']['id'])):
             bad=copy.deepcopy(rows);bad['physical'][key]=value

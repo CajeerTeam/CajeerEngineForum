@@ -111,7 +111,7 @@ final class UpdateManager
         catch (OperationBusy $e) { if (!empty($options['autonomous'])) return ['ok'=>false,'deferred'=>true,'reason'=>'operation_busy']; throw $e; }
         $dir=null; $journalled=false; $lifecycle=null;
         try {
-            if (OperationLock::active($this->rootPath)||is_file($this->rootPath.'/storage/app/backup-restore.json')||is_file($this->rootPath.'/storage/app/extensions/deployment.json')) throw new \RuntimeException('Interrupted operation: recover first');
+            if ($this->recoveryPending()) throw new \RuntimeException('Interrupted operation: recover first');
             if (!is_file($this->rootPath.'/storage/app/installed.lock')) throw new \RuntimeException('Installed forum required');
             // Authenticate before allocating a persistent transaction directory. Reverify the copied bytes below.
             $initial=$this->verifyPackage($package,$this->option($options,'sha256'),$signature);
@@ -312,7 +312,7 @@ final class UpdateManager
     {
         if (is_file($this->rootPath.'/storage/app/extensions/deployment.json')) throw new \RuntimeException('Recover extension deployment first');
         // HTTP holds a shared lease. The active marker blocks reopening after a crash.
-        if (OperationLock::active($this->rootPath)||is_file($this->rootPath.'/storage/app/backup-restore.json')) throw new \RuntimeException('Cannot leave maintenance while recovery is pending');
+        if ($this->recoveryPending()) throw new \RuntimeException('Cannot leave maintenance while recovery is pending');
         if(is_file($this->rootPath.'/storage/app/installed.lock')) \CajeerEngine\Forum\Migration\ForumMigrationEngine::assertNoRunning(new \CajeerEngine\Database\DatabaseManager($this->config));
         OperationFiles::remove($this->rootPath.'/storage/app/maintenance.json'); return ['ok'=>true,'enabled'=>false];
     }

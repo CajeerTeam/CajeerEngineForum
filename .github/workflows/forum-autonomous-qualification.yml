@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
     inputs:
       ci_run:
-        description: Successful main CI run ID for the exact 1.5.11 candidate
+        description: Successful main CI run ID for the exact 1.6.0 candidate
         required: true
         type: string
       phase:
@@ -31,6 +31,7 @@ jobs:
       FIXTURE: /etc/cajeerengine/qualification-fixture.json
       QUALIFICATION_PHASE: ${{ inputs.phase }}
       CANDIDATE_DIR: ${{ runner.temp }}/forum-auto-candidate-${{ github.run_id }}-${{ github.run_attempt }}
+      BASELINE_DIR: ${{ runner.temp }}/forum-auto-baseline-${{ github.run_id }}-${{ github.run_attempt }}
       REPORT_DIR: ${{ runner.temp }}/forum-auto-report-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
       - uses: actions/checkout@v4
@@ -41,19 +42,27 @@ jobs:
         run: |
           set -euo pipefail
           [[ "$QUALIFICATION_CI_RUN" =~ ^[1-9][0-9]*$ ]]
-          python3 tools/qualification-run.py fetch --ci-run "$QUALIFICATION_CI_RUN" --directory "$CANDIDATE_DIR" --trusted-key "$TRUSTED_KEY" --version 1.5.11
+          python3 tools/qualification-run.py fetch --ci-run "$QUALIFICATION_CI_RUN" --directory "$CANDIDATE_DIR" --trusted-key "$TRUSTED_KEY" --version 1.6.0
       - name: Real published GitHub release via autonomous host operator, backup and HTTP load
         shell: bash
         run: |
           set -euo pipefail
           mkdir -m 700 "$REPORT_DIR"
           extra=()
-          if [[ "$QUALIFICATION_PHASE" == postpublication ]]; then extra+=(--published-candidate); fi
-          python3 tools/qualify-autonomous-update.py "${extra[@]}" --fixture "$FIXTURE" --trusted-key "$TRUSTED_KEY" \
-            --candidate "$CANDIDATE_DIR/cajeerengine-1.5.11-dist.zip" --disposable destroy-test-services --report "$REPORT_DIR/autonomous.json"
-          if [[ "$QUALIFICATION_PHASE" == prepublication ]]; then
-            python3 tools/qualification-run.py receipt --kind autonomous --directory "$CANDIDATE_DIR" --version 1.5.11 --reports "$REPORT_DIR"
+          source=1.5.10
+          kind=autonomous
+          if [[ "$QUALIFICATION_PHASE" == postpublication ]]; then
+            extra+=(--published-candidate)
+            source=1.5.11
+            kind=postpublication
           fi
+          mkdir -m 700 "$BASELINE_DIR"
+          base="cajeerengine-$source-dist.zip"
+          gh release download "v$source" --repo "$GITHUB_REPOSITORY" --dir "$BASELINE_DIR" --pattern "$base" --pattern "$base.sig" --pattern "$base.sha256"
+          (cd "$BASELINE_DIR" && sha256sum --strict --check "$base.sha256")
+          python3 tools/qualify-autonomous-update.py "${extra[@]}" --fixture "$FIXTURE" --trusted-key "$TRUSTED_KEY" \
+            --baseline "$BASELINE_DIR/$base" --candidate "$CANDIDATE_DIR/cajeerengine-1.6.0-dist.zip" --disposable destroy-test-services --report "$REPORT_DIR/autonomous.json"
+          python3 tools/qualification-run.py receipt --kind "$kind" --directory "$CANDIDATE_DIR" --version 1.6.0 --reports "$REPORT_DIR"
       - uses: actions/upload-artifact@v4
         if: always()
         with:

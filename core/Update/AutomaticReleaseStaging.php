@@ -11,7 +11,10 @@ final readonly class AutomaticReleaseStaging
 
     public function enabled(): bool
     {
-        return (new UpdatePolicy($this->config))->stagingEnabled() && $this->config->bool('updates.operator.enabled') && $this->config->bool('updates.web_upgrade.enabled');
+        $policy = new UpdatePolicy($this->config);
+        // Automatic staging performs a GitHub discovery request. Respect the host
+        // discovery kill switch as well as the staging policy.
+        return $policy->discoveryEnabled() && $policy->stagingEnabled() && $this->config->bool('updates.operator.enabled') && $this->config->bool('updates.web_upgrade.enabled');
     }
     private function path(): string { return OperationFiles::path($this->root,'storage/app/updates/auto-stage.json'); }
     public function state(): array

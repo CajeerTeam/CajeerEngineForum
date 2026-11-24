@@ -6,7 +6,7 @@ on:
 permissions:
   contents: read
 env:
-  FORUM_CURRENT_VERSION: ${{ '1.5.11' }}
+  FORUM_CURRENT_VERSION: ${{ '1.6.0' }}
 concurrency:
   group: forum-ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -795,61 +795,19 @@ jobs:
           composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader
           mkdir -p storage/tmp/forum-ci/release
           php tools/verify-signed-release.php "$RUNNER_TEMP/forum-current" "$RUNNER_TEMP/forum-current/ci-release.pub"
-      - name: Build authentic previous baseline from repository history
+      - name: Build authentic tagged 1.5.11 baseline
         run: |
           set -euo pipefail
+          ref=refs/tags/v1.5.11
+          git rev-parse --verify "${ref}^{commit}"
+          git merge-base --is-ancestor "$ref" HEAD
           mkdir -p "$RUNNER_TEMP/forum-previous"
-          ref="$FORUM_BASELINE_REF"
-          if [ "$ref" = 'v0.8.7' ]; then
-            for tag in v0.8.7 0.8.7; do
-              if git rev-parse --verify "refs/tags/$tag^{commit}" >/dev/null 2>&1; then ref="refs/tags/$tag"; break; fi
-            done
-          fi
-          if ! git rev-parse --verify "${ref}^{commit}" >/dev/null 2>&1; then
-            [[ "$GITHUB_REF" != refs/tags/* ]] || { echo "Missing tagged baseline $ref" >&2; exit 1; }
-            ref=''
-            for sha in $(git rev-list HEAD -- release.json); do
-              found=$(git show "$sha:release.json" | php -r 'echo json_decode(stream_get_contents(STDIN),true,512,JSON_THROW_ON_ERROR)["edition_version"]??"";')
-              if [ "$found" = 0.8.7 ]; then ref="$sha"; break; fi
-            done
-            [[ -n "$ref" ]] || { echo 'Cannot find historical 0.8.7 source' >&2; exit 1; }
-            echo "Branch CI historical baseline 0.8.7: $ref (not a published tag)"
-          fi
           git archive "$ref" | tar -x -C "$RUNNER_TEMP/forum-previous"
           cd "$RUNNER_TEMP/forum-previous"
-          baseline=$(php -r '$v=json_decode(file_get_contents("release.json"),true,512,JSON_THROW_ON_ERROR)["edition_version"]; if($v!=="0.8.7") exit(1); echo $v;')
+          baseline=$(php -r '$v=json_decode(file_get_contents("release.json"),true,512,JSON_THROW_ON_ERROR)["edition_version"]; if($v!=="1.5.11") exit(1); echo $v;')
           echo "FORUM_BASELINE_VERSION=$baseline" >> "$GITHUB_ENV"
           composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader
           php tools/build-release.php --dist --target-dir="$RUNNER_TEMP/forum-previous-dist" --json
-      - name: Build version-verified historical intermediate upgrades
-        run: |
-          set -euo pipefail
-          history=(0.9.2 0.9.7 0.9.8 0.9.9)
-          available=()
-          for version in "${history[@]}"; do
-            ref="refs/tags/v${version}"
-            if ! git rev-parse --verify "${ref}^{commit}" >/dev/null 2>&1; then
-              [[ "$GITHUB_REF" != refs/tags/* ]] || { echo "Official upgrade certification requires historical tag: $ref" >&2; exit 1; }
-              ref=''
-              for sha in $(git rev-list HEAD -- release.json); do
-                found=$(git show "$sha:release.json" | php -r 'echo json_decode(stream_get_contents(STDIN),true,512,JSON_THROW_ON_ERROR)["edition_version"]??"";')
-                if [ "$found" = "$version" ]; then ref="$sha"; break; fi
-              done
-              if [ -z "$ref" ]; then
-                echo "Branch CI: historical $version has no tag or commit; full tagged upgrade certification remains required"
-                continue
-              fi
-              echo "Branch CI: upgrade $version uses authentic historical Git commit $ref"
-            fi
-            dir="$RUNNER_TEMP/forum-history/$version"
-            mkdir -p "$dir"
-            git archive "$ref" | tar -x -C "$dir"
-            test "$(php -r 'echo json_decode(file_get_contents($argv[1]),true,512,JSON_THROW_ON_ERROR)["edition_version"];' "$dir/release.json")" = "$version"
-            (cd "$dir"; composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader; php tools/build-release.php --dist --target-dir="$RUNNER_TEMP/forum-intermediate-dist" --json)
-            available+=("$version")
-          done
-          [[ ${#available[@]} -gt 0 ]] || { echo 'No intermediate upgrades tested' >&2; exit 1; }
-          printf 'FORUM_HISTORY_VERSIONS=%s\n' "${available[*]}" >> "$GITHUB_ENV"
       - name: Clean install, live HTTP, identity and corrupt-ledger rejection
         env:
           FORUM_TEST_RELEASE_DB: forum_test_release_clean
@@ -859,12 +817,7 @@ jobs:
           FORUM_TEST_RELEASE_DB: forum_test_release_upgrade
         run: |
           set -euo pipefail
-          extra=()
-          for version in $FORUM_HISTORY_VERSIONS; do
-            extra+=(--intermediate "$RUNNER_TEMP/forum-intermediate-dist/cajeerengine-$version-dist.zip")
-          done
-          [[ ${#extra[@]} -ge 2 ]] || { echo 'No versioned intermediate artifacts available' >&2; exit 1; }
-          python tools/forum-tests/release_acceptance.py --driver ${{ matrix.driver }} --artifact "$RUNNER_TEMP/forum-current/cajeerengine-${FORUM_CURRENT_VERSION}-dist.zip" --previous "$RUNNER_TEMP/forum-previous-dist/cajeerengine-${FORUM_BASELINE_VERSION}-dist.zip" "${extra[@]}" --report storage/tmp/forum-ci/release/upgrade
+          python tools/forum-tests/release_acceptance.py --driver ${{ matrix.driver }} --artifact "$RUNNER_TEMP/forum-current/cajeerengine-${FORUM_CURRENT_VERSION}-dist.zip" --previous "$RUNNER_TEMP/forum-previous-dist/cajeerengine-${FORUM_BASELINE_VERSION}-dist.zip" --report storage/tmp/forum-ci/release/upgrade
       - name: Cold recovery from authentic baseline after loss of source host and database
         env:
           FORUM_TEST_RELEASE_DB: forum_test_release_dr
@@ -953,25 +906,13 @@ jobs:
         with:
           name: forum-signed-candidate
           path: ${{ runner.temp }}/forum-host
-      - name: Build authentic systemd upgrade baseline (tag or historical branch commit)
+      - name: Build authentic tagged systemd upgrade baseline
         run: |
           set -euo pipefail
-          ref=refs/tags/v0.9.9
-          expected=0.9.9
-          if ! git rev-parse --verify "${ref}^{commit}" >/dev/null 2>&1; then
-            [[ "$GITHUB_REF" != refs/tags/* ]] || { echo 'Missing tagged systemd release baseline v0.9.9' >&2; exit 1; }
-            # Branch CI is allowed to exercise real earlier Git trees, but not
-            # to represent them as an officially certified signed release.
-            ref=''
-            for version in 0.9.9 0.9.8; do
-              for sha in $(git rev-list HEAD -- release.json); do
-                found=$(git show "$sha:release.json" | php -r 'echo json_decode(stream_get_contents(STDIN),true,512,JSON_THROW_ON_ERROR)["edition_version"]??"";')
-                if [ "$found" = "$version" ]; then ref="$sha"; expected="$version"; break 2; fi
-              done
-            done
-            [[ -n "$ref" ]] || { echo 'No authentic historical systemd baseline in Git history' >&2; exit 1; }
-            echo "Branch CI systemd baseline: commit $ref, version $expected"
-          fi
+          ref=refs/tags/v1.5.11
+          expected=1.5.11
+          git rev-parse --verify "${ref}^{commit}"
+          git merge-base --is-ancestor "$ref" HEAD
           dir="$RUNNER_TEMP/forum-systemd-old"
           mkdir -p "$dir"
           git archive "$ref" | tar -x -C "$dir"
@@ -1150,8 +1091,8 @@ jobs:
           if [ "$FORUM_CURRENT_VERSION" = 1.0.0-rc.1 ]; then
             ref=refs/tags/v0.9.9; baseline_version=0.9.9
           fi
-          if [ "$FORUM_CURRENT_VERSION" = 1.5.11 ]; then
-            ref=refs/tags/v1.5.10; baseline_version=1.5.10
+          if [ "$FORUM_CURRENT_VERSION" = 1.6.0 ]; then
+            ref=refs/tags/v1.5.11; baseline_version=1.5.11
           fi
           echo "FORUM_COMPOSE_BASELINE=$baseline_version" >> "$GITHUB_ENV"
           if [ "$ref" = v0.8.7 ]; then

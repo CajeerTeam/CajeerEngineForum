@@ -1,3 +1,9 @@
+## [1.6.0] — GitHub Automated Updates Stable
+
+- Require exact signed 1.5.11 baseline and 1.6.0 candidate in physical qualification; validate independent pre- and postpublication autonomous update receipts.
+- Publish only after physical and CI gates; promote to Latest only after exact public artifact and live autonomous update verification.
+- Harden autonomous admission and minor upgrade regression coverage. Physical certification remains pending until executed.
+
 ## [1.5.11] — Automated Updates Qualification & RC
 
 - Require live canonical GitHub autonomous update evidence and exact-candidate physical load/crash qualification before publication.

@@ -1,6 +1,6 @@
 # CajeerEngine Forum Edition
 
-**Forum Edition 1.5.11 — Automated Updates Qualification & RC**, built on CajeerEngine 2.1.0. Publication requires a passing `forum-required` gate, physical 10k/100k/1M soak and both interrupted-update checkpoints and live GitHub updater qualification, tied to the exact signed release and commit. Certification is pending until all gates actually pass. See [release procedure](docs/forum-production-stable-1.5.0.md).
+**Forum Edition 1.6.0 — GitHub Automated Updates Stable**, built on CajeerEngine 2.1.0. Publication requires a passing `forum-required` gate, physical 10k/100k/1M soak and both interrupted-update checkpoints and live GitHub updater qualification, tied to the exact signed release and commit. Certification is pending until all gates actually pass. See [release procedure](docs/forum-github-updates-stable-1.6.0.md).
 
 See [Full Platform Integration & E2E](docs/forum-platform-e2e-1.4.10.md) for the cross-subsystem acceptance suite. See [Automated Deployment & Recovery](docs/forum-deployment-recovery-1.4.9.md) for the deployment and recovery procedures.
 

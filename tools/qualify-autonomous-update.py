@@ -22,7 +22,7 @@ from qualify import Client, data, expect, load, assert_load, write_report
 
 REPO = 'CajeerTeam/CajeerEngineForum'
 def transition(published_candidate=False):
-    return ('1.5.10','1.5.11') if published_candidate else ('1.5.9','1.5.10')
+    return ('1.5.11','1.6.0') if published_candidate else ('1.5.10','1.5.11')
 
 
 def require(condition, message):
@@ -98,9 +98,14 @@ def run(args):
     source, target = transition(args.published_candidate)
     app = root/'storage/app'; updates = app/'updates'
     candidate = digest(args.candidate)
-    require(args.candidate.name == 'cajeerengine-1.5.11-dist.zip', 'Wrong qualification candidate')
+    require(args.candidate.name == 'cajeerengine-1.6.0-dist.zip', 'Wrong qualification candidate')
     pub = base64.b64decode(args.trusted_key.read_text().strip(), validate=True)
     require(len(pub)==32, 'Invalid independent key'); key_id=hashlib.sha256(pub).hexdigest()
+    require(args.baseline.name == f'cajeerengine-{source}-dist.zip', 'Wrong installed baseline package')
+    baseline_sha = digest(args.baseline)
+    require(baseline_sha != candidate, 'Candidate cannot be the baseline')
+    baseline = json.loads(command(['php','bin/cajeer','update:integrity','--package='+str(args.baseline),'--sha256='+baseline_sha],root))
+    require(baseline.get('ok') is True and baseline.get('version')==source and baseline.get('sha256')==baseline_sha and baseline.get('mismatch_count')==0 and baseline.get('key_id')==key_id and baseline.get('checked',0)>0, 'Installed baseline does not match authentic signed distribution')
     state = read(Path(cfg['state'])); thread=str(uuid.UUID(state['thread'])); reply=str(uuid.UUID(state['reply']))
     client = Client(cfg['domain'], Path(cfg['ca']), cfg['port'])
     path='/api/v1/forum/threads/'+thread
@@ -162,12 +167,12 @@ def run(args):
     command(['php',str(supervisor),str(root)],root)
     require(read(updates/'last-update.json')['id']==tx and read(root/'release.json')['edition_version']==target, 'Operator repeated committed update')
     verify(target)
-    write_report(args.report,{'schema':1,'ok':True,'commit':os.environ['GITHUB_SHA'],'candidate_sha256':candidate,'source_version':source,'target_version':target,'github_dist_sha256':sha,'key_id':key_id,'transaction_id':tx,'actual_autonomous_update':True,'canonical_github':True,'backup_rehearsed':True,'installed_integrity':True,'preserved_fixture':True,'no_duplicate_apply':True,'manual_requests':0,'seconds':elapsed,'during':counts,'before':before,'after':after})
+    write_report(args.report,{'schema':1,'ok':True,'phase':'postpublication' if args.published_candidate else 'prepublication','baseline_sha256':baseline_sha,'baseline_integrity':True,'commit':os.environ['GITHUB_SHA'],'candidate_sha256':candidate,'source_version':source,'target_version':target,'github_dist_sha256':sha,'key_id':key_id,'transaction_id':tx,'actual_autonomous_update':True,'canonical_github':True,'backup_rehearsed':True,'installed_integrity':True,'preserved_fixture':True,'no_duplicate_apply':True,'manual_requests':0,'seconds':elapsed,'during':counts,'before':before,'after':after})
 
 
 if __name__=='__main__':
     p=argparse.ArgumentParser(description=__doc__)
-    for name in ('fixture','trusted-key','candidate','report'): p.add_argument('--'+name,type=Path,required=True)
+    for name in ('fixture','trusted-key','candidate','baseline','report'): p.add_argument('--'+name,type=Path,required=True)
     p.add_argument('--disposable',required=True)
-    p.add_argument('--published-candidate',action='store_true',help='Postpublication acceptance of exact 1.5.11 from GitHub; not the prepublication historical evidence')
+    p.add_argument('--published-candidate',action='store_true',help='Postpublication acceptance of exact 1.6.0 from GitHub; not the prepublication historical evidence')
     run(p.parse_args())

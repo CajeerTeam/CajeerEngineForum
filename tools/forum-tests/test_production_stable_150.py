@@ -34,7 +34,8 @@ def rows():
 class ProductionStable(unittest.TestCase):
     def test_minor_predecessor_and_recovery(self):
         self.assertEqual(gate.previous_version(VERSION),'1.4.11')
-        with self.assertRaises(ValueError):gate.previous_version('1.6.0')
+        self.assertEqual(gate.previous_version('1.6.0'),'1.5.11')
+        with self.assertRaises(ValueError):gate.previous_version('1.7.0')
         row={'schema':1,'ok':True,'actual_operator_sigkill':True,'checkpoint':'drained','commit':COMMIT,'source_version':'1.4.11','target_version':VERSION,'target_sha256':DIGEST,'source_sha256':'c'*64,'recovery_state':'rolled_back','recovery_seconds':3,'preserved_fixture':True,'recovered_version':'1.4.11','signed_deployment_verified':True,'deployment_identity':{'image':'sha256:'+'c'*64,'manifest_sha256':'d'*64}}
         gate.validate_recovery(row,'drained',COMMIT,VERSION,DIGEST)
         for change in ({'source_version':'1.5.-1'},{'signed_deployment_verified':False},{'recovered_version':'1.5.0'}):
@@ -106,6 +107,17 @@ class ProductionStable(unittest.TestCase):
                 with self.assertRaises(ValueError):publish.stage(REPO,TAG,COMMIT,notes,[a,b])
             self.assertEqual(len(calls),1)
 
+    def test_published_candidate_requires_exact_remote_assets(self):
+        with tempfile.TemporaryDirectory() as d:
+            a=Path(d)/'dist.zip';a.write_bytes(b'certified bytes')
+            inv=publish.asset_inventory([a]); remote={'draft':False,'prerelease':False,'tag_name':'v1.6.0','published_at':'2026-11-24T00:00:00Z','assets':[{'name':a.name,'state':'uploaded','size':inv[a.name]['size'],'digest':inv[a.name]['digest']}]}
+            def api(repo,path):
+                return remote if path.startswith('releases/') else {'object':{'sha':COMMIT},'sha':COMMIT}
+            with patch.object(publish,'api',api),patch.object(publish,'gh') as gh:
+                publish.verify_published(REPO,'v1.6.0',COMMIT,[a]);gh.assert_not_called()
+                remote['assets'][0]['digest']='sha256:'+'f'*64
+                with self.assertRaises(ValueError):publish.verify_published(REPO,'v1.6.0',COMMIT,[a])
+                gh.assert_not_called()
     def test_live_manifest_and_background_image_verification(self):
         with tempfile.TemporaryDirectory() as d:
             root=Path(d);a=root/'release.zip';key=root/'release.pub';key.write_text('fixture');manifest={'edition':'forum','version':VERSION,'checksums':{'index':'a'*64}}

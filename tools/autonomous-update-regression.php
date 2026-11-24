@@ -20,6 +20,9 @@ try {
     test((new P($cfg))->autonomousReason('1.5.5','1.5.6',false,time())==='security_release_required','unsigned security label never authorizes apply');
     $cfg->set('updates.policy',['mode'=>'automatic_patch','auto_apply_enabled'=>true]);
     test((new P($cfg))->autonomousReason('1.5.5','1.6.0',true,time())==='patch_release_required','minor denied by patch policy');
+    $cfg->set('updates.policy.mode','automatic_minor');
+    test((new P($cfg))->autonomousReason('1.5.11','1.6.0',false,time())===null,'1.5.11 to 1.6.0 allowed under minor policy');
+    $cfg->set('updates.policy.mode','automatic_patch');
     if (PHP_OS_FAMILY!=='Linux'||!function_exists('posix_geteuid')||posix_geteuid()===0) {echo "SKIP non-root operator integration (run under dedicated UID)\n";return;}
     $stage=['id'=>str_repeat('a',32),'sha256'=>str_repeat('b',64),'from_version'=>'1.5.5','version'=>'1.5.6'];
     $dir=$root.'/storage/app/update-requests'; F::dir($dir); F::json($dir.'/staged.json',$stage,0644);

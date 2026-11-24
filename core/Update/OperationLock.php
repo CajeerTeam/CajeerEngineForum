@@ -68,7 +68,7 @@ final class OperationLock
     public static function active(string $root): bool
     {
         $path = OperationFiles::path($root, 'storage/app/updates/active.json');
-        return is_file($path);
+        return file_exists($path);
     }
-    public static function maintenance(string $root): bool { return is_file(OperationFiles::path($root,'storage/app/extensions/deployment.json')) || self::active($root) || is_file(OperationFiles::path($root, 'storage/app/backup-restore.json')) || is_file(OperationFiles::path($root, 'storage/app/maintenance.json')); }
+    public static function maintenance(string $root): bool { return file_exists(OperationFiles::path($root,'storage/app/extensions/deployment.json')) || self::active($root) || file_exists(OperationFiles::path($root, 'storage/app/backup-restore.json')) || file_exists(OperationFiles::path($root, 'storage/app/maintenance.json')); }
 }

@@ -29,6 +29,9 @@ try {
     $calls=0;$auto=new A($root,$cfg,function()use(&$calls){$calls++;return ['state'=>'staged','version'=>'1.5.3'];});
     check(!$auto->due()&&$auto->run()['state']==='skipped'&&$calls===0,'opt-in disabled by default');
     $cfg->set('updates.core.auto_stage_enabled',true);
+    $cfg->set('updates.core.auto_check_enabled',false);
+    check(!$auto->due()&&$auto->run()['state']==='skipped'&&$calls===0,'host discovery kill switch blocks automatic staging');
+    $cfg->set('updates.core.auto_check_enabled',true);
     check($auto->due(),'enabled idle operator is due');
     $r=$auto->run();check($r['ok']&&$r['state']==='staged'&&$calls===1,'successful automatic staging recorded');
     check(!$auto->due()&&$auto->run()['state']==='skipped'&&$calls===1,'persisted successful cooldown');
@@ -38,5 +41,7 @@ try {
     check(!str_contains(file_get_contents($status),'private credential'),'failure state redacts exception details');
     F::json($status,['next_attempt_at'=>0,'failures'=>1]);$r=$failed->run();check($r['failures']===2&&$r['next_attempt_at']>=time()+119,'exponential retry survives restart');
     F::json($status,['next_attempt_at'=>0]);F::json($root.'/storage/app/updates/active.json',['state'=>'running']);check(!$auto->due(),'recovery blocks automatic staging');
+    F::remove($root.'/storage/app/updates/active.json');mkdir($root.'/storage/app/updates/active.json');
+    check(!$auto->due(),'malformed active marker fails closed');rmdir($root.'/storage/app/updates/active.json');
     check(!is_dir($root.'/storage/app/update-requests'),'automatic staging never generates approval');
 } finally {erase($root);}

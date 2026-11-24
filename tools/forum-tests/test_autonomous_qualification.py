@@ -56,6 +56,32 @@ class Qualification(unittest.TestCase):
         with self.assertRaises(ValueError):gate.validate_runs(missing,REPO,COMMIT)
         rows['autonomous']['conclusion']='failure'
         with self.assertRaises(ValueError):gate.validate_runs(rows,REPO,COMMIT)
+    def test_stable_pre_and_post_are_distinct(self):
+        pre=dict(fixture(), source_version='1.5.10', target_version='1.5.11', phase='prepublication', baseline_sha256='f'*64, baseline_integrity=True)
+        post=dict(pre, source_version='1.5.11', target_version='1.6.0', phase='postpublication', baseline_sha256=pre['github_dist_sha256'], github_dist_sha256=DIGEST, transaction_id='20261124-050001-'+'e'*16)
+        gate.validate_autonomous(pre,COMMIT,DIGEST,'1.6.0')
+        gate.validate_autonomous(post,COMMIT,DIGEST,'1.6.0',published=True)
+        for change in ({'phase':'prepublication'},{'baseline_integrity':False},{'baseline_sha256':DIGEST},{'github_dist_sha256':'c'*64}):
+            with self.assertRaises(ValueError): gate.validate_autonomous(dict(post,**change),COMMIT,DIGEST,'1.6.0',published=True)
+        with self.assertRaises(ValueError): gate.validate_autonomous(pre,COMMIT,DIGEST,'1.6.0',published=True)
+        import hashlib
+        rows={name:{'id':i+1,'run_attempt':1,'path':'.github/workflows/'+workflow,'event':event,'head_sha':COMMIT,'head_branch':'main','repository':{'full_name':REPO},'head_repository':{'full_name':REPO},'status':'completed','conclusion':'success'} for i,(name,(workflow,event)) in enumerate(gate.WORKFLOWS.items())}
+        run=dict(rows['autonomous'],id=999)
+        with tempfile.TemporaryDirectory() as d:
+            path=Path(d)
+            def write(row):
+                f=path/'autonomous.json'; f.write_text(json.dumps(row))
+                receipt={'schema':1,'kind':'postpublication','commit':COMMIT,'repository':REPO,'version':'1.6.0','run_id':999,'attempt':1,'ci_run_id':rows['ci']['id'],'ci_attempt':1,'dist_sha256':DIGEST,'reports':{'autonomous.json':hashlib.sha256(f.read_bytes()).hexdigest()}}
+                (path/'qualification-receipt.json').write_text(json.dumps(receipt))
+            write(post)
+            gate.validate_postpublication(path,run,rows,REPO,COMMIT,'1.6.0',DIGEST,pre,post['key_id'])
+            for bad in (dict(run,id=rows['autonomous']['id']),dict(run,run_attempt=2),dict(run,conclusion='failure')):
+                with self.assertRaises(ValueError): gate.validate_postpublication(path,bad,rows,REPO,COMMIT,'1.6.0',DIGEST,pre,post['key_id'])
+            for change in ({'baseline_sha256':'f'*64},{'transaction_id':pre['transaction_id']},{'key_id':'f'*64}):
+                write(dict(post,**change))
+                with self.assertRaises(ValueError): gate.validate_postpublication(path,run,rows,REPO,COMMIT,'1.6.0',DIGEST,pre,post['key_id'])
+            write(post); (path/'autonomous.json').write_text('{}')
+            with self.assertRaises(ValueError): gate.validate_postpublication(path,run,rows,REPO,COMMIT,'1.6.0',DIGEST,pre,post['key_id'])
     def test_receipt_binds_report(self):
         import hashlib
         with tempfile.TemporaryDirectory() as d:

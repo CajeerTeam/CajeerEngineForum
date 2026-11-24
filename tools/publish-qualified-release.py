@@ -100,11 +100,28 @@ def stage(repo,tag,commit,notes,files):
     print('PASS: complete draft, remote asset digests and immutable tag verified; publication remains protected')
 
 
+def verify_published(repo, tag, commit, files):
+    """Revalidate remote bytes before Latest promotion; never replace assets."""
+    require(repo.lower()=='cajeerteam/cajeerengineforum' and tag=='v1.6.0'
+            and re.fullmatch(r'[0-9a-f]{40}',commit) is not None,'Invalid stable promotion identity')
+    require_current(repo,tag,commit)
+    release=api(repo,'releases/tags/'+tag)
+    require(release.get('draft') is False and release.get('prerelease') is False
+            and release.get('tag_name')==tag and bool(release.get('published_at')), 'Not the published candidate')
+    missing_assets(release['assets'],asset_inventory(files),complete=True)
+    require_current(repo,tag,commit)
+    print('PASS: exact public release assets and tag revalidated')
+
+
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     for name in ('repo','tag','commit'):p.add_argument('--'+name,required=True)
-    p.add_argument('--notes',type=Path,required=True);p.add_argument('files',type=Path,nargs='+')
-    a=p.parse_args();stage(a.repo,a.tag,a.commit,a.notes,a.files)
+    p.add_argument('--notes',type=Path);p.add_argument('--verify-published',action='store_true');p.add_argument('files',type=Path,nargs='+')
+    a=p.parse_args()
+    if a.verify_published: verify_published(a.repo,a.tag,a.commit,a.files)
+    else:
+        require(a.notes is not None,'Release notes required for draft')
+        stage(a.repo,a.tag,a.commit,a.notes,a.files)
 
 
 if __name__=='__main__':main()
