@@ -98,3 +98,5 @@ node --check public/forum-assets/forum.js
 Уязвимости сообщайте конфиденциально на `security@cajeer.ru`.
 
 Проект распространяется по [Apache License 2.0](LICENSE). Сведения об авторах и сторонних компонентах: [NOTICE](NOTICE), [THIRD_PARTY_NOTICES](THIRD_PARTY_NOTICES.md), [TRADEMARKS](TRADEMARKS.md). Ядро: [CajeerEngine](https://github.com/CajeerTeam/CajeerEngine).
+
+<sub>© 2026 SkiF4er · Cajeer Team · сведения о правообладателях и участниках: [NOTICE](NOTICE).</sub>
