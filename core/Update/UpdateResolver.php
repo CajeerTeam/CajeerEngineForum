@@ -34,20 +34,9 @@ final readonly class UpdateResolver
         $metadata = $this->metadata();
         $releases = is_array($metadata['releases'] ?? null) ? $metadata['releases'] : [];
         $channel = $this->channel();
-        $latest = null;
-        foreach ($releases as $release) {
-            if (!is_array($release)) { continue; }
-            $releaseChannel = (string) ($release['channel'] ?? 'stable');
-            if ($releaseChannel !== $channel && $channel !== 'dev') { continue; }
-            $version = (string) ($release['version'] ?? '');
-            try { if (UpdatePreflight::channelOf($version)!==$releaseChannel) continue; } catch (\Throwable) { continue; }
-            if (!is_array($release['artifacts']['dist']??null)) continue;
-            if ($latest === null || version_compare($version, (string) $latest['version'], '>')) {
-                $latest = $release;
-            }
-        }
-
-        $updateAvailable = $latest !== null && version_compare((string) $latest['version'], $currentVersion, '>');
+        $plan = ReleasePath::plan($releases, $currentVersion, $channel, (bool)($this->config['core']['sequential'] ?? true));
+        $latest = $plan['latest'];
+        $updateAvailable = $plan['next'] !== null;
         $result = [
             'current_version' => $currentVersion,
             'channel' => $channel,
@@ -63,6 +52,9 @@ final readonly class UpdateResolver
             'checked_at' => (new \DateTimeImmutable())->format(DATE_ATOM),
             'update_available' => $updateAvailable,
             'latest' => $latest,
+            'next' => $plan['next'],
+            'upgrade_path' => $plan['steps'],
+            'sequential' => $plan['sequential'],
             'registry_url' => $this->registryUrl(),
             'signature_required' => (bool) ($this->config['registry']['signature_required'] ?? true),
         ];
@@ -91,7 +83,7 @@ final readonly class UpdateResolver
             'metadata_failure' => $metadata['_failure'] ?? null,
             'retry_at' => $metadata['_retry_at'] ?? null,
             'release_count' => is_array($metadata['releases'] ?? null) ? count($metadata['releases']) : 0,
-            'last_check' => $last,
+            'last_check' => $last !== null && ($last['current_version'] ?? null) === $currentVersion && ($last['channel'] ?? null) === $this->channel() && ($last['sequential'] ?? null) === (bool)($this->config['core']['sequential'] ?? true) ? $last : null,
             'local_metadata_file' => $this->localMetadataPath(),
             'bundled_metadata_file' => $this->bundledMetadataPath(),
         ];

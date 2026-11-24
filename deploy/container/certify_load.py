@@ -67,7 +67,7 @@ def validate_report(path, name, commit, artifact_sha, version):
         validate_thresholds(name, doc['thresholds'])
         require(doc.get('queue_driver') == 'pgsql', prefix+'physical PostgreSQL queue required')
         require(doc.get('checks', {}).get('post_fault_workload') is True if name == '1m-soak' else True, prefix+'missing post-fault workload')
-    if version in ('1.5.0','1.5.1'):
+    if version in ('1.5.0','1.5.1','1.5.2'):
         identity=doc.get('deployment_identity',{})
         require(doc.get('checks',{}).get('signed_deployment_identity') is True
                 and re.fullmatch(r'sha256:[a-f0-9]{64}',identity.get('image','')) is not None
@@ -164,7 +164,7 @@ def seal(args):
         docs[name]=validate_report(path,name,commit,artifact_sha,args.version)
     require(len({row['hardware']['host_sha256'] for row in docs.values()})==1,'different test hosts')
     require(len({row['app_image'] for row in docs.values()})==1,'different running release images')
-    if args.version in ('1.5.0','1.5.1'):
+    if args.version in ('1.5.0','1.5.1','1.5.2'):
         import zipfile
         with zipfile.ZipFile(artifact) as package:
             manifest=json.loads(package.read('cajeerengine/release-manifest.json'))

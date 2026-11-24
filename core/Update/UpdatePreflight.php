@@ -13,9 +13,10 @@ final class UpdatePreflight
         $version=ForumVersion::validate($manifest['version']??null);
         if (($manifest['edition']??null)!=='forum'||($manifest['mode']??null)!=='dist') throw new \RuntimeException('Only Forum Edition dist can be applied');
         if ($expected!==null && ForumVersion::validate($expected)!==$version) throw new \RuntimeException('Approved target version differs from signed package');
-        if (version_compare($version,$current,'<=')) throw new \RuntimeException('Target must be newer; use verified rollback for downgrade');
+        if (ReleasePath::compare($version,$current)<=0) throw new \RuntimeException('Target must be newer; use verified rollback for downgrade');
         $actual=self::channelOf($version);
-        if (!in_array($channel,['stable','rc','beta','dev'],true)||($channel!=='dev'&&$actual!==$channel)) throw new \RuntimeException('Signed release does not match configured update channel');
+        if (!ReleasePath::accepts($channel,$actual)) throw new \RuntimeException('Signed release does not match configured update channel');
+        if (isset($manifest['upgrade_compatibility'])) UpdateCompatibility::assertSource($manifest['upgrade_compatibility'],$current,$version);
     }
 
     public static function channelOf(string $version): string

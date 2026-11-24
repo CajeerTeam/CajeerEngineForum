@@ -103,7 +103,7 @@ try {
 
     $shaMode = 'correct';
     $fail = false;
-    try { $downloader->download('2.1.0'); } catch (RuntimeException $error) { $fail = str_contains($error->getMessage(), 'not the latest'); }
+    try { $downloader->download('2.1.0'); } catch (RuntimeException $error) { $fail = str_contains($error->getMessage(), 'not the next'); }
     requireDownloader($fail, 'cannot select unadvertised release');
     $fail = false;
     try { $downloader->download(); } catch (RuntimeException $error) { $fail = str_contains($error->getMessage(), 'Signed ZIP release verification failed'); }

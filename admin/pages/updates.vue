@@ -5,7 +5,7 @@ type RecoveryBackup = { id: string; version?: string; created_at?: string; compl
 type UpdateState = {
   current_version?: string; channel?: string; web_upgrade_enabled?: boolean
   github_reachable?: boolean; metadata_status?: string; metadata_failure?: string
-  last_check?: { update_available?: boolean; latest?: { version?: string; source?: string; notes?: string }; checked_at?: string }
+  last_check?: { update_available?: boolean; latest?: { version?: string; source?: string; notes?: string }; next?: { version?: string; notes?: string }; upgrade_path?: Array<{version:string}>; metadata_status?:string; checked_at?: string }
   staged?: { ok?: boolean; id?: string; version?: string; sha256?: string; file_count?: number }
   wizard?: { operator_ready?: boolean; production_apply_enabled?: boolean; installed?: boolean; staged_installable?: boolean
     operator_status?: { status?: string; checked_at?: string; reason?: string; age_seconds?: number }; maintenance?: { enabled?: boolean; update_active?: boolean };
@@ -21,12 +21,12 @@ const nextCursor = ref<string | null>(null)
 const notifications = ref<HistoryEntry[]>([])
 const unreadCount = ref(0)
 const notice = ref('')
-const latest = computed(() => state.value.last_check?.latest?.version || '')
+const latest = computed(() => state.value.last_check?.next?.version || '')
 const pending = computed(() => (state.value.requests || []).some(r => ['pending','running'].includes(r.state)))
 const ready = computed(() => state.value.web_upgrade_enabled === true && state.value.wizard?.operator_ready === true && state.value.wizard?.production_apply_enabled === true && state.value.wizard?.operator_status?.status !== 'recovery_required' && !pending.value && !state.value.wizard?.maintenance?.update_active && !loading.value)
 const canBackup = computed(() => ready.value)
 const canRollback = computed(() => ready.value && state.value.wizard?.rollback?.available === true && !!state.value.wizard?.rollback?.transaction)
-const canDownload = computed(() => ready.value && state.value.last_check?.update_available === true && !!latest.value)
+const canDownload = computed(() => ready.value && state.value.last_check?.update_available === true && !!latest.value && ['fresh','not_modified'].includes(state.value.last_check?.metadata_status || ''))
 const canInstall = computed(() => ready.value && state.value.wizard?.installed === true && state.value.wizard?.staged_installable === true && state.value.staged?.ok === true && !!state.value.staged?.id && !!state.value.staged?.sha256)
 let timer: ReturnType<typeof setInterval> | undefined
 const load = async (quiet = false) => {
@@ -107,15 +107,17 @@ onUnmounted(() => {if(timer)clearInterval(timer)})
     <p v-if="notice" role="status">{{ notice }}</p>
     <div class="ce-card-grid">
       <AdminCard label="Установлена" :value="state.current_version || '—'" />
-      <AdminCard label="GitHub Release" :value="latest || '—'" />
+      <AdminCard label="Следующий шаг" :value="latest || '—'" />
       <AdminCard label="Канал" :value="state.channel || 'stable'" />
       <AdminCard label="Оператор" :value="state.wizard?.operator_status?.status || 'нет данных'" />
     </div>
     <div class="ce-panel">
       <h2>Новый релиз</h2>
+      <p>Последний: {{ state.last_check?.latest?.version || "—" }} · План: {{ state.last_check?.upgrade_path?.map(s => s.version).join(" → ") || "—" }}</p>
+      <p>Совместимость подтверждается по подписанному пакету.</p>
       <p>GitHub: {{ state.github_reachable === true ? 'доступен' : 'нет свежих данных' }} · {{ state.metadata_status || 'неизвестно' }}</p>
       <p v-if="state.metadata_failure" class="ce-error">{{ state.metadata_failure }}</p>
-      <details v-if="state.last_check?.latest?.notes"><summary>Описание релиза</summary><pre>{{ state.last_check.latest.notes.slice(0,4000) }}</pre></details>
+      <details v-if="state.last_check?.next?.notes"><summary>Описание релиза</summary><pre>{{ state.last_check.next.notes.slice(0,4000) }}</pre></details>
       <p>Подпись: {{ state.wizard?.production_apply_enabled ? 'ключ настроен' : 'отсутствует доверенный ключ' }}</p>
       <p>Оператор: {{ state.wizard?.operator_ready ? 'готов' : (state.wizard?.operator_status?.reason || 'недоступен') }} · {{ state.wizard?.operator_status?.checked_at || 'нет heartbeat' }}</p>
       <button :disabled="loading" @click="check">Проверить сейчас</button>

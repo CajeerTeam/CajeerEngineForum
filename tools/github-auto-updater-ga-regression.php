@@ -98,7 +98,7 @@ try {
     $stage['version'] = '2.0.7';
     OperationFiles::json($requests . '/staged.json', $stage);
     $eligible = ['update_available'=>true, 'metadata_status'=>'fresh', 'metadata_source'=>GitHubEndpoints::RELEASES_URL,
-        'checked_at'=>gmdate(DATE_ATOM), 'latest'=>['version'=>'2.1.0']];
+        'current_version'=>'2.0.7', 'channel'=>'stable', 'sequential'=>true, 'checked_at'=>gmdate(DATE_ATOM), 'next'=>['version'=>'2.1.0']];
     OperationFiles::json($root . '/storage/app/updates/last-check.json', $eligible);
     $request = $manager->request('download', ['confirm'=>true, 'version'=>'2.1.0'], 'admin');
     gaAssert(($request['state'] ?? null) === 'pending' && ($request['action'] ?? null) === 'download', 'real approved download enters durable queue');

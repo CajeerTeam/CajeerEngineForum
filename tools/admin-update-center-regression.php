@@ -42,7 +42,7 @@ $manager = new UpdateManager($root, $config);
 try {
     $approved = static fn (string $version): array => [
         'update_available'=>true, 'metadata_status'=>'fresh', 'metadata_source'=>GitHubEndpoints::RELEASES_URL,
-        'checked_at'=>gmdate(DATE_ATOM), 'latest'=>['version'=>$version],
+        'current_version'=>'2.0.3', 'channel'=>'stable', 'sequential'=>true, 'checked_at'=>gmdate(DATE_ATOM), 'next'=>['version'=>$version],
     ];
     $path = $root . '/storage/app/updates/last-check.json';
     OperationFiles::dir(dirname($path));
@@ -53,6 +53,10 @@ try {
     $stale = $approved('2.0.4'); $stale['checked_at']=gmdate(DATE_ATOM,time()-3700);
     OperationFiles::json($path, $stale);
     refusesCenter(fn () => $manager->request('download',['confirm'=>true,'version'=>'2.0.4'],'admin'), 'stale release check rejected');
+    foreach (['current_version'=>'2.0.2','channel'=>'rc','sequential'=>false] as $field=>$value) {
+        OperationFiles::json($path,array_replace($approved('2.0.4'),[$field=>$value]));
+        refusesCenter(fn () => $manager->request('download',['confirm'=>true,'version'=>'2.0.4'],'admin'), 'approval from different '.$field.' rejected');
+    }
     OperationFiles::json($path, $approved('2.0.4'));
     $request = $manager->request('download',['confirm'=>true,'version'=>'2.0.4'],'admin-a');
     assertCenter(($request['action']??'')==='download' && ($request['state']??'')==='pending' && isset($request['confirmed_at']), 'approval produces durable queued download');

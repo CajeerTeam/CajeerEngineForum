@@ -1,4 +1,4 @@
-name: Forum 1.5.1 physical interrupted signed update
+name: Forum 1.5.2 physical interrupted signed update
 on:
   workflow_dispatch:
     inputs:
@@ -12,7 +12,7 @@ on:
         required: true
         options: [drained, activating]
 env:
-  FORUM_CHAOS_TARGET: ${{ '1.5.1' }}
+  FORUM_CHAOS_TARGET: ${{ '1.5.2' }}
 permissions:
   contents: read
   actions: read
@@ -57,7 +57,7 @@ jobs:
           test -d "$CE_CHAOS_STATE_DIR" && test ! -L "$CE_CHAOS_STATE_DIR"
           test "$(stat -c '%a' "$CE_CHAOS_STATE_DIR")" = 700
           test ! -e "$CE_CHAOS_STATE_DIR/update.json"
-          test "$(sed -n 's/^CE_RELEASE_VERSION=//p' "$CE_CHAOS_OLD_ENV")" = 1.5.0
+          test "$(sed -n 's/^CE_RELEASE_VERSION=//p' "$CE_CHAOS_OLD_ENV")" = 1.5.1
           test "$(sed -n 's/^CE_RELEASE_VERSION=//p' "$CE_CHAOS_NEW_ENV")" = "$FORUM_CHAOS_TARGET"
           php tools/verify-signed-release.php "$CE_CHAOS_SIGNED_DIR" "$CE_CHAOS_TRUSTED_PUB"
           artifact="$CE_CHAOS_SIGNED_DIR/cajeerengine-${FORUM_CHAOS_TARGET}-dist.zip"

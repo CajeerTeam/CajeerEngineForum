@@ -7,6 +7,7 @@ use CajeerEngine\Update\GitHubEndpoints;
 return [
     'core' => [
         'channel' => getenv('UPDATE_CHANNEL') ?: 'stable',
+        'sequential' => (filter_var(getenv('UPDATE_SEQUENTIAL') !== false ? getenv('UPDATE_SEQUENTIAL') : 'true', FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE) ?? true),
         'releases_url' => GitHubEndpoints::RELEASES_URL,
         'timeout' => (int) (getenv('UPDATE_HTTP_TIMEOUT') ?: 5),
         'auto_check_enabled' => filter_var(getenv('UPDATE_AUTO_CHECK_ENABLED') !== false ? getenv('UPDATE_AUTO_CHECK_ENABLED') : 'true', FILTER_VALIDATE_BOOLEAN),

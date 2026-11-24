@@ -34,6 +34,9 @@ final class UpdateCheckCommand extends BaseCommand
         if (is_array($result['latest'] ?? null)) {
             $output->writeln('Latest: ' . $result['latest']['version']);
         }
+        foreach ($result['upgrade_path'] ?? [] as $step) {
+            $output->writeln('Step: ' . $step['from'] . ' -> ' . $step['version'] . ' (' . $step['kind'] . ')');
+        }
         return self::SUCCESS;
     }
 }

@@ -37,6 +37,8 @@ final readonly class AutomaticReleaseDiscovery
             'channel' => $result['channel'],
             'update_available' => $result['update_available'],
             'latest_version' => $result['latest']['version'] ?? null,
+            'next_version' => $result['next']['version'] ?? null,
+            'upgrade_path' => $result['upgrade_path'],
             'metadata_status' => $result['metadata_status'],
             'metadata_fetched_at' => $result['metadata_fetched_at'],
             'metadata_checked_at' => $result['metadata_checked_at'],

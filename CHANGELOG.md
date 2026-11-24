@@ -1,3 +1,8 @@
+## [1.5.2] - 2026-11-24
+
+- Ordered update plans, stable promotion from preview channels, and signed minimum source version.
+- Preflight PHP, database, Redis and enabled extension checks before applying.
+
 ## [1.5.1] - 2026-11-24
 
 - Synchronize all bounded GitHub release pages with per-page ETags, atomic publication, persistent rate-limit and transient-failure cooldown, and exclusive discovery lock.

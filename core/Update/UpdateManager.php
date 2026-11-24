@@ -23,13 +23,16 @@ final class UpdateManager
     public function plan(array $options=[]): array
     {
         $package=$this->option($options,'package'); $check=$package===null?$this->check():[];
-        $plan=['ok'=>true,'current_version'=>$this->currentVersion(),'target_version'=>$this->option($options,'version')??($check['latest']['version']??null),'package'=>$package,'mode'=>'dist','backup_before_update'=>true,'code_snapshot_before_update'=>true,'maintenance_mode_during_apply'=>true,'migrations_after_apply'=>true,'post_update_doctor'=>true,'production_apply_enabled'=>$this->trustConfigured(),'update_available'=>$check['update_available']??false,'checked_at'=>gmdate(DATE_ATOM)];
+        if($package===null && $this->option($options,'version')!==null && $this->option($options,'version')!==($check['next']['version']??null))throw new \RuntimeException('Requested version is not the next eligible release');
+        $plan=['ok'=>true,'current_version'=>$this->currentVersion(),'target_version'=>$this->option($options,'version')??($check['next']['version']??null),'package'=>$package,'mode'=>'dist','backup_before_update'=>true,'code_snapshot_before_update'=>true,'maintenance_mode_during_apply'=>true,'migrations_after_apply'=>true,'post_update_doctor'=>true,'production_apply_enabled'=>$this->trustConfigured(),'update_available'=>$check['update_available']??false,'upgrade_path'=>$check['upgrade_path']??[],'checked_at'=>gmdate(DATE_ATOM)];
         if ($package!==null && PHP_SAPI==='cli') {
             $verified=$this->verifyPackage($this->resolvePackage($package),$this->option($options,'sha256'),$this->option($options,'signature'));
             if (!$verified['ok']) throw new \RuntimeException($verified['error']);
             UpdatePreflight::identity($verified['manifest'],$this->currentVersion(),$this->channel(),$this->option($options,'version'));
             $plan['target_version']=$verified['version']; $plan['expected_sha256']=$verified['sha256']; $plan['file_count']=$verified['file_count'];
+            $plan['runtime_compatibility']=UpdateCompatibility::inspect($verified['manifest'],$this->config);
             $plan['extension_compatibility']=(new \CajeerEngine\Extension\ExtensionRegistry($this->rootPath,$this->config))->targetCompatibility($verified['version'],$verified['manifest']['engine_api_version']);
+            $plan['ok']=$plan['runtime_compatibility']['ok'] && $plan['extension_compatibility']['ok'];
         }
         return $plan;
     }
@@ -55,6 +58,10 @@ final class UpdateManager
             $release=json_decode($zip['cajeerengine/release.json']->getContent(),true,512,JSON_THROW_ON_ERROR);
             if (($release['channel']??null)!==UpdatePreflight::channelOf($version)) throw new \RuntimeException('Signed release channel differs from version');
             if (!is_string($m['engine_api_version']??null)||!preg_match('/^\d+\.\d+(?:\.\d+)?$/D',$m['engine_api_version'])||($release['engine_api_version']??null)!==$m['engine_api_version']) throw new \RuntimeException('Invalid target Engine API identity');
+            if (array_key_exists('upgrade_compatibility',$release)) {
+                UpdateCompatibility::validate($release['upgrade_compatibility'],$version);
+                $m['upgrade_compatibility']=$release['upgrade_compatibility'];
+            }
             foreach ($m['removed_files']??[] as $file) if (!is_string($file)||!$this->managed($file)||in_array($file,$m['files'],true)) throw new \RuntimeException('Invalid removed file');
             if (version_compare(PHP_VERSION,'8.4.1','<')||version_compare(PHP_VERSION,'9.0','>=')) throw new \RuntimeException('Unsupported PHP runtime');
             return ['ok'=>true,'package'=>$packagePath,'version'=>$version,'mode'=>$mode,'manifest'=>$m,'file_count'=>count($m['files'])]+$sig;
@@ -74,6 +81,7 @@ final class UpdateManager
             $initial=$this->verifyPackage($package,$this->option($options,'sha256'),$signature);
             if (!$initial['ok']) throw new \RuntimeException($initial['error']);
             UpdatePreflight::identity($initial['manifest'],$this->currentVersion(),$this->channel(),$this->option($options,'version'));
+            UpdateCompatibility::requireRuntime($initial['manifest'],$this->config);
             $this->discardAbandonedStages();
             $backup=new BackupManager($this->rootPath,$this->config);
             $space=UpdatePreflight::space($this->rootPath,$package,$initial['manifest'],$backup->preflight());
@@ -84,6 +92,7 @@ final class UpdateManager
             if (!$v['ok']) throw new \RuntimeException($v['error']);
             UpdatePreflight::identity($v['manifest'],$this->currentVersion(),$this->channel(),$this->option($options,'version'));
             if (!hash_equals($initial['sha256'],$v['sha256'])) throw new \RuntimeException('Artifact changed during staging');
+            $runtime=UpdateCompatibility::requireRuntime($v['manifest'],$this->config);
             UpdatePreflight::migrations($this->rootPath,$v['manifest']['checksums']);
             $previous=$this->currentVersion();
             \CajeerEngine\Forum\Migration\ForumMigrationEngine::assertNoRunning(new \CajeerEngine\Database\DatabaseManager($this->config));
@@ -91,7 +100,7 @@ final class UpdateManager
             if(!$compatibility['ok'])throw new \RuntimeException('Target release incompatible with enabled extensions: '.implode(', ',array_column($compatibility['blocked'],'name')).'; resolve extension dependencies before updating');
             $this->postCheck(false,true);
             $plan=$this->stage($dir,$v['manifest']);
-            $report=['ok'=>true,'id'=>$id,'previous_version'=>$previous,'target_version'=>$v['version'],'sha256'=>$v['sha256'],'copy_plan'=>$plan,'preflight'=>['space'=>$space,'extensions'=>$compatibility,'migration_history'=>'verified','recovery'=>'ready'],'dry_run'=>!empty($options['dry_run'])];
+            $report=['ok'=>true,'id'=>$id,'previous_version'=>$previous,'target_version'=>$v['version'],'sha256'=>$v['sha256'],'copy_plan'=>$plan,'preflight'=>['space'=>$space,'runtime'=>$runtime,'extensions'=>$compatibility,'migration_history'=>'verified','recovery'=>'ready'],'dry_run'=>!empty($options['dry_run'])];
             if ($report['dry_run']) return $report;
             $journal=['id'=>$id,'state'=>'prepared','previous_version'=>$previous,'target_version'=>$v['version'],'sha256'=>$v['sha256'],'maintenance_was_enabled'=>$this->maintenanceState()['enabled'],'maintenance_before'=>is_file($this->rootPath.'/storage/app/maintenance.json')?OperationFiles::read($this->rootPath.'/storage/app/maintenance.json'):null,'backup'=>null,'child_lock'=>'child-'.bin2hex(random_bytes(8)).'.lock','at'=>gmdate(DATE_ATOM)];
             $journalled=true; $this->journal($journal);
@@ -223,7 +232,10 @@ final class UpdateManager
             $v=$this->verifyPackage($dir.'/package.zip',$expectedSha);
             if (!$v['ok']) throw new \RuntimeException($v['error']);
             UpdatePreflight::identity($v['manifest'],$this->currentVersion(),$this->channel(),$expectedVersion);
-            $data=['ok'=>true,'id'=>$id,'version'=>$v['version'],'sha256'=>$v['sha256'],'file_count'=>$v['file_count']];
+            $runtime=UpdateCompatibility::requireRuntime($v['manifest'],$this->config);
+            $extensions=(new \CajeerEngine\Extension\ExtensionRegistry($this->rootPath,$this->config))->targetCompatibility($v['version'],$v['manifest']['engine_api_version']);
+            if(isset($v['manifest']['upgrade_compatibility'])&&!$extensions['ok'])throw new \RuntimeException('Target release incompatible with enabled extensions');
+            $data=['ok'=>true,'id'=>$id,'from_version'=>$this->currentVersion(),'runtime_compatibility'=>$runtime,'extension_compatibility'=>$extensions,'version'=>$v['version'],'sha256'=>$v['sha256'],'file_count'=>$v['file_count']];
             OperationFiles::json($this->requestDir().'/staged.json',$data,0644); $published=true; return $data;
         } finally { try { if (!$published&&$dir!==null) $this->discardStage($dir); } finally { OperationLock::release($lock); } }
     }
@@ -248,7 +260,7 @@ final class UpdateManager
                 $version=\CajeerEngine\Forum\ForumVersion::validate($payload['version']??null);
                 $check=OperationFiles::read($this->path('last-check.json'));
                 $when=strtotime((string)($check['checked_at']??''));
-                if ($when===false||$when<time()-3600||$when>time()+30||($check['update_available']??false)!==true||!in_array($check['metadata_status']??null,['fresh','not_modified'],true)||($check['metadata_source']??null)!==GitHubEndpoints::RELEASES_URL||($check['latest']['version']??null)!==$version) throw new \RuntimeException('Fresh eligible GitHub release check required');
+                if ($when===false||$when<time()-3600||$when>time()+30||($check['current_version']??null)!==$this->currentVersion()||($check['channel']??null)!==$this->channel()||($check['sequential']??null)!==$this->config->bool('updates.core.sequential',true)||($check['update_available']??false)!==true||!in_array($check['metadata_status']??null,['fresh','not_modified'],true)||($check['metadata_source']??null)!==GitHubEndpoints::RELEASES_URL||($check['next']['version']??null)!==$version) throw new \RuntimeException('Fresh eligible GitHub release check required');
                 UpdatePreflight::identity(['version'=>$version,'edition'=>'forum','mode'=>'dist'],$this->currentVersion(),$this->channel(),$version);
                 $data['version']=$version;
             } elseif ($action==='backup') { /* full backup, no arbitrary server path */ }
@@ -268,6 +280,7 @@ final class UpdateManager
         try {
             if (!is_string($stage['id']??null)||!preg_match('/^[a-f0-9]{32}$/D',$stage['id'])||!is_string($stage['sha256']??null)||!preg_match('/^[a-f0-9]{64}$/D',$stage['sha256'])) return false;
             UpdatePreflight::identity(['version'=>$stage['version']??null,'edition'=>'forum','mode'=>'dist'],$this->currentVersion(),$this->channel(),null);
+            if(isset($stage['from_version'])&&$stage['from_version']!==$this->currentVersion())return false;
             // The web UID only reads the operator's receipt. The privileged CLI
             // independently checks exact bytes and signature before application.
             if (PHP_SAPI==='cli') {

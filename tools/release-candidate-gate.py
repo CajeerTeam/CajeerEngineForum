@@ -96,7 +96,7 @@ def validate_recovery(row, checkpoint, commit, version, digest):
             and row['source_sha256'] != digest, checkpoint+': invalid source digest')
     require(row.get('recovery_state') == ('rolled_back' if checkpoint == 'drained' else 'committed'), checkpoint+': incorrect recovery state')
     require(row.get('preserved_fixture') is True and row.get('recovered_version') == (previous if checkpoint == 'drained' else version), checkpoint+': missing verified HTTP data recovery')
-    if version in ('1.5.0','1.5.1'):
+    if version in ('1.5.0','1.5.1','1.5.2'):
         identity=row.get('deployment_identity',{})
         require(row.get('signed_deployment_verified') is True
                 and re.fullmatch(r'sha256:[a-f0-9]{64}',identity.get('image','')) is not None
@@ -123,7 +123,7 @@ def main():
     require(physical.get('schema') == 1 and physical.get('ok') is True and physical.get('edition_version') == a.version
             and physical.get('commit') == a.commit and physical.get('dist_sha256') == digest
             and set(physical.get('profiles',{})) == {'10k','100k','1m-soak'}, 'physical certificate identity mismatch')
-    if a.version in ('1.5.0','1.5.1'):
+    if a.version in ('1.5.0','1.5.1','1.5.2'):
         validate_ci_run(rows['ci'],a.repo,a.commit)
         require(a.load_directory is not None, 'raw physical evidence directory required')
         for kind, directory in (('physical',a.load_directory),('drained',a.drained.parent),('activating',a.activating.parent)):

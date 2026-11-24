@@ -45,13 +45,13 @@ final readonly class GitHubReleaseDownloader
                 || ($check['metadata_source'] ?? null) !== GitHubEndpoints::RELEASES_URL) {
                 throw new \RuntimeException('Fresh GitHub Release metadata required; cached/offline metadata is not install authorization');
             }
-            $release = $check['latest'] ?? null;
+            $release = $check['next'] ?? null;
             if (!is_array($release) || !($check['update_available'] ?? false)) {
                 throw new \RuntimeException('No newer release available on selected channel');
             }
             $version = $release['version'] ?? null;
             if (!is_string($version) || ($requestedVersion !== null && $requestedVersion !== $version)) {
-                throw new \RuntimeException('Requested release is not the latest eligible GitHub release');
+                throw new \RuntimeException('Requested release is not the next eligible GitHub release');
             }
             $asset = $release['artifacts']['dist'] ?? null;
             $name = 'cajeerengine-' . $version . '-dist.zip';
@@ -100,6 +100,7 @@ final readonly class GitHubReleaseDownloader
                         $verified = (new UpdateManager($this->rootPath, $this->config))->verifyPackage($published, $digest);
                         if (($verified['ok'] ?? false) && ($verified['version'] ?? '') === $version && ($verified['mode'] ?? '') === 'dist'
                             && $this->checksumMatches($published . '.sha256', $name, $digest)) {
+                            UpdatePreflight::identity($verified['manifest'],$current,$resolver->channel(),$version);
                             return $this->result($version, $published, $verified, true);
                         }
                     }
@@ -150,6 +151,7 @@ final readonly class GitHubReleaseDownloader
                 if (!($verified['ok'] ?? false) || ($verified['version'] ?? '') !== $version || ($verified['mode'] ?? '') !== 'dist') {
                     throw new \RuntimeException('Signed ZIP release verification failed: ' . ($verified['error'] ?? 'wrong version or mode'));
                 }
+                UpdatePreflight::identity($verified['manifest'],$current,$resolver->channel(),$version);
                 // Write sidecars first. Receipt is the final publication commit marker.
                 OperationFiles::copy($parts['checksum'], $published . '.sha256');
                 OperationFiles::copy($parts['signature'], $published . '.sig');

@@ -1,5 +1,5 @@
 const ADMIN_VERSION = '2.1.0'
-const FORUM_EDITION = '1.5.1'
+const FORUM_EDITION = '1.5.2'
 let oidcEnabled = false
 const API_BASE = '/api/v1'
 const TOKEN_KEY = 'cajeerengine.admin.token'
@@ -1501,7 +1501,7 @@ function updatesView() {
   const raw = state.cache.updates
   if (raw?.error) return `<div class="notice error">${escapeHtml(raw.error.message || 'Не удалось получить состояние обновлений')}</div>`
   const u = dataOf(raw, {}) || {}
-  const w = u.wizard || {}, stage = u.staged || {}, check = u.last_check || {}, latest = check.latest || {}
+  const w = u.wizard || {}, stage = u.staged || {}, check = u.last_check || {}, latest = check.next || {}
   const requests = Array.isArray(u.requests) ? u.requests : []
   const history = asArray(state.cache.updateHistory)
   const noticeData = dataOf(state.cache.updateNotifications,{}) || {}
@@ -1521,12 +1521,13 @@ function updatesView() {
   const rows = requests.map(req=>`<tr><td><code>${escapeHtml(String(req.id || '').slice(0,12))}</code></td><td>${escapeHtml(req.action)}</td><td>${escapeHtml(req.version || '—')}</td><td>${escapeHtml(req.state)}</td><td>${fmtTime(req.requested_at)}</td></tr>`)
   return `<div class="grid cards">
     <div class="card kpi"><div class="kpi-label">Установленная версия</div><div class="kpi-value">${escapeHtml(current)}</div><span class="muted">CajeerEngine</span></div>
-    <div class="card kpi"><div class="kpi-label">Найдена в GitHub</div><div class="kpi-value">${escapeHtml(latest.version || '—')}</div>${flag(available, 'Есть обновление', 'Нет доступного обновления')}</div>
+    <div class="card kpi"><div class="kpi-label">Следующий шаг</div><div class="kpi-value">${escapeHtml(latest.version || '—')}</div>${flag(available, 'Есть обновление', 'Нет доступного обновления')}</div>
     <div class="card kpi"><div class="kpi-label">Канал релизов</div><div class="kpi-value">${escapeHtml(u.channel || 'stable')}</div><span class="muted">${escapeHtml(check.metadata_status || u.metadata_status || 'неизвестно')}</span></div>
   </div>
   <div class="grid two">
     <div class="card"><h2>GitHub Release</h2><p>Проверка GitHub Releases; загрузка ZIP происходит только в отдельном фоновом операторе. Установить можно только проверенный Ed25519/SHA-256 пакет.</p>
       <div class="status-line">${flag(trust,'Ключ подписи настроен','Нет доверенного ключа')} ${flag(enabled,'Оператор готов','Оператор недоступен')} ${flag(u.github_reachable===true,'GitHub доступен','Проверка GitHub недоступна')}</div>
+      <p>Последний релиз: ${escapeHtml(check.latest?.version || "—")} · План: ${escapeHtml((check.upgrade_path || []).map(s=>s.version).join(" → ") || "—")}. Совместимость подтверждается после проверки подписи.</p>
       <p class="muted">Последняя проверка: ${fmtTime(check.checked_at || u.last_checked_at)}. ${check.metadata_failure ? 'Причина: '+escapeHtml(check.metadata_failure) : ''}</p>
       <p class="muted">Синхронизировано страниц: ${escapeHtml(u.metadata_page_count ?? check.metadata_page_count ?? 0)} · Каталог: ${fmtTime(u.metadata_fetched_at || check.metadata_fetched_at)}${u.retry_at || check.retry_at ? ' · Повтор после: '+fmtTime(u.retry_at || check.retry_at) : ''}</p>
       ${latest.source && /^https:\/\/github\.com\/CajeerTeam\/CajeerEngineForum\/releases\//i.test(latest.source) ? `<p><a href="${escapeHtml(latest.source)}" target="_blank" rel="noopener noreferrer">Открыть релиз на GitHub</a></p>` : ''}
@@ -1536,6 +1537,7 @@ function updatesView() {
     </div>
     <div class="card"><h2>Установка</h2><p>Подготовленный архив: <strong>${escapeHtml(stage.ok ? stage.version : 'нет')}</strong></p><p class="muted">Последние записи о скачанных релизах: ${escapeHtml(Array.isArray(u.downloads) ? u.downloads.length : 0)}</p>
       ${stage.ok ? `<p class="muted">SHA-256: <code>${escapeHtml(stage.sha256)}</code><br>Файлов: ${escapeHtml(stage.file_count)}</p>`:''}
+      ${stage.runtime_compatibility && !stage.runtime_compatibility.legacy_policy ? `<p>Совместимость при подготовке: ${flag(stage.runtime_compatibility.ok && stage.extension_compatibility?.ok, "подтверждена", "ошибка")} · PHP ${escapeHtml(stage.runtime_compatibility.php_version)} · SQL ${escapeHtml(stage.runtime_compatibility.database_driver)} ${escapeHtml(stage.runtime_compatibility.database_version || "—")} · Redis ${escapeHtml(stage.runtime_compatibility.redis_enabled ? stage.runtime_compatibility.redis_version || "—" : "отключён")}</p>` : ""}
       <p>Оператор: ${escapeHtml(operator.status || 'нет данных')} ${operator.checked_at?('· '+fmtTime(operator.checked_at)):''}</p>
       ${operator.status==='recovery_required' ? '<div class="notice error">Требуется ручное восстановление. Новые задания автоматически не выполняются.</div>' : ''}
       <div class="toolbar"><button class="btn" data-update-install ${installReady?'':'disabled'}>Установить обновление</button><a class="btn secondary" href="/upgrade/">Мастер диагностики</a></div>
@@ -1583,7 +1585,7 @@ function bindUpdates() {
   })
   document.querySelector('[data-update-check]')?.addEventListener('click',()=>submit('/updates/check',{},'Проверка GitHub Releases завершена.'))
   document.querySelector('[data-update-download]')?.addEventListener('click',()=>{
-    const u=dataOf(state.cache.updates,{}) || {},version=u.last_check?.latest?.version
+    const u=dataOf(state.cache.updates,{}) || {},version=u.last_check?.next?.version
     if(!version || !confirm(`Скачать и криптографически проверить CajeerEngine ${version}? Запрос будет выполнен серверным оператором.`))return
     submit('/updates/download',{confirm:true,version},`Загрузка ${version} поставлена в очередь.`)
   })
