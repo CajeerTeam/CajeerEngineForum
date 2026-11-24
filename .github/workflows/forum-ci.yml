@@ -6,7 +6,7 @@ on:
 permissions:
   contents: read
 env:
-  FORUM_CURRENT_VERSION: ${{ '1.4.3' }}
+  FORUM_CURRENT_VERSION: ${{ '1.4.4' }}
 concurrency:
   group: forum-ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -125,6 +125,8 @@ jobs:
       - run: php bin/cajeer api:lint --strict --json
       - run: node --check public/forum-assets/forum.js
       - run: php tools/forum-platform-config-regression.php
+      - run: php tools/forum-platform-workflows-unit.php
+      - run: python tools/forum-tests/platform_workflows_sql_regression.py
       - run: php tools/forum-ai-writing-unit.php
       - run: php tools/forum-ai-moderation-unit.php
       - run: php tools/forum-ai-insights-unit.php
@@ -310,6 +312,10 @@ jobs:
         env:
           FORUM_TEST_DRIVER: sqlite
         run: php tools/forum-unified-identity-acceptance.php
+      - name: Platform Workflows real PDO (sqlite)
+        env:
+          FORUM_TEST_DRIVER: sqlite
+        run: php tools/forum-platform-workflows-acceptance.php
       - run: php tools/forum-analytics-dashboard-regression.php
       - run: php tools/forum-engagement-regression.php
       - run: php tools/forum-analytics-hardening-regression.php
@@ -509,6 +515,10 @@ jobs:
         env:
           FORUM_TEST_DRIVER: pgsql
         run: php tools/forum-unified-identity-acceptance.php
+      - name: Platform Workflows real PDO (pgsql)
+        env:
+          FORUM_TEST_DRIVER: pgsql
+        run: php tools/forum-platform-workflows-acceptance.php
       - name: Knowledge sync real PostgreSQL FTS repair and search acceptance
         env:
           FORUM_TEST_DRIVER: pgsql
@@ -616,6 +626,10 @@ jobs:
         env:
           FORUM_TEST_DRIVER: mysql
         run: php tools/forum-unified-identity-acceptance.php
+      - name: Platform Workflows real PDO (mysql)
+        env:
+          FORUM_TEST_DRIVER: mysql
+        run: php tools/forum-platform-workflows-acceptance.php
       - name: Knowledge sync real MySQL/MariaDB FTS repair and search acceptance
         env:
           FORUM_TEST_DRIVER: mysql
@@ -672,6 +686,7 @@ jobs:
       - run: python tools/forum-support-browser-regression.py --browser ${{ matrix.browser }}
       - run: python tools/forum-platform-config-browser-regression.py --browser ${{ matrix.browser }}
       - run: python tools/forum-unified-identity-browser-regression.py --browser ${{ matrix.browser }}
+      - run: python tools/forum-platform-workflows-browser-regression.py --browser ${{ matrix.browser }}
       - run: python tools/forum-unified-admin-browser-regression.py --browser ${{ matrix.browser }}
       - name: Real browser E2E with SMTP
         run: python tools/forum-tests/run.py --suite browser --browser ${{ matrix.browser }} --report storage/tmp/forum-ci/browser

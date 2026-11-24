@@ -40,6 +40,10 @@ final class ForumRuntimeJobs
             $history=ForumAiChat::prunePrivateHistory($this->db,100);
             $this->stats['ai_private_retention']=$history;
         });
+        $registry->register('platform.workflows.run',function(array $p,JobContext $ctx):void{
+            if(!$this->db->tableExists('ce_platform_workflows'))return;
+            $ctx->heartbeat();$this->stats['workflows']=(new PlatformWorkflows($this->db))->drain();
+        });
         $registry->register('forum.analytics.rollup',$analyticsJob);
         $registry->register('forum.analytics.cleanup',$analyticsJob);
         $registry->register('forum.notifications.dispatch',function(array $p,JobContext $ctx){$ctx->heartbeat();$this->stats['notifications']=($this->stats['notifications']??0)+$this->tx()->notifications()->dispatch(100);});
@@ -50,6 +54,7 @@ final class ForumRuntimeJobs
     public function schedule(): void
     {
         $now=time();$tick=intdiv($now,10);$jobs=[];
+        if($this->db->tableExists('ce_platform_workflows')&&(new PlatformWorkflows($this->db))->pending($now))$jobs[]='platform.workflows.run';
         if($this->db->tableExists('ce_forum_analytics_state') && intdiv($now,60)!==intdiv($now-10,60))$jobs[]='forum.analytics.rollup';
         if($this->db->tableExists('ce_forum_ai_conversations') && intdiv($now,900)!==intdiv($now-10,900))$jobs[]='forum.ai.search.cleanup';
         if($this->platform!==null&&$this->db->tableExists('ce_forum_extension_events')&&(new ForumExtensionOutbox($this->db))->pending())$jobs[]='forum.extensions.dispatch';

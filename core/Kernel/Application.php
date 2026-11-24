@@ -685,7 +685,8 @@ final class Application
             $forumSupportService, $container->get(AuditLogger::class)
         );
         $platformConfig = $container->get('controller.platformConfig');
-        $controllers = compact('platformConfig', 'identity', 'forum', 'forumAi', 'forumSupport', 'aiAnalytics', 'aiAutomations', 'aiMigration', 'support', 'knowledge', 'ai', 'identityAdmin', 'oidc', 'migration', 'analyticsHub', 'tracking', 'analyticsEvents', 'consent', 'integrations', 'health', 'system', 'contentTypes', 'entries', 'runtime', 'search', 'queue', 'scheduler', 'webhooks', 'extensions', 'installer', 'importExport', 'updates', 'rc', 'stable', 'admin', 'media', 'public', 'cms', 'database', 'auth', 'users', 'roles', 'apiTokens', 'security');
+        $platformWorkflows = new \CajeerEngine\Api\Controller\PlatformWorkflowController(new \CajeerEngine\Forum\Service\PlatformWorkflows($forumDb));
+        $controllers = compact('platformWorkflows', 'platformConfig', 'identity', 'forum', 'forumAi', 'forumSupport', 'aiAnalytics', 'aiAutomations', 'aiMigration', 'support', 'knowledge', 'ai', 'identityAdmin', 'oidc', 'migration', 'analyticsHub', 'tracking', 'analyticsEvents', 'consent', 'integrations', 'health', 'system', 'contentTypes', 'entries', 'runtime', 'search', 'queue', 'scheduler', 'webhooks', 'extensions', 'installer', 'importExport', 'updates', 'rc', 'stable', 'admin', 'media', 'public', 'cms', 'database', 'auth', 'users', 'roles', 'apiTokens', 'security');
         foreach (\CajeerEngine\Http\RouteRegistry::all() as [$method, $path, $name, $controller, $action, $scopes]) {
             $router->add([$method], $path, $name, [$controllers[$controller], $action], $scopes);
         }

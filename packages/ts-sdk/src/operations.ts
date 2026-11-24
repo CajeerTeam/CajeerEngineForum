@@ -3427,6 +3427,12 @@ export const operations = {
         "parameters": [],
         "bodyRequired": false
     },
+    "get_platform_workflows_index": {
+        "method": "GET",
+        "path": "/platform/workflows",
+        "parameters": [],
+        "bodyRequired": false
+    },
     "patch_CmsRedirect": {
         "method": "PATCH",
         "path": "/cms/redirects/{id}",
@@ -4767,6 +4773,18 @@ export const operations = {
         "parameters": [],
         "bodyRequired": true
     },
+    "post_platform_workflows_preview": {
+        "method": "POST",
+        "path": "/platform/workflows/preview",
+        "parameters": [],
+        "bodyRequired": true
+    },
+    "post_platform_workflows_remove": {
+        "method": "POST",
+        "path": "/platform/workflows/remove",
+        "parameters": [],
+        "bodyRequired": true
+    },
     "put_AnalyticsEventConfig": {
         "method": "PUT",
         "path": "/tracking/events",
@@ -5135,6 +5153,12 @@ export const operations = {
     "put_platform_config_update": {
         "method": "PUT",
         "path": "/platform/config",
+        "parameters": [],
+        "bodyRequired": true
+    },
+    "put_platform_workflows_save": {
+        "method": "PUT",
+        "path": "/platform/workflows",
         "parameters": [],
         "bodyRequired": true
     }

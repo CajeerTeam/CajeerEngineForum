@@ -1,5 +1,5 @@
 const ADMIN_VERSION = '2.1.0'
-const FORUM_EDITION = '1.4.3'
+const FORUM_EDITION = '1.4.4'
 let oidcEnabled = false
 const API_BASE = '/api/v1'
 const TOKEN_KEY = 'cajeerengine.admin.token'
@@ -27,6 +27,7 @@ const nav = [
   ['analytics-hub','◉','Analytics Hub','Внешняя статистика','Аналитика','analytics:read'],
   ['analytics-insights','◉','AI External Analytics','AI-анализ внешней статистики','Аналитика','analytics:read'],
   ['analytics-events','◉','События','Цели и диагностика','Аналитика','tracking:read'],
+  ['platform-workflows','◉','Автоматизация платформы','Правила, расписания и история','AI и автоматизация','*'],
   ['forum/ai','◉','AI форума','Модель и квоты','AI и автоматизация','forum:acp:settings'],
   ['forum/ai_actions','◉','AI-действия форума','Подтверждаемые изменения','AI и автоматизация','forum:acp:settings'],
   ['ai','◉','AI ядра','OpenAI и автоматизация','AI и автоматизация','content:read'],
@@ -284,6 +285,7 @@ async function routeLoad(route) {
     if (route === 'analytics-hub') {await loadSilent('analyticsHub','/analytics/reports');const previous=dataOf(state.cache.analyticsHubReport,{});if(previous.connection?.id){const r=state.forms.hubPeriod;await loadSilent('analyticsHubReport',`/analytics/reports/${encodeURIComponent(previous.connection.id)}/data${r?'?'+new URLSearchParams(r):''}`)}}
     if (route === 'analytics-events') await Promise.allSettled([loadSilent('analyticsEvents','/tracking/events'),loadSilent('analyticsJournal','/tracking/events/journal')])
     if (route === 'privacy') await loadSilent('privacy', '/privacy/consent')
+    if (route === 'platform-workflows') await loadSilent('platformWorkflows','/platform/workflows')
     if (route === 'platform-config') await loadSilent('platformConfig','/platform/config')
     if (route === 'integrations') await loadSilent('integrations', '/integrations')
     if (route === 'extensions') await Promise.allSettled([loadSilent('extensions', '/extensions'), loadSilent('extensionsRuntime', '/extensions/runtime'), loadSilent('extensionsDiagnostics', '/extensions/diagnostics')])
@@ -374,6 +376,7 @@ function render() {
   else if (state.route === 'analytics-insights') body = analyticsInsightsView()
   else if (state.route === 'analytics-events') body = analyticsEventsView()
   else if (state.route === 'privacy') body = privacyView()
+  else if (state.route === 'platform-workflows') body = platformWorkflowsView()
   else if (state.route === 'platform-config') body = platformConfigView()
   else if (state.route === 'integrations') body = integrationsView()
   else if (state.route === 'extensions') body = extensionsView()
@@ -425,6 +428,35 @@ function bindCommon() {
 function integrationScope(scope) {
   const scopes = state.identity?.scopes || []
   return scopes.includes('*') || scopes.includes(scope)
+}
+
+function platformWorkflowsView(){
+  const cached=state.cache.platformWorkflows, data=dataOf(cached)
+  if(!integrationScope('*'))return '<div class="notice error">Недостаточно прав.</div>'
+  if(!data||cached?.error)return `<div class="notice error">${escapeHtml(cached?.error?.message||'Автоматизация недоступна')}</div>`
+  const r=state.forms.workflowEdit||{}, opts=(items,value)=>items.map(([id,label])=>`<option value="${id}" ${id===value?'selected':''}>${label}</option>`).join('')
+  const triggers=[['schedule','По расписанию'],['support.requested','Новое обращение / запрос оператора']]
+  const actions=[['support.assign','Назначить оператору'],['analytics.aggregate','Агрегировать статистику'],['analytics.cleanup','Очистить истёкшую статистику']]
+  const time=n=>Number(n)>0?new Date(Number(n)*1000).toLocaleString():'—'
+  const rules=table(['Правило','Триггер / действие','Следующий запуск','Состояние','Управление'],(data.rules||[]).map(x=>`<tr><td>${escapeHtml(x.name)}<br><small>${escapeHtml(x.id)}</small></td><td>${escapeHtml(x.trigger_name)} / ${escapeHtml(x.action_name)}</td><td>${escapeHtml(time(x.next_due))}</td><td>${Number(x.enabled)===1?'Включено':'Пауза'}</td><td><button class="btn small secondary" data-workflow-edit="${escapeHtml(x.id)}">Изменить</button> <button class="btn small danger" data-workflow-delete="${escapeHtml(x.id)}">Удалить</button></td></tr>`))
+  const runs=table(['Время','Правило / ревизия','Действие','Результат','Записей'],(data.runs||[]).map(x=>`<tr><td>${escapeHtml(time(x.created_at))}</td><td>${escapeHtml((data.rules||[]).find(y=>y.id===x.rule_id)?.name||x.rule_id)} / ${escapeHtml(x.rule_revision)}</td><td>${escapeHtml(x.action_name)}</td><td>${escapeHtml(x.status)}</td><td>${escapeHtml(x.affected)}</td></tr>`))
+  return `<section class="card"><h2>Автоматизация платформы</h2><p>Правила выполняет существующий worker. Просроченные интервалы объединяются в один запуск. Событие обрабатывает только своё незакреплённое обращение; назначение не заменяет оператора и не закрывает заявку.</p><button class="btn secondary" data-workflow-refresh>Обновить</button>${rules}</section><section class="card"><h2>${r.id?'Изменение правила':'Новое правило'}</h2><form class="form" data-workflow-form><label>Название<input class="input" name="name" required maxlength="120" value="${escapeHtml(r.name||'')}"></label><label>Триггер<select class="input" name="trigger_name">${opts(triggers,r.trigger_name||'schedule')}</select></label><label>Действие<select class="input" name="action_name">${opts(actions,r.action_name||'support.assign')}</select></label><label data-workflow-operator>UUID оператора (Identity Center)<input class="input" name="operator_id" value="${escapeHtml(r.operator_id||'')}"></label><label data-workflow-condition><span data-workflow-condition-label>Условие</span><input class="input" name="condition_value" type="number" min="0" step="1" value="${escapeHtml(r.condition_value??0)}"></label><label data-workflow-interval>Интервал (сек., 60–86400)<input class="input" name="interval_seconds" type="number" min="60" max="86400" step="1" value="${escapeHtml(Number(r.interval_seconds)||300)}"></label><label><input type="checkbox" name="enabled" ${Number(r.enabled)===1?'checked':''}> Включить правило</label><div class="row-actions"><button class="btn secondary" type="button" data-workflow-preview>Проверить без изменений</button><button class="btn" type="submit">Сохранить</button><button class="btn secondary" type="button" data-workflow-new>Новое правило</button></div><p role="status" data-workflow-result></p></form></section><section class="card"><h2>История выполнения (100 последних, 90 дней)</h2><p>done — выполнено; no_match — условие не выполнено; revoked — права отозваны; stale — устаревшая ревизия; failed — ошибка, изменения отменены.</p>${runs}</section>`
+}
+function bindPlatformWorkflows(){
+  if(state.route!=='platform-workflows'||!integrationScope('*'))return
+  const form=document.querySelector('[data-workflow-form]');if(!form)return
+  const data=dataOf(state.cache.platformWorkflows), r=state.forms.workflowEdit||{}
+  const sync=()=>{const event=form.elements.trigger_name.value==='support.requested';const action=form.elements.action_name;if(event)action.value='support.assign';for(const option of action.options)option.disabled=event&&option.value!=='support.assign';const support=action.value==='support.assign',cleanup=action.value==='analytics.cleanup';form.querySelector('[data-workflow-operator]').hidden=!support;form.elements.operator_id.required=support;form.querySelector('[data-workflow-interval]').hidden=event;form.elements.interval_seconds.disabled=event;form.querySelector('[data-workflow-condition]').hidden=event||cleanup;form.elements.condition_value.disabled=event||cleanup;form.elements.condition_value.max=support?'604800':'1000';form.querySelector('[data-workflow-condition-label]').textContent=support?'Минимальный возраст обращения (сек.)':'Минимум ожидающих событий'}
+  sync();form.elements.trigger_name.addEventListener('change',sync);form.elements.action_name.addEventListener('change',sync)
+  const body=()=>{const f=new FormData(form),trigger=String(f.get('trigger_name')),action=String(f.get('action_name'));return {id:r.id||null,revision:Number(r.revision||0),name:String(f.get('name')).trim(),trigger_name:trigger,action_name:action,operator_id:action==='support.assign'?String(f.get('operator_id')).trim():null,condition_value:trigger==='support.requested'||action==='analytics.cleanup'?0:Number(f.get('condition_value')),interval_seconds:trigger==='schedule'?Number(f.get('interval_seconds')):0,enabled:f.has('enabled')}}
+  const out=form.querySelector('[data-workflow-result]'), busy=async(fn)=>{const buttons=[...document.querySelectorAll('[data-workflow-form] button,[data-workflow-edit],[data-workflow-delete],[data-workflow-refresh]')];buttons.forEach(b=>b.disabled=true);try{await fn()}catch(e){out.textContent=e.message}finally{buttons.forEach(b=>b.disabled=false)}}
+  const refresh=async()=>{await loadSilent('platformWorkflows','/platform/workflows');if(state.route==='platform-workflows')render()}
+  document.querySelector('[data-workflow-refresh]').onclick=()=>void busy(refresh)
+  form.querySelector('[data-workflow-new]').onclick=()=>{state.forms.workflowEdit=null;render()}
+  document.querySelectorAll('[data-workflow-edit]').forEach(b=>b.onclick=()=>{state.forms.workflowEdit=(data.rules||[]).find(x=>x.id===b.dataset.workflowEdit);render()})
+  document.querySelectorAll('[data-workflow-delete]').forEach(b=>b.onclick=()=>{const x=(data.rules||[]).find(x=>x.id===b.dataset.workflowDelete);if(!x||!confirm('Удалить правило? История останется.'))return;void busy(async()=>{await api('/platform/workflows/remove',{method:'POST',body:JSON.stringify({id:x.id,revision:Number(x.revision)})});state.forms.workflowEdit=null;await refresh()})})
+  form.querySelector('[data-workflow-preview]').onclick=()=>{if(!form.reportValidity())return;void busy(async()=>{const x=dataOf(await api('/platform/workflows/preview',{method:'POST',body:JSON.stringify(body())}));out.textContent=`Предпросмотр: ${x.eligible===null?'не применяется':x.eligible} ${x.note||''}`})}
+  form.onsubmit=e=>{e.preventDefault();if(!form.reportValidity()||!confirm('Сохранить правило автоматизации? Включённое правило сможет выполнять выбранное действие.'))return;void busy(async()=>{await api('/platform/workflows',{method:'PUT',body:JSON.stringify(body())});state.forms.workflowEdit=null;await refresh()})}
 }
 
 function platformConfigView() {
@@ -792,6 +824,7 @@ function bindForms() {
   bindAnalyticsEvents()
   bindAnalyticsHub()
   bindAnalyticsInsights()
+  bindPlatformWorkflows()
   bindPlatformConfig()
   bindIntegrations()
   bindExtensions()

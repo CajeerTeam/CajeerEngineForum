@@ -1,3 +1,11 @@
+## [1.4.4] - 2026-11-24
+
+### Platform Automation & Workflows
+- SQL-backed administrator rule editor with interval schedules and transactional support-request triggers, typed conditions and allowlisted actions.
+- Assign unclaimed human-support tickets to an authorized operator; aggregate and prune analytics using existing services.
+- Read-only preview, revision-checked enable/edit/remove, current RBAC at execution, bounded work, deduplicated events and atomic execution history/audit.
+- Migration 0092 for SQLite, PostgreSQL and MySQL/MariaDB; CI/staging qualification required.
+
 ## [1.4.3] - 2026-11-24
 
 ### Unified Identity & Access Management

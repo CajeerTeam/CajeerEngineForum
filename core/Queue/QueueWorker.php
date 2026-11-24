@@ -70,6 +70,15 @@ final class QueueWorker
             }
             try {
             // Non-Redis workers (or failed Redis handoff) drain durable SQL directly.
+            if(!$distributed&&($queue===null||$queue==='default')&&$forumDbReady&&$this->database!==null&&$this->forumJobs!==null&&!$this->stopping&&$this->database->tableExists('ce_platform_workflows')){
+                try{
+                    $workflows=new \CajeerEngine\Forum\Service\PlatformWorkflows($this->database);
+                    if($workflows->pending()){
+                        if($signals)pcntl_alarm(max(1,min(120,(int)(getenv('QUEUE_JOB_TIMEOUT_SECONDS')?:120))));
+                        try{$this->forumJobs->stats['workflows']=$workflows->drain();}finally{if($signals)pcntl_alarm(0);}
+                    }
+                }catch(\Throwable $e){$failed++;$errors[]=['name'=>'platform.workflows.run','error'=>'Workflow execution deferred'];}
+            }
             if(($queue===null||$queue==='default')&&$forumDbReady&&$this->database!==null&&$this->platform!==null&&!$this->stopping&&$this->database->tableExists('ce_forum_extension_events')){
                 try{
                     $outbox=new \CajeerEngine\Forum\Service\ForumExtensionOutbox($this->database);
@@ -140,7 +149,7 @@ final class QueueWorker
         \CajeerEngine\Observability\OperationsMonitor::marker($root,'worker',$failed?'failure':'success');
         $stats=$this->forumJobs?->stats??[];$forumProcessed+=$stats['notifications']??0;foreach($stats['mail']??[] as $key=>$n)$mailStats[$key]+=$n;$mediaStats=array_replace($mediaStats,$stats['media']??[]);
         try{$diagnostics=$this->queue->diagnostics();}catch(\Throwable){$diagnostics=['connected'=>false,'error'=>'Queue unavailable'];}
-        return ['processed'=>$processed,'forum_extensions'=>$extensionStats?:($this->forumJobs?->stats['extensions']??[]),'forum_notifications_processed'=>$forumProcessed,'forum_mail'=>$mailStats,'forum_attachments_cleaned'=>$attachmentsCleaned,'forum_drafts_cleaned'=>$draftsCleaned,'forum_spam_cleaned'=>$spamCleaned,'forum_recycle_purged'=>$recyclePurged,'forum_media'=>$mediaStats,'failed'=>$failed,'lost_reservations'=>$lost,'stopping'=>$this->stopping,'errors'=>$errors,'diagnostics'=>$diagnostics];
+        return ['processed'=>$processed,'forum_extensions'=>$extensionStats?:($this->forumJobs?->stats['extensions']??[]),'forum_notifications_processed'=>$forumProcessed,'forum_mail'=>$mailStats,'forum_attachments_cleaned'=>$attachmentsCleaned,'forum_drafts_cleaned'=>$draftsCleaned,'forum_spam_cleaned'=>$spamCleaned,'forum_recycle_purged'=>$recyclePurged,'forum_media'=>$mediaStats,'platform_workflows_processed'=>$stats['workflows']??0,'failed'=>$failed,'lost_reservations'=>$lost,'stopping'=>$this->stopping,'errors'=>$errors,'diagnostics'=>$diagnostics];
     }
     private function logMessage(array $payload,JobContext $context): void
     {

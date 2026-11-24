@@ -194,6 +194,7 @@ final readonly class ForumSupportAssistant
             $pdo->prepare('INSERT INTO ce_forum_support_tickets(id,user_id,subject,status,needs_human,assigned_to,revision,created_at,updated_at) VALUES(?,?,?, ?,1,NULL,1,?,?)')
                 ->execute([$id,$actor->userId,$subject,'open',$now,$now]);
             self::append($pdo,$id,'user',$message,$actor->userId);
+            (new PlatformWorkflows($this->db))->supportRequested($id);
         });
         // Ticket creation must survive unavailable AI, exhausted budgets and missing evidence.
         if(($data['ai_help']??false)===true){try{$this->automatic($actor,$id,$message);}catch(\Throwable){} }
@@ -251,6 +252,7 @@ final readonly class ForumSupportAssistant
             $q->execute([$staff?'waiting':'open',$staff?0:1,$staff?($t['assigned_to']??$actor->userId):$t['assigned_to'],time(),$id,$rev]);
             if($q->rowCount()!==1)throw new ForumException('Обращение изменено. Обновите страницу.',409);
             self::append($pdo,$id,$staff?'operator':'user',$body,$actor->userId);
+            if(!$staff)(new PlatformWorkflows($this->db))->supportRequested($id);
         });
         return $this->show($actor,$id);
     }
@@ -266,6 +268,7 @@ final readonly class ForumSupportAssistant
             $q=$pdo->prepare("UPDATE ce_forum_support_tickets SET status='open',needs_human=1,revision=revision+1,updated_at=? WHERE id=? AND user_id=? AND revision=?");
             $q->execute([time(),$id,$actor->userId,$rev]);
             if($q->rowCount()!==1)throw new ForumException('Обращение изменено. Обновите страницу.',409);
+            (new PlatformWorkflows($this->db))->supportRequested($id);
         });
         return $this->show($actor,$id);
     }

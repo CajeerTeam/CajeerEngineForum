@@ -4413,6 +4413,15 @@ final class Operations {
     ),
     'bodyRequired' => false,
   ),
+  'get_platform_workflows_index' => 
+  array (
+    'method' => 'GET',
+    'path' => '/platform/workflows',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => false,
+  ),
   'patch_CmsRedirect' => 
   array (
     'method' => 'PATCH',
@@ -6210,6 +6219,24 @@ final class Operations {
     ),
     'bodyRequired' => true,
   ),
+  'post_platform_workflows_preview' => 
+  array (
+    'method' => 'POST',
+    'path' => '/platform/workflows/preview',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => true,
+  ),
+  'post_platform_workflows_remove' => 
+  array (
+    'method' => 'POST',
+    'path' => '/platform/workflows/remove',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => true,
+  ),
   'put_AnalyticsEventConfig' => 
   array (
     'method' => 'PUT',
@@ -6682,6 +6709,15 @@ final class Operations {
   array (
     'method' => 'PUT',
     'path' => '/platform/config',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => true,
+  ),
+  'put_platform_workflows_save' => 
+  array (
+    'method' => 'PUT',
+    'path' => '/platform/workflows',
     'parameters' => 
     array (
     ),

@@ -132,6 +132,7 @@ final readonly class AdminController
             ['key' => 'analytics_events', 'label' => 'События', 'path' => '/admin/#/analytics-events', 'scope' => 'tracking:read'],
             ['key' => 'tracking', 'label' => 'Счётчики', 'path' => '/admin/#/tracking', 'scope' => 'tracking:read'],
             ['key' => 'privacy', 'label' => 'Приватность', 'path' => '/admin/#/privacy', 'scope' => 'privacy:read'],
+            ['key' => 'platform_workflows', 'label' => 'Автоматизация платформы', 'path' => '/admin/#/platform-workflows', 'scope' => '*'],
             ['key' => 'platform_config', 'label' => 'Настройки платформы', 'path' => '/admin/#/platform-config', 'scope' => 'system:read'],
             ['key' => 'integrations', 'label' => 'Интеграции', 'path' => '/admin/#/integrations', 'scope' => 'integrations:read'],
             ['key' => 'extensions', 'label' => 'Расширения', 'path' => '/admin/#/extensions', 'scope' => 'extensions:read'],

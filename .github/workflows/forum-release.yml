@@ -124,14 +124,14 @@ jobs:
           python3 tools/certification-evidence.py verify "$ARTIFACT_ROOT" --trusted-key "$pub"
 
           cat > "$RUNNER_TEMP/forum-release-notes.md" <<'NOTES'
-          ## CajeerEngineForum 1.4.3 — Unified Identity & Access Management
+          ## CajeerEngineForum 1.4.4 — Platform Automation & Workflows
 
-          Forum Edition 1.4.3 on CajeerEngine 2.1.0.
+          Forum Edition 1.4.4 on CajeerEngine 2.1.0.
 
-          - Unified account access, protected role assignment, ACL inspection, delegation and browser-session revocation.
+          - Durable workflow rules, support routing, scheduled analytics, live RBAC, safe preview and execution history.
           - Source revalidation after queue admission and strict streamed/final response reconciliation.
           - Signed ZIPs, detached signatures, SHA-256, manifests and artifact index are published together.
-          - No new migrations; mandatory real PDO and browser acceptance remains in place.
+          - Migration 0092; mandatory real PDO and browser acceptance remains in place.
 
           Publication of signed artifacts is gated on successful CI, external staging approval,
           independently trusted signing keys and production change-control review.
