@@ -60,7 +60,8 @@ $transport = static function (string $url, array $headers) use (&$requests, &$mo
     };
 };
 try {
-    $monitor = new GitHubReleaseMonitor($root, $transport);
+    $clock = time();
+    $monitor = new GitHubReleaseMonitor($root, $transport, sleep: static fn(int $ms) => null, clock: static function () use (&$clock): int { return $clock; });
     $config = ['core' => ['channel' => 'stable', 'releases_url' => GitHubEndpoints::RELEASES_URL]];
     $resolver = new UpdateResolver($config, $root, $monitor);
     $fresh = $resolver->check('2.0.1');
@@ -84,6 +85,7 @@ try {
         'offline GitHub exposes stale metadata but not successful poll');
     verifyDiscovery(!str_contains(json_encode($stale, JSON_THROW_ON_ERROR), 'API_SECRET'), 'transport secrets never reach persistent status');
 
+    $clock += 31;
     $mode = 'invalid';
     verifyDiscovery($resolver->check('2.0.1')['metadata_status'] === 'stale', 'invalid API payload does not overwrite cache');
     $mode = 'rate';

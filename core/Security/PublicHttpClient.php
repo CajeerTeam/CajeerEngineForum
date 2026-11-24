@@ -52,7 +52,7 @@ final class PublicHttpClient implements OutboundHttpTransport
     /** Same pinned transport, with final response headers for pagination metadata. */
     public function requestWithHeaders(string $url,string $method,#[\SensitiveParameter] array $headers=[],#[\SensitiveParameter] string $body='',int $maxBytes=1048576):array
     {
-        return \CajeerEngine\Observability\Operation::measure('integration','outbound.http',fn()=> $this->sendWithHeaders($url,$method,$headers,$body,$maxBytes),$this->metricsRoot,static fn(array $r)=>$r[0]>=200&&$r[0]<300?'success':($r[0]===429?'rate_limited':'failure'));
+        return \CajeerEngine\Observability\Operation::measure('integration','outbound.http',fn()=> $this->sendWithHeaders($url,$method,$headers,$body,$maxBytes),$this->metricsRoot,static fn(array $r)=>($r[0]>=200&&$r[0]<300)||$r[0]===304?'success':($r[0]===429?'rate_limited':'failure'));
     }
     private function sendWithHeaders(string $url,string $method,#[\SensitiveParameter] array $headers,#[\SensitiveParameter] string $body,int $maxBytes):array
     {
@@ -74,7 +74,7 @@ final class PublicHttpClient implements OutboundHttpTransport
             CURLOPT_SSL_VERIFYPEER => true, CURLOPT_SSL_VERIFYHOST => 2,
             CURLOPT_HEADERFUNCTION => static function ($ch,string $line) use (&$responseHeaders):int {
                 if (str_starts_with($line,'HTTP/')) $responseHeaders=[];
-                elseif (str_contains($line,':')) {[$name,$value]=explode(':',$line,2);$name=strtolower(trim($name));if(in_array($name,['x-wp-total','x-wp-totalpages','etag','retry-after','x-ratelimit-remaining','x-ratelimit-reset'],true))$responseHeaders[$name]=trim($value);}
+                elseif (str_contains($line,':')) {[$name,$value]=explode(':',$line,2);$name=strtolower(trim($name));if(in_array($name,['x-wp-total','x-wp-totalpages','etag','retry-after','x-ratelimit-remaining','x-ratelimit-reset','link'],true))$responseHeaders[$name]=$name==='link'&&isset($responseHeaders[$name])?$responseHeaders[$name].', '.trim($value):trim($value);}
                 return strlen($line);
             },
             CURLOPT_WRITEFUNCTION => static function ($ch, string $chunk) use (&$response, $maxBytes): int {

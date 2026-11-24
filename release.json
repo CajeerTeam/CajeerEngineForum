@@ -17,10 +17,10 @@
     "docs": "GitHub repository docs/",
     "updates": "GitHub Releases",
     "release_builder": "tools/build-release.php",
-    "source_artifact": "storage/releases/cajeerengine-1.5.0-source.zip",
-    "dist_artifact": "storage/releases/cajeerengine-1.5.0-dist.zip",
+    "source_artifact": "storage/releases/cajeerengine-1.5.1-source.zip",
+    "dist_artifact": "storage/releases/cajeerengine-1.5.1-dist.zip",
     "checksums": "storage/releases/*.sha256",
-    "artifact_index": "storage/releases/cajeerengine-1.5.0-artifacts.json",
+    "artifact_index": "storage/releases/cajeerengine-1.5.1-artifacts.json",
     "support_bundle": "storage/app/support",
     "backup": "storage/app/backups/production",
     "server_reports": "storage/app/reports",
@@ -36,6 +36,7 @@
     "engine_api_version": "1.1"
   },
   "product_changes": [
+    "Forum Edition 1.5.1: paginated conditional GitHub release synchronization, atomic complete catalog, bounded retries and persistent cooldown, protected optional API token, synchronization diagnostics. No schema migration; independent qualification required.",
     "Forum Edition 1.5.0: exact signed candidate acquisition, verified deployment identity and independent run-attempt receipts, minor-version recovery, resumable verified draft publication and mandatory qualification. Certification pending real CI and physical evidence.",
     "Forum Edition 1.4.11: enforced physical load and soak thresholds, balanced route pacing, sustained writes, measured chaos recovery and publication gated on independent physical reports for the exact candidate. Physical qualification pending.",
     "Forum Edition 1.4.10: live browser-to-API-to-SQL-to-worker integration acceptance for support, workflow, analytics, ACL and operational diagnostics; strict evidence and corrected ACP version identity. Independent CI and staging remain required.",
@@ -210,6 +211,6 @@
   },
   "stability": "production-stable-gated",
   "edition": "forum",
-  "edition_version": "1.5.0",
+  "edition_version": "1.5.1",
   "upstream_version": "2.1.0"
 }

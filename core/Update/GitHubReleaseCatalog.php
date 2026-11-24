@@ -12,11 +12,15 @@ final class GitHubReleaseCatalog
     {
         if (!array_is_list($payload)) return null;
         $releases = [];
+        $seen = [];
+        $duplicates = [];
         foreach ($payload as $release) {
             if (!is_array($release) || ($release['draft'] ?? true) !== false || !is_bool($release['prerelease'] ?? null)) continue;
             $tag = $release['tag_name'] ?? null;
             if (!is_string($tag) || !preg_match('/^v?((?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)(?:-(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*)?)$/D', $tag, $match)) continue;
             $version = $match[1];
+            if (isset($seen[$version])) $duplicates[$version] = true;
+            $seen[$version] = true;
             $prerelease = $release['prerelease'];
             // A prerelease flag or SemVer suffix must never enter the stable channel.
             if ($prerelease !== str_contains($version, '-')) continue;
@@ -28,7 +32,7 @@ final class GitHubReleaseCatalog
                 if (!is_array($asset) || ($asset['state'] ?? null) !== 'uploaded' || !is_string($asset['name'] ?? null) || !is_int($asset['size'] ?? null) || $asset['size'] <= 0) continue;
                 $name = $asset['name'];
                 // Construct canonical links ourselves; never forward arbitrary API-provided URLs.
-                if (isset($assets[$name])) continue;
+                if (isset($assets[$name])) continue 2;
                 $assets[$name] = $asset;
             }
             $artifacts = [];
@@ -51,13 +55,17 @@ final class GitHubReleaseCatalog
             // A Git tag, automatic source archive or incomplete upload is not a deployable release.
             if (!isset($artifacts['dist'])) continue;
             $channel = !$prerelease ? 'stable' : (preg_match('/-rc(?:[.0-9-]|$)/i', $version) ? 'rc' : (preg_match('/-beta(?:[.0-9-]|$)/i', $version) ? 'beta' : 'dev'));
+            // Cut release notes on a UTF-8 boundary so persisted diagnostics remain valid JSON.
+            $notes = is_string($release['body'] ?? null) ? substr($release['body'], 0, 8000) : '';
+            for ($i=0; $i<3 && $notes !== '' && !preg_match('//u', $notes); ++$i) $notes = substr($notes, 0, -1);
+            if (!preg_match('//u', $notes)) $notes = '';
             $releases[] = [
                 'version' => $version, 'channel' => $channel, 'stability' => $channel,
                 'released_at' => $published, 'source' => GitHubEndpoints::releaseUrl($tag),
-                'notes' => is_string($release['body'] ?? null) ? $release['body'] : '',
+                'notes' => $notes,
                 'artifacts' => $artifacts,
             ];
         }
-        return ['releases' => $releases];
+        return ['releases' => array_values(array_filter($releases, static fn(array $r): bool => !isset($duplicates[$r['version']])) )];
     }
 }

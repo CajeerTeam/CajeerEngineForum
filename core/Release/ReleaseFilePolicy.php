@@ -24,6 +24,7 @@ final class ReleaseFilePolicy
         'docs/forum-production-stable-1.5.0.md',
         'tools/ai-assistant-production-regression.php',
         'tools/automatic-release-discovery-regression.php',
+        'tools/github-release-sync-regression.php',
         'tools/forum-1.0.2-stabilization-regression.php',
         'tools/forum-account-linking-browser-regression.mjs',
         'tools/forum-account-linking-reauth-regression.php',

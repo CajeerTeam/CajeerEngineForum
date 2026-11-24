@@ -39,6 +39,10 @@ final readonly class AutomaticReleaseDiscovery
             'latest_version' => $result['latest']['version'] ?? null,
             'metadata_status' => $result['metadata_status'],
             'metadata_fetched_at' => $result['metadata_fetched_at'],
+            'metadata_checked_at' => $result['metadata_checked_at'],
+            'metadata_page_count' => $result['metadata_page_count'],
+            'metadata_failure' => $result['metadata_failure'],
+            'retry_at' => $result['retry_at'],
         ] + ($result['github_reachable'] ? [] : ['error' => 'GitHub release metadata unavailable']);
     }
 }

@@ -1,3 +1,9 @@
+## [1.5.1] - 2026-11-24
+
+- Synchronize all bounded GitHub release pages with per-page ETags, atomic publication, persistent rate-limit and transient-failure cooldown, and exclusive discovery lock.
+- Keep last complete catalog on failure; reject ambiguous versions/assets and untrusted pagination. Optional protected GitHub API token; signed downloads retain independent trust checks.
+- Expose page count, last successful synchronization and retry deadline; preserve physical release admission. No schema migration.
+
 ## [1.5.0] - 2026-11-24
 
 - Bind physical tests to the same signed CI artifact and workflow attempt used for publication.

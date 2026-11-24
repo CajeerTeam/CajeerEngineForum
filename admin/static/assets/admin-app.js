@@ -1,5 +1,5 @@
 const ADMIN_VERSION = '2.1.0'
-const FORUM_EDITION = '1.5.0'
+const FORUM_EDITION = '1.5.1'
 let oidcEnabled = false
 const API_BASE = '/api/v1'
 const TOKEN_KEY = 'cajeerengine.admin.token'
@@ -1511,7 +1511,7 @@ function updatesView() {
   const enabled = u.web_upgrade_enabled === true && w.operator_ready === true && w.operator_status?.status !== 'recovery_required'
   const trust = w.production_apply_enabled === true
   const available = check.update_available === true && typeof latest.version === 'string'
-  const downloadReady = enabled && trust && available && !pending && !w.maintenance?.update_active && !updatesWorking
+  const downloadReady = enabled && trust && available && ['fresh','not_modified'].includes(check.metadata_status) && !u.retry_at && !pending && !w.maintenance?.update_active && !updatesWorking
   const installReady = enabled && trust && w.staged_installable === true && stage.ok === true && !!stage.id && !!stage.sha256 && !pending && !w.maintenance?.update_active && !updatesWorking && w.installed
   const rollback = w.rollback || {}, backups = Array.isArray(u.backups) ? u.backups : []
   const safeRecovery = enabled && !pending && !w.maintenance?.update_active && !updatesWorking
@@ -1528,7 +1528,8 @@ function updatesView() {
     <div class="card"><h2>GitHub Release</h2><p>Проверка GitHub Releases; загрузка ZIP происходит только в отдельном фоновом операторе. Установить можно только проверенный Ed25519/SHA-256 пакет.</p>
       <div class="status-line">${flag(trust,'Ключ подписи настроен','Нет доверенного ключа')} ${flag(enabled,'Оператор готов','Оператор недоступен')} ${flag(u.github_reachable===true,'GitHub доступен','Проверка GitHub недоступна')}</div>
       <p class="muted">Последняя проверка: ${fmtTime(check.checked_at || u.last_checked_at)}. ${check.metadata_failure ? 'Причина: '+escapeHtml(check.metadata_failure) : ''}</p>
-      ${latest.source && /^https:\/\/github\.com\/CajeerTeam\/CajeerEngine\/releases\//i.test(latest.source) ? `<p><a href="${escapeHtml(latest.source)}" target="_blank" rel="noopener noreferrer">Открыть релиз на GitHub</a></p>` : ''}
+      <p class="muted">Синхронизировано страниц: ${escapeHtml(u.metadata_page_count ?? check.metadata_page_count ?? 0)} · Каталог: ${fmtTime(u.metadata_fetched_at || check.metadata_fetched_at)}${u.retry_at || check.retry_at ? ' · Повтор после: '+fmtTime(u.retry_at || check.retry_at) : ''}</p>
+      ${latest.source && /^https:\/\/github\.com\/CajeerTeam\/CajeerEngineForum\/releases\//i.test(latest.source) ? `<p><a href="${escapeHtml(latest.source)}" target="_blank" rel="noopener noreferrer">Открыть релиз на GitHub</a></p>` : ''}
       ${typeof latest.notes === 'string' && latest.notes ? `<details><summary>Описание релиза</summary><pre class="json">${escapeHtml(latest.notes.slice(0,4000))}</pre></details>` : ''}
       <div class="toolbar"><button class="btn secondary" data-update-check ${updatesWorking?'disabled':''}>Проверить сейчас</button><button class="btn" data-update-download ${downloadReady?'':'disabled'}>Скачать и подготовить ${escapeHtml(latest.version||'')}</button></div>
       <p class="muted">${!enabled?'Необходим свежий heartbeat UpdateOperator, включённые настройки и отсутствие незавершённого восстановления. Причина: '+escapeHtml(w.operator_status?.reason||'неизвестно'):!trust?'Задайте UPDATE_TRUSTED_PUBLIC_KEY_FILE.':'Загрузка запускается в фоновом операторе; статус обновится автоматически.'}</p>

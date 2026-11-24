@@ -56,6 +56,8 @@ final readonly class UpdateResolver
             'metadata_status' => $metadata['_status'] ?? 'offline',
             'github_reachable' => in_array($metadata['_status'] ?? '', ['fresh', 'not_modified'], true),
             'metadata_fetched_at' => $metadata['_fetched_at'] ?? null,
+            'metadata_checked_at' => $metadata['_checked_at'] ?? null,
+            'metadata_page_count' => $metadata['_page_count'] ?? 0,
             'metadata_failure' => $metadata['_failure'] ?? null,
             'retry_at' => $metadata['_retry_at'] ?? null,
             'checked_at' => (new \DateTimeImmutable())->format(DATE_ATOM),
@@ -64,7 +66,7 @@ final readonly class UpdateResolver
             'registry_url' => $this->registryUrl(),
             'signature_required' => (bool) ($this->config['registry']['signature_required'] ?? true),
         ];
-        $this->writeLastCheck($result);
+        if ($result['metadata_failure'] !== 'sync_busy') $this->writeLastCheck($result);
         return $result;
     }
 
@@ -84,6 +86,8 @@ final readonly class UpdateResolver
             'metadata_status' => $metadata['_status'] ?? 'offline',
             'github_reachable' => in_array($metadata['_status'] ?? '', ['fresh', 'not_modified'], true),
             'metadata_fetched_at' => $metadata['_fetched_at'] ?? null,
+            'metadata_checked_at' => $metadata['_checked_at'] ?? null,
+            'metadata_page_count' => $metadata['_page_count'] ?? 0,
             'metadata_failure' => $metadata['_failure'] ?? null,
             'retry_at' => $metadata['_retry_at'] ?? null,
             'release_count' => is_array($metadata['releases'] ?? null) ? count($metadata['releases']) : 0,
@@ -98,7 +102,7 @@ final readonly class UpdateResolver
     {
         $url = $this->releasesUrl();
         if ($url === GitHubEndpoints::RELEASES_URL) {
-            $monitor = $this->monitor ?? new GitHubReleaseMonitor($this->rootPath);
+            $monitor = $this->monitor ?? new GitHubReleaseMonitor($this->rootPath, timeoutSeconds: max(1,min(15,(int)($this->config['core']['timeout']??5))));
             $data = $fetch ? $monitor->fetch() : $monitor->snapshot();
             if ($data !== null && ($data['_source'] ?? 'empty') !== 'empty') return $data;
             $failure = $data ?? [];
