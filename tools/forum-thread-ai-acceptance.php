@@ -15,7 +15,7 @@ $root=dirname(__DIR__);
 require $root.'/vendor/autoload.php';
 $driver=getenv('FORUM_TEST_DRIVER')?:'sqlite';
 if(!in_array($driver,['sqlite','mysql','pgsql'],true)||!in_array($driver,PDO::getAvailableDrivers(),true))throw new RuntimeException('Real PDO required: '.$driver);
-if($driver!=='sqlite'){putenv('DB_DRIVER='.$driver);putenv('DB_DATABASE=forum_analytics');}
+if($driver!=='sqlite'){putenv('DB_DRIVER='.$driver);putenv('DB_DATABASE=forum_thread_ai');}
 $config=new ConfigRepository($root);$config->set('database.default',$driver);
 $db=new DatabaseManager($config);
 if($driver==='sqlite'){
@@ -26,7 +26,7 @@ if($driver==='sqlite'){
 }else{
     $pdo=$db->connection();
     $actual=(string)$pdo->query($driver==='pgsql'?'SELECT current_database()':'SELECT DATABASE()')->fetchColumn();
-    if($actual!=='forum_analytics')throw new RuntimeException('Refusing non-disposable database');
+    if($actual!=='forum_thread_ai')throw new RuntimeException('Refusing non-disposable database');
     (new MigrationRunner($pdo,$root.'/migrations'))->run($driver);
 }
 $uid='9fafb572-8342-4f41-a945-b1f442edc211';

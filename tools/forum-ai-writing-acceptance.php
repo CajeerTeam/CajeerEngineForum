@@ -21,7 +21,7 @@ if (!in_array($driver,['sqlite','pgsql','mysql'],true) || !in_array($driver,PDO:
 }
 if ($driver !== 'sqlite') {
     putenv('DB_DRIVER='.$driver);
-    putenv('DB_DATABASE=forum_analytics');
+    putenv('DB_DATABASE=forum_ai_writing');
 }
 $config = new ConfigRepository($root);
 $config->set('database.default',$driver);
@@ -37,7 +37,7 @@ if ($driver === 'sqlite') {
 } else {
     $pdo = $db->connection();
     $actual = (string)$pdo->query($driver==='pgsql'?'SELECT current_database()':'SELECT DATABASE()')->fetchColumn();
-    if ($actual !== 'forum_analytics') throw new RuntimeException('Refusing to modify non-disposable database: '.$actual);
+    if ($actual !== 'forum_ai_writing') throw new RuntimeException('Refusing to modify non-disposable database: '.$actual);
     (new MigrationRunner($pdo,$root.'/migrations'))->run($driver);
 }
 

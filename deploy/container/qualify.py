@@ -179,6 +179,15 @@ def qualify(a):
     def check(name): report['checks'][name]=True;save();print('PASS',name,flush=True)
     def call(path,status=200,**kw): return expect(c,path,status,**kw)
     def login(email): return {'Authorization':'Bearer '+data(call('/api/v1/auth/login',201,method='POST',data={'email':email,'password':a.password_file.read_text().strip()})[1])['access_token']}
+    def assured_admin():
+        password = a.password_file.read_text().strip()
+        headers, body = call('/api/v1/auth/login', 201, method='POST', headers={'X-Cajeer-Browser': '1'}, data={'email': a.email, 'password': password})
+        session = data(body)
+        cookie = headers.get('set-cookie', '').split(';', 1)[0]
+        require(cookie.startswith('ce_session=') and 'access_token' not in session, 'browser session required for ACL qualification')
+        auth = {'Cookie': cookie, 'X-CSRF-Token': session['csrf_token']}
+        require(data(call('/api/v1/auth/assurance/confirm', method='POST', headers=auth, data={'password': password, 'two_factor_code': ''})[1])['fresh'], 'ACL step-up')
+        return auth
     def health(): return c.request('/health/ready')[0]==200
     def assert_ready(): wait_until(health,120,'ready')
     def recover(service): dc.run('start',service);assert_ready()
@@ -351,12 +360,12 @@ def qualify(a):
         check('confirmed_writes_preserved')
         policy='/api/v1/forum/categories/'+category+'/permissions'; original=data(call(policy,headers=admin)[1])
         try:
-            call(policy,method='PUT',headers=admin,data={'visibility':'hidden','rules':[],'revision':original['revision']})
+            call(policy,method='PUT',headers=assured_admin(),data={'visibility':'hidden','rules':[],'revision':original['revision']})
             call('/forum/threads/'+thread,404);call(path,404)
             require(not any(x['id']==thread for x in data(call('/api/v1/forum/search?q=ContainerSmokeMarker')[1])),'ACL leaked after cache warmup')
             check('acl_revocation')
         finally:
-            current=data(call(policy,headers=admin)[1]);call(policy,method='PUT',headers=admin,data={'visibility':original['visibility'],'rules':original['rules'],'revision':current['revision']})
+            current=data(call(policy,headers=admin)[1]);call(policy,method='PUT',headers=assured_admin(),data={'visibility':original['visibility'],'rules':original['rules'],'revision':current['revision']})
         require(b'ContainerSmokeBody' in call('/forum/threads/'+thread)[1],'SSR cache not revalidated after ACL restore')
         require(any(x['id']==thread for x in data(call('/api/v1/forum/search?q=ContainerSmokeMarker')[1])),'FTS cache not revalidated after ACL restore')
         check('cache_invalidation')

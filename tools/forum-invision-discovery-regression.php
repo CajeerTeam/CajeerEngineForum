@@ -41,7 +41,7 @@ $reject(static fn()=> new InvisionSourceDiscovery($open('DROP TABLE ips_forums_p
 $reject(static fn()=> new InvisionSourceDiscovery($open('DROP TABLE ips_forums_posts')),'prefix ambiguous or missing');
 $reject(static fn()=> new InvisionSourceDiscovery($open('ALTER TABLE ips_core_members DROP COLUMN email')),'missing columns email');
 $reject(static fn()=> new InvisionSourceDiscovery($open("UPDATE ips_core_applications SET app_version='3.4.0' WHERE app_directory='core'")),'Unsupported or unrecognized');
-$reject(static fn()=> new InvisionSourceDiscovery($open("DELETE FROM ips_core_applications WHERE app_directory='forums'")),'not installed');
+$reject(static fn()=> new InvisionSourceDiscovery($open("DELETE FROM ips_core_applications WHERE app_directory='forums'")),'Forums application is missing or duplicated');
 $reject(static fn()=> InvisionSourceDiscovery::detectPrefix(['ips_core_applications','ips_core_members','ips_forums_topics','ips_forums_posts','ibf_core_applications','ibf_core_members','ibf_forums_topics','ibf_forums_posts']),'prefix ambiguous');
 $pdo5=$open("UPDATE ips_core_applications SET app_version='5.0.20'; ALTER TABLE ips_forums_posts RENAME COLUMN post TO post_content");
 $plan5=(new InvisionSourceDiscovery($pdo5,'ips_','5.0.20'))->plan();

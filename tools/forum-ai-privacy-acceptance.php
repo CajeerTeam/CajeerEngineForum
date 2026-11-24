@@ -15,7 +15,7 @@ require_once $root.'/vendor/autoload.php';
 $driver=getenv('FORUM_TEST_DRIVER')?:'sqlite';
 if(!in_array($driver,['sqlite','pgsql','mysql'],true)||!in_array($driver,PDO::getAvailableDrivers(),true))
     throw new RuntimeException('Required real PDO driver is unavailable: '.$driver);
-if($driver!=='sqlite'){putenv('DB_DRIVER='.$driver);putenv('DB_DATABASE=forum_analytics');}
+if($driver!=='sqlite'){putenv('DB_DRIVER='.$driver);putenv('DB_DATABASE=forum_ai_privacy');}
 $config=new ConfigRepository($root);$config->set('database.default',$driver);
 $db=new DatabaseManager($config);
 if($driver==='sqlite'){
@@ -28,7 +28,7 @@ if($driver==='sqlite'){
 } else {
     $pdo=$db->connection();
     $database=(string)$pdo->query($driver==='pgsql'?'SELECT current_database()':'SELECT DATABASE()')->fetchColumn();
-    if($database!=='forum_analytics')throw new RuntimeException('Refuse non-disposable database '.$database);
+    if($database!=='forum_ai_privacy')throw new RuntimeException('Refuse non-disposable database '.$database);
     (new MigrationRunner($pdo,$root.'/migrations'))->run($driver);
 }
 final class PrivacyAcceptanceProvider extends OpenAiClient {

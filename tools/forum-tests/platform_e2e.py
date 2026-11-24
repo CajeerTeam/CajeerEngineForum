@@ -168,8 +168,10 @@ class PlatformJourney(unittest.TestCase):
                 member.goto(self.base + '/forum/support')
                 member.get_by_label('Тема обращения').fill(subject)
                 member.get_by_label('Описание проблемы').fill(content)
-                member.get_by_role('button', name='Создать обращение').click()
-                expect(member.get_by_text(content, exact=True)).to_be_visible()
+                with member.expect_response(lambda r: r.url.endswith('/api/v1/forum/support/tickets') and r.request.method == 'POST') as created:
+                    member.get_by_role('button', name='Создать обращение').click()
+                self.assertEqual(created.value.status, 201, 'support creation HTTP contract: ' + created.value.text()[:500])
+                expect(member.locator('.forum-support-message').get_by_text(content, exact=True)).to_be_visible()
                 expect(member.locator('.forum-support-message img')).to_have_count(0)
                 ticket = api(member, '/forum/support/tickets')[0]['id']
                 path = '/forum/support/tickets/' + ticket

@@ -17,9 +17,9 @@ try {
     if ((int)$db->connection()->query('SELECT COUNT(*) FROM ce_users')->fetchColumn()!==0) throw new RuntimeException('Disposable forum database must be empty');
     $roles=new RoleRepository($db);$roles->seedDefaults();$users=new UserRepository($db,$roles,new PasswordHasher($cfg));$users->createAdmin('admin@example.test','Admin','AdminPass12345');
     $app=Application::boot($root);
-    $call=function(string $method,string $path,?array $data=null,?string $token=null,int $expect=200,array $cookies=[],array $extra=[])use($app):array{
+    $call=function(string $method,string $path,?array $data=null,string|array|null $token=null,int $expect=200,array $cookies=[],array $extra=[])use($app):array{
         $headers=['CONTENT_TYPE'=>'application/json','HTTP_ACCEPT'=>'application/json','REMOTE_ADDR'=>'127.0.0.1']+$extra;
-        if($token)$headers['HTTP_AUTHORIZATION']='Bearer '.$token;
+        if(is_array($token)){ $cookies['ce_session']=$token['cookie'];$headers['HTTP_X_CSRF_TOKEN']=$token['csrf']; } elseif($token)$headers['HTTP_AUTHORIZATION']='Bearer '.$token;
         $r=Request::create('https://forum.test/api/v1'.$path,$method,[],$cookies,[],$headers,$data===null?null:json_encode($data,JSON_THROW_ON_ERROR));$res=$app->handle($r);
         check($res->getStatusCode()===$expect,"$method $path expected $expect, got ".$res->getStatusCode().' '.substr((string)$res->getContent(),0,300));return json_decode((string)$res->getContent(),true,512,JSON_THROW_ON_ERROR)['data']??[];
     };
@@ -34,6 +34,16 @@ try {
     $member=$call('POST','/forum/register',['name'=>'Member','email'=>'member@example.test','password'=>'MemberPass12345'],null,201)['id'];
     $other=$call('POST','/forum/register',['name'=>'Other','email'=>'other@example.test','password'=>'OtherPass12345'],null,201)['id'];
     $login=fn($email,$password)=>$call('POST','/auth/login',['email'=>$email,'password'=>$password],null,201)['access_token'];
+    $assuredLogin=function(string $email,string $password)use($app,$call):array{
+        $response=$app->handle(Request::create('https://forum.test/api/v1/auth/login','POST',[],[],[],['CONTENT_TYPE'=>'application/json','HTTP_X_CAJEER_BROWSER'=>'1','REMOTE_ADDR'=>'127.0.0.1'],json_encode(['email'=>$email,'password'=>$password],JSON_THROW_ON_ERROR)));
+        check($response->getStatusCode()===201,'browser login for privileged integration');
+        $session=json_decode((string)$response->getContent(),true,512,JSON_THROW_ON_ERROR)['data'];
+        $cookie=$response->headers->getCookies()[0]->getValue();
+        check(!isset($session['access_token'])&&is_string($session['csrf_token']??null),'cookie session and CSRF issued');
+        $auth=['cookie'=>$cookie,'csrf'=>$session['csrf_token']];
+        check($call('POST','/auth/assurance/confirm',['password'=>$password,'two_factor_code'=>''],$auth)['fresh']===true,'real privileged step-up');
+        return $auth;
+    };
     $call('POST','/forum/register',['name'=>'Member','email'=>'member@example.test','password'=>'MemberPass12345'],null,409);
     $m=$login('member@example.test','MemberPass12345');$a=$login('admin@example.test','AdminPass12345');$o=$login('other@example.test','OtherPass12345');
     $t=$call('POST',"/forum/boards/$board/threads",['title'=>'Test topic','body'=>'First <script>not HTML</script>'],$m,201)['id'];
@@ -46,12 +56,16 @@ try {
     check($call('GET','/forum/acp?view=threads&board_id='.$board,null,$a)['items'][0]['id']===$t,'ACP discussion filter');
     $adminId=$users->findByEmail('admin@example.test')['id'];
     $call('PATCH',"/forum/acp/members/$adminId",['name'=>'Admin','status'=>'disabled'],$a,403);
-    $call('PATCH',"/forum/acp/members/$other",['name'=>'Other ACP','status'=>'active'],$a);
+    $aBrowser=$assuredLogin('admin@example.test','AdminPass12345');
+    $call('PATCH',"/forum/acp/members/$adminId",['name'=>'Admin','status'=>'disabled'],$aBrowser,403);
+    $call('PATCH',"/forum/acp/members/$other",['name'=>'Other ACP','status'=>'active'],$aBrowser);
     check($users->findById($other)['name']==='Other ACP','ACP member change persisted');
     $audit=$call('GET','/forum/acp?view=audit&q=forum.acp.member.update',null,$a);check(count($audit['items'])===1&&$audit['items'][0]['actor_id']===$adminId,'ACP transactional audit');
     $adminBrowser=$app->handle(Request::create('https://forum.test/api/v1/auth/login','POST',[],[],[],['CONTENT_TYPE'=>'application/json','HTTP_X_CAJEER_BROWSER'=>'1','REMOTE_ADDR'=>'127.0.0.1'],json_encode(['email'=>'admin@example.test','password'=>'AdminPass12345'])));
     check($adminBrowser->getStatusCode()===201,'ACP administrator browser login');$adminCookie=$adminBrowser->headers->getCookies()[0]->getValue();$adminCsrf=json_decode($adminBrowser->getContent(),true)['data']['csrf_token'];
     $call('PATCH',"/forum/acp/members/$other",['name'=>'Other','status'=>'active'],null,403,['ce_session'=>$adminCookie]);
+    $call('PATCH',"/forum/acp/members/$other",['name'=>'Other','status'=>'active'],null,403,['ce_session'=>$adminCookie],['HTTP_X_CSRF_TOKEN'=>$adminCsrf]);
+    check($call('POST','/auth/assurance/confirm',['password'=>'AdminPass12345','two_factor_code'=>''],null,200,['ce_session'=>$adminCookie],['HTTP_X_CSRF_TOKEN'=>$adminCsrf])['fresh']===true,'CSRF test session confirmed');
     $call('PATCH',"/forum/acp/members/$other",['name'=>'Other','status'=>'active'],null,200,['ce_session'=>$adminCookie],['HTTP_X_CSRF_TOKEN'=>$adminCsrf]);
     check($users->findById($other)['name']==='Other','ACP CSRF protected member edit');
 
@@ -59,28 +73,29 @@ try {
     $policy=$call('GET','/forum/acp?view=settings',null,$a);
     $defaults=array_diff_key($policy['values'],['paused'=>true,'registration_open'=>true]);
     $call('PUT','/forum/acp/policy',['revision'=>$policy['revision'],'values'=>$defaults],$m,403);
-    $call('PUT',"/forum/acp/delegation/$other",['scopes'=>['forum:acp:settings','forum:acp:audit']],$a);
+    $call('PUT',"/forum/acp/delegation/$other",['scopes'=>['forum:acp:settings','forum:acp:audit']],$aBrowser);
     $delegated=$login('other@example.test','OtherPass12345');
+    $delegatedBrowser=$assuredLogin('other@example.test','OtherPass12345');
     $caps=$call('GET','/forum/acp?view=access',null,$delegated)['capabilities'];
     check($caps['settings']&&$caps['audit']&&!$caps['admin']&&!$caps['members'],'ACP scoped capabilities');
     $call('GET','/forum/acp?view=users',null,$delegated,403);
     $call('GET','/forum/acp?view=structure',null,$delegated,403);
-    $call('PUT',"/forum/acp/delegation/$member",['scopes'=>['forum:acp:settings']],$delegated,403);
-    $call('POST','/forum/acp/maintenance',['action'=>'cleanup_spam'],$delegated,403);
+    $call('PUT',"/forum/acp/delegation/$member",['scopes'=>['forum:acp:settings']],$delegatedBrowser,403);
+    $call('POST','/forum/acp/maintenance',['action'=>'cleanup_spam'],$delegatedBrowser,403);
     $changed=$defaults;$changed['name']='Community policy test';$changed['description']='Live community description';$changed['new_threads_hour']=1;$changed['registration_enabled']=false;$changed['attachment_mb']=1;
-    $policy=$call('PUT','/forum/acp/policy',['revision'=>$policy['revision'],'values'=>$changed],$delegated);
-    $call('PUT','/forum/acp/policy',['revision'=>$policy['revision']-1,'values'=>$defaults],$delegated,409);
+    $policy=$call('PUT','/forum/acp/policy',['revision'=>$policy['revision'],'values'=>$changed],$delegatedBrowser);
+    $call('PUT','/forum/acp/policy',['revision'=>$policy['revision']-1,'values'=>$defaults],$delegatedBrowser,409);
     check($policy['values']['name']==='Community policy test'&&!$policy['values']['registration_open'],'community policy persisted');
     $call('POST','/forum/register',['name'=>'Blocked','email'=>'blocked@example.test','password'=>'BlockedPass12345'],null,403);
     $call('POST',"/forum/boards/$board/threads",['title'=>'Blocked by budget','body'=>'Budget check'],$m,429);
     check($call('GET','/forum/attachments',null,$m)['limits']['file_bytes']===1048576,'live attachment limit');
     $history=$call('GET','/forum/acp?view=policy_history',null,$delegated);check($history['items'][0]['context']['after']['values']['name']==='Community policy test','policy before/after audit');
     $paused=$changed;$paused['pause_from']=time()-10;$paused['pause_until']=time()+600;
-    $call('PUT','/forum/acp/policy',['revision'=>$policy['revision'],'values'=>$paused],$delegated,403);
-    $policy=$call('PUT','/forum/acp/policy',['revision'=>$policy['revision'],'values'=>$paused],$a);
+    $call('PUT','/forum/acp/policy',['revision'=>$policy['revision'],'values'=>$paused],$delegatedBrowser,403);
+    $policy=$call('PUT','/forum/acp/policy',['revision'=>$policy['revision'],'values'=>$paused],$aBrowser);
     $call('POST',"/forum/threads/$t/posts",['body'=>'Maintenance rejected'],$m,503);
     $call('GET',"/forum/threads/$t",null,$m);
-    $call('PUT','/forum/acp/policy',['revision'=>$policy['revision'],'values'=>$defaults],$a);
+    $call('PUT','/forum/acp/policy',['revision'=>$policy['revision'],'values'=>$defaults],$aBrowser);
     // Actual theme lifecycle over the existing HTTP/session/ACL stack.
     $theme=$call('GET','/forum/acp?view=themes',null,$delegated);
     $defaultTheme=$theme['active'];$design=$theme['presets']['ocean'];$design['name']='Custom ocean';$design['logo']='OC';$design['scheme']='light';
@@ -88,30 +103,30 @@ try {
     $call('PUT','/forum/acp/theme',['revision'=>$theme['revision'],'action'=>'draft','design'=>$design],$m,403);
     $call('PUT','/forum/acp/theme',['revision'=>$theme['revision'],'action'=>'draft','design'=>$design],null,403,['ce_session'=>$adminCookie]);
     $bad=$design;$bad['light']['bg']='</style><script>alert(1)</script>';
-    $call('PUT','/forum/acp/theme',['revision'=>$theme['revision'],'action'=>'draft','design'=>$bad],$delegated,422);
-    $theme=$call('PUT','/forum/acp/theme',['revision'=>$theme['revision'],'action'=>'draft','design'=>$design],$delegated);
+    $call('PUT','/forum/acp/theme',['revision'=>$theme['revision'],'action'=>'draft','design'=>$bad],$delegatedBrowser,422);
+    $theme=$call('PUT','/forum/acp/theme',['revision'=>$theme['revision'],'action'=>'draft','design'=>$design],$delegatedBrowser);
     check($theme['active']===$defaultTheme&&$theme['draft']===$design,'theme draft is isolated from publication');
-    $call('PUT','/forum/acp/theme',['revision'=>$theme['revision']-1,'action'=>'activate'],$delegated,409);
+    $call('PUT','/forum/acp/theme',['revision'=>$theme['revision']-1,'action'=>'activate'],$delegatedBrowser,409);
     $themeHtml=static function(string $path,?string $token=null)use($app){return $app->handle(Request::create('https://forum.test'.$path,'GET',[],[],[],['REMOTE_ADDR'=>'127.0.0.1']+($token?['HTTP_AUTHORIZATION'=>'Bearer '.$token]:[])));};
     $previewPath='/forum/threads/'.$t.'?theme_preview=1&scheme=dark&revision='.$theme['revision'];
     $preview=$themeHtml($previewPath,$delegated);$previewBody=(string)$preview->getContent();
     check($preview->getStatusCode()===200&&str_contains($previewBody,'data-theme="dark"')&&str_contains($previewBody,'--bg:#081b23')&&str_contains($previewBody,'First &lt;script&gt;')&&!str_contains($previewBody,'src="/forum-assets/forum.js')&&str_contains((string)$preview->headers->get('X-Robots-Tag'),'noindex'),'real SSR preview is read-only, current draft and noindex');
     check($themeHtml($previewPath)->getStatusCode()===401&&$themeHtml($previewPath,$m)->getStatusCode()===403,'theme preview requires current scope');
     check(!str_contains((string)$themeHtml('/forum/threads/'.$t)->getContent(),'--bg:#081b23'),'public HTML unchanged before activation');
-    $theme=$call('PUT','/forum/acp/theme',['revision'=>$theme['revision'],'action'=>'activate'],$delegated);
+    $theme=$call('PUT','/forum/acp/theme',['revision'=>$theme['revision'],'action'=>'activate'],$delegatedBrowser);
     $published=$themeHtml('/forum/threads/'.$t);
     check(str_contains((string)$published->getContent(),'--bg:#081b23')&&str_contains((string)$published->getContent(),'data-theme="light"')&&str_contains((string)$published->getContent(),'rel="canonical"'),'activation applies design without losing SEO');
     check($themeHtml($previewPath,$delegated)->getStatusCode()===409,'stale preview revision rejected');
-    $theme=$call('PUT','/forum/acp/theme',['revision'=>$theme['revision'],'action'=>'restore','index'=>0],$delegated);
+    $theme=$call('PUT','/forum/acp/theme',['revision'=>$theme['revision'],'action'=>'restore','index'=>0],$delegatedBrowser);
     check($theme['active']===$defaultTheme&&!str_contains((string)$themeHtml('/forum/threads/'.$t)->getContent(),'--bg:#081b23'),'restore prior active design');
     check($call('GET','/forum/acp?view=policy_history',null,$delegated)['items'][0]['event']==='forum.acp.theme.restore','theme mutation appears in audit');
-    $call('POST','/forum/acp/maintenance',['action'=>'ecosystem_check'],$delegated,403);
-    $ecosystem=$call('POST','/forum/acp/maintenance',['action'=>'ecosystem_check'],$a);check($ecosystem['ok']&&$ecosystem['checks']['theme']&&$ecosystem['checks']['delegation'],'ACP ecosystem diagnostics checks live state');
-    $call('POST','/forum/acp/maintenance',['action'=>'cleanup_spam'],$a);
-    $call('PUT',"/forum/acp/delegation/$other",['scopes'=>[]],$a);
+    $call('POST','/forum/acp/maintenance',['action'=>'ecosystem_check'],$delegatedBrowser,403);
+    $ecosystem=$call('POST','/forum/acp/maintenance',['action'=>'ecosystem_check'],$aBrowser);check($ecosystem['ok']&&$ecosystem['checks']['theme']&&$ecosystem['checks']['delegation'],'ACP ecosystem diagnostics checks live state');
+    $call('POST','/forum/acp/maintenance',['action'=>'cleanup_spam'],$aBrowser);
+    $call('PUT',"/forum/acp/delegation/$other",['scopes'=>[]],$aBrowser);
     $call('GET','/forum/acp?view=settings',null,$delegated,403);
     $call('GET','/forum/acp?view=themes',null,$delegated,403);
-    $call('PUT','/forum/acp/theme',['revision'=>$theme['revision'],'action'=>'activate'],$delegated,403);
+    $call('PUT','/forum/acp/theme',['revision'=>$theme['revision'],'action'=>'activate'],$delegatedBrowser,403);
     check(in_array('forum-member',$users->findById($other)['roles'],true),'revocation preserves forum membership');
 
     check($call('GET',"/forum/boards/$board")['threads'][0]['id']===$t,'board listing with joined author');
@@ -133,19 +148,19 @@ try {
     check(str_contains((string)$htmlRequest('/forum/account')->headers->get('X-Robots-Tag'),'noindex')&&str_contains((string)$htmlRequest('/forum/search?q=test')->headers->get('X-Robots-Tag'),'noindex'),'private and search pages are noindex');
     check(str_contains((string)$htmlRequest('/forum/threads/'.$t,$m)->headers->get('X-Robots-Tag'),'noindex'),'authenticated HTML is never indexable');
     $boardInfo=$call('GET',"/forum/boards/$board")['board'];$patch=['name'=>$boardInfo['name'],'description'=>$boardInfo['description'],'node_type'=>$boardInfo['node_type'],'state'=>$boardInfo['state']];
-    $call('PATCH',"/forum/boards/$board",$patch+['seo_index'=>false],$a);
+    $call('PATCH',"/forum/boards/$board",$patch+['seo_index'=>false],$aBrowser);
     check(str_contains((string)$htmlRequest('/forum/threads/'.$t)->headers->get('X-Robots-Tag'),'noindex')&&!str_contains((string)$htmlRequest('/forum/sitemap.xml?page=1')->getContent(),$t),'board SEO switch excludes thread from sitemap and robots metadata');
-    $call('PATCH',"/forum/boards/$board",$patch,$a);
+    $call('PATCH',"/forum/boards/$board",$patch,$aBrowser);
     check((int)$call('GET',"/forum/boards/$board")['board']['seo_index']===0,'omitted SEO setting is preserved');
-    $call('PATCH',"/forum/boards/$board",$patch+['seo_index'=>true],$a);
+    $call('PATCH',"/forum/boards/$board",$patch+['seo_index'=>true],$aBrowser);
     // ACL change through the existing versioned permission API.
     $acl=$call('GET',"/forum/boards/$board/permissions",null,$a);
-    $call('PUT',"/forum/boards/$board/permissions",['visibility'=>'private','rules'=>[],'revision'=>$acl['revision']],$a);
+    $call('PUT',"/forum/boards/$board/permissions",['visibility'=>'private','rules'=>[],'revision'=>$acl['revision']],$aBrowser);
     $hidden=$htmlRequest('/forum/threads/'.$t);
     check($hidden->getStatusCode()===404&&!str_contains((string)$hidden->getContent(),'First &lt;script&gt;')&&!str_contains((string)$htmlRequest('/forum/sitemap.xml?page=1')->getContent(),$t),'private board cannot leak through SSR or sitemap');
     check($htmlRequest('/forum/threads/'.$t,$a)->getStatusCode()===200,'authenticated administrator can still read private thread');
     $acl=$call('GET',"/forum/boards/$board/permissions",null,$a);
-    $call('PUT',"/forum/boards/$board/permissions",['visibility'=>'public','rules'=>[],'revision'=>$acl['revision']],$a);
+    $call('PUT',"/forum/boards/$board/permissions",['visibility'=>'public','rules'=>[],'revision'=>$acl['revision']],$aBrowser);
     $call('PATCH','/forum/account/preferences',['profile_visibility'=>'private'],$m);
     check($htmlRequest('/forum/members/'.$member)->getStatusCode()===404&&$htmlRequest('/forum/members/'.$member,$m)->getStatusCode()===200,'private profile SSR respects guest and owner access');
     $call('PATCH','/forum/account/preferences',['profile_visibility'=>'public'],$m);
@@ -185,9 +200,9 @@ try {
     if ($driver==='pgsql' && (int)$db->connection()->query("SELECT COUNT(*) FROM pg_available_extensions WHERE name='pg_trgm'")->fetchColumn()>0) {
         $db->connection()->exec('CREATE EXTENSION IF NOT EXISTS pg_trgm');
         // One typo in a distinctive title, no lexical matches; fixture removed afterwards.
-        $fuzzy=$call('POST',"/forum/boards/$board/threads",['title'=>'Astrophotography','body'=>'Fuzzy fixture'],$a,201)['id'];
+        $fuzzy=$call('POST',"/forum/boards/$board/threads",['title'=>'Astrophotography','body'=>'Fuzzy fixture'],$aBrowser,201)['id'];
         check($advanced(['q'=>'Astrophotograpy','discover'=>'similar'])[0]['id']===$fuzzy,'optional PostgreSQL trigram typo discovery');
-        $call('POST',"/forum/threads/$fuzzy/moderate",['action'=>'delete'],$a);
+        $call('POST',"/forum/threads/$fuzzy/moderate",['action'=>'delete'],$aBrowser);
     }
 
     $maintenance=new \CajeerEngine\Forum\Service\ForumSearchMaintenance($db);
@@ -205,28 +220,28 @@ try {
     $call('PUT',"/forum/posts/$post/reaction",['enabled'=>true],$o);$call('PUT',"/forum/posts/$post/reaction",['enabled'=>true],$o);
     check((int)$call('GET',"/forum/threads/$t")['posts'][0]['likes']===1,'reaction idempotency');
     $call('PUT',"/forum/threads/$t/watch",['enabled'=>true],$m);check(count($call('GET','/forum/watches',null,$m))===1,'subscription stored');
-    $report=$call('POST',"/forum/posts/$post/report",['reason'=>'Test report'],$o,201)['id'];$call('GET','/forum/reports',null,$m,403);$call('GET','/forum/reports',null,$a);$call('POST',"/forum/reports/$report/resolve",null,$a);
-    $call('POST',"/forum/threads/$t/moderate",['action'=>'lock'],$m,403);$call('POST',"/forum/threads/$t/moderate",['action'=>'lock'],$a);$call('POST',"/forum/threads/$t/posts",['body'=>'Blocked'],$m,409);
-    $call('POST',"/forum/threads/$t/moderate",['action'=>'unlock'],$a);$call('POST',"/forum/threads/$t/moderate",['action'=>'pin'],$a);
+    $report=$call('POST',"/forum/posts/$post/report",['reason'=>'Test report'],$o,201)['id'];$call('GET','/forum/reports',null,$m,403);$call('GET','/forum/reports',null,$a);$call('POST',"/forum/reports/$report/resolve",null,$aBrowser);
+    $call('POST',"/forum/threads/$t/moderate",['action'=>'lock'],$m,403);$call('POST',"/forum/threads/$t/moderate",['action'=>'lock'],$aBrowser);$call('POST',"/forum/threads/$t/posts",['body'=>'Blocked'],$m,409);
+    $call('POST',"/forum/threads/$t/moderate",['action'=>'unlock'],$aBrowser);$call('POST',"/forum/threads/$t/moderate",['action'=>'pin'],$aBrowser);
     check(count($call('GET','/forum/search?q=Test'))===1,'search');check(!isset($call('GET',"/forum/members/$member")['member']['email']),'public profile hides email');
-    $cat=$call('POST','/forum/categories',['name'=>'New','description'=>''],$a,201)['id'];$call('POST',"/forum/categories/$cat/boards",['name'=>'Board','description'=>''],$a,201);
+    $cat=$call('POST','/forum/categories',['name'=>'New','description'=>''],$aBrowser,201)['id'];$call('POST',"/forum/categories/$cat/boards",['name'=>'Board','description'=>''],$aBrowser,201);
     $browser=$app->handle(Request::create('https://forum.test/api/v1/auth/login','POST',[],[],[],['CONTENT_TYPE'=>'application/json','HTTP_X_CAJEER_BROWSER'=>'1','REMOTE_ADDR'=>'127.0.0.1'],json_encode(['email'=>'member@example.test','password'=>'MemberPass12345'])));check($browser->getStatusCode()===201,'browser login');$cookie=$browser->headers->getCookies()[0]->getValue();$csrf=json_decode($browser->getContent(),true)['data']['csrf_token'];
     $call('POST',"/forum/threads/$t/posts",['body'=>'CSRF blocked'],null,403,['ce_session'=>$cookie]);$call('POST',"/forum/threads/$t/posts",['body'=>'CSRF valid'],null,201,['ce_session'=>$cookie],['HTTP_X_CSRF_TOKEN'=>$csrf]);
-    $call('POST',"/forum/threads/$t/moderate",['action'=>'delete'],$a);$call('GET',"/forum/threads/$t",null,null,404);
+    $call('POST',"/forum/threads/$t/moderate",['action'=>'delete'],$aBrowser);$call('GET',"/forum/threads/$t",null,null,404);
     // Moderation deletion moves a thread into the recycle bin; it deliberately
     // preserves its posts until an administrator performs an explicit purge.
     $retained=$db->connection()->prepare('SELECT deleted_at,deletion_id FROM ce_forum_threads WHERE id=?');
     $retained->execute([$t]);$trash=$retained->fetch(\PDO::FETCH_ASSOC);$retained->closeCursor();
     check(is_array($trash)&&$trash['deleted_at']!==null&&is_string($trash['deletion_id']),'soft-deleted discussion retained for recovery');
-    $call('POST',"/forum/recycle-bin/thread/$t",['action'=>'purge','deletion_id'=>$trash['deletion_id']],$a);
+    $call('POST',"/forum/recycle-bin/thread/$t",['action'=>'purge','deletion_id'=>$trash['deletion_id']],$aBrowser);
     $remaining=$db->connection()->prepare('SELECT COUNT(*) FROM ce_forum_posts WHERE thread_id=?');$remaining->execute([$t]);
     check((int)$remaining->fetchColumn()===0,'explicit purge cascades posts');$remaining->closeCursor();
     check($call('GET','/forum/search?q=searchmarker&mode=posts')===[],'purged post removed from index');
     check($htmlRequest('/forum/threads/'.$t)->getStatusCode()===404&&!str_contains((string)$htmlRequest('/forum/sitemap.xml?page=1')->getContent(),$t),'purged content disappears from SSR and sitemap');
     // Merge and multi-page SSR against the actual database; old URLs must not reveal hidden targets.
-    $target=$call('POST',"/forum/boards/$board/threads",['title'=>'SSR target','body'=>'First page marker'],$a,201)['id'];
-    $source=$call('POST',"/forum/boards/$board/threads",['title'=>'SSR source','body'=>'Merged source marker'],$a,201)['id'];
-    $call('POST',"/forum/threads/$target/merge",['source_ids'=>[$source]],$a);
+    $target=$call('POST',"/forum/boards/$board/threads",['title'=>'SSR target','body'=>'First page marker'],$aBrowser,201)['id'];
+    $source=$call('POST',"/forum/boards/$board/threads",['title'=>'SSR source','body'=>'Merged source marker'],$aBrowser,201)['id'];
+    $call('POST',"/forum/threads/$target/merge",['source_ids'=>[$source]],$aBrowser);
     $redirect=$htmlRequest('/forum/threads/'.$source);
     check($redirect->getStatusCode()===301&&$redirect->headers->get('Location')==='/forum/threads/'.$target,'merged thread redirects to live canonical URL');
     $db->transaction(function()use($db,$target,$member){$repo=new \CajeerEngine\Forum\Repository\PostRepository($db);for($n=3;$n<=26;$n++)$repo->insert(\CajeerEngine\Support\Uuid::v4(),$target,$member,$n===26?'SSR page two marker':'Pagination fixture',$n);});

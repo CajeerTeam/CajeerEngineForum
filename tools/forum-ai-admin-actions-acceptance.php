@@ -14,7 +14,7 @@ use CajeerEngine\Runtime\ConfigRepository;
 $root=dirname(__DIR__);require_once $root.'/vendor/autoload.php';
 $driver=getenv('FORUM_TEST_DRIVER')?:'sqlite';
 if(!in_array($driver,['sqlite','pgsql','mysql'],true)||!in_array($driver,PDO::getAvailableDrivers(),true))throw new RuntimeException('Real PDO driver required: '.$driver);
-if($driver!=='sqlite'){putenv('DB_DRIVER='.$driver);putenv('DB_DATABASE=forum_analytics');}
+if($driver!=='sqlite'){putenv('DB_DRIVER='.$driver);putenv('DB_DATABASE=forum_ai_admin_actions');}
 $config=new ConfigRepository($root);$config->set('database.default',$driver);$db=new DatabaseManager($config);
 if($driver==='sqlite'){
     $pdo=new PDO('sqlite::memory:',null,null,[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION]);$pdo->exec('PRAGMA foreign_keys=ON');
@@ -22,7 +22,7 @@ if($driver==='sqlite'){
     foreach(glob($root.'/migrations/sqlite/*.sql') as $file)$pdo->exec((string)file_get_contents($file));
 }else{
     $pdo=$db->connection();$actual=(string)$pdo->query($driver==='pgsql'?'SELECT current_database()':'SELECT DATABASE()')->fetchColumn();
-    if($actual!=='forum_analytics')throw new RuntimeException('Unsafe DB target '.$actual);
+    if($actual!=='forum_ai_admin_actions')throw new RuntimeException('Unsafe DB target '.$actual);
     (new MigrationRunner($pdo,$root.'/migrations'))->run($driver);
 }
 final class AdminActionStubProvider extends OpenAiClient {

@@ -149,6 +149,7 @@ jobs:
       - run: python tools/forum-tests/migration_111_sql_regression.py
       - run: python tools/forum-tests/xenforo_media_sql_regression.py
       - run: python tools/forum-tests/xenforo_acceptance_sql_regression.py
+      - run: php tools/forum-support-contract-regression.php
       - run: php tools/forum-invision-discovery-regression.php
       - run: php tools/forum-invision-core-integration.php
       - run: php tools/forum-invision-content-unit.php
@@ -467,7 +468,7 @@ jobs:
       - run: composer install --prefer-dist --no-interaction
       - name: Prepare isolated databases
         run: |
-          php -r '$p=new PDO("pgsql:host=127.0.0.1;port=5432;dbname=forum_install",getenv("DB_USERNAME"),getenv("DB_PASSWORD")); foreach (["forum_upgrade","forum_http","forum_identity","forum_test_phpunit","forum_test_core","forum_test_network","forum_test_load","forum_perf","forum_test_redis","forum_analytics"] as $db) $p->exec("CREATE DATABASE ".$db);'
+          php -r '$p=new PDO("pgsql:host=127.0.0.1;port=5432;dbname=forum_install",getenv("DB_USERNAME"),getenv("DB_PASSWORD")); foreach (["forum_upgrade","forum_http","forum_identity","forum_test_phpunit","forum_test_core","forum_test_network","forum_test_load","forum_perf","forum_test_redis","forum_analytics","forum_ai_admin_actions","forum_ai_chat","forum_ai_insights","forum_ai_moderation","forum_ai_privacy","forum_ai_reliability","forum_ai_search","forum_ai_writing","forum_knowledge_sync","forum_platform_workflows","forum_support","forum_thread_ai","forum_unified_identity"] as $db) $p->exec("CREATE DATABASE ".$db);'
       - name: PHPUnit PostgreSQL integration
         run: |
           mkdir -p storage/tmp/forum-ci
@@ -499,7 +500,7 @@ jobs:
         run: php tools/forum-analytics-stable-acceptance.php
       - name: Forum 1.3.2 real PostgreSQL AI chat acceptance
         env:
-          DB_DATABASE: forum_analytics
+          DB_DATABASE: forum_ai_chat
           FORUM_TEST_DRIVER: pgsql
         run: php tools/forum-ai-chat-acceptance.php
       - name: Real SQL contextual thread AI acceptance (no skips)
@@ -512,7 +513,7 @@ jobs:
         run: php tools/forum-ai-search-acceptance.php
       - name: Forum 1.3.5 support AI, FAQ and operator flow real PostgreSQL PDO
         env:
-          DB_DATABASE: forum_analytics
+          DB_DATABASE: forum_support
           FORUM_TEST_DRIVER: pgsql
         run: php tools/forum-support-acceptance.php
       - name: Forum 1.3.6 AI Writing real pgsql PDO/provider acceptance
@@ -603,14 +604,14 @@ jobs:
       - run: php tools/forum-search-db-regression.php
       - name: Prepare disposable analytics schema (MySQL/MariaDB)
         run: |
-          php -r '$p=new PDO("mysql:host=127.0.0.1;port=3306;dbname=mysql","root","ForumCI-Root-123!"); $p->exec("CREATE DATABASE forum_analytics CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"); $p->exec("GRANT ALL PRIVILEGES ON forum_analytics.* TO ".$p->quote("forum_ci")."@".$p->quote("%"));'
+          php -r '$p=new PDO("mysql:host=127.0.0.1;port=3306;dbname=mysql","root","ForumCI-Root-123!"); foreach (["forum_analytics","forum_ai_admin_actions","forum_ai_chat","forum_ai_insights","forum_ai_moderation","forum_ai_privacy","forum_ai_reliability","forum_ai_search","forum_ai_writing","forum_knowledge_sync","forum_platform_workflows","forum_support","forum_thread_ai","forum_unified_identity"] as $db) { $p->exec("CREATE DATABASE ".$db." CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"); $p->exec("GRANT ALL PRIVILEGES ON ".$db.".* TO ".$p->quote("forum_ci")."@".$p->quote("%")); }'
       - name: Forum 1.3.2 real MySQL/MariaDB analytics stable acceptance
         env:
           DB_DATABASE: forum_analytics
         run: php tools/forum-analytics-stable-acceptance.php
       - name: Forum 1.3.2 real MySQL/MariaDB AI chat acceptance
         env:
-          DB_DATABASE: forum_analytics
+          DB_DATABASE: forum_ai_chat
           FORUM_TEST_DRIVER: mysql
         run: php tools/forum-ai-chat-acceptance.php
       - name: Real SQL contextual thread AI acceptance (no skips)
@@ -623,7 +624,7 @@ jobs:
         run: php tools/forum-ai-search-acceptance.php
       - name: Forum 1.3.5 support AI, FAQ and operator flow real MySQL/MariaDB PDO
         env:
-          DB_DATABASE: forum_analytics
+          DB_DATABASE: forum_support
           FORUM_TEST_DRIVER: mysql
         run: php tools/forum-support-acceptance.php
       - name: Forum 1.3.6 AI Writing real mysql PDO/provider acceptance

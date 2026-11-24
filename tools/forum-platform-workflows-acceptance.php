@@ -10,10 +10,10 @@ use CajeerEngine\Runtime\ConfigRepository;
 use CajeerEngine\Support\Uuid;
 $root=dirname(__DIR__);require $root.'/vendor/autoload.php';
 $driver=getenv('FORUM_TEST_DRIVER')?:'sqlite';if(!in_array($driver,['sqlite','pgsql','mysql'],true)||!in_array($driver,PDO::getAvailableDrivers(),true))throw new RuntimeException('Real PDO required');
-if($driver!=='sqlite'){putenv('DB_DRIVER='.$driver);putenv('DB_DATABASE=forum_analytics');}
+if($driver!=='sqlite'){putenv('DB_DRIVER='.$driver);putenv('DB_DATABASE=forum_platform_workflows');}
 $config=new ConfigRepository($root);$config->set('database.default',$driver);$db=new DatabaseManager($config);
 if($driver==='sqlite'){$pdo=new PDO('sqlite::memory:',null,null,[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION]);$pdo->exec('PRAGMA foreign_keys=ON');(new ReflectionProperty($db,'pdo'))->setValue($db,$pdo);foreach(glob($root.'/migrations/sqlite/*.sql') as $file)$pdo->exec(file_get_contents($file));}
-else{$pdo=$db->connection();if($pdo->query($driver==='pgsql'?'SELECT current_database()':'SELECT DATABASE()')->fetchColumn()!=='forum_analytics')throw new RuntimeException('Unsafe database');(new MigrationRunner($pdo,$root.'/migrations'))->run($driver);}
+else{$pdo=$db->connection();if($pdo->query($driver==='pgsql'?'SELECT current_database()':'SELECT DATABASE()')->fetchColumn()!=='forum_platform_workflows')throw new RuntimeException('Unsafe database');(new MigrationRunner($pdo,$root.'/migrations'))->run($driver);}
 $roles=new RoleRepository($db);$roles->seedDefaults();$users=new UserRepository($db,$roles);$ids=[];
 foreach(['admin','operator','member'] as $key){$id=Uuid::v4();$pdo->prepare("INSERT INTO ce_users (id,email,name,password_hash,two_factor_recovery_codes) VALUES (?,?,?,?,'[]')")->execute([$id,$id.'@example.invalid',$key,'!']);$ids[$key]=$id;}
 $a=$ids['admin'];$o=$ids['operator'];$m=$ids['member'];$users->syncRoles($a,['admin']);$users->syncRoles($o,['forum-acp-members']);$users->syncRoles($m,['forum-member']);

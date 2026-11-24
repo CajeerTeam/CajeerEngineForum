@@ -15,7 +15,7 @@ $root=dirname(__DIR__);
 require $root.'/vendor/autoload.php';
 $driver=getenv('FORUM_TEST_DRIVER')?:'sqlite';
 if(!in_array($driver,['sqlite','mysql','pgsql'],true)||!in_array($driver,PDO::getAvailableDrivers(),true))throw new RuntimeException('Required real PDO driver: '.$driver);
-if($driver!=='sqlite'){putenv('DB_DRIVER='.$driver);putenv('DB_DATABASE=forum_analytics');}
+if($driver!=='sqlite'){putenv('DB_DRIVER='.$driver);putenv('DB_DATABASE=forum_support');}
 $config=new ConfigRepository($root);$config->set('database.default',$driver);$db=new DatabaseManager($config);
 if($driver==='sqlite'){
     $pdo=new PDO('sqlite::memory:',null,null,[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION]);
@@ -25,7 +25,7 @@ if($driver==='sqlite'){
 }else{
     $pdo=$db->connection();
     $actual=(string)$pdo->query($driver==='pgsql'?'SELECT current_database()':'SELECT DATABASE()')->fetchColumn();
-    if($actual!=='forum_analytics')throw new RuntimeException('Refusing non-disposable database '.$actual);
+    if($actual!=='forum_support')throw new RuntimeException('Refusing non-disposable database '.$actual);
     (new MigrationRunner($pdo,$root.'/migrations'))->run($driver);
 }
 final class SearchAcceptanceOpenAi extends OpenAiClient{
