@@ -740,6 +740,12 @@ export const operations = {
         "parameters": [],
         "bodyRequired": false
     },
+    "api_v1_forum_ai_history_erase": {
+        "method": "POST",
+        "path": "/forum/ai/history/erase",
+        "parameters": [],
+        "bodyRequired": true
+    },
     "api_v1_forum_ai_search_answer": {
         "method": "POST",
         "path": "/forum/ai/search",

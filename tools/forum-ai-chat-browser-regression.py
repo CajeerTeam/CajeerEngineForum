@@ -29,7 +29,7 @@ window.__errors=[];
 const id='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 window.__calls=[];window.__conversations=[];window.__messages=[];
 async function f(path,method='GET',body){
- if(path==='/ai/status')return {enabled:true,configured:true,model:'gpt-4.1-mini',daily_requests_used:0,daily_request_limit:20,monthly_tokens_used:0,monthly_token_limit:100000};
+ if(path==='/ai/status')return {enabled:true,configured:true,model:'gpt-4.1-mini',daily_requests_used:0,daily_request_limit:20,monthly_tokens_used:0,monthly_token_limit:100000,requests_per_minute:5,history_retention_days:90};
  if(path==='/ai/conversations' && method==='GET')return window.__conversations;
  if(path==='/ai/conversations/'+id && method==='GET')return window.__messages;
  if(path==='/ai/conversations/'+id && method==='PATCH'){

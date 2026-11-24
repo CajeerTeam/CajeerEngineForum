@@ -6,7 +6,7 @@ on:
 permissions:
   contents: read
 env:
-  FORUM_CURRENT_VERSION: ${{ '1.3.9' }}
+  FORUM_CURRENT_VERSION: ${{ '1.3.10' }}
 concurrency:
   group: forum-ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -295,6 +295,10 @@ jobs:
         env:
           FORUM_TEST_DRIVER: sqlite
         run: php tools/forum-ai-admin-actions-acceptance.php
+      - name: Forum 1.3.10 AI privacy, abuse, retention real PDO (sqlite)
+        env:
+          FORUM_TEST_DRIVER: sqlite
+        run: php tools/forum-ai-privacy-acceptance.php
       - run: php tools/forum-analytics-dashboard-regression.php
       - run: php tools/forum-engagement-regression.php
       - run: php tools/forum-analytics-hardening-regression.php
@@ -307,6 +311,7 @@ jobs:
       - run: python tools/forum-tests/analytics_events_sql_regression.py
       - run: python tools/forum-tests/analytics_rollup_sql_regression.py
       - run: python tools/forum-tests/ai_chat_sql_regression.py
+      - run: python tools/forum-tests/ai_privacy_sql_regression.py
       - run: python tools/forum-tests/thread_ai_sql_regression.py
       - run: python tools/forum-tests/ai_search_sql_regression.py
       - run: php tools/forum-ai-search-unit-regression.php
@@ -475,6 +480,10 @@ jobs:
         env:
           FORUM_TEST_DRIVER: pgsql
         run: php tools/forum-ai-admin-actions-acceptance.php
+      - name: Forum 1.3.10 AI privacy, abuse, retention real PDO (pgsql)
+        env:
+          FORUM_TEST_DRIVER: pgsql
+        run: php tools/forum-ai-privacy-acceptance.php
       - name: Knowledge sync real PostgreSQL FTS repair and search acceptance
         env:
           FORUM_TEST_DRIVER: pgsql
@@ -568,6 +577,10 @@ jobs:
         env:
           FORUM_TEST_DRIVER: mysql
         run: php tools/forum-ai-admin-actions-acceptance.php
+      - name: Forum 1.3.10 AI privacy, abuse, retention real PDO (mysql)
+        env:
+          FORUM_TEST_DRIVER: mysql
+        run: php tools/forum-ai-privacy-acceptance.php
       - name: Knowledge sync real MySQL/MariaDB FTS repair and search acceptance
         env:
           FORUM_TEST_DRIVER: mysql
@@ -614,6 +627,7 @@ jobs:
       - run: python tools/forum-analytics-dashboard-browser-regression.py --browser ${{ matrix.browser }}
       - run: python tools/forum-engagement-browser-regression.py --browser ${{ matrix.browser }}
       - run: python tools/forum-ai-chat-browser-regression.py --browser ${{ matrix.browser }}
+      - run: python tools/forum-ai-privacy-browser-regression.py --browser ${{ matrix.browser }}
       - run: python tools/forum-ai-writing-browser-regression.py --browser ${{ matrix.browser }}
       - run: python tools/forum-ai-moderation-browser-regression.py --browser ${{ matrix.browser }}
       - run: python tools/forum-ai-insights-browser-regression.py --browser ${{ matrix.browser }}

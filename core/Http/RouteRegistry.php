@@ -322,6 +322,7 @@ final class RouteRegistry
             ['POST', '/api/v1/forum/ai/search', 'api.v1.forum.ai.search.answer', 'forumAi', 'searchAnswer', []],
             ['POST', '/api/v1/forum/ai/search/stream', 'api.v1.forum.ai.search.stream', 'forumAi', 'searchStream', []],
             ['GET', '/api/v1/forum/ai/status', 'api.v1.forum.ai.status', 'forumAi', 'status', []],
+            ['POST', '/api/v1/forum/ai/history/erase', 'api.v1.forum.ai.history.erase', 'forumAi', 'eraseHistory', []],
             ['GET', '/api/v1/forum/ai/conversations', 'api.v1.forum.ai.conversations', 'forumAi', 'list', []],
             ['GET', '/api/v1/forum/ai/conversations/{id}', 'api.v1.forum.ai.conversation.show', 'forumAi', 'show', []],
             ['PATCH', '/api/v1/forum/ai/conversations/{id}', 'api.v1.forum.ai.conversation.rename', 'forumAi', 'rename', []],

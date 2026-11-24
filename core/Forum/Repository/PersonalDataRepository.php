@@ -7,7 +7,7 @@ use CajeerEngine\Forum\ForumException;
 /** Only fixed, owner-scoped queries. Never serialize credential or moderation-internal rows. */
 final readonly class PersonalDataRepository extends Repository
 {
-    public const SECTIONS = ['account','profile','profile_images','profile_fields','preferences','notification_preferences','watch_preferences','conversation_preferences','threads','posts','post_revisions','messages','message_revisions','drafts','attachments','subscriptions','board_subscriptions','reactions','poll_votes','answer_votes','relations','blocks','conversation_memberships','read_state','notifications','answer_notifications','reports','conversation_reports','submissions','sanctions','appeals','sessions'];
+    public const SECTIONS = ['account','profile','profile_images','profile_fields','preferences','notification_preferences','watch_preferences','conversation_preferences','threads','posts','post_revisions','messages','message_revisions','drafts','attachments','subscriptions','board_subscriptions','reactions','poll_votes','answer_votes','relations','blocks','conversation_memberships','read_state','notifications','answer_notifications','reports','conversation_reports','submissions','sanctions','appeals','sessions','ai_conversations','ai_messages'];
     public const PAGE_SIZE = 25;
 
     public function page(string $id, string $section, int $offset, array $boards): array
@@ -48,6 +48,8 @@ final readonly class PersonalDataRepository extends Repository
             'sanctions'=>['SELECT id,kind,board_id,reason,points,starts_at,ends_at,revoked_at,revoke_reason FROM ce_forum_sanctions WHERE user_id=?','id'],
             'appeals'=>['SELECT a.id,a.sanction_id,a.body,a.status,a.created_at,a.decided_at,a.decision FROM ce_forum_appeals a JOIN ce_forum_sanctions s ON s.id=a.sanction_id WHERE s.user_id=?','a.id'],
             'sessions'=>['SELECT t.id,t.name,s.provider,s.user_agent AS device,s.ip_hint AS network,t.created_at,COALESCE(s.last_seen_at,t.last_used_at) AS last_seen_at,t.expires_at,COALESCE(s.revoked_at,t.revoked_at) AS revoked_at FROM ce_api_tokens t LEFT JOIN ce_user_sessions s ON s.token_id=t.id AND s.user_id=t.user_id WHERE t.user_id=?','t.id'],
+            'ai_conversations'=>['SELECT id,title,thread_id,purpose,created_at,updated_at FROM ce_forum_ai_conversations WHERE user_id=?','created_at,id'],
+            'ai_messages'=>['SELECT m.id,m.conversation_id,m.role,m.content,m.created_at,m.model,m.input_tokens,m.output_tokens FROM ce_forum_ai_messages m JOIN ce_forum_ai_conversations c ON c.id=m.conversation_id WHERE c.user_id=?','m.created_at,m.id'],
         ];
         if (!isset($queries[$section])) throw new ForumException('Неизвестный раздел экспорта.',422);
         [$sql,$order]=$queries[$section];
@@ -68,6 +70,17 @@ final readonly class PersonalDataRepository extends Repository
     public function erase(string $id, string $replacementEmail, string $passwordHash): void
     {
         $now=time();
+        // Account closure must not leave private AI transcripts under the disabled user.
+        // An ongoing OpenAI request can still write its completion; reject and retry
+        // rather than deleting while it is in flight.
+        $active=$this->rows('SELECT id FROM ce_forum_ai_conversations WHERE user_id=? AND busy_until>? LIMIT 1',[$id,$now]);
+        if($active!==[])throw new ForumException('Дождитесь окончания AI-генерации перед закрытием аккаунта.',409);
+        $this->query('DELETE FROM ce_forum_ai_messages WHERE conversation_id IN (SELECT id FROM ce_forum_ai_conversations WHERE user_id=?)',[$id]);
+        $this->query('DELETE FROM ce_forum_ai_conversations WHERE user_id=?',[$id]);
+        $this->query('DELETE FROM ce_forum_ai_request_buckets WHERE user_id=?',[$id]);
+        $this->query('DELETE FROM ce_forum_ai_usage WHERE user_id=?',[$id]);
+        $this->query('DELETE FROM ce_forum_ai_daily WHERE user_id=?',[$id]);
+        // Keep administrative decision/audit trails under normal retention policy.
         $this->clearProfile($id);
         $moderation=new ModerationQueueRepository($this->db);
         foreach($this->rows("SELECT id,revision_number FROM ce_forum_review_submissions WHERE author_id=? AND status='pending' ORDER BY id",[$id]) as $row){

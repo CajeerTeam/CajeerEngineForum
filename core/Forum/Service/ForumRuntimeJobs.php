@@ -33,6 +33,8 @@ final class ForumRuntimeJobs
             do{$ctx->heartbeat();$n=ForumAiChat::pruneExpiredSearch($this->db,100);$total+=$n;}
             while($n===100 && $total<500);
             $this->stats['ai_search_cleaned']=$total;
+            $history=ForumAiChat::prunePrivateHistory($this->db,100);
+            $this->stats['ai_private_retention']=$history;
         });
         $registry->register('forum.analytics.rollup',$analyticsJob);
         $registry->register('forum.analytics.cleanup',$analyticsJob);

@@ -54,6 +54,17 @@ final readonly class ForumAiController
     public function show(Request $r,array $p):JsonResponse {return $this->wrap(fn()=> $this->chat->messages($this->user($r),(string)$p['id']));}
     public function rename(Request $r,array $p):JsonResponse {return $this->wrap(function()use($r,$p){$v=$this->input($r,['title']);if(!is_string($v['title']??null))throw new ForumException('Укажите название.',422);return $this->chat->rename($this->user($r),(string)$p['id'],$v['title']);});}
     public function delete(Request $r,array $p):JsonResponse {return $this->wrap(function()use($r,$p){if($this->input($r,[])!==[])throw new ForumException('Неверный запрос.',422);$this->chat->delete($this->user($r),(string)$p['id']);return ['deleted'=>true];});}
+    public function eraseHistory(Request $r):JsonResponse
+    {
+        return $this->wrap(function()use($r):array {
+            $body=$this->input($r,['confirmation']);
+            if(($body['confirmation']??null)!=='DELETE AI HISTORY')throw new ForumException('Подтвердите удаление AI-истории.',422);
+            $user=$this->user($r);
+            $result=$this->chat->eraseHistory($user);
+            $this->audit->record('forum.ai.history.erased',$user,['conversations'=>$result['deleted_conversations']]);
+            return $result;
+        });
+    }
     public function adminStatus(Request $r):JsonResponse {return $this->wrap(function()use($r){$this->user($r);\CajeerEngine\Forum\Security\ForumAccessPolicy::fromAuth($r->attributes->get('auth'))->require('forum:acp:settings');return $this->chat->administrator();});}
     public function adminConfigure(Request $r):JsonResponse {return $this->wrap(function()use($r){$uid=$this->user($r);\CajeerEngine\Forum\Security\ForumAccessPolicy::fromAuth($r->attributes->get('auth'))->require('forum:acp:settings');$settings=$this->chat->configure($this->input($r,['enabled','model','max_output_tokens','daily_request_limit','monthly_token_limit','revision']));$this->audit->record('forum.ai.settings.updated',$uid,['enabled'=>$settings['enabled'],'model'=>$settings['model'],'revision'=>$settings['revision']]);return $settings;});}
 

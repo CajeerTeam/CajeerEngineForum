@@ -1,3 +1,12 @@
+## [1.3.10] - 2026-11-24
+
+### AI Privacy & Abuse Protection
+- Authenticated forum members can export their own ordinary and thread AI conversations and messages through the privacy portal, and irreversibly erase all their AI conversations with explicit confirmation. Owner scoping and session CSRF are retained.
+- Account closure deletes forum AI transcripts, daily token ledgers and request buckets; if an OpenAI response is in flight, closure fails safely until the request completes. Existing moderation and legally required audit logs are preserved.
+- Worker deletes idle AI conversations after 90 days (excluding running generations), and per-user minute throttle buckets after 24 hours. Scheduled cleanup handles batches to bound SQL work.
+- Durable SQL-backed five requests per minute and one simultaneous generation per user apply across all forum AI entry points, in addition to existing daily/monthly and monetary budgets. The server-controlled system roles and core outbound credential scanning remain active.
+- Migration `0090_forum_ai_privacy_abuse.sql` for SQLite, PostgreSQL and MySQL/MariaDB; SQL and browser regression tests in CI. External provider and staging checks are necessary before stable deployment.
+
 ## [1.3.9] - 2026-11-24
 
 ### Controlled Admin AI Actions

@@ -969,6 +969,15 @@ final class Operations {
     ),
     'bodyRequired' => false,
   ),
+  'api_v1_forum_ai_history_erase' => 
+  array (
+    'method' => 'POST',
+    'path' => '/forum/ai/history/erase',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => true,
+  ),
   'api_v1_forum_ai_search_answer' => 
   array (
     'method' => 'POST',

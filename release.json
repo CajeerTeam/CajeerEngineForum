@@ -17,10 +17,10 @@
     "docs": "GitHub repository docs/",
     "updates": "GitHub Releases",
     "release_builder": "tools/build-release.php",
-    "source_artifact": "storage/releases/cajeerengine-1.3.9-source.zip",
-    "dist_artifact": "storage/releases/cajeerengine-1.3.9-dist.zip",
+    "source_artifact": "storage/releases/cajeerengine-1.3.10-source.zip",
+    "dist_artifact": "storage/releases/cajeerengine-1.3.10-dist.zip",
     "checksums": "storage/releases/*.sha256",
-    "artifact_index": "storage/releases/cajeerengine-1.3.9-artifacts.json",
+    "artifact_index": "storage/releases/cajeerengine-1.3.10-artifacts.json",
     "support_bundle": "storage/app/support",
     "backup": "storage/app/backups/production",
     "server_reports": "storage/app/reports",
@@ -36,6 +36,7 @@
     "engine_api_version": "1.1"
   },
   "product_changes": [
+    "Forum Edition 1.3.10: member-owned AI history export and bulk erasure; 90-day idle retention worker, durable five-per-minute and single-concurrency abuse controls, account-close cleanup, prompt injection tests and extended CI. Production certification requires external CI and staging.",
     "Forum Edition 1.3.9: controlled, human-approved admin AI changes for community title/description and support FAQ; true database-backed actor-owned proposals, OpenAI Responses generation, explicit external disclosure, before/after preview, single-use digest and 15-minute expiry, revision and live-permission rechecks, transactional execution and audit; new migration 0089, multi-database PDO and browser regressions. No autonomous AI actions.",
     "Forum Edition 1.3.8: on-demand ACP AI Insights for consent-approved, anonymous event rollups; read-only verified evidence, configurable UTC date ranges and event-series selection; OpenAI Responses explanations through existing quota/budget machinery with a dedicated strict system role, output validation, evidence ID binding and removal of transient transcripts; integrity and live ACL rechecks, optional CSV export and interactive chart drilldown. No database migration, raw-event/user disclosure or autonomous administration.",
     "Forum Edition 1.3.7: moderator-initiated AI review for existing report and premoderation cases. Billed OpenAI Responses advice returns validated risk categories, grounded evidence and suggested human review only. Effective board ACL, live content and optimistic case revision are rechecked before and after the provider call; non-public content requires explicit disclosure. Redaction, 30-day advice expiry, bounded retention cleanup, isolated temporary transcripts and SQL audit. Migration 0088. No automatic deletion, sanction, approval or moderation resolution.",
@@ -176,10 +177,11 @@
     "1.3.6": "AI Writing Assistant: grammar, style, formatting and thread titles with explicit apply, existing quotas and no automatic publishing.",
     "1.3.7": "AI Moderation Advisor: evidence-bound, moderator-initiated risk analysis for report/submission cases with human-only decisions and permission checks.",
     "1.3.8": "AI ACP Insights: evidence-bound explanations for anonymous forum activity, interactive ACP charts, dates, trends, CSV export, privacy and budget limits.",
-    "1.3.9": "Controlled Admin AI Actions: preview, approval, ACL, revisions, audit."
+    "1.3.9": "Controlled Admin AI Actions: preview, approval, ACL, revisions, audit.",
+    "1.3.10": "AI Privacy & Abuse Protection: user export and history erasure, automatic retention and SQL-backed rate/concurrency caps."
   },
   "stability": "production-stable-gated",
   "edition": "forum",
-  "edition_version": "1.3.9",
+  "edition_version": "1.3.10",
   "upstream_version": "2.1.0"
 }
