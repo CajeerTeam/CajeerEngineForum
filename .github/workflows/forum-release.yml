@@ -124,11 +124,11 @@ jobs:
           python3 tools/certification-evidence.py verify "$ARTIFACT_ROOT" --trusted-key "$pub"
 
           cat > "$RUNNER_TEMP/forum-release-notes.md" <<'NOTES'
-          ## CajeerEngineForum 1.4.9 — Automated Deployment & Recovery
+          ## CajeerEngineForum 1.4.10 — Full Platform Integration & E2E
 
-          Forum Edition 1.4.9 on CajeerEngine 2.1.0.
+          Forum Edition 1.4.10 on CajeerEngine 2.1.0.
 
-          - Durable backup capture reconciliation, SQL capacity preflight, safe first-install resume and idempotent Compose rollback activation.
+          - Live browser-to-API-to-SQL-to-worker acceptance, with independent session, privacy and analytics assertions.
           - Source revalidation after queue admission and strict streamed/final response reconciliation.
           - Signed ZIPs, detached signatures, SHA-256, manifests and artifact index are published together.
           - No new migration; mandatory real PDO and browser acceptance remains in place.

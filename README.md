@@ -1,8 +1,8 @@
 # CajeerEngine Forum Edition
 
-**Forum Edition 1.4.9 — Automated Deployment & Recovery**, built on CajeerEngine 2.1.0. Publication requires a passing `forum-required` gate and verified signed CI certification tied to the exact commit and release artifacts.
+**Forum Edition 1.4.10 — Full Platform Integration & E2E**, built on CajeerEngine 2.1.0. Publication requires a passing `forum-required` gate and verified signed CI certification tied to the exact commit and release artifacts.
 
-See [Automated Deployment & Recovery](docs/forum-deployment-recovery-1.4.9.md) for the deployment and recovery procedures.
+See [Full Platform Integration & E2E](docs/forum-platform-e2e-1.4.10.md) for the cross-subsystem acceptance suite. See [Automated Deployment & Recovery](docs/forum-deployment-recovery-1.4.9.md) for the deployment and recovery procedures.
 
 See [Platform Security & Privacy](docs/forum-platform-security-1.4.7.md) for deployment, credential sources, abuse controls and retention.
 

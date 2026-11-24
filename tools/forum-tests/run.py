@@ -133,7 +133,7 @@ def totp(secret):
 
 
 @contextmanager
-def server(report, workers=1):
+def server(report, workers=1, *, include_site=False):
     if not (ROOT / 'vendor/autoload.php').is_file():
         raise RuntimeError('Run composer install first')
     # Copy only source/configuration. Never copy .env, storage, uploads or a database.
@@ -196,7 +196,7 @@ def server(report, workers=1):
                     time.sleep(.2)
                 else:
                     raise RuntimeError('Forum did not become ready; inspect http.log')
-                yield base
+                yield (base, site, server_env) if include_site else base
             finally:
                 if workers > 1:
                     # PHP CLI master and all forked workers share this process group.
@@ -224,7 +224,7 @@ class NetworkTests(unittest.TestCase):
         # file directory belongs to this disposable installation; individual
         # tests still exercise authentic global/auth/search limits and 429s.
         assert self.rate_limit_dir is not None
-        for bucket in ('auth', 'global', 'forum_search'):
+        for bucket in ('auth', 'global', 'forum_search', 'forum_ai', 'login_pair', 'login_account'):
             for state in self.rate_limit_dir.glob(bucket + '-*.json'):
                 state.unlink()
 
@@ -1716,6 +1716,10 @@ class JUnitResult(unittest.TextTestResult):
         super().addError(test, err)
         ET.SubElement(self.case, 'error').text = self._exc_info_to_string(err, test)
 
+    def addSkip(self, test, reason):
+        super().addSkip(test, reason)
+        ET.SubElement(self.case, 'skipped', message=reason)
+
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
@@ -1730,10 +1734,10 @@ def main():
         if cls is BrowserTests:
             cls.browser_name = args.browser; cls.report = report
         result = unittest.TextTestRunner(verbosity=2, resultclass=JUnitResult).run(unittest.defaultTestLoader.loadTestsFromTestCase(cls))
-        suite = ET.Element('testsuite', name=args.suite, tests=str(result.testsRun), failures=str(len(result.failures)), errors=str(len(result.errors)))
+        suite = ET.Element('testsuite', name=args.suite, tests=str(result.testsRun), failures=str(len(result.failures)), errors=str(len(result.errors)), skipped=str(len(result.skipped)))
         suite.extend(result.cases)
         ET.ElementTree(suite).write(report / 'junit.xml', encoding='utf-8', xml_declaration=True)
-        return 0 if result.wasSuccessful() else 1
+        return 0 if result.wasSuccessful() and result.testsRun > 0 and not result.skipped else 1
 
 
 if __name__ == '__main__':

@@ -1,3 +1,10 @@
+## [1.4.10] - 2026-11-24
+
+- Live browser/API/SQL/worker journey across unified ACP, forum support, workflow execution, analytics and identity with independent sessions and persisted assertions.
+- Enforce correct edition in ACP assets; test router serves only published static assets.
+- Fail acceptance on skipped tests and missing or incomplete JUnit evidence.
+- No schema migration. Real CI and staging qualification remain required.
+
 ## [1.4.9] - 2026-11-24
 
 ### Automated Deployment & Recovery

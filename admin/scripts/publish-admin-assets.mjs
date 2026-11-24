@@ -6,6 +6,7 @@ const root = fileURLToPath(new URL('../..', import.meta.url))
 const source = join(root, 'admin/static')
 const target = join(root, 'public/admin')
 const version = (await readFile(join(root, 'VERSION'), 'utf8')).trim()
+const release = JSON.parse(await readFile(join(root, 'release.json'), 'utf8'))
 const check = process.argv.includes('--check')
 const paths = ['index.html', 'assets/admin-app.js', 'assets/admin-app.css', 'assets/admin-preview.js', 'assets/admin-preview.css']
 const digest = b => createHash('sha256').update(b).digest('hex')
@@ -14,6 +15,12 @@ try {
   for (const path of paths) {
     const body = await readFile(join(source, path))
     if (!body.length) throw new Error(`Empty source: ${path}`)
+    if (release.edition === 'forum') {
+      const edition = release.edition_version
+      if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(edition)) throw new Error('Invalid Forum Edition')
+      if (path === 'assets/admin-app.js' && !body.toString().split('\n').includes(`const FORUM_EDITION = '${edition}'`)) throw new Error('ACP edition does not match release.json')
+      if (path === 'index.html' && !['js', 'css'].every(ext => body.toString().includes(`/admin/assets/admin-app.${ext}?v=${edition}"`))) throw new Error('ACP asset cache version does not match release.json')
+    }
     if (!check) {
       await mkdir(dirname(join(target, path)), { recursive: true })
       await copyFile(join(source, path), join(target, path))

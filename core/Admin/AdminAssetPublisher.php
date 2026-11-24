@@ -25,6 +25,15 @@ final readonly class AdminAssetPublisher
         $index = $files['index.html']['exists'] ? file_get_contents($base . '/index.html') : '';
         $ready = $ready && str_contains($index, '/admin/assets/admin-app.js') && str_contains($index, '/admin/assets/admin-app.css')
             && $files['assets/admin-app.js']['size'] >= 18000 && $files['assets/admin-app.css']['size'] >= 3500;
+        $release = json_decode((string) @file_get_contents($this->rootPath . '/release.json'), true);
+        if (($release['edition'] ?? null) === 'forum') {
+            $edition = $release['edition_version'] ?? null;
+            $app = $files['assets/admin-app.js']['exists'] ? file_get_contents($base . '/assets/admin-app.js') : '';
+            $ready = $ready && is_string($edition) && preg_match('/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/D', $edition) === 1
+                && in_array("const FORUM_EDITION = '" . $edition . "'", preg_split('/\r?\n/', (string) $app), true)
+                && str_contains($index, '/admin/assets/admin-app.js?v=' . $edition . '"')
+                && str_contains($index, '/admin/assets/admin-app.css?v=' . $edition . '"');
+        }
         $manifest = ['name' => 'CajeerEngine Admin UI', 'version' => $version, 'mode' => 'production-static-spa', 'base_path' => '/admin/', 'api_base' => '/api/v1', 'files' => $files, 'quality' => ['production_assets' => $ready], 'ready' => $ready];
         $path = $base . '/assets/admin-manifest.json';
         if ($write && $ready && is_dir($this->rootPath . '/admin/static')) {

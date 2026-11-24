@@ -6,7 +6,7 @@ on:
 permissions:
   contents: read
 env:
-  FORUM_CURRENT_VERSION: ${{ '1.4.9' }}
+  FORUM_CURRENT_VERSION: ${{ '1.4.10' }}
 concurrency:
   group: forum-ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -644,7 +644,7 @@ jobs:
         run: php tools/forum-knowledge-sync-acceptance.php
   browser:
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 35
     strategy:
       fail-fast: false
       matrix:
@@ -696,6 +696,9 @@ jobs:
       - run: python tools/forum-unified-identity-browser-regression.py --browser ${{ matrix.browser }}
       - run: python tools/forum-platform-workflows-browser-regression.py --browser ${{ matrix.browser }}
       - run: python tools/forum-unified-admin-browser-regression.py --browser ${{ matrix.browser }}
+      - run: python tools/forum-tests/test_platform_e2e_harness.py
+      - name: Live cross-subsystem platform journey
+        run: python tools/forum-tests/platform_e2e.py --browser ${{ matrix.browser }} --report storage/tmp/forum-ci/platform
       - name: Real browser E2E with SMTP
         run: python tools/forum-tests/run.py --suite browser --browser ${{ matrix.browser }} --report storage/tmp/forum-ci/browser
       - name: Upload browser evidence
