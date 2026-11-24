@@ -6,7 +6,7 @@ namespace CajeerEngine\Update;
 
 use CajeerEngine\Runtime\ConfigRepository;
 
-/** One-shot, single-node service consumer for explicitly approved installation requests.
+/** One-shot, single-node service consumer for explicit approvals and host-authorized autonomous updates.
  *
  * Invoke from a dedicated operator account via systemd timer. No browser request
  * can select a command, filesystem path, or executable. Backups and committed
@@ -107,6 +107,7 @@ final class UpdateOperator
                 $result['reason'] = 'heartbeat_invalid'; return $result;
             }
             $result['status'] = $state; $result['checked_at'] = $checkedAt;
+            if (is_array($status['auto_apply']??null)) $result['auto_apply']=array_intersect_key($status['auto_apply'],array_flip(['state','version','reason','transaction_id']));
             $result['age_seconds'] = max(0, time() - $when);
             if ($result['age_seconds'] > $maxAge) {
                 $result['status'] = 'stale'; $result['reason'] = 'heartbeat_stale'; return $result;
@@ -159,6 +160,9 @@ final class UpdateOperator
                 return $this->status('recovery_required', null, false, 'Active recovery marker: ' . $marker);
             }
         }
+        try {
+            if (!(new AutonomousUpdate($this->rootPath,$this->config))->reconcile()) return $this->status('recovery_required',null,false,'Unresolved autonomous update; inspect private attempt journal');
+        } catch (\Throwable) { return $this->status('recovery_required',null,false,'Invalid autonomous update journal'); }
         $dir = OperationFiles::path($this->rootPath, 'storage/app/update-requests');
         if (!is_dir($dir)) return $this->idle();
         if (is_link($dir)) throw new \RuntimeException('Symlink request directory');
@@ -240,19 +244,24 @@ final class UpdateOperator
 
     private function idle(): array
     {
+        if ((new UpdatePolicy($this->config))->autonomousEnabled()) $this->status('running',null,true);
+        try { $apply=(new AutonomousUpdate($this->rootPath,$this->config))->run(); }
+        catch (\Throwable) { return $this->status('recovery_required',null,false,'Autonomous update admission state is invalid'); }
+        if (in_array($apply['state'],['completed','failed','recovery_required'],true)) return $this->status($apply['state'],null,$apply['state']==='completed',$apply['reason']??null,$apply['transaction_id']??null,['auto_apply'=>$apply]);
         $auto = new AutomaticReleaseStaging($this->rootPath, $this->config);
-        if (!$auto->due()) return $this->status('idle', null, true);
+        if (!$auto->due()) return $this->status('idle', null, true,null,null,['auto_apply'=>$apply]);
         $this->status('running', null, true);
         $result = $auto->run();
-        return $this->status(($result['ok'] ?? false) ? 'idle' : 'failed', null, (bool) ($result['ok'] ?? false)) + ['auto_stage'=>$result];
+        return $this->status(($result['ok'] ?? false) ? 'idle' : 'failed', null, (bool) ($result['ok'] ?? false),null,null,['auto_apply'=>$apply,'auto_stage'=>$result]);
     }
 
-    private function status(string $status, ?string $id, bool $ok, ?string $detail = null, ?string $transaction = null): array
+    private function status(string $status, ?string $id, bool $ok, ?string $detail = null, ?string $transaction = null, array $extra=[]): array
     {
         $result = ['ok' => $ok, 'status' => $status, 'processed' => in_array($status, ['completed','failed'], true) ? 1 : 0,
             'request_id' => $id, 'checked_at' => gmdate(DATE_ATOM)];
         if ($detail !== null) $result['detail'] = $detail;
         if ($transaction !== null) $result['transaction_id'] = $transaction;
+        $result += $extra;
         OperationFiles::json(OperationFiles::path($this->rootPath, 'storage/app/updates/operator-status.json'), $result, 0644);
         if ($status === 'recovery_required') {
             try { (new UpdateHistory($this->rootPath))->record('update.recovery_required',

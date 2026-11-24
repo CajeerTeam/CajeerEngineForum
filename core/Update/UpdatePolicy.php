@@ -78,6 +78,17 @@ final class UpdatePolicy
         };
     }
 
+    public function autonomousEnabled(): bool
+    {
+        return $this->error===null && $this->config->bool('updates.policy.auto_apply_enabled') && $this->discoveryEnabled() && in_array($this->mode,['automatic_security','automatic_patch','automatic_minor','fully_automatic'],true);
+    }
+
+    public function autonomousReason(string $from,string $to,?bool $verifiedSecurity,int $now): ?string
+    {
+        if (!$this->autonomousEnabled()) return 'autonomous_disabled';
+        return $this->stageReason($from,$to,$verifiedSecurity) ?? $this->requestReason('apply',$to,$now);
+    }
+
     /** Policy uses verified security classification only, never release notes or an API label. */
     public function stageReason(string $from,string $to,?bool $verifiedSecurity=null): ?string
     {
@@ -134,7 +145,7 @@ final class UpdatePolicy
     {
         $now??=time();
         return ['mode'=>$this->error==='invalid_mode'?'invalid':$this->mode,'valid'=>$this->error===null,'error'=>$this->error,
-            'discovery_enabled'=>$this->discoveryEnabled(),'staging_enabled'=>$this->stagingEnabled(),'autonomous_apply_enabled'=>false,
+            'discovery_enabled'=>$this->discoveryEnabled(),'staging_enabled'=>$this->stagingEnabled(),'autonomous_apply_enabled'=>$this->autonomousEnabled(),
             'timezone'=>$this->zone->getName(),'days'=>$this->days,
             'window_start'=>$this->start===null?null:sprintf('%02d:%02d',intdiv($this->start,60),$this->start%60),
             'window_end'=>$this->end===null?null:sprintf('%02d:%02d',intdiv($this->end,60),$this->end%60),

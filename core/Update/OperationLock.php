@@ -53,7 +53,7 @@ final class OperationLock
         $path = OperationFiles::path($root, 'storage/app/operations.lock');
         OperationFiles::dir(dirname($path), 0775);
         $handle = self::openLockFile($path, 0660);
-        if (!flock($handle, ($exclusive ? LOCK_EX : LOCK_SH) | ($wait ? 0 : LOCK_NB))) { fclose($handle); throw new \RuntimeException('Another operation is running; retry after drain'); }
+        if (!flock($handle, ($exclusive ? LOCK_EX : LOCK_SH) | ($wait ? 0 : LOCK_NB))) { fclose($handle); throw new OperationBusy('Another operation is running; retry after drain'); }
         if ($exclusive) self::$exclusive[realpath($root)?:$root]=$handle;
         return $handle;
     }

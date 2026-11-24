@@ -1,3 +1,9 @@
+## [1.5.5] - 2026-11-24
+
+- Opt-in autonomous installation in the dedicated operator; signed staging, fresh release selection and host policy are independently rechecked.
+- Durable private attempt journals prevent replay after failure or interruption. Safe pre-mutation deferrals retry; unknown outcomes block the operator.
+- Preserve existing backup, migration, rollback and qualification gates. No schema migration.
+
 ## [1.5.4] - 2026-11-24
 
 - Host-owned update policies, version blocks and verified security-release classification.

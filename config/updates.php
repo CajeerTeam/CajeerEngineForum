@@ -18,6 +18,7 @@ return [
         'download_max_bytes' => (int) (getenv('UPDATE_DOWNLOAD_MAX_BYTES') ?: 2147483648),
     ],
     'policy' => [
+        'auto_apply_enabled' => filter_var(getenv('UPDATE_AUTO_APPLY_ENABLED') ?: false, FILTER_VALIDATE_BOOLEAN),
         'mode' => getenv('UPDATE_POLICY_MODE') === false ? 'legacy' : getenv('UPDATE_POLICY_MODE'),
         'timezone' => getenv('UPDATE_MAINTENANCE_TIMEZONE') === false ? 'UTC' : getenv('UPDATE_MAINTENANCE_TIMEZONE'),
         'days' => getenv('UPDATE_MAINTENANCE_DAYS') === false ? '1,2,3,4,5,6,7' : getenv('UPDATE_MAINTENANCE_DAYS'),

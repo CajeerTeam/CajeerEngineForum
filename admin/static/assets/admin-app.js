@@ -1,5 +1,5 @@
 const ADMIN_VERSION = '2.1.0'
-const FORUM_EDITION = '1.5.4'
+const FORUM_EDITION = '1.5.5'
 let oidcEnabled = false
 const API_BASE = '/api/v1'
 const TOKEN_KEY = 'cajeerengine.admin.token'
@@ -1533,7 +1533,8 @@ function updatesView() {
       <p class="muted">Синхронизировано страниц: ${escapeHtml(u.metadata_page_count ?? check.metadata_page_count ?? 0)} · Каталог: ${fmtTime(u.metadata_fetched_at || check.metadata_fetched_at)}${u.retry_at || check.retry_at ? ' · Повтор после: '+fmtTime(u.retry_at || check.retry_at) : ''}</p>
       ${latest.source && /^https:\/\/github\.com\/CajeerTeam\/CajeerEngineForum\/releases\//i.test(latest.source) ? `<p><a href="${escapeHtml(latest.source)}" target="_blank" rel="noopener noreferrer">Открыть релиз на GitHub</a></p>` : ''}
       ${typeof latest.notes === 'string' && latest.notes ? `<details><summary>Описание релиза</summary><pre class="json">${escapeHtml(latest.notes.slice(0,4000))}</pre></details>` : ''}
-      <p>Политика: ${escapeHtml(policy.mode || 'legacy')} · ${policy.valid === false ? 'ошибка: '+escapeHtml(policy.error) : 'действует'} · автономная установка отключена</p>
+      <p>Политика: ${escapeHtml(policy.mode || 'legacy')} · ${policy.valid === false ? 'ошибка: '+escapeHtml(policy.error) : 'действует'} · автономная установка ${policy.autonomous_apply_enabled === true ? "разрешена политикой" : "отключена"}</p>
+      ${operator.auto_apply ? `<p>Автоустановка: ${escapeHtml(operator.auto_apply.state || "—")} ${escapeHtml(operator.auto_apply.version || "")}${operator.auto_apply.reason ? " · "+escapeHtml(operator.auto_apply.reason) : ""}</p>` : ""}
       <p>Окно обслуживания: ${escapeHtml(policy.timezone || 'UTC')} · ${escapeHtml((policy.days || []).join(', ') || '—')} · ${escapeHtml(policy.window_start || '00:00')}–${escapeHtml(policy.window_end || '24:00')} · ${policy.window_open === false ? 'закрыто' : 'открыто'}${policy.next_window_at && policy.window_open === false ? ' · следующий запуск не ранее '+fmtTime(Number(policy.next_window_at)*1000) : ''}</p>
       ${policy.defer_until ? `<p>Отложено до: ${fmtTime(policy.defer_until)}</p>` : ''}
       ${policy.blocked_versions?.length ? `<p>Заблокированные версии: ${escapeHtml(policy.blocked_versions.join(', '))}</p>` : ''}

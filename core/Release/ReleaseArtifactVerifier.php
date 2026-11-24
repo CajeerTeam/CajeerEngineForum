@@ -139,6 +139,10 @@ final class ReleaseArtifactVerifier
             if ($mode==='source') $required[]='tools/update-scheduling-regression.php';
             if (array_key_exists('security_update',$release) && !is_bool($release['security_update'])) throw new \RuntimeException('Invalid signed security classification');
         }
+        if (($manifest['edition']??null)==='forum' && version_compare($version,'1.5.5','>=')) {
+            $required=array_merge($required,['core/Update/AutonomousUpdate.php','core/Update/OperationBusy.php']);
+            if ($mode==='source') $required[]='tools/autonomous-update-regression.php';
+        }
         foreach ($required as $file) if (!in_array($file, $files, true)) throw new \RuntimeException('Required ZIP entry missing: ' . $file);
         foreach (['pgsql', 'mysql', 'sqlite'] as $driver) {
             if (!array_filter($files, static fn ($file) => str_starts_with($file, 'migrations/' . $driver . '/') && str_ends_with($file, '.sql'))) throw new \RuntimeException('Missing migrations: ' . $driver);

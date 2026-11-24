@@ -79,7 +79,9 @@ final class UpdateManager
         foreach (['no_backup','no_maintenance','no_migrations','no_doctor'] as $flag) if (!empty($options[$flag])) throw new \RuntimeException('Safety steps cannot be disabled: '.$flag);
         $package=$this->option($options,'package')??throw new \RuntimeException('Provide --package');
         $package=$this->resolvePackage($package); $signature=$this->option($options,'signature')??$package.'.sig';
-        $lock=OperationLock::acquire($this->rootPath,true); $dir=null; $journalled=false;
+        try { $lock=OperationLock::acquire($this->rootPath,true); }
+        catch (OperationBusy $e) { if (!empty($options['autonomous'])) return ['ok'=>false,'deferred'=>true,'reason'=>'operation_busy']; throw $e; }
+        $dir=null; $journalled=false;
         try {
             if (OperationLock::active($this->rootPath)||is_file($this->rootPath.'/storage/app/backup-restore.json')||is_file($this->rootPath.'/storage/app/extensions/deployment.json')) throw new \RuntimeException('Interrupted operation: recover first');
             if (!is_file($this->rootPath.'/storage/app/installed.lock')) throw new \RuntimeException('Installed forum required');
@@ -108,8 +110,13 @@ final class UpdateManager
             $plan=$this->stage($dir,$v['manifest']);
             $report=['ok'=>true,'id'=>$id,'previous_version'=>$previous,'target_version'=>$v['version'],'sha256'=>$v['sha256'],'copy_plan'=>$plan,'preflight'=>['space'=>$space,'runtime'=>$runtime,'extensions'=>$compatibility,'migration_history'=>'verified','recovery'=>'ready'],'dry_run'=>!empty($options['dry_run'])];
             if ($report['dry_run']) return $report;
+            if (!empty($options['autonomous'])) {
+                if (!$this->config->bool('updates.operator.enabled') || !$this->config->bool('updates.web_upgrade.enabled') || ($options['from_version']??null)!==$previous || OperationLock::maintenance($this->rootPath)) return ['ok'=>false,'deferred'=>true,'reason'=>'admission_changed'];
+                if (($reason=(new UpdatePolicy($this->config))->autonomousReason($previous,$v['version'],$v['security_update'],time()))!==null) return ['ok'=>false,'deferred'=>true,'reason'=>$reason];
+            }
             if (!empty($options['scheduled_request']) && ($reason=(new UpdatePolicy($this->config))->requestReason('apply',$v['version'],time()))!==null) throw new \RuntimeException('Update policy: '.$reason);
             $journal=['id'=>$id,'state'=>'prepared','previous_version'=>$previous,'target_version'=>$v['version'],'sha256'=>$v['sha256'],'maintenance_was_enabled'=>$this->maintenanceState()['enabled'],'maintenance_before'=>is_file($this->rootPath.'/storage/app/maintenance.json')?OperationFiles::read($this->rootPath.'/storage/app/maintenance.json'):null,'backup'=>null,'child_lock'=>'child-'.bin2hex(random_bytes(8)).'.lock','at'=>gmdate(DATE_ATOM)];
+            if (!empty($options['autonomous'])) $journal['authorization']=['type'=>'host_policy','mode'=>(new UpdatePolicy($this->config))->snapshot()['mode']];
             $journalled=true; $this->journal($journal);
             DatabaseBackup::useProcessLock($dir.'/'.$journal['child_lock']);
             try {
@@ -207,7 +214,7 @@ final class UpdateManager
         $report=is_file($last)?OperationFiles::read($last):null;
         $activePath=PHP_SAPI==='cli'?$this->path('active.json'):$this->requestDir().'/progress.json';
         $active=OperationLock::active($this->rootPath)&&is_file($activePath)?$this->publicJournal(OperationFiles::read($activePath)):null;
-        return ['ok'=>true,'operator_ready'=>UpdateOperator::health($this->rootPath,$this->config)['ready'],'staged_installable'=>$this->stageEligible($this->staged()),'current_version'=>$this->currentVersion(),'maintenance'=>$this->maintenanceState(),'active'=>$active,'last_report'=>$report===null?null:array_intersect_key($report,array_flip(['ok','id','state','previous_version','target_version','version'])),'installed'=>is_file($this->rootPath.'/storage/app/installed.lock'),'production_apply_enabled'=>$this->trustConfigured()];
+        return ['ok'=>true,'operator_ready'=>($operator=UpdateOperator::health($this->rootPath,$this->config))['ready'],'operator_status'=>$operator,'staged_installable'=>$this->stageEligible($this->staged()),'current_version'=>$this->currentVersion(),'maintenance'=>$this->maintenanceState(),'active'=>$active,'last_report'=>$report===null?null:array_intersect_key($report,array_flip(['ok','id','state','previous_version','target_version','version'])),'installed'=>is_file($this->rootPath.'/storage/app/installed.lock'),'production_apply_enabled'=>$this->trustConfigured()];
     }
     public function history(int $limit=20): array
     {
@@ -250,6 +257,7 @@ final class UpdateManager
                         UpdatePreflight::identity($v['manifest'],$this->currentVersion(),$this->channel(),$expectedVersion);
                         UpdateCompatibility::requireRuntime($v['manifest'],$this->config);
                         if (!(new \CajeerEngine\Extension\ExtensionRegistry($this->rootPath,$this->config))->targetCompatibility($v['version'],$v['manifest']['engine_api_version'])['ok']) throw new \RuntimeException('Target release incompatible with enabled extensions');
+                        (new AutonomousUpdate($this->rootPath,$this->config))->rememberStage($prior);
                         return $prior+['cached'=>true];
                     }
                 }
@@ -264,9 +272,11 @@ final class UpdateManager
             if ($automatic && $policy->stageReason($this->currentVersion(),$v['version'],$v['security_update'])!==null) throw new \RuntimeException('Automatic staging denied by signed release policy');
             $runtime=UpdateCompatibility::requireRuntime($v['manifest'],$this->config);
             $extensions=(new \CajeerEngine\Extension\ExtensionRegistry($this->rootPath,$this->config))->targetCompatibility($v['version'],$v['manifest']['engine_api_version']);
-            if(isset($v['manifest']['upgrade_compatibility'])&&!$extensions['ok'])throw new \RuntimeException('Target release incompatible with enabled extensions');
+            if(($automatic||isset($v['manifest']['upgrade_compatibility']))&&!$extensions['ok'])throw new \RuntimeException('Target release incompatible with enabled extensions');
             $data=['ok'=>true,'id'=>$id,'from_version'=>$this->currentVersion(),'runtime_compatibility'=>$runtime,'extension_compatibility'=>$extensions,'version'=>$v['version'],'sha256'=>$v['sha256'],'file_count'=>$v['file_count']];
-            OperationFiles::json($this->requestDir().'/staged.json',$data,0644); $published=true; return $data;
+            OperationFiles::json($this->requestDir().'/staged.json',$data,0644); $published=true;
+            if ($automatic) (new AutonomousUpdate($this->rootPath,$this->config))->rememberStage($data);
+            return $data;
         } finally { try { if (!$published&&$dir!==null) $this->discardStage($dir); } finally { OperationLock::release($approval); OperationLock::release($lock); } }
     }
     public function request(string $action, array $payload, string $actor): array

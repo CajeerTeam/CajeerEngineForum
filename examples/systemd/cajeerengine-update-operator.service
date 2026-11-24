@@ -1,5 +1,5 @@
 [Unit]
-Description=CajeerEngine verified update operator (one approved request)
+Description=CajeerEngine verified update operator (one approved or policy-authorized operation)
 After=local-fs.target network-online.target
 Wants=network-online.target
 ConditionPathExists=/var/www/cajeerengine/bin/cajeer
