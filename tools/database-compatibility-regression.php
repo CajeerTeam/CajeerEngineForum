@@ -27,6 +27,7 @@ final class CompatColumnStatement extends PDOStatement
 {
     public function __construct(private readonly string $collation) {}
     public function execute(?array $params = null): bool { return true; }
+    public function closeCursor(): bool { return true; }
     public function fetch(int $mode = PDO::FETCH_DEFAULT, int $cursorOrientation = PDO::FETCH_ORI_NEXT, int $cursorOffset = 0): mixed
     {
         return ['COLUMN_TYPE' => 'char(36)', 'CHARACTER_SET_NAME' => 'utf8mb4', 'COLLATION_NAME' => $this->collation];
@@ -125,6 +126,15 @@ foreach (['utf8mb4_general_ci', 'utf8mb4_unicode_ci'] as $collation) {
     ensure(substr_count($create, 'CHAR(36) CHARACTER SET utf8mb4 COLLATE ' . $collation) === 2,
         'AI tool calls foreign keys did not inherit the referenced column collation');
     ensure(str_contains($create, 'id VARCHAR(36) PRIMARY KEY'), 'Unrelated AI tool call identifiers were changed');
+}
+$identitySql = file_get_contents($root . '/migrations/mysql/0017_forum_identity.sql');
+ensure(is_string($identitySql), 'Missing identity migration');
+foreach (['utf8mb4_unicode_ci', 'utf8mb4_0900_ai_ci', 'utf8mb4_general_ci'] as $collation) {
+    $fixture = new CompatPDO('mysql', false, $collation);
+    MigrationSqlExecutor::execute($fixture, 'mysql', $identitySql);
+    ensure(count($fixture->queries) === 3, 'Identity migration did not execute every statement');
+    ensure(str_contains($fixture->queries[0], 'user_id CHAR(36) CHARACTER SET utf8mb4 COLLATE '.$collation.' NOT NULL'), 'Identity FK collation mismatch');
+    ensure(str_contains($fixture->queries[0], 'FOREIGN KEY (user_id) REFERENCES ce_users(id) ON DELETE CASCADE'), 'Identity FK lost');
 }
 $wrong = new CompatPDO('sqlite');
 $runner = new MigrationRunner($wrong, $root . '/migrations');

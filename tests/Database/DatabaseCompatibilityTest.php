@@ -34,7 +34,7 @@ final class DatabaseCompatibilityTest extends TestCase
         mkdir($dir . '/sqlite', 0700, true);
         try {
             file_put_contents($dir . '/sqlite/0001_initial.sql', 'CREATE TABLE working (id INTEGER PRIMARY KEY);');
-            file_put_contents($dir . '/sqlite/0002_new.sql', 'CREATE TABLE working (id INTEGER PRIMARY KEY);');
+            file_put_contents($dir . '/sqlite/0002_new.sql', 'CREATE TABLE recovered (id INTEGER PRIMARY KEY); CREATE TABLE working (id INTEGER PRIMARY KEY);');
             $pdo = new PDO('sqlite::memory:', options: [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
             $runner = new MigrationRunner($pdo, $dir);
             try {
@@ -44,8 +44,20 @@ final class DatabaseCompatibilityTest extends TestCase
                 self::assertNotSame('', $e->getMessage());
             }
             self::assertCount(1, $runner->status('sqlite')['failed']);
+            self::assertSame(0, (int) $pdo->query("SELECT COUNT(*) FROM sqlite_master WHERE name='recovered'")->fetchColumn());
+            $original = file_get_contents($dir . '/sqlite/0002_new.sql');
             file_put_contents($dir . '/sqlite/0002_new.sql', 'CREATE TABLE recovered (id INTEGER PRIMARY KEY);');
-            self::assertSame(1, $runner->run('sqlite')['applied']);
+            self::assertSame('failed_checksum_mismatch', $runner->status('sqlite')['integrity_errors'][0]['reason']);
+            try {
+                $runner->run('sqlite');
+                self::fail('Modified failed migration must be rejected');
+            } catch (\RuntimeException $e) {
+                self::assertStringContainsString('checksum mismatch', $e->getMessage());
+            }
+            file_put_contents($dir . '/sqlite/0002_new.sql', $original);
+            // Resolve the external conflict without changing recorded SQL.
+            $pdo->exec('ALTER TABLE working RENAME TO original_working');
+            self::assertSame(1, $runner->repairFailed('sqlite', true)['rerun']['applied']);
             self::assertSame([], $runner->status('sqlite')['failed']);
             self::assertSame(1, (int) $pdo->query("SELECT COUNT(*) FROM sqlite_master WHERE name='recovered'")->fetchColumn());
         } finally {

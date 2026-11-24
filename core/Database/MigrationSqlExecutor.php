@@ -22,7 +22,7 @@ final class MigrationSqlExecutor
                 if ($statement === null) {
                     continue;
                 }
-                $statement = self::mysqlAiToolCallForeignKeys($pdo, $statement);
+                $statement = self::mysqlHistoricalForeignKeys($pdo, $statement);
             }
             $pdo->exec($statement);
         }
@@ -131,40 +131,41 @@ final class MigrationSqlExecutor
     }
 
     /**
-     * MySQL/MariaDB foreign keys require compatible character sets and collations.
-     * Historical migration 0031 lets the server choose the charset's default
-     * collation for ce_ai_conversations and ce_ai_messages. Migration 0037 has
-     * no explicit collation and therefore inherits the database default, which
-     * can differ (for example, on MariaDB 10.11). Keep historical migration
-     * bytes/checksums intact and match each referenced column at execution.
+     * Historical SQL must retain its checksums. Match the referenced columns
+     * when a migration inherited a different server/database default collation.
      */
-    private static function mysqlAiToolCallForeignKeys(PDO $pdo, string $sql): string
+    private static function mysqlHistoricalForeignKeys(PDO $pdo, string $sql): string
     {
-        if (preg_match('/^CREATE\s+TABLE\s+ce_ai_tool_calls\s*\(/i', $sql) !== 1) {
+        if (preg_match('/^CREATE\s+TABLE\s+ce_identity_challenges\s*\(/i', $sql) === 1) {
+            $references = ['user_id' => 'ce_users'];
+        } elseif (preg_match('/^CREATE\s+TABLE\s+ce_ai_tool_calls\s*\(/i', $sql) === 1) {
+            $references = ['conversation_id' => 'ce_ai_conversations', 'assistant_message_id' => 'ce_ai_messages'];
+        } else {
             return $sql;
         }
         $metadata = $pdo->prepare('SELECT COLUMN_TYPE, CHARACTER_SET_NAME, COLLATION_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :table AND COLUMN_NAME = :column');
-        foreach (['conversation_id' => 'ce_ai_conversations', 'assistant_message_id' => 'ce_ai_messages'] as $column => $parent) {
+        foreach ($references as $column => $parent) {
             $metadata->execute(['table' => $parent, 'column' => 'id']);
             $definition = $metadata->fetch(PDO::FETCH_ASSOC);
+            $metadata->closeCursor();
             $type = is_array($definition) ? strtolower((string) ($definition['COLUMN_TYPE'] ?? '')) : '';
             $charset = is_array($definition) ? (string) ($definition['CHARACTER_SET_NAME'] ?? '') : '';
             $collation = is_array($definition) ? (string) ($definition['COLLATION_NAME'] ?? '') : '';
             if (preg_match('/^(?:char|varchar)\(36\)$/D', $type) !== 1
                 || preg_match('/^[a-zA-Z0-9_]+$/D', $charset) !== 1
                 || preg_match('/^[a-zA-Z0-9_]+$/D', $collation) !== 1) {
-                throw new \RuntimeException('Cannot resolve compatible AI tool call foreign key metadata');
+                throw new \RuntimeException('Cannot resolve compatible foreign key metadata for ' . $parent . '.id');
             }
             $columnType = strtoupper($type) . ' CHARACTER SET ' . $charset . ' COLLATE ' . $collation;
             $sql = preg_replace_callback(
-                '/(\b' . $column . '\s+)VARCHAR\s*\(\s*36\s*\)(\s+NOT\s+NULL)/i',
-                static fn (array $match): string => $match[1] . $columnType . $match[2],
+                '/(^|\n)([ \t]*' . $column . '\s+)(?:VAR)?CHAR\s*\(\s*36\s*\)(\s+NOT\s+NULL)/i',
+                static fn (array $match): string => $match[1] . $match[2] . $columnType . $match[3],
                 $sql,
                 1,
                 $replacements,
             );
             if ($sql === null || $replacements !== 1) {
-                throw new \RuntimeException('Unexpected AI tool call foreign key definition');
+                throw new \RuntimeException('Unexpected foreign key definition for ' . $column);
             }
         }
         return $sql;

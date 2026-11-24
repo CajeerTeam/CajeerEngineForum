@@ -96,9 +96,13 @@ final class SecurityHardeningAcceptanceTest extends TestCase
         try {
             $db = new DatabaseManager(new ConfigRepository(dirname(__DIR__,2)));
             $pdo = $db->connection();
-            $pdo->exec('CREATE TABLE ce_api_tokens (id TEXT PRIMARY KEY,user_id TEXT,name TEXT,token_hash TEXT,token_prefix TEXT,scopes TEXT,expires_at TEXT,created_at TEXT,last_used_at TEXT,revoked_at TEXT)');
+            (new \CajeerEngine\Database\MigrationRunner($pdo, dirname(__DIR__, 2).'/migrations'))->run('sqlite');
+            $roles = new \CajeerEngine\Database\Repository\RoleRepository($db);
+            $roles->seedDefaults();
+            $users = new \CajeerEngine\Database\Repository\UserRepository($db, $roles);
+            $owner = $users->create('owner@example.test', 'Owner', 'unused-test-hash', ['forum-member']);
+            $other = $users->create('other@example.test', 'Other', 'unused-test-hash', ['forum-member']);
             $tokens = new ApiTokenRepository($db);
-            $owner = 'owner'; $other = 'other';
             $own = $tokens->create($owner, 'api', ['content:read']);
             $foreign = $tokens->create($other, 'api', ['content:read']);
             $session = $tokens->create($owner, 'admin-session', ['*']);

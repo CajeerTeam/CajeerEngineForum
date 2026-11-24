@@ -25,16 +25,35 @@ final readonly class VersionVerifier
             ? CheckResult::pass('version', 'VERSION', 'VERSION содержит корректный номер релиза.')
             : CheckResult::fail('version', 'VERSION', 'VERSION должен содержать SemVer MAJOR.MINOR.PATCH с допустимым prerelease-суффиксом.', ['actual' => $version]);
 
+        // Engine and Forum are independently versioned: SDK/assets follow VERSION,
+        // while the public channel and distribution artifacts follow Forum Edition.
+        $artifactVersion = $version;
+        if (($release['edition'] ?? null) === 'forum') {
+            try {
+                $artifactVersion = (new \CajeerEngine\Forum\ForumVersion($this->rootPath))->current();
+                $checks[] = CheckResult::pass('version', 'release.edition', 'Forum and upstream identity verified.');
+            } catch (\Throwable) {
+                $checks[] = CheckResult::fail('version', 'release.edition', 'Invalid Forum or upstream version identity.');
+            }
+        }
         // Prereleases are never stable, even when the download artifact is versioned correctly.
         $channel = $release['channel'] ?? null;
-        $expectedChannel = str_contains($version, '-rc') ? 'rc'
-            : (str_contains($version, '-beta') ? 'beta'
-            : (str_contains($version, '-') ? 'dev' : 'stable'));
+        $expectedChannel = str_contains($artifactVersion, '-rc') ? 'rc'
+            : (str_contains($artifactVersion, '-beta') ? 'beta'
+            : (str_contains($artifactVersion, '-') ? 'dev' : 'stable'));
         $checks[] = $channel === $expectedChannel
             ? CheckResult::pass('version', 'release.channel', 'Release channel matches SemVer prerelease status.')
             : CheckResult::fail('version', 'release.channel', 'Prerelease channel/version mismatch.', ['expected' => $expectedChannel, 'actual' => $channel]);
-        $checks[] = ($release['stability'] ?? null) === $expectedChannel
-            ? CheckResult::pass('version', 'release.stability', 'Release stability matches SemVer and channel.')
+        // A stable update channel is not a production certification. The Forum
+        // candidate explicitly retains its qualification-required state until
+        // the separate signed release/physical acceptance gates have passed.
+        $qualificationRequired = $expectedChannel === 'stable'
+            && ($release['edition'] ?? null) === 'forum'
+            && ($release['stability'] ?? null) === 'production-qualification-required';
+        $checks[] = ($release['stability'] ?? null) === $expectedChannel || $qualificationRequired
+            ? CheckResult::pass('version', 'release.stability', $qualificationRequired
+                ? 'Stable Forum channel; production qualification remains required.'
+                : 'Release stability matches SemVer and channel.')
             : CheckResult::fail('version', 'release.stability', 'Release stability contradicts SemVer/channel.', ['expected' => $expectedChannel, 'actual' => $release['stability'] ?? null]);
 
         $expected = [
@@ -58,12 +77,12 @@ final readonly class VersionVerifier
             : CheckResult::fail('version', 'admin.manifest', 'Published admin assets are stale.', ['expected' => $version, 'actual' => $manifest['version'] ?? null]);
 
         foreach (['source', 'dist'] as $mode) {
-            $expectedArtifact = 'storage/releases/cajeerengine-' . $version . '-' . $mode . '.zip';
+            $expectedArtifact = 'storage/releases/cajeerengine-' . $artifactVersion . '-' . $mode . '.zip';
             $key = $mode . '_artifact';
             $actual = $release['distribution'][$key] ?? null;
             $checks[] = $actual === $expectedArtifact
-                ? CheckResult::pass('version', 'release.' . $key, 'Release artifact path matches VERSION.')
-                : CheckResult::fail('version', 'release.' . $key, 'Release artifact path does not match VERSION.', ['expected' => $expectedArtifact, 'actual' => $actual]);
+                ? CheckResult::pass('version', 'release.' . $key, 'Release artifact path matches distribution version.')
+                : CheckResult::fail('version', 'release.' . $key, 'Release artifact path does not match distribution version.', ['expected' => $expectedArtifact, 'actual' => $actual]);
         }
         foreach (['admin/static/assets/admin-app.js', 'public/admin/assets/admin-app.js'] as $file) {
             if ($dist && !is_file($this->rootPath . '/' . $file)) {

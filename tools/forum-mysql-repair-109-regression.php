@@ -55,6 +55,7 @@ $check=static function(bool $ok,string $description)use(&$n):void{
 try {
     $runner=new MigrationRunner($pdo,$dir);
     $status=$runner->status('mysql');
+    $check($runner->verifyApplied('mysql')['errors'] === [basename($file) => 'failed'], 'verification rejects failed migration');
     $check(count($status['failed'])===1,'failed MySQL DDL is visible in migration status');
     try {$runner->repairFailed('mysql',true);$rejected=false;}catch(RuntimeException $e){$rejected=str_contains($e->getMessage(),'backup');}
     $check($rejected && !$pdo->deleted,'repair --run cannot erase a partially committed MySQL migration');
@@ -66,6 +67,21 @@ try {
         'failed migration checksum drift is surfaced before repair');
     try {$runner->repairFailed('mysql',true);$rejected=false;}catch(RuntimeException){$rejected=true;}
     $check($rejected && !$pdo->deleted,'modified failed migration cannot be reset or executed');
+    // The verifier must be read-only and reject blank/changed checksums,
+    // pending migrations, and ledger entries with no corresponding SQL.
+    file_put_contents($file,'CREATE TABLE example (id INTEGER);');
+    $pdo->migrations[0]['status']='applied';
+    $check($runner->verifyApplied('mysql')['ok'], 'valid migration ledger accepted');
+    $pdo->migrations[0]['checksum']='';
+    $check($runner->verifyApplied('mysql')['errors'] === [basename($file) => 'checksum'], 'blank checksum rejected');
+    $pdo->migrations[0]['checksum']=str_repeat('0',64);
+    $check($runner->verifyApplied('mysql')['errors'] === [basename($file) => 'checksum'], 'changed checksum rejected');
+    $saved=$pdo->migrations;
+    $pdo->migrations=[['migration'=>'9999_orphan.sql','status'=>'applied','checksum'=>$checksum]];
+    $check($runner->verifyApplied('mysql')['errors'] === [basename($file) => 'pending', '9999_orphan.sql' => 'missing'], 'pending and orphaned ledger entries rejected');
+    $pdo->migrations=$saved;
+    $pdo->migrations[0]['status']='failed';
+    $pdo->migrations[0]['checksum']=$checksum;
     unlink($file);
     $missing=$runner->status('mysql');
     $check(count($missing['integrity_errors'])===1 && $missing['integrity_errors'][0]['reason']==='file_missing',

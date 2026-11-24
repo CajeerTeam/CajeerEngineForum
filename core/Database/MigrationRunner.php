@@ -102,6 +102,49 @@ final readonly class MigrationRunner
         return ['driver' => $driver, 'applied' => $count, 'batch' => $batch, 'migrations' => $executed];
     }
 
+    /** Read-only verification, also safe inside an existing transaction.
+     * A missing or empty checksum is not evidence of a successfully applied migration.
+     * @return array{ok:bool,driver:string,expected:int,errors:array<string,string>}
+     */
+    public function verifyApplied(string $driver): array
+    {
+        $driver = $this->assertDriver($driver);
+        $dir = $this->migrationsPath . '/' . $driver;
+        if (!is_dir($dir)) {
+            throw new \RuntimeException('Директория миграций не найдена: ' . $dir);
+        }
+        $files = $this->files($dir);
+        if ($files === []) {
+            throw new \RuntimeException('No migration files found: ' . $dir);
+        }
+        // Do not create/alter the ledger or acquire a migration writer lock on
+        // readiness/verification requests. Read one snapshot of the ledger.
+        $applied = $this->applied();
+        $errors = [];
+        foreach ($files as $file) {
+            $name = basename($file);
+            $checksum = hash_file('sha256', $file);
+            if ($checksum === false) {
+                throw new \RuntimeException('Cannot read migration: ' . $name);
+            }
+            if (!isset($applied[$name])) {
+                $errors[$name] = 'pending';
+                continue;
+            }
+            $row = $applied[$name];
+            unset($applied[$name]);
+            if (($row['status'] ?? null) !== 'applied') {
+                $errors[$name] = 'failed';
+            } elseif (!hash_equals($checksum, (string) ($row['checksum'] ?? ''))) {
+                $errors[$name] = 'checksum';
+            }
+        }
+        foreach ($applied as $name => $row) {
+            $errors[$name] = 'missing';
+        }
+        return ['ok' => $errors === [], 'driver' => $driver, 'expected' => count($files), 'errors' => $errors];
+    }
+
     /** @return array{driver:string,applied:list<array<string,mixed>>,pending:list<array<string,mixed>>,failed:list<array<string,mixed>>,integrity_errors:list<array<string,mixed>>} */
     public function status(string $driver): array
     {
