@@ -1,6 +1,8 @@
 # CajeerEngine Forum Edition
 
-**Forum Edition 1.3.8 — AI ACP Insights (verified anonymous analytics, on-demand OpenAI explanations, interactive charts and source-based CSV)**, built on CajeerEngine 2.1.0. Publication requires a passing `forum-required` gate and verified signed CI certification tied to the exact commit and release artifacts.
+**Forum Edition 1.4.1 — Unified Administration Center**, built on CajeerEngine 2.1.0. Publication requires a passing `forum-required` gate and verified signed CI certification tied to the exact commit and release artifacts.
+
+See [Unified Administration Center](docs/forum-unified-administration-1.4.1.md) for navigation, access and deployment.
 
 Self-hosted forum platform by CajeerTeam. PHP 8.4.1+, CajeerEngine kernel, Symfony Components, REST API, Apache-2.0.
 

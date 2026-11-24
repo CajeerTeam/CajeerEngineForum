@@ -8,20 +8,20 @@
     "index.html": {
       "path": "/admin/index.html",
       "exists": true,
-      "size": 712,
-      "sha256": "be4c4ae0404f91afb24f11d7c80b47f2ae517eca5fb5c47b2ab49a51b9d6689a"
+      "size": 762,
+      "sha256": "24b876f017cca30cc2f93aab9dce1cf3f4728c6fc370f722f30905f379d9811f"
     },
     "assets/admin-app.js": {
       "path": "/admin/assets/admin-app.js",
       "exists": true,
-      "size": 400018,
-      "sha256": "5504d716575f0e6e595b6dab62ddf045ea2b64c3c479986724b3d26d65ec1d7d"
+      "size": 411775,
+      "sha256": "7636eac283d2de0cb4a85ef5dce4d32e7ab8d5c2aebd4e7f5077d062eed5be0d"
     },
     "assets/admin-app.css": {
       "path": "/admin/assets/admin-app.css",
       "exists": true,
-      "size": 11236,
-      "sha256": "1135f222e38b4ad3a3560af618b1ae5c8e334f0e6e367aa8ee571a7d851db810"
+      "size": 11901,
+      "sha256": "9b5fcd8a6c52db6871b708018810015249be73e881ad024472be6f7a3c3a955b"
     },
     "assets/admin-preview.js": {
       "path": "/admin/assets/admin-preview.js",

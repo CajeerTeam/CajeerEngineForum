@@ -50,3 +50,6 @@
 .native-category-fill.native-actions{background:#d97706}
 #forum-acp details summary{cursor:pointer;font-weight:650;padding:10px 0}
 @media(max-width:700px){.native-dashboard-filters,.native-range{display:grid;grid-template-columns:1fr}.native-dashboard-filters>.form-row,.native-range>.form-row{max-width:none}.native-kpi-number{font-size:26px}}
+
+/* Unified Administration Center */
+.platform-nav-group{margin:8px 0 4px}.platform-nav-group h2{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#98a2b3;margin:8px 12px 4px}.platform-nav-group button{padding:7px 12px}.platform-nav-group button[aria-current=page]{box-shadow:inset 3px 0 #84adff}.platform-shortcuts{display:flex;flex-wrap:wrap;gap:8px}.platform-support-message{border-bottom:1px solid var(--line);padding:12px 0;overflow-wrap:anywhere}.platform-support-message p{white-space:pre-wrap}.platform-support-message button{margin:4px}.platform-support-message a{display:block}.platform-shortcuts .btn{white-space:normal;text-align:left}

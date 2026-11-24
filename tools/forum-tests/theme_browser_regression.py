@@ -18,7 +18,7 @@ def main():
    nonlocal state
    u=urlparse(path);path=u.path;query=parse_qs(u.query)
    def response(data,status=200):return {'status':status,'body':{'data':data} if status==200 else {'error':{'message':data}}}
-   if path=='/api/v1/auth/me':return response({'user_id':'admin','csrf_token':'csrf-test','scopes':['*']})
+   if path=='/api/v1/auth/me':return response({'user_id':'admin','csrf_token':'csrf-test','scopes':['*'] if caps['admin'] else ['forum:acp:'+k for k,v in caps.items() if k!='admin' and v]})
    if path=='/api/v1/forum/acp':
     v=query.get('view',['overview'])[0]
     if v=='access':return response({'allowed':True,'capabilities':caps})
@@ -44,7 +44,7 @@ def main():
    replacements={'FORUM_THEME_SCHEME':scheme,'FORUM_THEME_SIDEBAR':v['sidebar'],'FORUM_THEME_LOGO':v['logo'],'FORUM_THEME_CSS':'<style>'+base+css+'</style>','FORUM_THEME_PREVIEW':'<p>Preview fixture</p>','FORUM_NAME':'Forum','FORUM_TITLE':'Forum','FORUM_HEADING':'Forum','FORUM_DESCRIPTION':'Test','FORUM_BODY':'<article class="post">Public message</article>','FORUM_RENDERED':'true','FORUM_REGISTRATION':'true','FORUM_MAINTENANCE':'','FORUM_SCRIPT':''}
    for k,value in replacements.items():template=template.replace('<!--'+k+'-->',value)
    page.locator('iframe').evaluate('(f,html)=>{f.removeAttribute("src");f.srcdoc=html}',template)
-  page.get_by_role('button',name='Оформление форума',exact=True).click();expect(page.get_by_role('heading',name='Оформление форума')).to_be_visible()
+  page.get_by_role('button',name='Оформление форума',exact=True).click();expect(page.locator('#forum-acp').get_by_role('heading',name='Оформление форума')).to_be_visible()
   page.locator('[name=preset]').select_option('preset:ocean');page.locator('#forum-acp [name=name]').fill('My Ocean');page.locator('[name=logo]').fill('OC');page.locator('[name=sidebar]').select_option('left');page.locator('[name=width]').fill('1000');page.get_by_role('button',name='Сохранить черновик').click();expect(page.get_by_text('Активная тема: Cajeer Default · Ревизия 1')).to_be_visible()
   assert state['active']==presets['default'] and state['draft']['name']=='My Ocean'
   page.locator('[name=preview_scheme]').select_option('light');page.get_by_role('button',name='Обновить предпросмотр').click();expect(page.locator('iframe')).to_have_attribute('src','/forum?theme_preview=1&scheme=light&revision=1');mount_preview('light');frame=page.frame_locator('iframe');expect(frame.locator('html')).to_have_attribute('data-theme','light');expect(frame.locator('body')).to_have_css('background-color','rgb(238, 248, 248)');expect(frame.locator('.logo')).to_have_text('OC');expect(frame.locator('.wrap').first).to_have_css('max-width','1000px')

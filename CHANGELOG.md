@@ -1,3 +1,12 @@
+## [1.4.1] - 2026-11-24
+
+### Unified Administration Center
+- Grouped, scope-aware `/admin/` navigation with deep links to real Forum ACP views and existing core tools.
+- Combined dashboard using authorized forum counts and core metrics, independently failing on unavailable APIs.
+- Native operator support queue, replies, revision-checked ticket actions and FAQ editor inside ACP.
+- System view presents existing forum queue, PostgreSQL, Redis and HTTP telemetry, with optional non-overlapping refresh.
+- Shared session, fresh navigation permissions, legacy routes retained. No migration. CI and staging required.
+
 ## [1.4.0] - 2026-11-24
 
 ### AI Assistant Stable

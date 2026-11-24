@@ -124,11 +124,11 @@ jobs:
           python3 tools/certification-evidence.py verify "$ARTIFACT_ROOT" --trusted-key "$pub"
 
           cat > "$RUNNER_TEMP/forum-release-notes.md" <<'NOTES'
-          ## CajeerEngineForum 1.4.0 — AI Assistant Stable
+          ## CajeerEngineForum 1.4.1 — Unified Administration Center
 
-          Forum Edition 1.4.0 on CajeerEngine 2.1.0.
+          Forum Edition 1.4.1 on CajeerEngine 2.1.0.
 
-          - Forum AI chat, contextual assistance, search, support, writing, moderation, insights and confirmed administrator actions.
+          - Unified administration, permission-aware navigation, forum and core metrics, support and FAQ management.
           - Source revalidation after queue admission and strict streamed/final response reconciliation.
           - Signed ZIPs, detached signatures, SHA-256, manifests and artifact index are published together.
           - No new migrations; mandatory real PDO and browser acceptance remains in place.

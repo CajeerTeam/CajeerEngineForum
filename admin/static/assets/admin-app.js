@@ -1,39 +1,75 @@
 const ADMIN_VERSION = '2.1.0'
+const FORUM_EDITION = '1.4.1'
 let oidcEnabled = false
 const API_BASE = '/api/v1'
 const TOKEN_KEY = 'cajeerengine.admin.token'
 localStorage.removeItem(TOKEN_KEY) // remove legacy bearer credentials
 const app = document.getElementById('app')
 
+// All destinations reuse existing, server-authorized handlers. No iframe or separate login.
 const nav = [
-  ['forum', '◉', 'Forum ACP', 'Управление сообществом'],
-  ['dashboard', '📊', 'Обзор', 'Состояние продукта'],
-  ['content-types', '🧩', 'Типы контента', 'Field builder и schema'],
-  ['content', '📝', 'Контент', 'Записи, публикации, ревизии'],
-  ['media', '🖼️', 'Media', 'Загрузка и управление файлами'],
-  ['cms', '🌐', 'CMS', 'Тема, меню, редиректы, preview'],
-  ['users', '👥', 'Доступ', 'Пользователи, роли, tokens'],
-  ['identity', '🔑', 'Identity Center', 'SkiF4er ID: привязки, пользователи и сессии'],
-  ['ai', '◈', 'AI Assistant', 'ChatGPT через OpenAI API'],
-  ['seo', '🔎', 'AI SEO Assistant', 'Аудит страниц и SEO-оптимизация'],
-  ['translations', '🌐', 'AI Translation Studio', 'Переводы и локализации'],
-  ['diagnostics', '⚙️', 'AI CMS Diagnostics', 'Проверка состояния CMS и объяснение проблем'],
-  ['knowledge', '📚', 'AI Knowledge Base', 'Документы, категории, импорт, поиск'],
-  ['knowledge-chat', '◈', 'AI Knowledge Chat / RAG', 'Ответы с проверенными источниками'],
-  ['support', '✉', 'AI Support Center', 'Обращения и передача оператору'],
-  ['tracking', '📈', 'Счётчики', 'Яндекс Метрика, GA4, GTM, Matomo и Plausible'],
-  ['analytics-hub', '📊', 'Analytics Hub', 'Отчёты трафика и поисковой статистики'],
-  ['analytics-insights', '📈', 'AI External Analytics', 'AI-анализ внешней статистики'],
-  ['analytics-events', '📊', 'События', 'Правила, цели и диагностика аналитики'],
-  ['privacy', '🔒', 'Приватность', 'Согласия, политика и категории'],
-  ['integrations', '🔗', 'Интеграции', 'Провайдеры, подключения и секреты'],
-  ['extensions', '🔌', 'Extensions', 'Runtime, lifecycle, events'],
-  ['updates', '⬆️', 'Updates', 'Maintenance и rollback'],
-  ['search', '🔎', 'Search', 'Поиск и reindex'],
-  ['migration', '↔', 'Migration Center', 'DLE / WordPress Discovery'],
-  ['import-export', '📦', 'Import/export', 'Пакеты, diff, run'],
-  ['system', '⚙️', 'System', 'Диагностика API/runtime'],
+  ['dashboard','◉','Обзор платформы','Общие показатели форума и ядра','Платформа'],
+  ['forum','◉','Forum ACP','Управление сообществом','Сообщество','forum'],
+  ['forum/overview','◉','Обзор сообщества','Показатели форума','Сообщество','*'],
+  ['forum/threads','◉','Обсуждения','Темы форума','Сообщество','*'],
+  ['forum/posts','◉','Сообщения','Публикации форума','Сообщество','*'],
+  ['forum/attachments','◉','Вложения','Файлы форума','Сообщество','*'],
+  ['forum/structure','◉','Структура и ACL','Категории, разделы и разрешения','Сообщество','*'],
+  ['forum/users','◉','Участники форума','Управление участниками','Сообщество','forum:acp:members'],
+  ['forum/groups','◉','Группы форума','Группы и роли','Сообщество','*'],
+  ['forum/moderation','◉','Модерация','Жалобы и проверка публикаций','Сообщество','*'],
+  ['forum/support','◉','Поддержка форума','Обращения и FAQ','Сообщество','forum:acp:members'],
+  ['users','◉','Пользователи ядра','Пользователи, роли, tokens','Доступ','users:read'],
+  ['identity','◉','Identity Center','SkiF4er ID, привязки и сессии','Доступ','identity'],
+  ['forum/delegation','◉','Делегирование','Форумные полномочия','Доступ','*'],
+  ['forum/analytics','◉','Аналитика форума','Метрики и AI Insights','Аналитика','forum:acp:settings'],
+  ['tracking','◉','Счётчики','Внешние провайдеры','Аналитика','tracking:read'],
+  ['analytics-hub','◉','Analytics Hub','Внешняя статистика','Аналитика','analytics:read'],
+  ['analytics-insights','◉','AI External Analytics','AI-анализ внешней статистики','Аналитика','analytics:read'],
+  ['analytics-events','◉','События','Цели и диагностика','Аналитика','tracking:read'],
+  ['forum/ai','◉','AI форума','Модель и квоты','AI и автоматизация','forum:acp:settings'],
+  ['forum/ai_actions','◉','AI-действия форума','Подтверждаемые изменения','AI и автоматизация','forum:acp:settings'],
+  ['ai','◉','AI ядра','OpenAI и автоматизация','AI и автоматизация','content:read'],
+  ['knowledge','◉','AI Knowledge Base','Документы и поиск','AI и автоматизация','content:read'],
+  ['knowledge-chat','◉','AI Knowledge Chat / RAG','Ответы с источниками','AI и автоматизация','content:read'],
+  ['support','◉','Поддержка CMS','Обращения CMS','AI и автоматизация','content:read'],
+  ['content-types','◉','Типы контента','Field builder и schema','CMS','content:read'],
+  ['content','◉','Контент','Записи и ревизии','CMS','content:read'],
+  ['media','◉','Media','Управление файлами','CMS','media:read'],
+  ['cms','◉','CMS','Тема, меню, редиректы','CMS','content:read'],
+  ['seo','◉','AI SEO Assistant','Аудит страниц','CMS','content:read'],
+  ['translations','◉','AI Translation Studio','Локализации','CMS','content:read'],
+  ['forum/settings','◉','Настройки сообщества','Политика форума','Настройки','forum:acp:settings'],
+  ['forum/themes','◉','Оформление форума','Темы и дизайн','Настройки','forum:acp:settings'],
+  ['integrations','◉','Интеграции','Подключения и секреты','Настройки','integrations:read'],
+  ['extensions','◉','Extensions','Runtime и lifecycle','Настройки','extensions:read'],
+  ['privacy','◉','Приватность','Согласия и политика','Безопасность','privacy:read'],
+  ['forum/policy_history','◉','История политики','Аудит изменений','Безопасность','forum:acp:audit'],
+  ['forum/audit','◉','Аудит форума','Журнал операций','Безопасность','*'],
+  ['forum/maintenance','◉','Обслуживание форума','Диагностика и очистка','Эксплуатация','forum:acp:maintenance'],
+  ['system','◉','System','Диагностика API/runtime','Эксплуатация','system:read'],
+  ['diagnostics','◉','AI CMS Diagnostics','Диагностика CMS','Эксплуатация','system:read'],
+  ['search','◉','Search','Поиск и reindex','Эксплуатация','system:read'],
+  ['updates','◉','Updates','Maintenance и rollback','Эксплуатация','updates:read'],
+  ['forum/imports','◉','Миграции форума','XenForo и Invision','Миграции','*'],
+  ['migration','◉','Migration Center','DLE / WordPress','Миграции','migration:read'],
+  ['import-export','◉','Import/export','Пакеты, diff, run','Миграции','imports:read'],
 ]
+const forumRoute = route => route === 'forum' || route.startsWith('forum/')
+function routeAllowed(route) {
+  if (!state.token || state.identity?.suspended) return false
+  const entry = nav.find(n=>n[0]===route)
+  if (!entry) return false
+  const scope = entry[5]
+  if (scope === 'forum') return ['*','forum:acp:settings','forum:acp:members','forum:acp:audit','forum:acp:maintenance'].some(integrationScope)
+  if (scope === 'identity') return true
+  return !scope || integrationScope(scope)
+}
+function navigationHtml() {
+  const allowed=nav.filter(([id])=>routeAllowed(id));const groups=[...new Set(allowed.map(n=>n[4]))]
+  return groups.map(group=>`<section class="platform-nav-group"><h2>${escapeHtml(group)}</h2>${allowed.filter(n=>n[4]===group).map(([id,icon,label])=>`<button class="${state.route===id?'active':''}" ${state.route===id?'aria-current="page"':''} data-route="${id}"><span>${escapeHtml(label)}</span></button>`).join('')}</section>`).join('')
+}
+
 
 const state = {
   route: location.hash.replace(/^#\/?/, '') || 'dashboard',
@@ -192,21 +228,22 @@ async function bootstrap() {
     state.csrf = state.identity?.csrf_token || ''
     state.token = state.identity ? 'session' : ''
   } catch {}
-  if (!state.identity && state.token) {
-    try {
-      const payload = await api('/admin/bootstrap')
-      state.identity = dataOf(payload)?.identity || null
-    } catch {}
-  }
+
   await routeLoad(state.route)
   render()
 }
 
 async function routeLoad(route) {
   if (route === 'login') return
-  if (!state.token && route !== 'dashboard') return
+  if (!routeAllowed(route)) return
   try {
-    if (route === 'dashboard') await Promise.allSettled([loadSilent('dashboard', '/admin/dashboard'), loadSilent('bootstrap', '/admin/bootstrap')])
+    if (route === 'dashboard') {
+      delete state.cache.dashboard; delete state.cache.forumOverview
+      const tasks=[]
+      if(integrationScope('system:read'))tasks.push(loadSilent('dashboard','/admin/dashboard'))
+      if(integrationScope('*'))tasks.push(loadSilent('forumOverview','/forum/acp?view=overview'))
+      await Promise.allSettled(tasks)
+    }
     if (route === 'content-types') await loadSilent('contentTypes', '/content-types')
     if (route === 'content') await Promise.allSettled([loadSilent('contentTypes', '/content-types'), loadSilent('entries', `/content/${encodeURIComponent(state.forms.entryType)}?status=${encodeURIComponent(state.forms.entryStatus)}&q=${encodeURIComponent(state.forms.entrySearch)}&limit=50&offset=${state.forms.entryOffset}`), ...(state.forms.entryType === 'pages' ? [loadSilent('pageParents', `/content/pages?status=all&limit=50&q=${encodeURIComponent(state.forms.parentSearch)}`)] : [])])
     if (route === 'media') await loadSilent('media', mediaQuery())
@@ -271,18 +308,28 @@ async function loadSilent(name, path, options = {}) {
 }
 
 function go(route) {
-  state.route = route
+  if (state.route === route && location.hash === '#/'+route) { void navigateCurrent(); return }
   location.hash = '#/' + route
-  routeLoad(route).then(render)
 }
 
-window.addEventListener('hashchange', () => {
-  state.route = location.hash.replace(/^#\/?/, '') || 'dashboard'
-  routeLoad(state.route).then(render)
-})
+// Clear the old screen immediately. A delayed response cannot render an old route.
+let navigationSerial=0
+async function navigateCurrent() {
+  const serial=++navigationSerial
+  state.route=location.hash.replace(/^#\/?/,'')||'dashboard'
+  app.innerHTML='<div class="card" role="status">Загрузка раздела…</div>'
+  if(state.token && state.route!=='login') {
+    try { const identity=dataOf(await api('/auth/me')); if(serial!==navigationSerial)return; if(state.identity?.user_id!==identity?.user_id||JSON.stringify(state.identity?.scopes)!==JSON.stringify(identity?.scopes))state.cache={}; state.identity=identity; state.csrf=identity?.csrf_token||'' }
+    catch { if(serial!==navigationSerial)return; state.identity=null; state.token=''; state.csrf=''; state.cache={} }
+  }
+  if(serial!==navigationSerial)return
+  await routeLoad(state.route)
+  if(serial===navigationSerial)render()
+}
+window.addEventListener('hashchange', navigateCurrent)
 
 function shell(title, subtitle, body, toolbar = '') {
-  return `<div class="shell"><aside class="sidebar"><div class="brand"><div class="brand-mark">CE</div><div><div class="brand-title">CajeerEngine</div><div class="brand-sub">Admin UI ${ADMIN_VERSION}</div></div></div><nav class="nav">${nav.filter(([id]) => (id !== 'migration' || integrationScope('migration:read')) && (id !== 'integrations' || integrationScope('integrations:read')) && (id !== 'privacy' || integrationScope('privacy:read')) && (!['analytics-hub','analytics-insights'].includes(id) || integrationScope('analytics:read')) && (id !== 'diagnostics' || integrationScope('system:read')) && (!['tracking','analytics-events'].includes(id) || integrationScope('tracking:read'))).map(([id, icon, label]) => `<button class="${state.route === id ? 'active' : ''}" data-route="${id}"><span class="emoji">${icon}</span><span>${label}</span></button>`).join('')}</nav><div class="footer-note">API: <span class="code-inline">${API_BASE}</span><br>${state.identity ? `User: ${escapeHtml(state.identity.email || state.identity.name || state.identity.user_id || 'auth')}` : 'Без активной сессии'}</div></aside><main class="main"><div class="topbar"><div><h1>${escapeHtml(title)}</h1><p>${escapeHtml(subtitle || '')}</p></div><div class="toolbar">${toolbar}<button class="btn secondary" data-action="refresh">Обновить</button>${state.token ? '<button class="btn ghost" data-action="logout">Выйти</button>' : '<button class="btn" data-route="login">Войти</button>'}</div></div>${noticeHtml()}${state.loading ? '<div class="notice">Загрузка...</div>' : ''}${body}</main></div>`
+  return `<div class="shell"><aside class="sidebar"><div class="brand"><div class="brand-mark">CE</div><div><div class="brand-title">CajeerEngine</div><div class="brand-sub">Forum ${FORUM_EDITION} · Core ${ADMIN_VERSION}</div></div></div><nav class="nav">${navigationHtml()}</nav><div class="footer-note">API: <span class="code-inline">${API_BASE}</span><br>${state.identity ? `User: ${escapeHtml(state.identity.email || state.identity.name || state.identity.user_id || 'auth')}` : 'Без активной сессии'}</div></aside><main class="main"><div class="topbar"><div><h1>${escapeHtml(title)}</h1><p>${escapeHtml(subtitle || '')}</p></div><div class="toolbar">${toolbar}<button class="btn secondary" data-action="refresh">Обновить</button>${state.token ? '<button class="btn ghost" data-action="logout">Выйти</button>' : '<button class="btn" data-route="login">Войти</button>'}</div></div>${noticeHtml()}${state.loading ? '<div class="notice">Загрузка...</div>' : ''}${body}</main></div>`
 }
 
 function noticeHtml() {
@@ -291,12 +338,13 @@ function noticeHtml() {
 }
 
 function render() {
-  if (state.route === 'login' || (!state.token && location.hash.includes('login'))) return renderLogin()
+  if (state.route === 'login' || !state.token) return renderLogin()
+  if (!routeAllowed(state.route)) { app.innerHTML=shell('Доступ ограничен','Выберите доступный раздел','<div class="notice error" role="alert">Недостаточно прав или раздел не существует.</div>'); bindCommon(); return }
   const item = nav.find(([id]) => id === state.route) || nav[0]
   const title = item[2]
   const subtitle = item[3]
   let body = ''
-  if (state.route === 'forum') body = '<div id="forum-acp"></div>'
+  if (forumRoute(state.route)) body = '<div id="forum-acp"></div>'
   else if (state.route === 'dashboard') body = dashboardView()
   else if (state.route === 'content-types') body = contentTypesView()
   else if (state.route === 'content') body = contentView()
@@ -331,7 +379,7 @@ function render() {
   bindKnowledge()
   bindKnowledgeChat()
   bindSupport()
-  if (state.route === 'forum' && state.token) void forumAcp.mount()
+  if (forumRoute(state.route) && state.token) void forumAcp.mount(state.route.split('/')[1] || null, id=>go('forum/'+id))
 }
 
 function renderLogin() {
@@ -345,20 +393,20 @@ function renderLogin() {
       if (!session.csrf_token) throw new Error('API не вернул CSRF token.')
       state.token = 'session'
       state.csrf = session.csrf_token
-      state.identity = session.user || null
+      state.identity = dataOf(await api('/auth/me'))
+      state.csrf = state.identity?.csrf_token || session.csrf_token
       state.cache = {}; state.forms.hubPeriod = null; state.forms.webmasterResult = null
-      state.route = 'dashboard'
-      location.hash = '#/dashboard'
-      await routeLoad('dashboard')
-      setNotice('ok', 'Вход выполнен.')
+      const requested=state.route
+      const dest=routeAllowed(requested)?requested:'dashboard'
+      go(dest)
     } catch (error) { setNotice('error', error.message, error.payload) }
   })
 }
 
 function bindCommon() {
   document.querySelectorAll('[data-route]').forEach((button) => button.addEventListener('click', () => go(button.dataset.route)))
-  document.querySelectorAll('[data-action="refresh"]').forEach((button) => button.addEventListener('click', () => routeLoad(state.route).then(render)))
-  document.querySelectorAll('[data-action="logout"]').forEach((button) => button.addEventListener('click', async () => { try { await api('/auth/logout', { method: 'POST', body: '{}' }) } catch (error) { setNotice('error', error.message); return } state.token = ''; state.csrf = ''; state.identity = null; state.cache = {}; state.forms.hubPeriod = null; state.forms.webmasterResult = null; state.forms.entry=defaultEntry();for(const key of Object.keys(sessionStorage))if(key.startsWith('ce-editor-draft:'))sessionStorage.removeItem(key);localStorage.removeItem(TOKEN_KEY); go('login') }))
+  document.querySelectorAll('[data-action="refresh"]').forEach((button) => button.addEventListener('click', () => { state.cache={}; void navigateCurrent() }))
+  document.querySelectorAll('[data-action="logout"]').forEach((button) => button.addEventListener('click', async () => { try { await api('/auth/logout', { method: 'POST', body: '{}' }) } catch (error) { setNotice('error', error.message); return } forumAcp.reset(); state.token = ''; state.csrf = ''; state.identity = null; state.cache = {}; state.forms.hubPeriod = null; state.forms.webmasterResult = null; state.forms.entry=defaultEntry();for(const key of Object.keys(sessionStorage))if(key.startsWith('ce-editor-draft:'))sessionStorage.removeItem(key);localStorage.removeItem(TOKEN_KEY); go('login') }))
   document.querySelectorAll('[data-json]').forEach((el) => el.addEventListener('click', () => navigator.clipboard?.writeText(el.dataset.json || '')))
 }
 
@@ -903,10 +951,10 @@ function bindAi() {
 }
 
 function dashboardView() {
-  const dashboard = dataOf(state.cache.dashboard, {})
-  const cards = dashboard.cards || []
-  const bootstrap = dataOf(state.cache.bootstrap, {})
-  return `<div class="grid cards">${cards.map((card) => `<div class="card kpi"><div class="kpi-label">${escapeHtml(card.label)}</div><div class="kpi-value">${escapeHtml(card.value)}</div><span class="badge ${card.status || 'ok'}">${escapeHtml(card.status || 'ok')}</span></div>`).join('') || '<div class="card"><h2>Admin API</h2><p>Нажмите “Обновить”, чтобы получить dashboard.</p></div>'}</div><div class="grid two"><div class="card"><h2>Продукт</h2><p>Production static SPA с CRUD-экранами, авторизацией, route guards и обработкой 401/403.</p><div class="status-line"><span class="badge ok">static assets</span><span class="badge ok">Bearer auth</span><span class="badge ok">CMS CRUD</span><span class="badge ok">media upload</span></div></div><div class="card"><h2>Bootstrap</h2><pre class="json">${escapeHtml(JSON.stringify(bootstrap.app || bootstrap, null, 2))}</pre></div></div>`
+  const section=(label,payload,items)=>`<section class="card"><h2>${label}</h2>${payload?.error?'<p class="notice error">'+escapeHtml(payload.error.message)+'</p>':payload?`<div class="grid cards">${items.map(([name,value])=>`<div class="card kpi"><div class="kpi-label">${escapeHtml(name)}</div><div class="kpi-value">${escapeHtml(value)}</div></div>`).join('')}</div>`:'<p>Данные недоступны.</p>'}</section>`
+  const core=state.cache.dashboard, forum=state.cache.forumOverview
+  const labels={users:'Участники',active_users:'Активные',boards:'Разделы',threads:'Темы',posts:'Сообщения',reports:'Открытые жалобы',pending:'На проверке',attachments:'Вложения'}
+  return `<div class="card"><h2>Единый центр управления</h2><p>Forum ${FORUM_EDITION} · Core ${ADMIN_VERSION}. Одна защищённая сессия, доступ к действующим инструментам согласно полномочиям.</p><a href="/forum">Открыть форум</a></div>${integrationScope('*')?section('Сообщество',forum,Object.entries(dataOf(forum,{})?.counts||{}).map(([k,v])=>[labels[k]||k,v])):''}${integrationScope('system:read')?section('Ядро',core,(dataOf(core,{})?.cards||[]).map(c=>[c.label,c.value])):''}<section class="card"><h2>Доступные инструменты</h2><div class="platform-shortcuts">${nav.filter(n=>n[0]!=='dashboard'&&routeAllowed(n[0])).map(([id,,label,desc])=>`<a class="btn secondary" href="#/${id}" title="${escapeHtml(desc)}">${escapeHtml(label)}</a>`).join('')||'<p>Административные полномочия отсутствуют.</p>'}</div></section>`
 }
 
 function contentTypesView() {
@@ -1531,18 +1579,29 @@ function bindImportExport() {
   document.querySelector('[data-action="refresh-import"]')?.addEventListener('click',()=>run(async()=>{await routeLoad('import-export');render()}))
 }
 
+let opsAuto=false, opsPending=false
 function systemView() {
   const r=state.cache.operations
   if(!r || r.error)return `<section class="card"><h2>Эксплуатация</h2><p>${escapeHtml(r?.error?.message||'Загрузка диагностики...')}</p><button class="btn secondary" data-ops-refresh>Обновить</button></section>`
   const rows=Object.entries(r.checks||{}).map(([name,c])=>`<tr><td>${escapeHtml(name)}</td><td><span class="badge ${c.ok?'success':'danger'}">${c.ok?'OK':'Проблема'}</span></td><td>${escapeHtml(String(c.latency_ms??'—'))} мс</td><td>${escapeHtml(JSON.stringify(Object.fromEntries(Object.entries(c).filter(([k])=>!['ok','latency_ms'].includes(k)))))}</td></tr>`).join('')
-  return `<section class="card"><h2>Эксплуатация · ${escapeHtml(r.status)}</h2><p>Проверено: ${escapeHtml(r.time||'')}</p><button class="btn secondary" data-ops-refresh>Обновить</button><div class="grid two"><div><h3>Диск</h3><p>${r.disk?.free_bytes==null?'Недоступно':(r.disk.free_bytes/1073741824).toFixed(2)+' ГиБ свободно'}</p></div><div><h3>Предупреждения</h3>${(r.alerts||[]).map(a=>`<p>${escapeHtml(a)}</p>`).join('')||'<p>Нет предупреждений</p>'}</div></div><h3>HTTP · накопленные метрики</h3><p>Запросы: ${escapeHtml(String(r.http?.requests??0))} · 5xx: ${escapeHtml(String(r.http?.errors_5xx??0))} · среднее: ${escapeHtml(String(r.http?.average_ms??"—"))} мс · p95 bucket: ${escapeHtml(String(r.http?.p95_bucket_ms??"—"))} мс</p><h3>Readiness</h3>${Object.entries(r.readiness?.checks||{}).map(([k,v])=>`<p>${escapeHtml(k)}: ${v?'OK':'FAIL'}</p>`).join('')}<div class="table-wrap"><table><thead><tr><th>Компонент</th><th>Статус</th><th>Задержка</th><th>Детали</th></tr></thead><tbody>${rows}</tbody></table></div></section>`
+  return `<section class="card"><h2>Эксплуатация · ${escapeHtml(r.status)}</h2><p>Проверено: ${escapeHtml(r.time||'')}</p><button class="btn secondary" data-ops-refresh>Обновить</button> <label><input type="checkbox" data-ops-auto ${opsAuto?'checked':''}> Автообновление (30 с)</label><div class="grid two"><div><h3>Диск</h3><p>${r.disk?.free_bytes==null?'Недоступно':(r.disk.free_bytes/1073741824).toFixed(2)+' ГиБ свободно'}</p></div><div><h3>Предупреждения</h3>${(r.alerts||[]).map(a=>`<p>${escapeHtml(a)}</p>`).join('')||'<p>Нет предупреждений</p>'}</div></div>${forumOperationsView(r)}<h3>HTTP · накопленные метрики</h3><p>Запросы: ${escapeHtml(String(r.http?.requests??0))} · 5xx: ${escapeHtml(String(r.http?.errors_5xx??0))} · среднее: ${escapeHtml(String(r.http?.average_ms??"—"))} мс · p95 bucket: ${escapeHtml(String(r.http?.p95_bucket_ms??"—"))} мс</p><h3>Readiness</h3>${Object.entries(r.readiness?.checks||{}).map(([k,v])=>`<p>${escapeHtml(k)}: ${v?'OK':'FAIL'}</p>`).join('')}<div class="table-wrap"><table><thead><tr><th>Компонент</th><th>Статус</th><th>Задержка</th><th>Детали</th></tr></thead><tbody>${rows}</tbody></table></div></section>`
 }
-document.addEventListener('click',async e=>{if(e.target.closest('[data-ops-refresh]')){await routeLoad('system');render()}})
+function forumOperationsView(r){
+  const d=r.checks?.forum_database,c=r.checks?.forum_cache
+  const val=x=>escapeHtml(x??'—')
+  const queues=Object.entries(d?.queues||{}).map(([name,q])=>`<tr><td>${val(name)}</td><td>${q.capped?'≥ ':''}${val(q.count)}</td><td>${val(q.oldest_age_seconds)}</td></tr>`).join('')
+  const http=Object.entries(r.forum_http||{}).map(([name,h])=>`<tr><td>${val(name)}</td><td>${val(h.requests)}</td><td>${val(h.errors_5xx)}</td><td>${val(h.p50_bucket_ms)}</td><td>${val(h.p95_bucket_ms)}</td><td>${val(h.p99_bucket_ms)}</td></tr>`).join('')
+  return `<h3>Очереди форума</h3>${queues?table(['Очередь','Записей','Возраст, с'],[queues]):'<p>Метрики недоступны.</p>'}<div class="grid two"><div><h3>PostgreSQL</h3>${d?.postgres?.connections!=null?`<p>Соединения: ${val(d.postgres.connections)} / ${val(d.postgres.max_connections)}</p><p>Ожидают блокировки: ${val(d.postgres.lock_waiters)}</p>`:'<p>Метрики недоступны.</p>'}</div><div><h3>Redis форума</h3>${c?.stats?`<p>Hit: ${val(c.stats.hit)} · Miss: ${val(c.stats.miss)} · Coalesced: ${val(c.stats.coalesced)}</p><p>Память, байт: ${val(c.used_memory_bytes)}</p>`:`<p>${c?.enabled===false?'Отключён':'Метрики недоступны'}</p>`}</div></div><h3>HTTP форума</h3>${http?table(['Маршрут','Запросы','5xx','p50 мс','p95 мс','p99 мс'],[http]):'<p>Метрики недоступны.</p>'}`
+}
+async function refreshOperations(){if(opsPending||state.route!=='system'||!routeAllowed('system'))return;opsPending=true;const serial=navigationSerial;try{await routeLoad('system');if(state.route==='system'&&serial===navigationSerial)render()}finally{opsPending=false}}
+document.addEventListener('click',e=>{if(e.target.closest('[data-ops-refresh]'))void refreshOperations()})
+document.addEventListener('change',e=>{if(e.target.matches('[data-ops-auto]'))opsAuto=e.target.checked})
+setInterval(()=>{if(opsAuto&&!document.hidden)void refreshOperations()},30000)
 
 // Forum ACP: same-origin session and CSRF transport provided by the existing SPA.
 const forumAcp = (() => {
   let tab = 'overview', page = 1, query = '', filter = '', serial = 0, caps = {}, nativePreset = '30', nativeFrom = '', nativeUntil = '', nativeFocus = 'total', engagementDays = '30', nativeNotice = ''
-  const tabs = [['overview','Обзор'],['structure','Структура и ACL'],['users','Участники'],['groups','Группы'],['threads','Обсуждения'],['posts','Сообщения'],['moderation','Модерация'],['attachments','Вложения'],['audit','Аудит'],['analytics','Аналитическая панель'],['ai','AI-помощник'],['ai_actions','AI-действия'],['settings','Настройки сообщества'],['themes','Оформление форума'],['policy_history','История политики'],['maintenance','Обслуживание'],['delegation','Делегирование'],['imports','Миграции']]
+  const tabs = [['overview','Обзор'],['structure','Структура и ACL'],['users','Участники'],['groups','Группы'],['threads','Обсуждения'],['posts','Сообщения'],['moderation','Модерация'],['support','Поддержка форума'],['attachments','Вложения'],['audit','Аудит'],['analytics','Аналитическая панель'],['ai','AI-помощник'],['ai_actions','AI-действия'],['settings','Настройки сообщества'],['themes','Оформление форума'],['policy_history','История политики'],['maintenance','Обслуживание'],['delegation','Делегирование'],['imports','Миграции']]
   const el = (tag, text, cls) => { const n=document.createElement(tag); if(text!=null)n.textContent=text; if(cls)n.className=cls; return n }
   const add = (p,...nodes) => { p.append(...nodes); return p }
   const card = title => add(el('section',null,'card'),el('h2',title))
@@ -1563,13 +1622,17 @@ const forumAcp = (() => {
   const scopes=['node:view','thread:read','thread:create','post:reply','post:edit_own','post:edit_any','reaction:use','watch:use','report:create','thread:moderate']
   const picker = (name,rows,value='',empty='—') => select(name,[['',empty],...rows.map(r=>[r.id,r.name||r.title||r.id])],value)
   const reset = () => {page=1;query='';filter=''}
-  async function mount(){
+  let navigateTab=null
+  async function mount(selected, navigate){
+    if(navigate && !selected) selected='overview'
+    if(selected && selected!==tab){tab=selected;reset()}
+    if(navigate)navigateTab=navigate
     const root=document.getElementById('forum-acp');if(!root)return;const ticket=++serial
     root.replaceChildren();const bar=el('div',null,'toolbar');root.append(bar)
     const body=el('div');root.append(body);body.append(el('p','Загрузка…'))
     try{
       // Authoritative gate on every mount; never display retained data after logout/role change.
-      const access=await list('access');if(ticket!==serial||!root.isConnected)return;caps=access.capabilities;const available=tabs.filter(([id])=>caps.admin||(id==='users'&&caps.members)||(['settings','themes','analytics','ai','ai_actions'].includes(id)&&caps.settings)||(id==='policy_history'&&caps.audit)||(id==='maintenance'&&caps.maintenance));if(!available.length)throw new Error('Недостаточно прав.');if(!available.some(([id])=>id===tab)){tab=available[0][0];reset()}for(const [id,title] of available)bar.append(action(title,()=>{tab=id;reset();return mount()},tab===id?'':'secondary'));body.replaceChildren();const overview=tab==='overview'?await list('overview'):null;if(ticket!==serial||!root.isConnected)return;
+      const access=await list('access');if(ticket!==serial||!root.isConnected)return;caps=access.capabilities;const available=tabs.filter(([id])=>caps.admin||(['users','support'].includes(id)&&caps.members)||(['settings','themes','analytics','ai','ai_actions'].includes(id)&&caps.settings)||(id==='policy_history'&&caps.audit)||(id==='maintenance'&&caps.maintenance));if(!available.length)throw new Error('Недостаточно прав.');if(!available.some(([id])=>id===tab)){if(navigateTab&&tab!=='overview')throw new Error('Недостаточно прав.');tab=available[0][0];reset();if(navigateTab){navigateTab(tab);return}}if(!navigateTab)for(const [id,title] of available)bar.append(action(title,()=>{tab=id;reset();return mount()},tab===id?'':'secondary'));body.replaceChildren();const overview=tab==='overview'?await list('overview'):null;if(ticket!==serial||!root.isConnected)return;
       if(tab==='overview'){const labels={users:'Участники',active_users:'Активные',boards:'Разделы',threads:'Темы',posts:'Сообщения',reports:'Открытые жалобы',pending:'На проверке',attachments:'Вложения'};const grid=el('div',null,'grid cards');for(const [key,val] of Object.entries(overview.counts))grid.append(add(card(labels[key]||key),el('div',val,'kpi-value')));body.append(grid,add(card('Рабочие инструменты'),link('Открыть форум','/forum'),el('p','Структура, участники, группы, публикации и модерация управляются существующими сервисами форума.')));return}
       if(tab==='analytics')return await nativeAnalytics(body,ticket)
       if(tab==='ai')return await aiSettings(body,ticket)
@@ -1583,8 +1646,27 @@ const forumAcp = (() => {
       if(tab==='structure')return await structure(body,ticket)
       if(tab==='groups')return await groups(body,ticket)
       if(tab==='moderation')return await moderation(body,ticket)
+      if(tab==='support')return await supportCenter(body,ticket)
       return await records(body,ticket)
     }catch(e){if(ticket===serial&&root.isConnected){body.replaceChildren();error(body,e)}}
+  }
+  async function supportCenter(body,ticket){
+    const queue=card('Очередь обращений форума'), detail=card('Обращение'), faq=card('Редактор FAQ');body.append(queue,detail,faq)
+    const filter=select('status',[['open','Открытые'],['waiting','Ожидающие'],['resolved','Закрытые'],['all','Все']],'open'), rows=el('div'), faqRows=el('div');queue.append(field('Статус',filter),rows);faq.append(faqRows)
+    let revision=0
+    const alive=()=>ticket===serial&&body.isConnected
+    const show=async id=>{const seq=++revision;const view=await call('/support/tickets/'+encodeURIComponent(id));if(!alive()||seq!==revision)return;const t=view.ticket;detail.replaceChildren(el('h2',t.subject),el('p',t.status+' · ревизия '+t.revision));
+      for(const m of view.messages){const article=add(el('article',null,'platform-support-message'),el('strong',m.role),el('p',m.body));for(const ref of m.sources||[]){if(/^[a-f0-9-]{36}$/.test(ref.thread_id)&&/^[a-f0-9-]{36}$/.test(ref.post_id)&&Number.isSafeInteger(ref.page)&&ref.page>0)article.append(link(ref.title,`/forum/threads/${ref.thread_id}?page=${ref.page}#post-${ref.post_id}`))}detail.append(article)}
+      const mutate=async(path,data)=>{await call('/acp/support/tickets/'+encodeURIComponent(id)+path,'POST',{...data,expected_revision:Number(t.revision)});if(alive()){await show(id);await refreshQueue()}}
+      if(t.status!=='resolved')detail.append(form([field('Ответ оператора',area('message'))],'Отправить сообщение',x=>mutate('/reply',x)))
+      for(const [key,label] of [['claim','Взять в работу'],['reopen','Вернуть в очередь'],['resolve','Закрыть обращение']])detail.append(action(label,()=>{if(confirm(label+'?'))return mutate('/action',{action:key})}))
+    }
+    let queueSerial=0
+    const refreshQueue=async()=>{const seq=++queueSerial;const data=await call('/acp/support/tickets?'+new URLSearchParams({status:filter.value}));if(!alive()||seq!==queueSerial)return;rows.replaceChildren(...data.map(t=>action(t.subject+' · '+t.status,()=>show(t.id))));if(!data.length)rows.append(el('p','Очередь пуста.'))}
+    filter.addEventListener('change',()=>refreshQueue().catch(e=>error(queue,e)))
+    const edit=entry=>{const box=card(entry?'Изменить FAQ':'Добавить FAQ');faq.append(box);const published=input('published','','checkbox');published.checked=!!Number(entry?.published||0);box.append(form([field('Вопрос',input('question',entry?.question)),field('Ответ',area('answer',entry?.answer)),field('Опубликован',published),field('Порядок',input('sort_order',entry?.sort_order??100,'number'))],'Сохранить FAQ',async x=>{await call('/acp/support/faqs'+(entry?'/'+encodeURIComponent(entry.id):''),entry?'PUT':'POST',{question:x.question,answer:x.answer,published:published.checked,sort_order:Number(x.sort_order),...(entry?{expected_revision:Number(entry.revision)}:{})});box.remove();await refreshFaq()}),action('Отмена',()=>box.remove()))}
+    const refreshFaq=async()=>{const data=await call('/acp/support/faqs');if(!alive())return;faqRows.replaceChildren(...data.map(item=>add(el('div',null,'platform-support-message'),el('strong',item.question),el('p',Number(item.published)?'Опубликован':'Черновик'),action('Изменить',()=>edit(item)),action('Удалить',async()=>{if(confirm('Удалить FAQ?')){await call('/acp/support/faqs/'+encodeURIComponent(item.id),'DELETE',{expected_revision:Number(item.revision)});await refreshFaq()}},'danger'))))}
+    faq.append(action('Добавить FAQ',()=>edit(null)));await Promise.all([refreshQueue(),refreshFaq()])
   }
   async function aiSettings(body,ticket){
     const data=await call('/acp/ai');if(ticket!==serial)return;
@@ -2016,8 +2098,8 @@ const forumAcp = (() => {
     if(view==='audit')c.append(tableDom(['Событие','Исполнитель','Дата'],rows.map(r=>[r.event,r.actor_id,r.created_at])));if(!rows.length)c.append(el('p','Нет записей.'));c.append(add(el('div',null,'toolbar'),...(page>1?[action('Назад',()=>{page--;return mount()})]:[]),el('span','Страница '+d.page),...(d.has_more&&page<10000?[action('Далее',()=>{page++;return mount()})]:[])));body.append(detail)
   }
   async function editPost(detail,r){detail.replaceChildren();const c=card('Редактировать сообщение');detail.append(c);const {post}=await list('post',{id:r.id});if(!c.isConnected)return;c.append(form([field('Текст',area('body',post.body)),field('Формат',select('body_format',[['plain','Текст'],['markdown','Markdown'],['bbcode','BBCode']],post.body_format)),field('Причина',area('edit_reason'))],'Сохранить сообщение',x=>save('/posts/'+post.id,'PATCH',{...x,expected_revision:post.revision_number})),link('Открыть тему','/forum/threads/'+post.thread_id))}
-  async function member(detail,r){detail.replaceChildren();const c=card(r.name);detail.append(c);c.append(form([field('Имя',input('name',r.name)),field('Статус',select('status',[['active','Активен'],['pending','Ожидает'],['disabled','Отключён']],r.status))],'Сохранить участника',x=>{if(confirm('Изменить аккаунт '+r.name+'?'))return save('/acp/members/'+r.id,'PATCH',x)}),link('Профиль','/forum/members/'+r.id),link('Санкции','/forum/moderation/sanctions?user='+r.id));if(!caps.admin)return;c.append(action('Делегирование',()=>{tab='delegation';reset();return mount()}));const [g,m]=await Promise.all([call('/groups'),call('/members/'+r.id+'/groups')]);if(!c.isConnected)return;const primary=picker('primary_group_id',g,m.primary_group_id),secondary=el('select',null,'input');secondary.name='secondary';secondary.multiple=true;for(const row of g){const o=el('option',row.name);o.value=row.id;o.selected=m.secondary_group_ids.includes(row.id);secondary.append(o)}c.append(form([field('Основная группа',primary),field('Дополнительные группы (множественный выбор)',secondary)],'Назначить группы',(_x,f)=>save('/members/'+r.id+'/groups','PUT',{primary_group_id:primary.value,secondary_group_ids:[...f.elements.secondary.selectedOptions].map(o=>o.value).filter(id=>id!==primary.value)})),form([field('Очистить поле профиля',select('field',[['bio','Описание'],['signature','Подпись'],['avatar','Аватар'],['cover','Обложка']],'bio'))],'Очистить',x=>{if(confirm('Удалить содержимое поля?'))return save('/members/'+r.id+'/moderate-profile','POST',x)}))}
-  async function thread(detail,r){detail.replaceChildren();const c=card(r.title);detail.append(c);const d=await call('/threads/'+r.id);if(!c.isConnected)return;const t=d.thread||d;c.append(form([field('Префикс',input('prefix',t.prefix||'')),field('Теги через запятую',input('tags',(t.tags||d.tags||[]).map(x=>typeof x==='string'?x:x.name||x.tag).join(',')))],'Сохранить метаданные',x=>save('/threads/'+r.id+'/metadata','PUT',{prefix:x.prefix,tags:x.tags.split(',').map(s=>s.trim()).filter(Boolean)})),danger('Переместить тему в корзину','/threads/'+r.id+'/moderate','POST',{action:'delete',reason:'ACP moderation'}),action('Сообщения темы',()=>{tab='posts';page=1;query='';filter=r.id;return mount()}),link('Открыть обсуждение','/forum/threads/'+r.id))}
+  async function member(detail,r){detail.replaceChildren();const c=card(r.name);detail.append(c);c.append(form([field('Имя',input('name',r.name)),field('Статус',select('status',[['active','Активен'],['pending','Ожидает'],['disabled','Отключён']],r.status))],'Сохранить участника',x=>{if(confirm('Изменить аккаунт '+r.name+'?'))return save('/acp/members/'+r.id,'PATCH',x)}),link('Профиль','/forum/members/'+r.id),link('Санкции','/forum/moderation/sanctions?user='+r.id));if(!caps.admin)return;c.append(action('Делегирование',()=>{if(navigateTab)return navigateTab('delegation');tab='delegation';reset();return mount()}));const [g,m]=await Promise.all([call('/groups'),call('/members/'+r.id+'/groups')]);if(!c.isConnected)return;const primary=picker('primary_group_id',g,m.primary_group_id),secondary=el('select',null,'input');secondary.name='secondary';secondary.multiple=true;for(const row of g){const o=el('option',row.name);o.value=row.id;o.selected=m.secondary_group_ids.includes(row.id);secondary.append(o)}c.append(form([field('Основная группа',primary),field('Дополнительные группы (множественный выбор)',secondary)],'Назначить группы',(_x,f)=>save('/members/'+r.id+'/groups','PUT',{primary_group_id:primary.value,secondary_group_ids:[...f.elements.secondary.selectedOptions].map(o=>o.value).filter(id=>id!==primary.value)})),form([field('Очистить поле профиля',select('field',[['bio','Описание'],['signature','Подпись'],['avatar','Аватар'],['cover','Обложка']],'bio'))],'Очистить',x=>{if(confirm('Удалить содержимое поля?'))return save('/members/'+r.id+'/moderate-profile','POST',x)}))}
+  async function thread(detail,r){detail.replaceChildren();const c=card(r.title);detail.append(c);const d=await call('/threads/'+r.id);if(!c.isConnected)return;const t=d.thread||d;c.append(form([field('Префикс',input('prefix',t.prefix||'')),field('Теги через запятую',input('tags',(t.tags||d.tags||[]).map(x=>typeof x==='string'?x:x.name||x.tag).join(',')))],'Сохранить метаданные',x=>save('/threads/'+r.id+'/metadata','PUT',{prefix:x.prefix,tags:x.tags.split(',').map(s=>s.trim()).filter(Boolean)})),danger('Переместить тему в корзину','/threads/'+r.id+'/moderate','POST',{action:'delete',reason:'ACP moderation'}),action('Сообщения темы',()=>{tab='posts';page=1;query='';filter=r.id;if(navigateTab)return navigateTab('posts');return mount()}),link('Открыть обсуждение','/forum/threads/'+r.id))}
   async function moderation(body,ticket){const kind=filter||'report';const c=card('Очередь модерации');body.append(c);c.append(add(el('div',null,'toolbar'),action('Жалобы',()=>{filter='report';page=1;return mount()}),action('Предмодерация',()=>{filter='submission';page=1;return mount()}),action('Апелляции',()=>{filter='appeals';page=1;return mount()}),action('Корзина',()=>{filter='trash';page=1;return mount()}),action('Жалобы на переписки',()=>{filter='conversations';page=1;return mount()}),link('Полный центр модерации','/forum/moderation')));if(['appeals','trash','conversations'].includes(kind))return await moderationExtra(c,kind,ticket);const rows=await call('/moderation/queue?'+new URLSearchParams({kind,status:kind==='report'?'open':'pending',page:String(page)}));if(ticket!==serial)return;const detail=el('div');c.append(tableDom(['Дело','Приоритет','Действия'],rows.map(r=>[r.title||r.payload?.title||r.id,r.priority,action('Рассмотреть',async()=>{const path='/moderation/cases/'+kind+'/'+r.id;const d=await call(path),item=d.item;detail.replaceChildren();const box=card('Дело '+r.id);detail.append(box);box.append(el('p',item.reason||''),el('pre',item.snapshot_body||item.payload?.body||item.current_body||'','json'),el('pre',JSON.stringify(d.history,null,2),'json'));if(item.status===(kind==='report'?'open':'pending')){const advice=el('div'),render=async()=>{const result=await call(path+'/ai');advice.replaceChildren();if(!result.available){advice.append(el('p','AI-оценки нет или она устарела.'));return}if(result.revision_number!==item.revision_number){advice.append(el('p','Дело изменилось. Обновите карточку.'));return}const a=result.assessment;advice.append(el('h4','AI-рекомендация (не решение)'),el('p','Риск: '+a.risk+' · Предложение: '+a.recommendation),el('p',a.rationale),el('p','Признаки: '+a.flags.join(', ')));for(const quote of a.evidence||[])advice.append(el('blockquote',quote));};box.append(action('AI-анализ дела',async()=>{if(!confirm('Передать материал дела (возможно, неопубликованный или приватный) внешнему OpenAI? AI не применяет санкции.'))return;await call(path+'/ai','POST',{acknowledge_external_processing:true,include_non_public:true});await render()}),advice);await render()}const actions=kind==='report'?[['resolved','Рассмотреть'],['dismissed','Отклонить'],['deleted','Удалить и закрыть']]:[['approve','Одобрить'],['reject','Отклонить']];box.append(form([field('Решение',select('decision',actions,actions[0][0])),field('Причина',area('reason'))],'Применить',x=>{if(confirm('Применить решение?'))return save(path,'POST',{action:kind==='report'?'resolve':x.decision,...(kind==='report'?{disposition:x.decision}:{}),reason:x.reason,revision_number:item.revision_number})}),action('Назначить себя',()=>save(path,'POST',{action:'assign',assigned_to:state.identity.user_id||state.identity.id,revision_number:item.revision_number})))})])));c.append(add(el('div',null,'toolbar'),...(page>1?[action('Назад',()=>{page--;return mount()})]:[]),el('span','Страница '+page),...(rows.length===25?[action('Далее',()=>{page++;return mount()})]:[])));body.append(detail)}
   async function moderationExtra(c,kind,ticket){
     const path=kind==='appeals'?'/moderation/appeals':kind==='trash'?'/recycle-bin':'/conversation-reports';const result=await call(path+'?page='+page+(kind==='conversations'?'&status=open':''));if(ticket!==serial)return;const rows=kind==='trash'?result.items:result;
