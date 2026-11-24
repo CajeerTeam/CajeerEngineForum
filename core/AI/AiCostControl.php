@@ -51,7 +51,7 @@ final readonly class AiCostControl
     }
 
     /** The caller must already be in a DB transaction; throws before any provider call. */
-    public function hold(PDO $pdo, string $jobId, string $userId, string $module, array $status, int $tokenCeiling, int $expiresAt, ?int $now = null): void
+    public function hold(PDO $pdo, string $jobId, string $userId, string $module, array $status, int $tokenCeiling, int $expiresAt, ?int $now = null, ?int $outputCeiling = null): void
     {
         $now ??= time();
         if (!preg_match('/^(?:[a-f0-9]{32}|[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})$/D', $jobId) || $userId === '' || strlen($userId) > 80 || !preg_match('/^[a-z][a-z0-9_-]{1,39}$/D', $module)) {
@@ -61,6 +61,10 @@ final readonly class AiCostControl
         $model = (string)($status['model'] ?? '');
         if ($model === '' || strlen($model) > 80) throw new \InvalidArgumentException('Invalid AI model.');
         $amount = self::estimatedReserve($tokenCeiling, $rates);
+        if ($outputCeiling !== null) {
+            if ($outputCeiling < 0 || $outputCeiling > $tokenCeiling) throw new \InvalidArgumentException('Invalid output ceiling.');
+            $amount = max(1,self::charge($tokenCeiling-$outputCeiling,0,$outputCeiling,$rates));
+        }
         $day = gmdate('Y-m-d', $now); $month = gmdate('Y-m', $now);
         $this->reap($pdo, $now, 30);
         foreach (self::windows($userId, $day, $month, $status) as [$scope, $period, $limit]) {
@@ -105,6 +109,13 @@ final readonly class AiCostControl
         $row = $this->lease($pdo, $jobId);
         if ($row === null) return;
         $this->finish($pdo, $row, 0, 0, 0, 0, 'released');
+    }
+
+    /** A request may have reached the provider, but its usage could not be measured. */
+    public function chargeUnverified(PDO $pdo, string $jobId): void
+    {
+        $row = $this->lease($pdo, $jobId);
+        if ($row !== null) $this->finish($pdo,$row,(int)$row['reserved_micro_usd'],0,0,0,'unverified');
     }
 
     /** Crash recovery: reserve is counted pessimistically as unverified spend.

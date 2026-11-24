@@ -117,14 +117,13 @@ jobs:
           python3 tools/certification-evidence.py verify "$ARTIFACT_ROOT" --trusted-key "$pub"
 
           cat > "$RUNNER_TEMP/forum-release-notes.md" <<'NOTES'
-          ## CajeerEngineForum 1.3.10 — AI Privacy & Abuse Protection
+          ## CajeerEngineForum 1.3.11 — AI Performance & Reliability
 
-          Forum Edition 1.3.10 on CajeerEngine 2.1.0.
+          Forum Edition 1.3.11 on CajeerEngine 2.1.0.
 
-          - AI proposes changes to forum public copy or FAQ from live, permission-checked inputs; no automatic mutation.
-          - Actor-owned 15-minute proposals with exact before/after preview, live ACL/revision checks, separate approval and transactional audit.
-          - FAQ creation always starts unpublished; permissions, moderation and user roles cannot be modified through AI.
-          - Migration 0089; CI requires real PDO/provider-stub acceptance and Chromium/Firefox browser regression.
+          - Bounded database-wide FIFO admission, provider cooldown and conservative accounting for ambiguous failures.
+          - Worker recovers abandoned token and monetary leases; older chat turns are trimmed to fit the context limit.
+          - Migration 0091; CI requires real PDO acceptance and SQLite contention regression.
 
           Publication of signed artifacts is gated on successful CI, external staging approval,
           independently trusted signing keys and production change-control review.

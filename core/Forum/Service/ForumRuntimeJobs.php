@@ -29,6 +29,10 @@ final class ForumRuntimeJobs
         // SQL retention of abandoned search responses is independent of visitor traffic.
         $registry->register('forum.ai.search.cleanup',function(array $p,JobContext $ctx):void{
             if(!$this->db->tableExists('ce_forum_ai_conversations'))return;
+            $this->stats['ai_admission_cleaned']=(new ForumAiAdmission($this->db))->cleanup();
+            $ctx->heartbeat();
+            $cost=new \CajeerEngine\AI\AiCostControl($this->db,new \CajeerEngine\AI\AiSettings($this->db->config()->rootPath()));
+            $this->stats['ai_cost_recovered']=$this->db->transaction(fn(\PDO $pdo):int=>$cost->reap($pdo,time(),100));
             $total=0;
             do{$ctx->heartbeat();$n=ForumAiChat::pruneExpiredSearch($this->db,100);$total+=$n;}
             while($n===100 && $total<500);

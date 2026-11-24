@@ -6,7 +6,7 @@ on:
 permissions:
   contents: read
 env:
-  FORUM_CURRENT_VERSION: ${{ '1.3.10' }}
+  FORUM_CURRENT_VERSION: ${{ '1.3.11' }}
 concurrency:
   group: forum-ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -299,6 +299,10 @@ jobs:
         env:
           FORUM_TEST_DRIVER: sqlite
         run: php tools/forum-ai-privacy-acceptance.php
+      - name: Forum 1.3.11 AI reliability real PDO (sqlite)
+        env:
+          FORUM_TEST_DRIVER: sqlite
+        run: php tools/forum-ai-reliability-acceptance.php
       - run: php tools/forum-analytics-dashboard-regression.php
       - run: php tools/forum-engagement-regression.php
       - run: php tools/forum-analytics-hardening-regression.php
@@ -312,6 +316,7 @@ jobs:
       - run: python tools/forum-tests/analytics_rollup_sql_regression.py
       - run: python tools/forum-tests/ai_chat_sql_regression.py
       - run: python tools/forum-tests/ai_privacy_sql_regression.py
+      - run: python tools/forum-tests/ai_reliability_load.py
       - run: python tools/forum-tests/thread_ai_sql_regression.py
       - run: python tools/forum-tests/ai_search_sql_regression.py
       - run: php tools/forum-ai-search-unit-regression.php
@@ -484,6 +489,10 @@ jobs:
         env:
           FORUM_TEST_DRIVER: pgsql
         run: php tools/forum-ai-privacy-acceptance.php
+      - name: Forum 1.3.11 AI reliability real PDO (pgsql)
+        env:
+          FORUM_TEST_DRIVER: pgsql
+        run: php tools/forum-ai-reliability-acceptance.php
       - name: Knowledge sync real PostgreSQL FTS repair and search acceptance
         env:
           FORUM_TEST_DRIVER: pgsql
@@ -581,6 +590,10 @@ jobs:
         env:
           FORUM_TEST_DRIVER: mysql
         run: php tools/forum-ai-privacy-acceptance.php
+      - name: Forum 1.3.11 AI reliability real PDO (mysql)
+        env:
+          FORUM_TEST_DRIVER: mysql
+        run: php tools/forum-ai-reliability-acceptance.php
       - name: Knowledge sync real MySQL/MariaDB FTS repair and search acceptance
         env:
           FORUM_TEST_DRIVER: mysql

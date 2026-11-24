@@ -1,3 +1,10 @@
+## [1.3.11] - 2026-11-24
+
+### AI Performance & Reliability
+- Durable bounded FIFO admission across forum AI features, four concurrent generations, up to sixteen queued requests, short wait and provider-wide cooldown. No queued prompt storage or automatic replay of potentially billed requests.
+- Conservative accounting for ambiguous transport failures, expired token and money lease recovery in the worker, and automatic trimming of oldest history turns to keep the current request within its context cap.
+- Migration `0091_forum_ai_reliability.sql` for all three database drivers; real PDO acceptance and SQLite contention tests. External CI/staging required.
+
 ## [1.3.10] - 2026-11-24
 
 ### AI Privacy & Abuse Protection
