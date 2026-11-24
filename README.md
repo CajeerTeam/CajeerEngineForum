@@ -1,6 +1,6 @@
 # CajeerEngine Forum Edition
 
-**Forum Edition 1.4.10 — Full Platform Integration & E2E**, built on CajeerEngine 2.1.0. Publication requires a passing `forum-required` gate and verified signed CI certification tied to the exact commit and release artifacts.
+**Forum Edition 1.4.11 — Production Qualification & Release Candidate**, built on CajeerEngine 2.1.0. Publication requires a passing `forum-required` gate, physical 10k/100k/1M soak and both interrupted-update checkpoints, tied to the exact signed release and commit. See [qualification procedure](docs/forum-production-qualification-1.4.11.md).
 
 See [Full Platform Integration & E2E](docs/forum-platform-e2e-1.4.10.md) for the cross-subsystem acceptance suite. See [Automated Deployment & Recovery](docs/forum-deployment-recovery-1.4.9.md) for the deployment and recovery procedures.
 

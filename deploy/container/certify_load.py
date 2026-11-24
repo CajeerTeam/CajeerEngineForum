@@ -15,6 +15,8 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[2]
 PROFILES = {'10k': (10000, 300), '100k': (100000, 1800), '1m-soak': (1000000, 86400)}
+# Fixed policy for 1.4.11 and newer. Reports cannot select weaker limits.
+LIMITS = {'10k': (32, 30, 20), '100k': (64, 50, 40), '1m-soak': (200, 50, 40)}
 ROUTES = ('ssr', 'api', 'search', 'acp', 'corpus_ssr', 'corpus_search')
 CHECKS = ('identity_and_fixture', 'corpus_seeded', 'concurrent_publications', 'load_thresholds',
           'cpu_ram_io_postgres_telemetry', 'memory_budget', 'queue_delivery_latency',
@@ -35,6 +37,20 @@ def number(value):
     return type(value) in (int, float) and math.isfinite(value) and value >= 0
 
 
+def current_policy(version):
+    return tuple(map(int, version.split('-')[0].split('.'))) >= (1, 4, 11)
+
+
+def validate_thresholds(name, thresholds):
+    clients, rate, minimum = LIMITS[name]
+    for key, bound in {'clients': clients, 'target_rps': rate, 'minimum_rps': minimum}.items():
+        require(number(thresholds.get(key)) and thresholds[key] >= bound, name+': weakened '+key)
+    for key, bound in {'max_p95_ms': 500, 'max_error_rate': .001,
+                       'max_memory_growth_mib': 512, 'max_queue_p95_ms': 30000}.items():
+        require(number(thresholds.get(key)) and thresholds[key] <= bound, name+': weakened '+key)
+    require(thresholds['minimum_rps'] <= thresholds['target_rps'], name+': invalid offered rate')
+
+
 def validate_report(path, name, commit, artifact_sha, version):
     doc = json.loads(Path(path).read_text())
     prefix = name + ': '
@@ -46,10 +62,19 @@ def validate_report(path, name, commit, artifact_sha, version):
         require(all(doc.get('checks', {}).get(check) is True for check in CHAOS_CHECKS), prefix+'missing real chaos recovery evidence')
     posts, seconds = PROFILES[name]
     require(doc.get('seed_posts') == posts and doc.get('thresholds', {}).get('seconds', 0) >= seconds, prefix+'wrong corpus/duration')
+    strict = current_policy(version)
+    if strict:
+        validate_thresholds(name, doc['thresholds'])
+        require(doc.get('queue_driver') == 'pgsql', prefix+'physical PostgreSQL queue required')
+        require(doc.get('checks', {}).get('post_fault_workload') is True if name == '1m-soak' else True, prefix+'missing post-fault workload')
     load = doc.get('load', {})
     require(number(load.get('elapsed_seconds')) and load['elapsed_seconds'] >= seconds, prefix+'short load')
     require(number(doc.get('finished_at')) and number(doc.get('started_at')) and doc['finished_at']-doc['started_at'] >= seconds, prefix+'short wall duration')
     require(number(load.get('requests_per_second')) and load['requests_per_second'] >= doc['thresholds']['minimum_rps'], prefix+'insufficient RPS')
+    if strict:
+        require(type(load.get('requests')) is int and load['requests'] > 0, prefix+'invalid total requests')
+        require(abs(load['requests'] / load['elapsed_seconds'] - load['requests_per_second']) <= .002, prefix+'inconsistent throughput')
+        require(set(load.get('operations', {})) == set(ROUTES), prefix+'invalid operation set')
     for route in ROUTES:
         stats = load.get('operations', {}).get(route, {})
         require(type(stats.get('requests')) is int and stats['requests'] >= 1, prefix+'missing route '+route)
@@ -57,6 +82,32 @@ def validate_report(path, name, commit, artifact_sha, version):
         for p in ('p50_upper_ms', 'p95_upper_ms', 'p99_upper_ms'):
             require(number(stats.get(p)), prefix+'missing histogram '+route+'/'+p)
         require(stats['p95_upper_ms'] <= doc['thresholds']['max_p95_ms'], prefix+'slow route '+route)
+        if strict:
+            require(type(stats['errors']) is int and stats['errors'] <= stats['requests'], prefix+'invalid error count '+route)
+            require(stats['requests'] >= max(1, math.floor(load['requests'] / len(ROUTES)) - 1), prefix+'underrepresented route '+route)
+            errors = stats.get('error_types', {})
+            require(isinstance(errors, dict) and all(type(v) is int and v > 0 for v in errors.values()) and sum(errors.values()) == stats['errors'] and not errors.get('semantic_mismatch'), prefix+'inconsistent/semantic errors '+route)
+            require(stats['p50_upper_ms'] <= stats['p95_upper_ms'] <= stats['p99_upper_ms'], prefix+'invalid histogram '+route)
+    if strict:
+        require(sum(row['requests'] for row in load['operations'].values()) == load['requests'], prefix+'inconsistent route totals')
+        minimum_writes = 8 + max(0, (seconds // 60) - 1)
+        require(type(doc.get('confirmed_writes')) is int and doc.get('publication', {}).get('requests') == doc['confirmed_writes'] and doc.get('confirmed_writes', 0) >= minimum_writes and doc.get('queue_delivery', {}).get('requests', 0) >= minimum_writes, prefix+'missing sustained writes/delivery')
+        require(doc.get('checks', {}).get('mixed_platform_probes') is True, prefix+'missing mixed platform workload')
+        probes=doc.get('platform_probes', {})
+        require(set(probes)=={'ai_status','support','analytics','integrations','workflows','operations'}, prefix+'missing platform routes')
+        for route, stats in probes.items():
+            require(type(stats.get('requests')) is int and stats['requests'] >= max(1,seconds//60-1) and stats.get('errors')==0 and number(stats.get('p95_upper_ms')) and stats['p95_upper_ms'] <= 5000, prefix+'failed platform probe '+route)
+        if name == '1m-soak':
+            post = doc.get('post_fault_load', {})
+            require(number(post.get('elapsed_seconds')) and post['elapsed_seconds'] >= 60 and number(post.get('requests_per_second')) and post['requests_per_second'] >= doc['thresholds']['minimum_rps'], prefix+'insufficient recovery workload')
+            require(set(post.get('operations', {})) == set(ROUTES), prefix+'missing recovery routes')
+            require(type(post.get('requests')) is int and post['requests'] > 0 and abs(post['requests']/post['elapsed_seconds']-post['requests_per_second'])<=.002, prefix+'invalid recovery throughput')
+            for route, stats in post['operations'].items():
+                require(type(stats.get('requests')) is int and stats['requests'] > 0 and stats.get('errors') == 0 and number(stats.get('p95_upper_ms')) and stats['p95_upper_ms'] <= doc['thresholds']['max_p95_ms'], prefix+'failed recovery workload '+route)
+            require(sum(row['requests'] for row in post['operations'].values())==post['requests'], prefix+'inconsistent recovery totals')
+            for service in ('postgres', 'redis', 'worker', 'php_fpm_restart', 'network_partition', 'temp_disk_full', 'interrupted_transaction_rollback'):
+                duration = doc.get('fault_recovery_seconds', {}).get(service)
+                require(number(duration) and 0 < duration <= 600, prefix+'recovery time budget '+service)
     for key in ('publication', 'queue_delivery'):
         row=doc.get(key, {})
         require(number(row.get('p50_upper_ms')) and number(row.get('p95_upper_ms')) and number(row.get('p99_upper_ms')) and row.get('requests', 0)>=8 and row.get('errors')==0, prefix+'missing measured '+key)
@@ -81,6 +132,8 @@ def validate_report(path, name, commit, artifact_sha, version):
     require(type(interval) is int and 5<=interval<=60, prefix+'invalid sampling interval')
     require(len(observations) >= max(2, math.floor(seconds / interval)-1), prefix+'insufficient telemetry coverage')
     require(observations[0]['elapsed_seconds']>=0 and observations[-1]['elapsed_seconds']>=seconds, prefix+'telemetry not continuous')
+    if strict:
+        require(observations[0]['elapsed_seconds'] <= interval*3+15 and all(number(row.get('elapsed_seconds')) for row in observations), prefix+'invalid telemetry coverage')
     require(all(0 <= b['elapsed_seconds']-a['elapsed_seconds']<=interval*3+15 for a,b in zip(observations,observations[1:])), prefix+'telemetry gap')
     for item in ('host_sha256','architecture','kernel'):
         require(isinstance(doc.get('hardware',{}).get(item),str) and bool(doc['hardware'][item]), prefix+'missing hardware '+item)
@@ -104,6 +157,8 @@ def seal(args):
         docs[name]=validate_report(path,name,commit,artifact_sha,args.version)
     require(len({row['hardware']['host_sha256'] for row in docs.values()})==1,'different test hosts')
     require(len({row['app_image'] for row in docs.values()})==1,'different running release images')
+    if current_policy(args.version):
+        require(len({row.get('run_id') for row in docs.values()}) == 3 and all(re.fullmatch(r'[a-f0-9-]{36}', row.get('run_id','')) for row in docs.values()), 'duplicate or missing physical run identity')
     report={'schema':1,'ok':True,'edition_version':args.version,'commit':commit,'dist_sha256':artifact_sha,
             'profiles':{name:{'report_sha256':sha(path),'requests':doc['load']['requests'],
                        'elapsed_seconds':doc['load']['elapsed_seconds'],

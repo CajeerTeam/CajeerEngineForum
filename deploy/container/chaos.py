@@ -152,9 +152,10 @@ def interrupted_migration_transaction(dc, wait_ready):
 
 def run_chaos(dc, client, *, project, path, member, marker_prefix, wait_ready, verify_posts, report, save):
     """Real fault sequence; preserve *all* acknowledged writes across every fault."""
-    def pass_check(name):
+    def pass_check(name, begin):
         verify_posts()
         checked(client.request('/health/ready')[0] == 200, 'Readiness not restored: '+name)
+        report.setdefault('fault_recovery_seconds', {})[name] = round(time.monotonic()-begin, 3)
         report['checks'][name] = True
         save()
 
@@ -163,6 +164,7 @@ def run_chaos(dc, client, *, project, path, member, marker_prefix, wait_ready, v
     backend_identity(dc, project)
     report['checks']['chaos_identity'] = True; save()
     for service in ('app',):
+        begin=time.monotonic()
         mark = marker_prefix+'fpm'
         dc.run('stop', service)
         try:
@@ -170,13 +172,16 @@ def run_chaos(dc, client, *, project, path, member, marker_prefix, wait_ready, v
         finally:
             dc.run('start', service)
             wait_ready()
-        pass_check('php_fpm_restart')
+        pass_check('php_fpm_restart', begin)
+    begin=time.monotonic()
     mark = marker_prefix+'network'
     network_partition(dc, project, client, path, member, mark, wait_ready,
                       lambda _: None)
-    pass_check('network_partition')
+    pass_check('network_partition', begin)
+    begin=time.monotonic()
     mark = marker_prefix+'disk'
     temporary_disk_full(dc, client, path, member, mark, lambda _: None)
-    wait_ready(); pass_check('temp_disk_full')
+    wait_ready(); pass_check('temp_disk_full', begin)
+    begin=time.monotonic()
     interrupted_migration_transaction(dc, wait_ready)
-    pass_check('interrupted_transaction_rollback')
+    pass_check('interrupted_transaction_rollback', begin)

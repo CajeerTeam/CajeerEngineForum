@@ -1,11 +1,24 @@
 name: Publish Forum Edition release
 
 on:
-  workflow_run:
-    workflows:
-      - Forum Edition CI
-    types:
-      - completed
+  workflow_dispatch:
+    inputs:
+      ci_run:
+        description: Successful main push CI run ID (signed candidate)
+        type: string
+        required: true
+      physical_run:
+        description: Successful physical 10k/100k/1M qualification run ID
+        type: string
+        required: true
+      drained_run:
+        description: Successful interrupted update at drained checkpoint run ID
+        type: string
+        required: true
+      activating_run:
+        description: Successful interrupted update at activating checkpoint run ID
+        type: string
+        required: true
 
 permissions:
   actions: read
@@ -18,18 +31,17 @@ concurrency:
 jobs:
   publish:
     name: Publish conventional GitHub release
-    if: >-
-      ${{ github.event.workflow_run.conclusion == 'success' &&
-          github.event.workflow_run.event == 'push' &&
-          github.event.workflow_run.head_branch == 'main' &&
-          github.event.workflow_run.head_repository.full_name == github.repository }}
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     environment: forum-production # Configure required independent reviewers in GitHub environment protection
     env:
       GH_TOKEN: ${{ github.token }}
-      RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
-      RELEASE_RUN_ID: ${{ github.event.workflow_run.id }}
+      RELEASE_SHA: ${{ github.sha }}
+      RELEASE_RUN_ID: ${{ inputs.ci_run }}
+      PHYSICAL_RUN_ID: ${{ inputs.physical_run }}
+      DRAINED_RUN_ID: ${{ inputs.drained_run }}
+      ACTIVATING_RUN_ID: ${{ inputs.activating_run }}
     steps:
       - name: Check out the exact passing commit
         uses: actions/checkout@v4
@@ -71,6 +83,32 @@ jobs:
           php-version: '8.4'
           extensions: sodium, zip
           coverage: none
+
+      - name: Fetch exact workflow run metadata and physical evidence
+        if: steps.version.outputs.should_publish == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/forum-physical"
+          mkdir -p "$root/meta" "$root/load" "$root/drained" "$root/activating"
+          for id in "$RELEASE_RUN_ID" "$PHYSICAL_RUN_ID" "$DRAINED_RUN_ID" "$ACTIVATING_RUN_ID"; do
+            [[ "$id" =~ ^[1-9][0-9]*$ ]] || { echo 'Invalid workflow run ID' >&2; exit 1; }
+          done
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RELEASE_RUN_ID" > "$root/meta/ci.json"
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$PHYSICAL_RUN_ID" > "$root/meta/physical.json"
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$DRAINED_RUN_ID" > "$root/meta/drained.json"
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$ACTIVATING_RUN_ID" > "$root/meta/activating.json"
+          # Check repository/ref/commit/workflow/status before downloading any evidence.
+          python3 - "$root/meta" "$GITHUB_REPOSITORY" "$RELEASE_SHA" <<'PY'
+          import importlib.util, json, sys
+          from pathlib import Path
+          spec = importlib.util.spec_from_file_location('gate','tools/release-candidate-gate.py')
+          gate = importlib.util.module_from_spec(spec); spec.loader.exec_module(gate)
+          gate.validate_runs({name:json.loads((Path(sys.argv[1])/(name+'.json')).read_text()) for name in gate.WORKFLOWS},sys.argv[2],sys.argv[3])
+          PY
+          gh run download "$PHYSICAL_RUN_ID" --repo "$GITHUB_REPOSITORY" --name forum-physical-soak-evidence --dir "$root/load"
+          gh run download "$DRAINED_RUN_ID" --repo "$GITHUB_REPOSITORY" --name forum-physical-interrupted-update-drained --dir "$root/drained"
+          gh run download "$ACTIVATING_RUN_ID" --repo "$GITHUB_REPOSITORY" --name forum-physical-interrupted-update-activating --dir "$root/activating"
 
       - name: Download packages built by the passing CI run
         if: steps.version.outputs.should_publish == 'true'
@@ -123,18 +161,31 @@ jobs:
             --trusted-public-key "$pub" --version "$VERSION" --commit "$RELEASE_SHA"
           python3 tools/certification-evidence.py verify "$ARTIFACT_ROOT" --trusted-key "$pub"
 
+          physical="$RUNNER_TEMP/forum-physical"
+          python3 - "$physical/meta/ci.json" "$ARTIFACT_ROOT/ci-jobs.json" <<'PY'
+          import json,sys
+          run, jobs = (json.load(open(path)) for path in sys.argv[1:])
+          if run['id'] != jobs['run_id'] or run['run_attempt'] != jobs['attempt']:
+              raise SystemExit('Signed CI evidence not from selected successful run attempt')
+          PY
+          # Never trust the precomputed certificate alone: revalidate every raw report
+          # against the exact signed CI dist, fixed SLOs and checked-out commit.
+          python3 deploy/container/certify_load.py --release-dir "$ARTIFACT_ROOT" --trusted-public-key "$pub" --version "$VERSION" \
+            --small "$physical/load/10k.json" --medium "$physical/load/100k.json" --soak "$physical/load/1m-soak.json" --output "$physical/verified.json"
+          python3 tools/release-candidate-gate.py --repo "$GITHUB_REPOSITORY" --commit "$RELEASE_SHA" --version "$VERSION" \
+            --metadata "$physical/meta" --physical "$physical/verified.json" --drained "$physical/drained/recovery.json" \
+            --activating "$physical/activating/recovery.json" --dist "$ARTIFACT_ROOT/cajeerengine-${VERSION}-dist.zip"
+          test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')" = "$RELEASE_SHA"
+
           cat > "$RUNNER_TEMP/forum-release-notes.md" <<'NOTES'
-          ## CajeerEngineForum 1.4.10 — Full Platform Integration & E2E
+          ## CajeerEngineForum 1.4.11 — Production Qualification & Release Candidate
 
-          Forum Edition 1.4.10 on CajeerEngine 2.1.0.
+          Forum Edition 1.4.11 on CajeerEngine 2.1.0.
 
-          - Live browser-to-API-to-SQL-to-worker acceptance, with independent session, privacy and analytics assertions.
-          - Source revalidation after queue admission and strict streamed/final response reconciliation.
-          - Signed ZIPs, detached signatures, SHA-256, manifests and artifact index are published together.
-          - No new migration; mandatory real PDO and browser acceptance remains in place.
-
-          Publication of signed artifacts is gated on successful CI, external staging approval,
-          independently trusted signing keys and production change-control review.
+          - Physical 10k/100k/1M workload and 24-hour soak with fixed SLOs.
+          - Dependency failures, durable queue replay, interrupted update recovery and post-fault workload.
+          - Publication requires passing CI, disaster recovery and independent physical evidence for the exact signed artifact.
+          - No new migration.
           NOTES
 
           # A failure while uploading leaves a draft, not a partially public release.

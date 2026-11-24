@@ -38,16 +38,17 @@ final readonly class RateLimitMiddleware implements MiddlewareInterface
             $probe = $this->limiter->hit('platform_config_probe', $identity, 6, 60);
             if (!$probe['allowed'] || $probe['remaining'] < $hit['remaining']) $hit = $probe;
         }
-        \CajeerEngine\Observability\Operation::record('security','http_admission',$hit['allowed']?'success':'rate_limited',$started,$this->config->rootPath());
+        \CajeerEngine\Observability\Operation::record('security','http_admission',$hit['allowed']?'success':(!empty($hit['unavailable'])?'failure':'rate_limited'),$started,$this->config->rootPath());
         if (!$hit['allowed']) {
+            $unavailable = !empty($hit['unavailable']);
             $response = new JsonResponse([
                 'error' => [
-                    'code' => 'rate_limit_exceeded',
-                    'message' => 'Превышен лимит запросов.',
+                    'code' => $unavailable ? 'rate_limit_unavailable' : 'rate_limit_exceeded',
+                    'message' => $unavailable ? 'Сервис временно недоступен.' : 'Превышен лимит запросов.',
                     'retry_after' => $hit['retry_after'],
                     'request_id' => (string) $request->attributes->get('request_id', ''),
                 ],
-            ], 429);
+            ], $unavailable ? 503 : 429, ['Cache-Control'=>'no-store']);
             $this->applyHeaders($response, $hit);
             return $response;
         }

@@ -1,4 +1,4 @@
-name: Forum 1.3.9 physical interrupted signed update
+name: Forum 1.4.11 physical interrupted signed update
 on:
   workflow_dispatch:
     inputs:
@@ -8,7 +8,7 @@ on:
         required: true
         options: [drained, activating]
 env:
-  FORUM_CHAOS_TARGET: ${{ '1.3.9' }}
+  FORUM_CHAOS_TARGET: ${{ '1.4.11' }}
 permissions:
   contents: read
 concurrency:
@@ -24,6 +24,7 @@ jobs:
       CE_CHAOS_OLD_ENV: ${{ vars.CE_CHAOS_OLD_ENV }}
       CE_CHAOS_NEW_ENV: ${{ vars.CE_CHAOS_NEW_ENV }}
       CE_CHAOS_CA: ${{ vars.CE_CHAOS_CA }}
+      CE_CHAOS_SMOKE_STATE: ${{ vars.CE_CHAOS_SMOKE_STATE }}
       CE_CHAOS_STATE_DIR: ${{ vars.CE_CHAOS_STATE_DIR }}
       CE_CHAOS_SIGNED_DIR: ${{ vars.CE_CHAOS_SIGNED_DIR }}
       CE_CHAOS_TRUSTED_PUB: ${{ vars.CE_CHAOS_TRUSTED_PUB }}
@@ -36,12 +37,14 @@ jobs:
         run: |
           set -euo pipefail
           [[ "$CE_CHAOS_PROJECT" =~ ^[a-z0-9_-]*[-_]chaos([-_][a-z0-9_-]*)?$ ]]
-          for name in CE_CHAOS_OLD_ENV CE_CHAOS_NEW_ENV CE_CHAOS_CA CE_CHAOS_STATE_DIR CE_CHAOS_SIGNED_DIR CE_CHAOS_TRUSTED_PUB; do
+          for name in CE_CHAOS_OLD_ENV CE_CHAOS_NEW_ENV CE_CHAOS_CA CE_CHAOS_STATE_DIR CE_CHAOS_SMOKE_STATE CE_CHAOS_SIGNED_DIR CE_CHAOS_TRUSTED_PUB; do
             test -n "${!name}" && test -e "${!name}"
           done
           test -d "$CE_CHAOS_STATE_DIR" && test ! -L "$CE_CHAOS_STATE_DIR"
           test "$(stat -c '%a' "$CE_CHAOS_STATE_DIR")" = 700
           test ! -e "$CE_CHAOS_STATE_DIR/update.json"
+          test "$(sed -n 's/^CE_RELEASE_VERSION=//p' "$CE_CHAOS_OLD_ENV")" = 1.4.10
+          test "$(sed -n 's/^CE_RELEASE_VERSION=//p' "$CE_CHAOS_NEW_ENV")" = "$FORUM_CHAOS_TARGET"
           php tools/verify-signed-release.php "$CE_CHAOS_SIGNED_DIR" "$CE_CHAOS_TRUSTED_PUB"
           artifact="$CE_CHAOS_SIGNED_DIR/cajeerengine-${FORUM_CHAOS_TARGET}-dist.zip"
           sha="$(sha256sum "$artifact" | cut -d' ' -f1)"
@@ -55,13 +58,13 @@ jobs:
           python3 deploy/container/chaos_update.py \
             --project "$CE_CHAOS_PROJECT" --disposable destroy-test-services \
             --old-env "$CE_CHAOS_OLD_ENV" --new-env "$CE_CHAOS_NEW_ENV" \
-            --state-dir "$CE_CHAOS_STATE_DIR" --ca "$CE_CHAOS_CA" \
+            --state-dir "$CE_CHAOS_STATE_DIR" --ca "$CE_CHAOS_CA" --state "$CE_CHAOS_SMOKE_STATE" \
             --checkpoint '${{ inputs.checkpoint }}' \
             --report "$RUNNER_TEMP/forum-chaos/recovery.json"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: forum-100-physical-interrupted-update
+          name: forum-physical-interrupted-update-${{ inputs.checkpoint }}
           path: ${{ runner.temp }}/forum-chaos/*.json
           if-no-files-found: warn
           retention-days: 90

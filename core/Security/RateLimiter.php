@@ -10,7 +10,7 @@ final readonly class RateLimiter
     {
     }
 
-    /** @return array{allowed:bool,limit:int,remaining:int,reset_at:int,retry_after:int,key:string} */
+    /** @return array{allowed:bool,limit:int,remaining:int,reset_at:int,retry_after:int,key:string,unavailable?:bool} */
     public function hit(string $bucket, string $identity, int $limit, int $windowSeconds): array
     {
         $limit = max(1, $limit);
@@ -29,13 +29,13 @@ final readonly class RateLimiter
 
         // Deny symlink substitution and keep identity bucket state owner-private.
         if (is_link($dir) || is_link($file)) {
-            return ['allowed' => false, 'limit' => $limit, 'remaining' => 0, 'reset_at' => $now + $windowSeconds, 'retry_after' => $windowSeconds, 'key' => $bucket . ':' . $identityHash];
+            return $this->denied($bucket, $identityHash, $limit, $windowSeconds);
         }
         if (is_link($this->rootPath.'/storage') || (file_exists($file) && !is_file($file))) return $this->denied($bucket, $identityHash, $limit, $windowSeconds);
         $mask = umask(0077);
         try { $handle = @fopen($file, 'c+'); } finally { umask($mask); }
         if ($handle === false) {
-            return ['allowed' => false, 'limit' => $limit, 'remaining' => 0, 'reset_at' => $now + $windowSeconds, 'retry_after' => $windowSeconds, 'key' => $bucket . ':' . $identityHash];
+            return $this->denied($bucket, $identityHash, $limit, $windowSeconds);
         }
 
         try {
@@ -80,12 +80,12 @@ final readonly class RateLimiter
         } catch (\Throwable) {
             @flock($handle, LOCK_UN);
             @fclose($handle);
-            return ['allowed' => false, 'limit' => $limit, 'remaining' => 0, 'reset_at' => $now + $windowSeconds, 'retry_after' => $windowSeconds, 'key' => $bucket . ':' . $identityHash];
+            return $this->denied($bucket, $identityHash, $limit, $windowSeconds);
         }
     }
     private function denied(string $bucket, string $hash, int $limit, int $window): array
     {
-        return ['allowed'=>false,'limit'=>$limit,'remaining'=>0,'reset_at'=>time()+$window,'retry_after'=>$window,'key'=>$bucket.':'.$hash];
+        return ['allowed'=>false,'unavailable'=>true,'limit'=>$limit,'remaining'=>0,'reset_at'=>time()+$window,'retry_after'=>$window,'key'=>$bucket.':'.$hash];
     }
 
     /** Shared fixed-window admission. Redis expiry and increment are one atomic operation. */

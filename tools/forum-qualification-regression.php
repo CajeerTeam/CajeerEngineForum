@@ -15,5 +15,13 @@ try{
     putenv('RATE_LIMIT_DRIVER=redis');putenv('REDIS_HOST=127.0.0.1');putenv('REDIS_PORT=1');putenv('REDIS_TIMEOUT_SECONDS=0.05');
     $hit=(new RateLimiter($root))->hit('global','test',100,60);check(!$hit['allowed']&&($hit['unavailable']??false),'Redis outage distinguished from exhausted quota and fails closed');
     $ready=(new OperationsMonitor($root))->readiness();check(!$ready['checks']['redis_required']&&!$ready['ok'],'mandatory Redis dependency blocks readiness');
+    if (is_file(dirname(__DIR__).'/vendor/autoload.php')) {
+        require_once dirname(__DIR__).'/vendor/autoload.php';
+        $config=new \CajeerEngine\Runtime\ConfigRepository($root);
+        $mw=new \CajeerEngine\Http\Middleware\RateLimitMiddleware($config,new RateLimiter($root));
+        $req=\Symfony\Component\HttpFoundation\Request::create('/api/v1/forum/search');
+        $response=$mw->process($req,static fn()=>throw new RuntimeException('Must not admit request during limiter outage'));
+        check($response->getStatusCode()===503 && json_decode($response->getContent(),true)['error']['code']==='rate_limit_unavailable','HTTP admission returns retryable 503 during Redis outage');
+    }
     putenv('RATE_LIMIT_DRIVER=file');putenv('QUEUE_DRIVER=file');$hit=(new RateLimiter($root))->hit('global','test',1,60);check($hit['allowed'],'file limiter normal');$hit=(new RateLimiter($root))->hit('global','test',1,60);check(!$hit['allowed']&&!($hit['unavailable']??false),'quota exhaustion remains distinct');
 }finally{foreach(new RecursiveIteratorIterator(new RecursiveDirectoryIterator($root,FilesystemIterator::SKIP_DOTS),RecursiveIteratorIterator::CHILD_FIRST) as $e){$e->isDir()?rmdir($e->getPathname()):unlink($e->getPathname());}rmdir($root);}

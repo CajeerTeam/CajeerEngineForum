@@ -1,3 +1,9 @@
+## [1.4.11] - 2026-11-24
+
+- Enforce fixed physical qualification limits, balanced load, sustained writes, post-fault load and measured recovery.
+- Require independently reviewed physical evidence before publishing a signed release.
+- Enable interrupted signed update qualification from 1.4.10. No schema migration.
+
 ## [1.4.10] - 2026-11-24
 
 - Live browser/API/SQL/worker journey across unified ACP, forum support, workflow execution, analytics and identity with independent sessions and persisted assertions.

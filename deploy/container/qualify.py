@@ -5,12 +5,14 @@ import concurrent.futures
 import importlib.util
 import json
 import math
+import os
 from pathlib import Path
 import re
 import subprocess
 import time
 import uuid
 from collections import Counter
+from certify_load import validate_thresholds, current_policy
 from qualification_telemetry import ResourceMonitor, QueueLatencyMonitor
 from chaos import run_chaos
 
@@ -42,9 +44,10 @@ class Histogram:
 
 class Compose:
     def __init__(self, project, env):
+        self.env = {k:v for k,v in os.environ.items() if not k.startswith(('CE_', 'COMPOSE_'))}
         self.prefix = ['docker','compose','--project-name',project,'--env-file',str(env),'-f',str(HERE/'compose.yaml')]
     def run(self, *args, stdin=None, timeout=180):
-        result = subprocess.run(self.prefix+list(args), input=stdin, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout)
+        result = subprocess.run(self.prefix+list(args), input=stdin, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout, env=self.env)
         require(result.returncode == 0, 'Compose command failed: '+args[0])
         return result.stdout
     def memory(self):
@@ -72,7 +75,7 @@ def seed(dc, thread, posts, namespace):
         # One data-modifying CTE per dependency: later statements see committed rows.
         dc.sql(f"""BEGIN;
 INSERT INTO ce_forum_threads(id,board_id,author_id,title,read_sequence)
-SELECT md5('{ns}:t:'||i)::uuid,board_id,author_id,'QualificationCorpus'||i,100
+SELECT md5('{ns}:t:'||i)::uuid,board_id,author_id,'QualificationCorpus'||replace('{ns}','-','')||'x'||i,100
 FROM ce_forum_threads CROSS JOIN generate_series({start},{stop}) i WHERE id='{thread}'::uuid;
 INSERT INTO ce_forum_posts(id,thread_id,author_id,body,ordinal,read_sequence)
 SELECT md5('{ns}:p:'||i||':'||j)::uuid,md5('{ns}:t:'||i)::uuid,author_id,'Qualification corpus body '||i||' entry '||j,j,j
@@ -90,10 +93,16 @@ COMMIT;""",timeout=300)
 
 def load(client, routes, clients, seconds, rate, progress=None):
     """Closed-loop batches, bounded in-flight work and paced starts; no unbounded future list."""
-    stats = {name: Histogram() for name, *_ in routes}; started = time.monotonic(); deadline=started+seconds
+    groups = {}
+    for route in routes:
+        groups.setdefault(route[0], []).append(route)
+    names = tuple(groups)
+    stats = {name: Histogram() for name in names}; started = time.monotonic(); deadline=started+seconds
     i=0; next_start=started; next_report=started+30
     def one(index):
-        name,path,headers,validate=routes[index%len(routes)]; begin=time.monotonic(); error=None
+        name = names[index % len(names)]
+        variants = groups[name]
+        name,path,headers,validate=variants[(index // len(names)) % len(variants)]; begin=time.monotonic(); error=None
         try:
             code,_,body=client.request(path,headers=headers)
             if code!=200: error='http_'+str(code)
@@ -139,7 +148,20 @@ def wait_until(fn, seconds, label):
 def qualify(a):
     require(a.disposable=='destroy-test-services','explicit disposable confirmation required')
     require(re.fullmatch(r'[a-z0-9][a-z0-9_-]*',a.project) is not None,'invalid project name')
+    if a.profile != 'smoke' or a.faults:
+        require(re.search(r'(?:^|[-_])(?:ci|load|qualification|benchmark|chaos)(?:[-_]|$)', a.project) is not None, 'destructive test requires a dedicated named project')
     dc=Compose(a.project,a.env); c=Client(a.domain,a.ca,a.port)
+    from update import read_site
+    site = read_site(a.env)
+    require(site['CE_RELEASE_VERSION'] == a.version and site['CE_DOMAIN'] == a.domain and int(site['CE_HTTPS_PORT']) == a.port, 'site identity mismatch')
+    if a.profile != 'smoke':
+        require(site['CE_QUEUE_DRIVER'] == 'pgsql', 'physical qualification requires PostgreSQL queue')
+        require(site['CE_BIND_ADDRESS'] == '127.0.0.1', 'physical fixture must bind loopback only')
+    if a.faults or a.profile != 'smoke':
+        host = dc.env.get('DOCKER_HOST')
+        if not host or dc.env.get('DOCKER_CONTEXT'):
+            host = subprocess.check_output(['docker','context','inspect','--format','{{.Endpoints.docker.Host}}'], env=dc.env, text=True, timeout=30).strip()
+        require(host.startswith('unix://'), 'destructive qualification requires local Docker')
     env_text = a.env.read_text()
     found = re.search(r'^CE_RELEASE_SHA256=([a-f0-9]{64})$', env_text, flags=re.M)
     require(found is not None, 'site.env must identify approved release SHA-256')
@@ -151,7 +173,7 @@ def qualify(a):
     report={'hardware':{'host_sha256':hashlib.sha256(host_bytes).hexdigest(),
                         'cpu_count':os.cpu_count(),'architecture':platform.machine(),
                         'kernel':platform.release()},
-            'schema':2,'profile':a.profile,'source_commit':commit,'artifact_sha256':found.group(1),'edition_version':a.version,'run_id':str(uuid.uuid4()),'started_at':int(time.time()),'ok':False,'checks':{},'samples':[], 'thresholds':{'clients':a.clients,'seconds':a.seconds,'target_rps':a.rate,'minimum_rps':a.min_rps,'max_p95_ms':a.max_p95_ms,'max_error_rate':a.max_error_rate,'max_memory_growth_mib':a.max_growth_mib,'max_queue_p95_ms':a.max_queue_p95_ms}}
+            'schema':2,'profile':a.profile,'queue_driver':site['CE_QUEUE_DRIVER'],'source_commit':commit,'artifact_sha256':found.group(1),'edition_version':a.version,'run_id':str(uuid.uuid4()),'started_at':int(time.time()),'ok':False,'checks':{},'samples':[], 'thresholds':{'clients':a.clients,'seconds':a.seconds,'target_rps':a.rate,'minimum_rps':a.min_rps,'max_p95_ms':a.max_p95_ms,'max_error_rate':a.max_error_rate,'max_memory_growth_mib':a.max_growth_mib,'max_queue_p95_ms':a.max_queue_p95_ms}}
     a.report.parent.mkdir(parents=True,exist_ok=True)
     def save(): write_report(a.report,report)
     def check(name): report['checks'][name]=True;save();print('PASS',name,flush=True)
@@ -175,6 +197,11 @@ def qualify(a):
     save()
     try:
         image=dc.run('images','-q','app').strip();require(bool(re.fullmatch(r'(?:sha256:)?[a-f0-9]{12,64}',image)),'app image identity missing');report['app_image']=image
+        if a.profile != 'smoke':
+            cid = dc.run('ps','-q','app').strip()
+            require(re.fullmatch(r'[a-f0-9]{64}', cid) is not None, 'unique running app required')
+            actual = json.loads(subprocess.check_output(['docker','inspect',cid], text=True, timeout=30, env=dc.env))[0]
+            require(actual['Config']['Image'] == f"cajeerengine-forum:{a.version}-{site['CE_RELEASE_SHA256']}" and actual['Image'].removeprefix('sha256:').startswith(image.removeprefix('sha256:')), 'running image differs from approved artifact')
         assert_ready();require(json.loads(call('/api/v1/health')[1])['edition_version']==a.version,'edition mismatch')
         state=json.loads(a.state.read_text()); thread=str(uuid.UUID(state['thread'])); path='/api/v1/forum/threads/'+thread
         require(b'ContainerSmokeBody' in call('/forum/threads/'+thread)[1],'disposable fixture missing')
@@ -198,7 +225,7 @@ def qualify(a):
         for t in samples:
             routes.append(('corpus_ssr','/forum/threads/'+t,{},lambda b:b'Qualification corpus body' in b))
         if samples:
-            routes.append(('corpus_search','/api/v1/forum/search?q=QualificationCorpus1',{},
+            routes.append(('corpus_search','/api/v1/forum/search?q=QualificationCorpus'+report['run_id'].replace('-','')+'x1',{},
                            lambda b:any(row['id']==samples[0] for row in data(b))))
 
         # Verify the actual public SSR cache, not just API response semantics.
@@ -210,13 +237,48 @@ def qualify(a):
         warmup=load(c,routes,a.clients,5,a.rate);require(not any(r['errors'] for r in warmup['operations'].values()),'warmup failed')
         resources=ResourceMonitor(dc, interval_seconds=a.sample_interval).start()
         report['resource_samples_interval_seconds']=a.sample_interval
-        next_write=time.monotonic()+60; sequence=100
+        # Probe low-rate privileged subsystems under the same traffic and worker
+        # contention, without invoking paid AI providers or external integrations.
+        probe_hist = {name:Histogram() for name in ('ai_status','support','analytics','integrations','workflows','operations')}
+        def platform_probes():
+            endpoints = (
+                ('ai_status','/api/v1/forum/ai/status',member,lambda d:isinstance(d.get('enabled'),bool) and isinstance(d.get('configured'),bool)),
+                ('support','/api/v1/forum/support/tickets',member,lambda d:isinstance(d,list)),
+                ('analytics','/api/v1/forum/acp?view=analytics_dashboard',admin,lambda d:isinstance(d.get('totals'),dict)),
+                ('integrations','/api/v1/integrations',admin,lambda d:isinstance(d.get('items'),list)),
+                ('workflows','/api/v1/platform/workflows',admin,lambda d:isinstance(d.get('rules'),list)),
+                ('operations','/api/v1/system/operations',admin,lambda d:all(d['checks'].get(name,{}).get('ok') is True for name in ('database','redis','queue','worker','analytics','ai_admission','integrations'))),
+            )
+            for name, endpoint, headers, validate in endpoints:
+                begin=time.monotonic(); body=call(endpoint,headers=headers)[1]
+                payload=json.loads(body) if name=='operations' else data(body)
+                require(validate(payload),'platform probe failed: '+name)
+                probe_hist[name].add((time.monotonic()-begin)*1000)
+        import threading
+        stop_writes = threading.Event()
+        def sustained_writes():
+            sequence=100; next_write=time.monotonic()+60
+            while not stop_writes.wait(max(0,next_write-time.monotonic())):
+                pid,body,ms=publish(sequence);expected[pid]=body;publication.add(ms)
+                if a.profile != 'smoke' and current_policy(a.version): platform_probes()
+                sequence+=1;next_write+=60
         def progress(rows):
-            nonlocal next_write,sequence
-            if time.monotonic()>=next_write:
-                pid,body,ms=publish(sequence);expected[pid]=body;publication.add(ms);sequence+=1;next_write=time.monotonic()+60
+            if writes.done():
+                writes.result()
+                raise RuntimeError('sustained writer stopped unexpectedly')
             report['samples'].append({'elapsed_seconds':int(time.time())-report['started_at'],'operations':rows});save()
-        result=load(c,routes,a.clients,a.seconds,a.rate,progress);report['load']=result;save()
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as writer:
+            writes=writer.submit(sustained_writes)
+            try:
+                result=load(c,routes,a.clients,a.seconds,a.rate,progress)
+            finally:
+                stop_writes.set();writes.result(timeout=20)
+        report['load']=result
+        if a.profile != 'smoke' and current_policy(a.version):
+            report['platform_probes']={name:h.report() for name,h in probe_hist.items()}
+            require(all(h.total >= max(1,a.seconds//60-1) for h in probe_hist.values()),'missing sustained platform probes')
+            check('mixed_platform_probes')
+        save()
         assert_load(result,a.max_p95_ms,a.max_error_rate,a.min_rps);check('load_thresholds')
         report['resources']=resources.finish()
         report['resource_observations']=resources.samples
@@ -232,6 +294,7 @@ def qualify(a):
         check('queue_delivery_latency')
         # Explicit fault windows are excluded from normal latency/error thresholds.
         if a.faults:
+            worker_begin=time.monotonic()
             dc.run('kill','-s','SIGKILL','worker');dc.run('stop','worker')
             queue_job = None
             try:
@@ -254,6 +317,7 @@ def qualify(a):
                            420,'durable queue replay after SIGKILL')
                 report['checks']['durable_queue_replay'] = True
                 check('durable_queue_replay')
+            report.setdefault('fault_recovery_seconds',{})['worker']=round(time.monotonic()-worker_begin,3)
             check('worker_crash_recovered')
             for service in ('postgres','redis'):
                 begin=time.monotonic();dc.run('stop',service)
@@ -274,6 +338,9 @@ def qualify(a):
                       wait_ready=assert_ready,
                       verify_posts=lambda:verify_posts(thread,expected),
                       report=report,save=save)
+            post=load(c,routes,a.clients,60,a.rate)
+            assert_load(post,a.max_p95_ms,0,a.min_rps)
+            report['post_fault_load']=post;check('post_fault_workload')
         verify_posts(thread,expected);report['confirmed_writes']=len(expected);report['publication']=publication.report()
         require(publication.percentile(.95)<=a.max_p95_ms,'publication p95 threshold')
         check('confirmed_writes_preserved')
@@ -312,9 +379,11 @@ def main():
     minimum={'smoke':(0,5),'10k':(10000,300),'100k':(100000,1800),'1m-soak':(1000000,86400)}[a.profile]
     if a.profile!='smoke':
         require(a.seed_posts==minimum[0] and a.seconds>=minimum[1], 'certification profile corpus/duration mismatch')
+    if a.profile != 'smoke' and current_policy(a.version):
+        validate_thresholds(a.profile, {'clients':a.clients,'target_rps':a.rate,'minimum_rps':a.min_rps,'max_p95_ms':a.max_p95_ms,'max_error_rate':a.max_error_rate,'max_memory_growth_mib':a.max_growth_mib,'max_queue_p95_ms':a.max_queue_p95_ms})
     if a.chaos:
         require(a.faults and any(word in a.project for word in ('load','qualification','benchmark','chaos')), 'chaos requires --faults and disposable project naming')
     if a.profile=='1m-soak':
-        require(a.clients>=8 and a.faults, 'full soak requires concurrent writes and dependency recovery')
+        require(a.clients>=8 and a.faults and a.chaos, 'full soak requires concurrent writes and complete chaos recovery')
     qualify(a)
 if __name__=='__main__':main()
