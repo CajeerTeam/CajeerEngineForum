@@ -180,11 +180,11 @@ jobs:
           test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')" = "$RELEASE_SHA"
 
           cat > "$RUNNER_TEMP/forum-release-notes.md" <<'NOTES'
-          ## CajeerEngineForum 1.5.5 — Autonomous Update Engine
+          ## CajeerEngineForum 1.5.6 — Automatic Backup & Preflight
 
-          Forum Edition 1.5.5 on CajeerEngine 2.1.0.
+          Forum Edition 1.5.6 on CajeerEngine 2.1.0.
 
-          - Opt-in autonomous installation under host policy, fresh signed stage admission, durable private attempt journal and safe pre-mutation retries.
+          - Exact-snapshot recovery rehearsal, backup capacity checks, optional encrypted off-site readback and maintenance policy revalidation before autonomous installation.
           - Physical 10k/100k/1M workload and 24-hour soak with fixed SLOs.
           - Dependency failures, durable queue replay, interrupted update recovery and post-fault workload.
           - Publication requires passing CI, disaster recovery and independent physical evidence for the exact signed artifact.

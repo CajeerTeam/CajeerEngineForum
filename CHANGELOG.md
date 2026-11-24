@@ -1,3 +1,9 @@
+## [1.5.6] - 2026-11-24
+
+- Rehearse recovery from the exact freshly captured update backup before replacing live files. Verify database, private file copies, environment and optional encrypted off-site readback.
+- Check backup and restore capacity, destination ownership and maintenance policy; reject unsupported autonomous recovery drivers. Preserve manual recovery and signed qualification gates.
+- Correct upstream VERSION identity. No schema migration.
+
 ## [1.5.5] - 2026-11-24
 
 - Opt-in autonomous installation in the dedicated operator; signed staging, fresh release selection and host policy are independently rechecked.

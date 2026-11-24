@@ -71,6 +71,28 @@ final class DatabaseBackup
             throw new \RuntimeException('Rehearse MySQL backup/restore on a disposable database, then explicitly set BACKUP_MYSQL_RESTORE_CONFIRMED=true');
         }
     }
+    /** No destructive or unproven SQL restore is allowed in autonomous admission. */
+    public function assertDrillReady(): void
+    {
+        if ($this->driver==='mysql') throw new \RuntimeException('Autonomous updates require an isolated MySQL/MariaDB recovery implementation; use manual update after a separate restore drill');
+        if ($this->driver==='pgsql') {
+            if (in_array($this->name(),['postgres','template0','template1'],true)) throw new \RuntimeException('Refusing PostgreSQL system database recovery');
+            $this->assertRecoveryReady();
+            foreach (['pg_dump','pg_restore','createdb','dropdb'] as $tool) self::run([$tool,'--version'],[],null,null,15);
+        } elseif (!in_array('sqlite',\PDO::getAvailableDrivers(),true)) {
+            $python=(string)getenv('BACKUP_SQLITE_PYTHON');
+            if (!str_starts_with($python,'/')||!is_executable($python)) throw new \RuntimeException('SQLite rehearsal requires PDO or configured Python');
+            self::run([$python,'-I','-c','import sqlite3'],[],null,null,15);
+        }
+    }
+    public function assertRestoreSpace(): void
+    {
+        if ($this->driver!=='sqlite') return; // Remote capacity is exercised by the real isolated restore.
+        $path=$this->sqlitePath(); $bytes=$this->estimatedBytes();
+        $free=disk_free_space(dirname($path));
+        if (function_exists('posix_geteuid')&&posix_geteuid()!==0&&(fileowner($path)!==posix_geteuid()||!in_array(filegroup($path),array_merge([posix_getegid()],posix_getgroups()),true))) throw new \RuntimeException('Operator cannot preserve SQLite recovery ownership');
+        if (!is_writable(dirname($path))||$free===false||$free<$bytes+67108864) throw new \RuntimeException('SQLite restore destination is not writable or lacks capacity');
+    }
     public function create(string $file): void
     {
         if ($this->driver==='sqlite') {

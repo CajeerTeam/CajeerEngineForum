@@ -92,7 +92,8 @@ final class UpdateManager
             UpdateCompatibility::requireRuntime($initial['manifest'],$this->config);
             $this->discardAbandonedStages();
             $backup=new BackupManager($this->rootPath,$this->config);
-            $space=UpdatePreflight::space($this->rootPath,$package,$initial['manifest'],$backup->preflight());
+            $autonomous=!empty($options['autonomous']);
+            $space=UpdatePreflight::space($this->rootPath,$package,$initial['manifest'],$autonomous?$backup->updatePreflight():$backup->preflight());
             $id=gmdate('Ymd-His').'-'.bin2hex(random_bytes(8)); $dir=$this->transactionDir($id); OperationFiles::dir($dir); chmod($dir,0700);
             // Copy first, then authenticate the exact bytes that will be staged.
             OperationFiles::copy($package,$dir.'/package.zip'); OperationFiles::copy($signature,$dir.'/package.zip.sig');
@@ -108,6 +109,7 @@ final class UpdateManager
             if(!$compatibility['ok'])throw new \RuntimeException('Target release incompatible with enabled extensions: '.implode(', ',array_column($compatibility['blocked'],'name')).'; resolve extension dependencies before updating');
             $this->postCheck(false,true);
             $plan=$this->stage($dir,$v['manifest']);
+            if ($autonomous) UpdatePreflight::writablePlan($this->rootPath,$plan);
             $report=['ok'=>true,'id'=>$id,'previous_version'=>$previous,'target_version'=>$v['version'],'sha256'=>$v['sha256'],'copy_plan'=>$plan,'preflight'=>['space'=>$space,'runtime'=>$runtime,'extensions'=>$compatibility,'migration_history'=>'verified','recovery'=>'ready'],'dry_run'=>!empty($options['dry_run'])];
             if ($report['dry_run']) return $report;
             if (!empty($options['autonomous'])) {
@@ -123,6 +125,18 @@ final class UpdateManager
                 $this->setMaintenance('Updating to '.$v['version']);
                 $journal['state']='backup'; $this->journal($journal);
                 $journal['backup']=$backup->capture()['id'];
+                if ($autonomous) {
+                    $journal['state']='verifying_backup'; $this->journal($journal);
+                    $proof=$backup->proveUpdateRecovery($journal['backup']);
+                    $journal['recovery_proof']=$proof;
+                    $report['recovery_proof']=$proof;
+                    // The drill may exceed the permitted window. Do not replace any live files.
+                    if (($reason=(new UpdatePolicy($this->config))->autonomousReason($previous,$v['version'],$v['security_update'],time()))!==null) {
+                        $journal['state']='rolled_back'; $this->journal($journal);
+                        $result=['ok'=>false,'deferred'=>true,'reason'=>$reason,'id'=>$id,'state'=>'rolled_back','backup'=>['id'=>$journal['backup']],'recovery_proof'=>$proof];
+                        $this->finish($journal,$result); return $result;
+                    }
+                }
                 $journal['state']='backed_up'; $this->journal($journal);
                 // Recovery code is copied from the old release before any replacement.
                 $this->recoveryLauncher($dir,$backup->directory($journal['backup']));
@@ -182,7 +196,7 @@ final class UpdateManager
             $this->journal($j); DatabaseBackup::useProcessLock($dir.'/'.$j['child_lock']);
             $this->setMaintenance('Recovering update');
             $state=$j['state'];
-            if (!in_array($state,['prepared','backup','backed_up'],true)) {
+            if (!in_array($state,['prepared','backup','verifying_backup','backed_up'],true)) {
                 if (empty($j['backup'])) throw new \RuntimeException('Missing recovery backup');
                 $j['state']='recovering'; $this->journal($j);
                 (new BackupManager($this->rootPath,$this->config))->restoreCaptured($j['backup']);

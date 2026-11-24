@@ -13,6 +13,15 @@ $pdo->exec('CREATE TABLE ce_recovery_fixture (id INTEGER PRIMARY KEY, value VARC
 $file=tempnam(sys_get_temp_dir(),'ce-db-roundtrip-'); if($file===false) throw new RuntimeException('Cannot create temp file'); unlink($file);
 try {
     $db->create($file); $db->verify($file);
+    if (getenv('DB_DRIVER')==='pgsql') {
+        $workspace=$file.'-drill';
+        \CajeerEngine\Update\OperationFiles::dir($workspace);
+        try {
+            $db->assertDrillReady(); $proof=$db->drill($file,$workspace);
+            if (($proof['restore_verified']??false)!==true||($proof['tables_read']??0)<1) throw new RuntimeException('Isolated PostgreSQL recovery proof failed');
+            echo "PASS isolated PostgreSQL restore rehearsal\n";
+        } finally { \CajeerEngine\Backup\RecoveryBundle::cleanup($workspace); }
+    }
     $pdo=(new DatabaseManager($config))->connection(); $pdo->exec("UPDATE ce_recovery_fixture SET value='after'; CREATE TABLE ce_recovery_extra (id INTEGER)"); $pdo=null;
     $db->restore($file,$db->identity());
     $pdo=(new DatabaseManager($config))->connection();

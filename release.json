@@ -17,10 +17,10 @@
     "docs": "GitHub repository docs/",
     "updates": "GitHub Releases",
     "release_builder": "tools/build-release.php",
-    "source_artifact": "storage/releases/cajeerengine-1.5.5-source.zip",
-    "dist_artifact": "storage/releases/cajeerengine-1.5.5-dist.zip",
+    "source_artifact": "storage/releases/cajeerengine-1.5.6-source.zip",
+    "dist_artifact": "storage/releases/cajeerengine-1.5.6-dist.zip",
     "checksums": "storage/releases/*.sha256",
-    "artifact_index": "storage/releases/cajeerengine-1.5.5-artifacts.json",
+    "artifact_index": "storage/releases/cajeerengine-1.5.6-artifacts.json",
     "support_bundle": "storage/app/support",
     "backup": "storage/app/backups/production",
     "server_reports": "storage/app/reports",
@@ -36,6 +36,7 @@
     "engine_api_version": "1.1"
   },
   "product_changes": [
+    "Forum Edition 1.5.6: mandatory exact-snapshot recovery rehearsal for autonomous updates, backup capacity and destination checks, optional encrypted off-site readback and policy recheck before mutation. SQLite/PostgreSQL only for autonomous recovery; physical qualification required.",
     "Forum Edition 1.5.5: opt-in autonomous signed updates under host policy, private stage and attempt receipts, fresh catalog admission, durable mutation boundary, safe busy retries and fail-closed reconciliation. Physical qualification required.",
     "Forum Edition 1.5.4: host-owned update policies, signed security classification, maintenance windows, durable deferred approvals and version blocking. Explicit installation approval remains mandatory; qualification required.",
     "Forum Edition 1.5.3: durable digest-bound partial downloads, verified range resume, automatic operator staging, retry state and progress diagnostics. Installation remains explicitly approved; independent qualification required.",
@@ -215,11 +216,11 @@
   },
   "stability": "production-stable-gated",
   "edition": "forum",
-  "edition_version": "1.5.5",
+  "edition_version": "1.5.6",
   "upstream_version": "2.1.0",
   "upgrade_compatibility": {
     "schema": 1,
-    "min_from": "1.5.4",
+    "min_from": "1.5.5",
     "php": ">=8.4.1 <9.0",
     "extensions": [
       "json",

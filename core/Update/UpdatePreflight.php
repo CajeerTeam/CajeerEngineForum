@@ -36,6 +36,20 @@ final class UpdatePreflight
         }
     }
 
+    /** Check actual destinations under the operator UID before capturing or mutating. */
+    public static function writablePlan(string $root,array $plan): void
+    {
+        foreach (array_unique(array_merge($plan['files'],$plan['removed_files'],['release-manifest.json'])) as $relative) {
+            $path=OperationFiles::path($root,$relative);
+            if (file_exists($path)&&!is_file($path)) throw new \RuntimeException('Update destination is not a regular file: '.$relative);
+            $parent=dirname($path);
+            while (!file_exists($parent)) $parent=dirname($parent);
+            if (!is_dir($parent)||!is_writable($parent)||!is_executable($parent)) throw new \RuntimeException('Update destination directory is not writable: '.$relative);
+            if (is_file($path)&&function_exists('posix_geteuid')&&posix_geteuid()!==0) {
+                if (fileowner($path)!==posix_geteuid()||!in_array(filegroup($path),array_merge([posix_getegid()],posix_getgroups()),true)) throw new \RuntimeException('Operator cannot preserve destination ownership: '.$relative);
+            }
+        }
+    }
     /** Conservative estimate: compressed copy + extracted stage + backup + replacement headroom.
      * Free space is checked on both code and storage mounts; a remote database has its own capacity policy.
      */

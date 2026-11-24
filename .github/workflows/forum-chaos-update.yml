@@ -1,4 +1,4 @@
-name: Forum 1.5.5 physical interrupted signed update
+name: Forum 1.5.6 physical interrupted signed update
 on:
   workflow_dispatch:
     inputs:
@@ -12,7 +12,7 @@ on:
         required: true
         options: [drained, activating]
 env:
-  FORUM_CHAOS_TARGET: ${{ '1.5.5' }}
+  FORUM_CHAOS_TARGET: ${{ '1.5.6' }}
 permissions:
   contents: read
   actions: read

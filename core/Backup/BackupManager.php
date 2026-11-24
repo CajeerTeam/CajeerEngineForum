@@ -33,6 +33,89 @@ final class BackupManager
         }
         return $bytes;
     }
+    /** The automatic updater must have enough space for a fresh snapshot and its isolated rehearsal. */
+    public function updatePreflight(): int
+    {
+        $this->db->assertDrillReady();
+        $bytes=$this->preflight();
+        $env=F::path($this->root,'.env');
+        if (!is_file($env)||!is_readable($env)) throw new \RuntimeException('Original environment is required for automatic recovery');
+        $envSize=filesize($env);
+        if ($envSize===false||$envSize>PHP_INT_MAX-$bytes-4096) throw new \RuntimeException('Cannot estimate encrypted environment');
+        $bytes+=$envSize+4096;
+        $this->privateBase();
+        $offsite=$this->updateOffsitePolicy();
+        if ($offsite!==null) new OffsiteBackup($this->root,$offsite);
+        // Snapshot + restored copy + optional encrypted transfer spool. Include allocation headroom.
+        $multiplier=$offsite===null?2:4;
+        if ($bytes>intdiv(PHP_INT_MAX-67108864,$multiplier)) throw new \RuntimeException('Recovery size exceeds supported estimate');
+        $need=$bytes*$multiplier+67108864;
+        $free=disk_free_space($this->base);
+        if ($free===false||$free<$need) throw new \RuntimeException('Insufficient backup filesystem capacity for recovery rehearsal');
+        $this->db->assertRestoreSpace();
+        $paths=array_unique(array_merge($this->dataFiles(),$this->codeFiles(),['.env']));
+        $checked=[];
+        foreach ($paths as $relative) {
+            $path=F::path($this->root,$relative);
+            for ($entry=$path;$entry!==$this->root && !isset($checked[$entry]);$entry=dirname($entry)) {
+                $this->assertRestorePermissions($entry); $checked[$entry]=true;
+            }
+        }
+        return $bytes*$multiplier;
+    }
+    private function assertRestorePermissions(string $path): void
+    {
+        if (!is_writable(dirname($path))||!is_executable(dirname($path))) throw new \RuntimeException('Recovery destination directory is not writable');
+        if (function_exists('posix_geteuid')&&posix_geteuid()!==0 && (fileowner($path)!==posix_geteuid()||!in_array(filegroup($path),array_merge([posix_getegid()],posix_getgroups()),true))) throw new \RuntimeException('Operator cannot preserve recovery ownership');
+    }
+    private function updateOffsitePolicy(): ?BackupPolicy
+    {
+        $path=getenv('UPDATE_BACKUP_OFFSITE_POLICY_FILE');
+        return $path===false||$path===''?null:BackupPolicy::load($this->root,$path);
+    }
+    /** Caller owns the exclusive update lease. Never restore into the live installation. */
+    public function proveUpdateRecovery(string $id): array
+    {
+        $this->db->assertDrillReady();
+        $verified=$this->verify($id); $source=$this->directory($id);
+        $m=F::read($source.'/manifest.json');
+        if (($m['edition_version']??null)!==(new \CajeerEngine\Support\ProjectInfo($this->root))->editionVersion() || ($m['env']??null)===null) throw new \RuntimeException('Recovery requires the current release and encrypted environment');
+        foreach (array_merge(array_keys($m['files']),array_keys($m['dirs']),['.env']) as $relative) $this->assertRestorePermissions(F::path($this->root,$relative));
+        $this->db->assertRestoreSpace();
+        $work=F::path($this->base,'rehearsal-'.bin2hex(random_bytes(16)));
+        if (!mkdir($work,0700)) throw new \RuntimeException('Cannot reserve private recovery rehearsal');
+        $started=microtime(true);
+        try {
+            $restored=$work.'/restored'; F::dir($restored);
+            foreach ($m['files'] as $relative=>$info) {
+                $dest=F::path($restored,$relative);
+                // Keep copies private; do not reproduce executable or world-readable permissions.
+                F::copy(F::path($source,'files/'.$relative),$dest);
+                if (!hash_equals($info['sha256'],F::hash($dest))) throw new \RuntimeException('Recovery file readback failed');
+            }
+            $env=$this->decryptEnv($source);
+            try {
+                F::write($restored.'/.env',$env);
+                if (!hash_equals(hash('sha256',$env),F::hash($restored.'/.env'))) throw new \RuntimeException('Recovery environment readback failed');
+            } finally { sodium_memzero($env); }
+            $db=$this->db->drill($source.'/database.dump',$work);
+            if (($db['tables_read']??0)<1 || !(($db['restore_verified']??false)||($db['integrity_verified']??false))) throw new \RuntimeException('Recovered database has no verified application tables');
+            $offsite=null;
+            if (($policy=$this->updateOffsitePolicy())!==null) {
+                $bundle=$work.'/snapshot.cebackup'; $key=$this->secretKey();
+                try { RecoveryBundle::export($source,$bundle,$key); }
+                finally { sodium_memzero($key); }
+                $sha=F::hash($bundle); $size=filesize($bundle);
+                if ($size===false||$size<1) throw new \RuntimeException('Invalid encrypted recovery bundle');
+                (new OffsiteBackup($this->root,$policy))->publish($id,$sha,$bundle,$size);
+                $offsite=['verified'=>true,'sha256'=>$sha,'bytes'=>$size,'destination_identity'=>$policy->identity()];
+            }
+            // Reauthenticate the original snapshot after rehearsal, not a separate backup.
+            $again=$this->verify($id);
+            if (!hash_equals($verified['manifest_sha256'],$again['manifest_sha256'])) throw new \RuntimeException('Recovery snapshot changed during rehearsal');
+            return ['ok'=>true,'id'=>$id,'manifest_sha256'=>$verified['manifest_sha256'],'database'=>$db,'files_restored'=>count($m['files']),'environment_restored'=>true,'offsite'=>$offsite,'verified_at'=>gmdate(DATE_ATOM),'seconds'=>round(microtime(true)-$started,3),'application_boot_tested'=>false];
+        } finally { RecoveryBundle::cleanup($work); }
+    }
     public function create(): array
     {
         // A live request may briefly hold a shared activity lease even after
