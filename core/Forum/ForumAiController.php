@@ -6,13 +6,13 @@ namespace CajeerEngine\Forum;
 
 use CajeerEngine\AI\AiProviderException;
 use CajeerEngine\Audit\AuditLogger;
-use CajeerEngine\Forum\Service\{ForumAiChat,ForumThreadAssistant,ForumAiSearch,ForumWritingAssistant,ForumModerationAdvisor,ForumAiInsights};
+use CajeerEngine\Forum\Service\{ForumAiChat,ForumThreadAssistant,ForumAiSearch,ForumWritingAssistant,ForumModerationAdvisor,ForumAiInsights,ForumAdminAiActions};
 use Symfony\Component\HttpFoundation\{JsonResponse,Request,Response,StreamedResponse};
 
 /** Cookie-session protected member AI; never exposes CMS chat or credentials. */
 final readonly class ForumAiController
 {
-    public function __construct(private ForumAiChat $chat, private AuditLogger $audit, private ForumThreadAssistant $threadAssistant, private ForumAiSearch $search, private ForumWritingAssistant $writing, private ForumModerationAdvisor $moderationAdvisor, private ForumAiInsights $insights) {}
+    public function __construct(private ForumAiChat $chat, private AuditLogger $audit, private ForumThreadAssistant $threadAssistant, private ForumAiSearch $search, private ForumWritingAssistant $writing, private ForumModerationAdvisor $moderationAdvisor, private ForumAiInsights $insights, private ForumAdminAiActions $adminActions) {}
 
     private function user(Request $request): string
     {
@@ -56,6 +56,33 @@ final readonly class ForumAiController
     public function delete(Request $r,array $p):JsonResponse {return $this->wrap(function()use($r,$p){if($this->input($r,[])!==[])throw new ForumException('Неверный запрос.',422);$this->chat->delete($this->user($r),(string)$p['id']);return ['deleted'=>true];});}
     public function adminStatus(Request $r):JsonResponse {return $this->wrap(function()use($r){$this->user($r);\CajeerEngine\Forum\Security\ForumAccessPolicy::fromAuth($r->attributes->get('auth'))->require('forum:acp:settings');return $this->chat->administrator();});}
     public function adminConfigure(Request $r):JsonResponse {return $this->wrap(function()use($r){$uid=$this->user($r);\CajeerEngine\Forum\Security\ForumAccessPolicy::fromAuth($r->attributes->get('auth'))->require('forum:acp:settings');$settings=$this->chat->configure($this->input($r,['enabled','model','max_output_tokens','daily_request_limit','monthly_token_limit','revision']));$this->audit->record('forum.ai.settings.updated',$uid,['enabled'=>$settings['enabled'],'model'=>$settings['model'],'revision'=>$settings['revision']]);return $settings;});}
+
+    /** All admin AI mutations are separate from the generation request. */
+    public function adminActionList(Request $r):JsonResponse
+    {return $this->wrap(fn()=> $this->adminActions->list($this->actor($r)));}
+
+    public function adminActionGet(Request $r,array $p):JsonResponse
+    {return $this->wrap(fn()=> $this->adminActions->get($this->actor($r),(string)$p['id']));}
+
+    public function adminActionPropose(Request $r):JsonResponse
+    {
+        return $this->wrap(function()use($r):array {
+            $b=$this->input($r,['action','instructions','faq_id','acknowledge_external_processing']);
+            if(!is_string($b['action']??null)||!is_string($b['instructions']??null)
+                ||(isset($b['faq_id'])&&!is_string($b['faq_id']))||!is_bool($b['acknowledge_external_processing']??null))
+                throw new ForumException('Неверные параметры AI-предложения.',422);
+            return $this->adminActions->propose($this->actor($r),$b['action'],$b['instructions'],$b['faq_id']??null,$b['acknowledge_external_processing']);
+        });
+    }
+
+    public function adminActionDecide(Request $r,array $p):JsonResponse
+    {
+        return $this->wrap(function()use($r,$p):array {
+            $b=$this->input($r,['digest','decision']);
+            if(!is_string($b['digest']??null)||!is_string($b['decision']??null))throw new ForumException('Неверное подтверждение.',422);
+            return $this->adminActions->decide($this->actor($r),(string)$p['id'],$b['digest'],$b['decision']);
+        });
+    }
 
     /** Operator-only, anonymous analytics preview. No provider call. */
     public function insightsPreview(Request $r):JsonResponse

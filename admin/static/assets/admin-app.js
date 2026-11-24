@@ -1542,7 +1542,7 @@ document.addEventListener('click',async e=>{if(e.target.closest('[data-ops-refre
 // Forum ACP: same-origin session and CSRF transport provided by the existing SPA.
 const forumAcp = (() => {
   let tab = 'overview', page = 1, query = '', filter = '', serial = 0, caps = {}, nativePreset = '30', nativeFrom = '', nativeUntil = '', nativeFocus = 'total', engagementDays = '30', nativeNotice = ''
-  const tabs = [['overview','Обзор'],['structure','Структура и ACL'],['users','Участники'],['groups','Группы'],['threads','Обсуждения'],['posts','Сообщения'],['moderation','Модерация'],['attachments','Вложения'],['audit','Аудит'],['analytics','Аналитическая панель'],['ai','AI-помощник'],['settings','Настройки сообщества'],['themes','Оформление форума'],['policy_history','История политики'],['maintenance','Обслуживание'],['delegation','Делегирование'],['imports','Миграции']]
+  const tabs = [['overview','Обзор'],['structure','Структура и ACL'],['users','Участники'],['groups','Группы'],['threads','Обсуждения'],['posts','Сообщения'],['moderation','Модерация'],['attachments','Вложения'],['audit','Аудит'],['analytics','Аналитическая панель'],['ai','AI-помощник'],['ai_actions','AI-действия'],['settings','Настройки сообщества'],['themes','Оформление форума'],['policy_history','История политики'],['maintenance','Обслуживание'],['delegation','Делегирование'],['imports','Миграции']]
   const el = (tag, text, cls) => { const n=document.createElement(tag); if(text!=null)n.textContent=text; if(cls)n.className=cls; return n }
   const add = (p,...nodes) => { p.append(...nodes); return p }
   const card = title => add(el('section',null,'card'),el('h2',title))
@@ -1569,10 +1569,11 @@ const forumAcp = (() => {
     const body=el('div');root.append(body);body.append(el('p','Загрузка…'))
     try{
       // Authoritative gate on every mount; never display retained data after logout/role change.
-      const access=await list('access');if(ticket!==serial||!root.isConnected)return;caps=access.capabilities;const available=tabs.filter(([id])=>caps.admin||(id==='users'&&caps.members)||(['settings','themes','analytics','ai'].includes(id)&&caps.settings)||(id==='policy_history'&&caps.audit)||(id==='maintenance'&&caps.maintenance));if(!available.length)throw new Error('Недостаточно прав.');if(!available.some(([id])=>id===tab)){tab=available[0][0];reset()}for(const [id,title] of available)bar.append(action(title,()=>{tab=id;reset();return mount()},tab===id?'':'secondary'));body.replaceChildren();const overview=tab==='overview'?await list('overview'):null;if(ticket!==serial||!root.isConnected)return;
+      const access=await list('access');if(ticket!==serial||!root.isConnected)return;caps=access.capabilities;const available=tabs.filter(([id])=>caps.admin||(id==='users'&&caps.members)||(['settings','themes','analytics','ai','ai_actions'].includes(id)&&caps.settings)||(id==='policy_history'&&caps.audit)||(id==='maintenance'&&caps.maintenance));if(!available.length)throw new Error('Недостаточно прав.');if(!available.some(([id])=>id===tab)){tab=available[0][0];reset()}for(const [id,title] of available)bar.append(action(title,()=>{tab=id;reset();return mount()},tab===id?'':'secondary'));body.replaceChildren();const overview=tab==='overview'?await list('overview'):null;if(ticket!==serial||!root.isConnected)return;
       if(tab==='overview'){const labels={users:'Участники',active_users:'Активные',boards:'Разделы',threads:'Темы',posts:'Сообщения',reports:'Открытые жалобы',pending:'На проверке',attachments:'Вложения'};const grid=el('div',null,'grid cards');for(const [key,val] of Object.entries(overview.counts))grid.append(add(card(labels[key]||key),el('div',val,'kpi-value')));body.append(grid,add(card('Рабочие инструменты'),link('Открыть форум','/forum'),el('p','Структура, участники, группы, публикации и модерация управляются существующими сервисами форума.')));return}
       if(tab==='analytics')return await nativeAnalytics(body,ticket)
       if(tab==='ai')return await aiSettings(body,ticket)
+      if(tab==='ai_actions')return await aiAdminActions(body,ticket)
       if(tab==='settings')return await settings(body,ticket)
       if(tab==='themes')return await themeEditor(body,ticket)
       if(tab==='policy_history')return await policyHistory(body,ticket)
@@ -1604,6 +1605,66 @@ const forumAcp = (() => {
       });
     }),link('Перейти к пользовательскому чату','/forum/ai'));
   }
+  /** Only read/preview operations run until the operator confirms an exact proposal digest. */
+  async function aiAdminActions(body,ticket){
+    const rows=await call('/acp/ai/actions');if(ticket!==serial)return;
+    const intro=card('Управляемые AI-действия форума');body.append(intro);
+    intro.append(el('p','OpenAI готовит только предложение. Изменения не применяются во время генерации. Для исполнения требуется отдельное подтверждение и повторная проверка прав, ревизии и срока действия (15 минут). Создаваемый FAQ остаётся неопубликованным.','muted'));
+    const types=[['policy_name','Изменить название форума'],['policy_description','Изменить описание форума'],
+      ...(caps.members?[['faq_create','Создать неопубликованный FAQ'],['faq_update','Изменить опубликованный FAQ']]:[])];
+    const kind=select('action',types),request=area('instructions',''),ack=input('ack','','checkbox');
+    request.maxLength=1000;request.rows=4;
+    const ackLabel=el('label');ackLabel.append(ack,document.createTextNode(' Подтверждаю передачу выбранного публичного контекста и инструкции OpenAI.'));
+    const fields=[field('Тип изменения',kind),field('Инструкция AI',request)];
+    let faqField=null,faqSelect=null;
+    if(caps.members){
+      const faqs=await call('/acp/support/faqs');if(ticket!==serial)return;
+      faqSelect=select('faq_id',(Array.isArray(faqs)?faqs:[]).filter(f=>Number(f.published)===1).map(f=>[f.id,f.question]),'');
+      faqField=field('Опубликованный FAQ',faqSelect);faqField.hidden=true;fields.push(faqField);
+      kind.addEventListener('change',()=>{faqField.hidden=kind.value!=='faq_update';});
+    }
+    fields.push(ackLabel);
+    const preview=card('Предпросмотр изменения');body.append(preview);
+    const renderProposal=(proposal)=>{
+      preview.replaceChildren(el('h2','Предпросмотр изменения'));
+      if(!proposal){preview.append(el('p','Выберите предложение. До подтверждения данные форума не изменятся.','muted'));return;}
+      preview.append(el('p','Тип: '+proposal.action+' · Состояние: '+proposal.state));
+      preview.append(el('p','Обоснование AI: '+proposal.reason));
+      const before=el('pre',JSON.stringify(proposal.before,null,2),'json');
+      const after=el('pre',JSON.stringify(proposal.after,null,2),'json');
+      preview.append(el('h3','До'),before,el('h3','После (точное изменение)'),after,
+        el('p','Истекает: '+new Date(proposal.expires_at*1000).toLocaleString('ru-RU')+' · Модель: '+proposal.model,'muted'));
+      if(proposal.state==='pending'&&proposal.expires_at*1000>Date.now()){
+        preview.append(action('Применить после подтверждения',async()=>{
+          if(!confirm('Применить именно показанное изменение '+proposal.action+'? AI не будет вызван повторно.'))return;
+          const outcome=await call('/acp/ai/actions/'+proposal.id+'/decision','POST',{decision:'approve',digest:proposal.digest});
+          renderProposal(outcome);await mount();
+        },'primary'),action('Отклонить',async()=>{
+          if(!confirm('Отклонить это AI-предложение без применения?'))return;
+          const outcome=await call('/acp/ai/actions/'+proposal.id+'/decision','POST',{decision:'reject',digest:proposal.digest});
+          renderProposal(outcome);await mount();
+        }));
+      }
+      if(proposal.result)preview.append(el('p','Результат исполнения: '+JSON.stringify(proposal.result)));
+    };
+    intro.append(form(fields,'Сформировать предложение',async()=>{
+      if(!ack.checked)throw new Error('Требуется согласие на передачу контекста.');
+      if(kind.value==='faq_update'&&!faqSelect?.value)throw new Error('Выберите опубликованный FAQ.');
+      const proposal=await call('/acp/ai/actions','POST',{
+        action:kind.value,instructions:request.value,acknowledge_external_processing:true,
+        ...(kind.value==='faq_update'?{faq_id:faqSelect.value}:{})
+      });
+      ack.checked=false;renderProposal(proposal);
+    }));
+    renderProposal(null);
+    const history=card('История и ожидающие AI-предложения');body.append(history);
+    if(!rows.length)history.append(el('p','Предложений пока нет.','muted'));
+    else history.append(tableDom(['Создано','Действие','Статус',''],rows.map(r=>[
+      new Date(r.created_at*1000).toLocaleString('ru-RU'),r.action,r.state,
+      action('Просмотр',async()=>renderProposal(await call('/acp/ai/actions/'+r.id)))
+    ])));
+  }
+
   async function imports(body,ticket){
     const d=await list('imports',{page:String(page)});if(ticket!==serial)return;
     const c=card('Миграции форумов'),detail=el('div');body.append(c,detail);

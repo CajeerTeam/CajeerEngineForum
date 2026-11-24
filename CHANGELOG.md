@@ -1,3 +1,11 @@
+## [1.3.9] - 2026-11-24
+
+### Controlled Admin AI Actions
+- Active Forum ACP panel to propose, inspect, apply or reject permitted AI changes to the forum title/description and support FAQ. AI generation uses existing OpenAI Responses, quotas, budgets and temporary transcript cleanup.
+- No automated execution: database-backed, actor-owned proposals with exact before/after and rationale, explicit OpenAI disclosure, 15-minute expiration, and an approval-only second request bound to a proposal digest.
+- Live permission, account status and target revision rechecked in the same SQL transaction as the real forum policy/FAQ mutation; atomic audit. FAQ creation is unpublished, and editing published FAQ preserves its visibility. No role, sanctions or ACL mutations exposed.
+- Migration `0089_forum_ai_admin_actions.sql` for SQLite, PostgreSQL, MySQL/MariaDB; unit, SQL, browser and real PDO/provider-boundary acceptance added to CI. Production certification requires green external CI and staging.
+
 ## [1.3.8] - 2026-11-24
 
 ### AI ACP Insights

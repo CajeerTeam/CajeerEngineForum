@@ -117,14 +117,14 @@ jobs:
           python3 tools/certification-evidence.py verify "$ARTIFACT_ROOT" --trusted-key "$pub"
 
           cat > "$RUNNER_TEMP/forum-release-notes.md" <<'NOTES'
-          ## CajeerEngineForum 1.3.8 — AI ACP Insights
+          ## CajeerEngineForum 1.3.9 — Controlled Admin AI Actions
 
-          Forum Edition 1.3.8 on CajeerEngine 2.1.0.
+          Forum Edition 1.3.9 on CajeerEngine 2.1.0.
 
-          - Real OpenAI Responses suggestions for forum topic titles, copy editing, clarity and markup formatting.
-          - A separate preview requires explicit acceptance; never publishes or overwrites changes made during generation.
-          - Member-scoped session/CSRF, existing core monetary and token quotas, isolated one-shot transcripts and no new migration.
-          - CI requires PHP validation, real-PDO/provider-stub acceptance and Chromium/Firefox browser regression.
+          - AI proposes changes to forum public copy or FAQ from live, permission-checked inputs; no automatic mutation.
+          - Actor-owned 15-minute proposals with exact before/after preview, live ACL/revision checks, separate approval and transactional audit.
+          - FAQ creation always starts unpublished; permissions, moderation and user roles cannot be modified through AI.
+          - Migration 0089; CI requires real PDO/provider-stub acceptance and Chromium/Firefox browser regression.
 
           Publication of signed artifacts is gated on successful CI, external staging approval,
           independently trusted signing keys and production change-control review.

@@ -544,6 +544,42 @@ export const operations = {
         "parameters": [],
         "bodyRequired": true
     },
+    "api_v1_forum_acp_ai_actions_decide": {
+        "method": "POST",
+        "path": "/forum/acp/ai/actions/{id}/decision",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": true
+    },
+    "api_v1_forum_acp_ai_actions_get": {
+        "method": "GET",
+        "path": "/forum/acp/ai/actions/{id}",
+        "parameters": [
+            {
+                "name": "id",
+                "in": "path",
+                "required": true
+            }
+        ],
+        "bodyRequired": false
+    },
+    "api_v1_forum_acp_ai_actions_list": {
+        "method": "GET",
+        "path": "/forum/acp/ai/actions",
+        "parameters": [],
+        "bodyRequired": false
+    },
+    "api_v1_forum_acp_ai_actions_propose": {
+        "method": "POST",
+        "path": "/forum/acp/ai/actions",
+        "parameters": [],
+        "bodyRequired": true
+    },
     "api_v1_forum_acp_ai_configure": {
         "method": "PUT",
         "path": "/forum/acp/ai",

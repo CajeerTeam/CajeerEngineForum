@@ -668,6 +668,8 @@ final class Application
             $container->get(ExtensionRuntime::class)->platform()
         );
         $forumAiChat = new \CajeerEngine\Forum\Service\ForumAiChat($forumDb,$container->get(AiSettings::class),$container->get(OpenAiClient::class));
+        $forumSupportService = new \CajeerEngine\Forum\Service\ForumSupportAssistant(
+            $forumDb, new \CajeerEngine\Forum\Service\ForumAiSearch($forumDb,$forumTx,$forumAiChat));
         $forumAi = new \CajeerEngine\Forum\ForumAiController(
             $forumAiChat,
             $container->get(AuditLogger::class),
@@ -675,11 +677,11 @@ final class Application
             new \CajeerEngine\Forum\Service\ForumAiSearch($forumDb,$forumTx,$forumAiChat),
             new \CajeerEngine\Forum\Service\ForumWritingAssistant($forumAiChat),
             new \CajeerEngine\Forum\Service\ForumModerationAdvisor($forumDb,$forumTx,$forumAiChat),
-            new \CajeerEngine\Forum\Service\ForumAiInsights($forumDb,$forumTx,$forumAiChat)
+            new \CajeerEngine\Forum\Service\ForumAiInsights($forumDb,$forumTx,$forumAiChat),
+            new \CajeerEngine\Forum\Service\ForumAdminAiActions($forumDb,$forumTx,$forumAiChat,$forumSupportService)
         );
         $forumSupport = new \CajeerEngine\Forum\ForumSupportController(
-            new \CajeerEngine\Forum\Service\ForumSupportAssistant($forumDb, new \CajeerEngine\Forum\Service\ForumAiSearch($forumDb,$forumTx,$forumAiChat)),
-            $container->get(AuditLogger::class)
+            $forumSupportService, $container->get(AuditLogger::class)
         );
         $controllers = compact('identity', 'forum', 'forumAi', 'forumSupport', 'aiAnalytics', 'aiAutomations', 'aiMigration', 'support', 'knowledge', 'ai', 'identityAdmin', 'oidc', 'migration', 'analyticsHub', 'tracking', 'analyticsEvents', 'consent', 'integrations', 'health', 'system', 'contentTypes', 'entries', 'runtime', 'search', 'queue', 'scheduler', 'webhooks', 'extensions', 'installer', 'importExport', 'updates', 'rc', 'stable', 'admin', 'media', 'public', 'cms', 'database', 'auth', 'users', 'roles', 'apiTokens', 'security');
         foreach (\CajeerEngine\Http\RouteRegistry::all() as [$method, $path, $name, $controller, $action, $scopes]) {

@@ -708,6 +708,54 @@ final class Operations {
     ),
     'bodyRequired' => true,
   ),
+  'api_v1_forum_acp_ai_actions_decide' => 
+  array (
+    'method' => 'POST',
+    'path' => '/forum/acp/ai/actions/{id}/decision',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => true,
+  ),
+  'api_v1_forum_acp_ai_actions_get' => 
+  array (
+    'method' => 'GET',
+    'path' => '/forum/acp/ai/actions/{id}',
+    'parameters' => 
+    array (
+      0 => 
+      array (
+        'name' => 'id',
+        'in' => 'path',
+        'required' => true,
+      ),
+    ),
+    'bodyRequired' => false,
+  ),
+  'api_v1_forum_acp_ai_actions_list' => 
+  array (
+    'method' => 'GET',
+    'path' => '/forum/acp/ai/actions',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => false,
+  ),
+  'api_v1_forum_acp_ai_actions_propose' => 
+  array (
+    'method' => 'POST',
+    'path' => '/forum/acp/ai/actions',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => true,
+  ),
   'api_v1_forum_acp_ai_configure' => 
   array (
     'method' => 'PUT',

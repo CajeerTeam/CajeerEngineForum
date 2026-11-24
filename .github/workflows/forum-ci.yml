@@ -6,7 +6,7 @@ on:
 permissions:
   contents: read
 env:
-  FORUM_CURRENT_VERSION: ${{ '1.3.8' }}
+  FORUM_CURRENT_VERSION: ${{ '1.3.9' }}
 concurrency:
   group: forum-ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -127,6 +127,8 @@ jobs:
       - run: php tools/forum-ai-writing-unit.php
       - run: php tools/forum-ai-moderation-unit.php
       - run: php tools/forum-ai-insights-unit.php
+      - run: php tools/forum-ai-admin-actions-unit.php
+      - run: python tools/forum-tests/ai_admin_actions_sql_regression.py
       - run: python tools/forum-tests/ai_moderation_sql_regression.py
       - run: node --check public/admin/assets/admin-app.js
       - run: python tools/forum-tests/acp_sql_regression.py
@@ -289,6 +291,10 @@ jobs:
         run: php tools/forum-ai-moderation-acceptance.php
       - name: Forum 1.3.8 AI Insights real PDO/provider acceptance
         run: php tools/forum-ai-insights-acceptance.php
+      - name: Forum 1.3.9 controlled admin AI real PDO/provider acceptance
+        env:
+          FORUM_TEST_DRIVER: sqlite
+        run: php tools/forum-ai-admin-actions-acceptance.php
       - run: php tools/forum-analytics-dashboard-regression.php
       - run: php tools/forum-engagement-regression.php
       - run: php tools/forum-analytics-hardening-regression.php
@@ -465,6 +471,10 @@ jobs:
         run: php tools/forum-ai-moderation-acceptance.php
       - name: Forum 1.3.8 AI Insights real PDO/provider acceptance
         run: php tools/forum-ai-insights-acceptance.php
+      - name: Forum 1.3.9 controlled admin AI real PDO/provider acceptance
+        env:
+          FORUM_TEST_DRIVER: pgsql
+        run: php tools/forum-ai-admin-actions-acceptance.php
       - name: Knowledge sync real PostgreSQL FTS repair and search acceptance
         env:
           FORUM_TEST_DRIVER: pgsql
@@ -554,6 +564,10 @@ jobs:
         run: php tools/forum-ai-moderation-acceptance.php
       - name: Forum 1.3.8 AI Insights real PDO/provider acceptance
         run: php tools/forum-ai-insights-acceptance.php
+      - name: Forum 1.3.9 controlled admin AI real PDO/provider acceptance
+        env:
+          FORUM_TEST_DRIVER: mysql
+        run: php tools/forum-ai-admin-actions-acceptance.php
       - name: Knowledge sync real MySQL/MariaDB FTS repair and search acceptance
         env:
           FORUM_TEST_DRIVER: mysql
@@ -603,6 +617,7 @@ jobs:
       - run: python tools/forum-ai-writing-browser-regression.py --browser ${{ matrix.browser }}
       - run: python tools/forum-ai-moderation-browser-regression.py --browser ${{ matrix.browser }}
       - run: python tools/forum-ai-insights-browser-regression.py --browser ${{ matrix.browser }}
+      - run: python tools/forum-ai-admin-actions-browser-regression.py --browser ${{ matrix.browser }}
       - run: python tools/forum-thread-ai-browser-regression.py --browser ${{ matrix.browser }}
       - run: python tools/forum-ai-search-browser-regression.py --browser ${{ matrix.browser }}
       - run: python tools/forum-support-browser-regression.py --browser ${{ matrix.browser }}
