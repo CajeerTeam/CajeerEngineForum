@@ -45,13 +45,14 @@ final readonly class SchedulerRunner
                 ['name' => 'search.index_published', 'description' => 'Проверка и восстановление актуальности поискового каталога.', 'interval' => 'every_minute'],
                 ['name' => 'webhooks.dispatch_pending', 'description' => 'Отправка pending-событий Event API.', 'interval' => 'every_minute'],
                 ...($this->releaseDiscovery?->enabled() ? [['name' => 'updates.discover_releases', 'description' => 'Автоматическая проверка GitHub Releases.', 'interval' => $this->releaseDiscovery->intervalSeconds() . '_seconds']] : []),
+                ...(\CajeerEngine\Observability\TraceExporter::enabled() ? [['name'=>'observability.export_traces','description'=>'Export sampled traces','interval'=>'every_minute']] : []),
                 ...($this->updateNotifications !== null ? [['name' => 'updates.notifications.dispatch', 'description' => 'Передача событий обновления в надёжную очередь webhook.', 'interval' => 'every_minute']] : []),
             ],
             $this->aiAutomations === null ? [] : [['name' => 'ai.automation.dispatch', 'description' => 'Dispatch scheduled AI generation runs to queue', 'interval' => 'every_minute']],
             $this->analyticsHub === null ? [] : [['name' => 'analytics.sync_reports', 'description' => 'Queue analytics report refresh', 'interval' => 'hourly']],
             array_map(static fn($name) => ['name' => $name, 'description' => 'Extension task', 'interval' => 'every_minute'], $extensionNames),
         );
-        $internal = ['tmp.cleanup', 'queue.recover', 'forum.jobs.dispatch', 'queue.cleanup_processed', 'search.index_published', 'webhooks.dispatch_pending', 'analytics.sync_reports', 'ai.automation.dispatch', 'updates.discover_releases', 'updates.notifications.dispatch'];
+        $internal = ['tmp.cleanup', 'queue.recover', 'forum.jobs.dispatch', 'queue.cleanup_processed', 'search.index_published', 'webhooks.dispatch_pending', 'analytics.sync_reports', 'ai.automation.dispatch', 'updates.discover_releases', 'updates.notifications.dispatch','observability.export_traces'];
         if ($extensionRegistryUnavailable) {
             $tasks[] = ['name' => 'extensions.registry', 'description' => 'Extension task registry unavailable', 'interval' => 'every_minute', 'state' => ['status' => 'unavailable']];
         }
@@ -72,7 +73,7 @@ final readonly class SchedulerRunner
     public function run(): array
     {
         $store = $this->runStore ?? new TaskRunStore($this->rootPath);
-        $results = [];
+        $results = []; $started=hrtime(true);
         // Each task is isolated. A failing queue/backend cannot starve unrelated maintenance,
         // and a failed slot is never silently marked successful.
         $results['tmp.cleanup'] = $this->runTask($store, 'tmp.cleanup', 3600, fn() => ['removed' => $this->cleanupTmp()]);
@@ -119,6 +120,8 @@ final readonly class SchedulerRunner
         } catch (\Throwable) {
             // Telemetry must not hide completed task results.
         }
+        \CajeerEngine\Observability\Operation::record('scheduler','runner',$ok?'success':'failure',$started,$this->rootPath);
+        (new \CajeerEngine\Observability\Metrics($this->rootPath))->flush();
         return ['ok' => $ok, 'ran_at' => gmdate(DATE_ATOM), 'tasks' => $results];
     }
 

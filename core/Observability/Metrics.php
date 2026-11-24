@@ -9,7 +9,7 @@ use CajeerEngine\Update\OperationFiles;
 final class Metrics
 {
     private const BUCKETS=[0.005,0.01,0.025,0.05,0.1,0.25,0.5,1,2.5,5,10,30];
-    private const KINDS=['http','job','scheduler','database'];
+    private const KINDS=['http','job','scheduler','database','ai','analytics','integration','redis'];
     private static array $pending=[];
     private static array $pendingCount=[];
     private static bool $shutdownRegistered=false;
@@ -41,13 +41,18 @@ final class Metrics
     private function sample(string $kind,string $operation,string $outcome,float $seconds): array
     {
         if(!in_array($kind,self::KINDS,true))throw new \InvalidArgumentException('Unknown metric kind');
-        $operation=$this->operation($kind,$operation);$outcome=in_array($outcome,['1xx','2xx','3xx','4xx','5xx','success','failure','lost','skipped'],true)?$outcome:'other';
+        $operation=$this->operation($kind,$operation);$outcome=in_array($outcome,['1xx','2xx','3xx','4xx','5xx','success','failure','lost','skipped','rate_limited','rejected','hit','miss'],true)?$outcome:'other';
         $seconds=max(0.0,min(86400.0,is_finite($seconds)?$seconds:0.0));
-        return [$kind.'|'.$operation.'|'.$outcome,['count'=>1,'sum'=>$seconds,'buckets'=>array_map(static fn($b)=>(int)($seconds<=$b),self::BUCKETS)]];
+        return [$kind.'|'.$operation.'|'.$outcome,['count'=>1,'sum'=>$seconds,'buckets'=>array_map(static fn($b)=>(int)($seconds<=$b),self::BUCKETS),'recent'=>[intdiv(time(),300)=>[1,$seconds]]]];
     }
     private static function combine(?array $a,array $b): array
     {
-        if($a===null)return $b;$a['count']+=$b['count'];$a['sum']+=$b['sum'];foreach($b['buckets'] as $i=>$v)$a['buckets'][$i]+=$v;return $a;
+        if($a===null)return $b;
+        $a['count']+=$b['count'];$a['sum']+=$b['sum'];foreach($b['buckets'] as $i=>$v)$a['buckets'][$i]+=$v;
+        $slot=intdiv(time(),300);$recent=$a['recent']??[];
+        foreach($b['recent']??[] as $k=>$v){$old=$recent[$k]??[0,0];$recent[$k]=[$old[0]+$v[0],$old[1]+$v[1]];}
+        foreach($recent as $k=>$v)if($k<$slot-11||$k>$slot)unset($recent[$k]);
+        $a['recent']=$recent;return $a;
     }
     private function persist(array $rows): void
     {
@@ -89,7 +94,7 @@ final class Metrics
             static $routes=null; $routes??=array_column(\CajeerEngine\Http\RouteRegistry::all(),2);
             return in_array($name,$routes,true)||in_array($name,['unmatched','bootstrap','maintenance','install','upgrade','health','metrics'],true)?$name:'other';
         }
-        $known=match($kind){'job'=>['log.message','search.index_all','webhook.dispatch','webhook.deliver','webhooks.dispatch_pending','forum.notifications.dispatch','forum.mail.dispatch','forum.media.image','forum.media.replica','forum.extensions.dispatch','worker'], 'scheduler'=>['tmp.cleanup','queue.cleanup_processed','search.index_published','webhooks.dispatch_pending','runner','observability.export_traces'], 'database'=>['connect','transaction','query','health'],default=>[]};
+        $known=match($kind){'job'=>['log.message','search.index_all','webhook.dispatch','webhook.deliver','webhooks.dispatch_pending','forum.notifications.dispatch','forum.mail.dispatch','forum.media.image','forum.media.replica','forum.extensions.dispatch','forum.extensions.cleanup','forum.drafts.cleanup','forum.recycle.purge','forum.attachments.cleanup','forum.spam.cleanup','forum.ai.search.cleanup','forum.analytics.rollup','forum.analytics.cleanup','platform.workflows.run','ai.automation.execute','ai.support.reply','ai.translation.propose','analytics.report_sync','analytics.deliver','worker'], 'scheduler'=>['tmp.cleanup','queue.cleanup_processed','search.index_published','webhooks.dispatch_pending','runner','observability.export_traces','queue.recover','forum.jobs.dispatch','analytics.sync_reports','ai.automation.dispatch','updates.discover_releases','updates.notifications.dispatch'], 'database'=>['connect','transaction','query','health'], 'ai'=>['openai.responses'], 'analytics'=>['native.rollup','native.record','report.sync'], 'integration'=>['provider.execute','webhook.deliver','outbound.http'], 'redis'=>['connect','queue.command','cache.get','cache.put','cache.forget','ping'],default=>[]};
         return in_array($name,$known,true)?$name:(str_starts_with($name,'extension.')?'extension':'other');
     }
     public function snapshot(): array
@@ -98,6 +103,24 @@ final class Metrics
             $path=$this->root.'/storage/logs/observability/metrics-'.$i.'.json';
             foreach((new JsonFile($path))->readObject() as $key=>$row)$result[$key]=$row;
         }ksort($result);return $result;
+    }
+    /** Twelve UTC five-minute buckets, including the current partial bucket. Old installations have no recent history. */
+    public function recentSummary(): array
+    {
+        $now=time();$slot=intdiv($now,300);$components=[];
+        foreach(self::KINDS as $kind)$components[$kind]=['count'=>0,'failures'=>0,'rejected'=>0,'sum'=>0.0,'operations'=>[]];
+        foreach($this->snapshot() as $key=>$row){
+            [$kind,$op,$outcome]=explode('|',$key);if(!isset($components[$kind]))continue;
+            $count=0;$sum=0.0;foreach($row['recent']??[] as $k=>$v)if($k>=$slot-11&&$k<=$slot){$count+=$v[0];$sum+=$v[1];}
+            if(!$count)continue;
+            $failure=in_array($outcome,['5xx','failure','lost','rate_limited','rejected'],true)?$count:0;
+            $rejected=in_array($outcome,['4xx','rate_limited','rejected'],true)?$count:0;
+            $c=&$components[$kind];$c['count']+=$count;$c['failures']+=$failure;$c['rejected']+=$rejected;$c['sum']+=$sum;
+            $o=&$c['operations'][$op];$o??=['count'=>0,'failures'=>0,'rejected'=>0,'sum'=>0.0];$o['count']+=$count;$o['failures']+=$failure;$o['rejected']+=$rejected;$o['sum']+=$sum;unset($o,$c);
+        }
+        $summarize=static function(array &$r):void{$r['average_ms']=$r['count']?round($r['sum']*1000/$r['count'],2):null;$r['failure_percent']=$r['count']?round(100*$r['failures']/$r['count'],2):null;unset($r['sum']);};
+        foreach($components as &$c){$summarize($c);foreach($c['operations'] as &$o)$summarize($o);unset($o);ksort($c['operations']);}unset($c);
+        return ['from'=>($slot-11)*300,'until'=>$now,'bucket_seconds'=>300,'components'=>$components];
     }
     private const FORUM_ROUTES = [
         'ssr'=>['forum.home','forum.page','public.home'],

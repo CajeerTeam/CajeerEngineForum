@@ -75,3 +75,7 @@ Sampling respects a valid incoming parent sampled bit; otherwise it uses determi
 ## Validation
 
 `php tools/observability-regression.php` exercises real HTTP probes without Composer, concurrent counters, rotating logs, actual file queue and scheduler, storage probes and OTLP delivery/retry. `--database` additionally exercises measured PDO SQLite queries. Release smoke validates readiness success, RBAC and metrics on installed SQLite/PostgreSQL dist. Prometheus server, distributed storage, external Redis/S3/collector and production load need deployment-specific validation.
+
+## Forum Edition 1.4.6
+
+See [Unified Observability & Diagnostics](forum-unified-observability-1.4.6.md) for the recent component view, new histograms, passive probes, alert semantics, and upgrade instructions.

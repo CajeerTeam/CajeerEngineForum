@@ -1,8 +1,8 @@
 # CajeerEngine Forum Edition
 
-**Forum Edition 1.4.5 — Unified Queue & Scheduler**, built on CajeerEngine 2.1.0. Publication requires a passing `forum-required` gate and verified signed CI certification tied to the exact commit and release artifacts.
+**Forum Edition 1.4.6 — Unified Observability & Diagnostics**, built on CajeerEngine 2.1.0. Publication requires a passing `forum-required` gate and verified signed CI certification tied to the exact commit and release artifacts.
 
-See [Unified Queue & Scheduler](docs/forum-unified-queue-1.4.5.md) for deployment, recovery and operations.
+See [Unified Observability & Diagnostics](docs/forum-unified-observability-1.4.6.md) for deployment, recovery and operations.
 
 See [Platform Workflows](docs/forum-platform-workflows-1.4.4.md) for configuration, scheduling and execution history.
 

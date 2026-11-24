@@ -22,8 +22,8 @@ final readonly class TraceExporter
     {
         if(!self::sampled($trace))return;
         try{
-            if(!in_array($kind,['http','job','scheduler','database'],true))return;
-            $name=$kind==='http'&&in_array($operation,array_column(\CajeerEngine\Http\RouteRegistry::all(),2),true)?$operation:match($kind){'http'=>'http.request','job'=>'queue.job','scheduler'=>'scheduler.task','database'=>'database.operation'};
+            if(!in_array($kind,['http','job','scheduler','database','ai','analytics','integration'],true))return;
+            $name=$kind==='http'&&in_array($operation,array_column(\CajeerEngine\Http\RouteRegistry::all(),2),true)?$operation:match($kind){'http'=>'http.request','job'=>'queue.job','scheduler'=>'scheduler.task','database'=>'database.operation','ai'=>'ai.provider','analytics'=>'analytics.operation','integration'=>'integration.operation'};
             $dir=$this->directory();$lock=fopen($dir.'/spool.lock','c+');if(!$lock)return;
             try{if(!flock($lock,LOCK_EX|LOCK_NB))return;$files=glob($dir.'/span-*.json')?:[];if(count($files)>=1000){error_log('CajeerEngine: trace spool full');return;}
                 $span=['traceId'=>$trace->traceId,'spanId'=>$trace->spanId,'name'=>$name,'kind'=>$kind==='http'?2:1,'startTimeUnixNano'=>sprintf('%.0F',$start*1e9),'endTimeUnixNano'=>sprintf('%.0F',($start+max(0.0,$duration))*1e9),'status'=>['code'=>$ok?1:2],'attributes'=>[['key'=>'cajeer.kind','value'=>['stringValue'=>$kind]]]];

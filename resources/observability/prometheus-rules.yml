@@ -14,11 +14,29 @@ groups:
         annotations:
           summary: "Forum is not ready; check maintenance and database"
       - alert: CajeerEngineDependencyUnavailable
-        expr: cajeer_dependency_up{component=~"database|storage|queue|cache|search|scheduler|worker|backup|backup_automation|traces|update"} == 0
+        expr: cajeer_dependency_up{component=~"database|storage|queue|cache|search|scheduler|worker|backup|backup_automation|traces|update|ai|ai_admission|analytics|integrations|redis"} == 0
         for: 5m
         labels: {severity: warning}
         annotations:
           summary: "CajeerEngine component {{ $labels.component }} is unhealthy"
+      - alert: CajeerEngineRecentComponentFailures
+        expr: (cajeer_recent_operation_failures >= 3) and (cajeer_recent_operations >= 5) and (cajeer_recent_operation_failures / clamp_min(cajeer_recent_operations, 1) >= 0.2)
+        for: 2m
+        labels: {severity: warning}
+        annotations:
+          summary: "Recent {{ $labels.component }} operation failure ratio exceeds threshold"
+      - alert: CajeerEngineNativeAnalyticsDelayed
+        expr: cajeer_analytics_native_oldest_age_seconds > 300
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: "Unaggregated forum analytics events are delayed"
+      - alert: CajeerEngineAIAdmissionExpired
+        expr: cajeer_ai_admission_expired > 0
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: "Forum AI admission leases have expired; inspect cleanup jobs"
       - alert: CajeerEngineHTTP5xx
         expr: sum by (instance) (rate(cajeer_http_requests_total{status_class="5xx"}[5m])) / clamp_min(sum by (instance) (rate(cajeer_http_requests_total[5m])), 0.001) > 0.01
         for: 5m

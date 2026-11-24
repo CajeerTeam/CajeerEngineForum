@@ -45,8 +45,9 @@ try{
         }finally{$pdo->exec('DROP SCHEMA '.$schema.' CASCADE');}exit(0);
     }
     if($mode==='--redis'){
+        mkdir($work.'/storage',0700);
         $redis=new Redis();$redis->connect(getenv('CE_QUEUE_REDIS_HOST')?:'127.0.0.1',(int)(getenv('CE_QUEUE_REDIS_PORT')?:6379));$prefix='ce:test:'.bin2hex(random_bytes(6)).':';
-        try{$q=new RedisQueueDriver($redis,$prefix,2);exercise($q,'regression');$id=CajeerEngine\Support\Uuid::v4();$redis->hSet($prefix.'job:'.$id,'data',json_encode(['id'=>$id,'queue'=>'legacy','name'=>'test','payload'=>[],'attempts'=>1,'max_attempts'=>3,'status'=>'reserved']));check($q->migrateLegacy()===1,'Redis legacy orphan recovered');sleep(1);check($q->pop('legacy')?->id===$id,'Redis legacy job reclaimed');}finally{$cursor=null;do{foreach($redis->scan($cursor,$prefix.'*',200)?:[]as $k)$redis->del($k);}while($cursor!==0);}exit(0);
+        try{$q=new RedisQueueDriver($redis,$prefix,2,$work);exercise($q,'regression');$id=$q->push('test',[],'expired-observation');$q->pop('expired-observation');sleep(3);check($q->diagnostics()['expired_reservations']>=1,'Redis diagnostics detects real expired reservation');$q->recover('expired-observation');check($q->diagnostics()['expired_reservations']===0,'Redis diagnostics tracks recovered lease');$m=new CajeerEngine\Observability\Metrics($work);check($m->recentSummary()['components']['redis']['operations']['queue.command']['count']>0,'real Redis queue operations exported');$id=CajeerEngine\Support\Uuid::v4();$redis->hSet($prefix.'job:'.$id,'data',json_encode(['id'=>$id,'queue'=>'legacy','name'=>'test','payload'=>[],'attempts'=>1,'max_attempts'=>3,'status'=>'reserved']));check($q->migrateLegacy()===1,'Redis legacy orphan recovered');sleep(1);check($q->pop('legacy')?->id===$id,'Redis legacy job reclaimed');}finally{$cursor=null;do{foreach($redis->scan($cursor,$prefix.'*',200)?:[]as $k)$redis->del($k);}while($cursor!==0);}exit(0);
     }
     putenv('APP_ENV=testing');putenv('CONTENT_STORAGE=file');putenv('CMS_STORAGE=file');putenv('SEARCH_DRIVER=file');
     $q=new FileQueueDriver($work,2);exercise($q,'regression');

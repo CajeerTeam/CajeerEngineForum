@@ -9,6 +9,8 @@ use CajeerEngine\Security\PublicHttpClient;
 /** TLS-verified, DNS-pinned OpenAI Responses transport; supports stateless function calling. */
 class OpenAiClient
 {
+    private ?string $metricsRoot=null;
+    public function __construct(?string $root=null){$this->metricsRoot=$root;}
     /** @return array{text:string,usage:array{input_tokens:int,output_tokens:int,cached_input_tokens?:int},response_id:string} */
     public function complete(#[\SensitiveParameter] string $key, string $model, array $input, int $maxOutput, ?callable $onDelta = null): array
     {
@@ -105,6 +107,11 @@ class OpenAiClient
 
     /** @return array{text:string,calls:list<array<string,mixed>>,usage:array{input_tokens:int,output_tokens:int,cached_input_tokens?:int},response_id:string} */
     protected function request(string $key, string $model, array $input, int $maxOutput, array $tools, ?callable $onDelta = null, bool $forceText = false): array
+    {
+        return \CajeerEngine\Observability\Operation::measure('ai','openai.responses',fn()=> $this->sendRequest($key,$model,$input,$maxOutput,$tools,$onDelta,$forceText),$this->metricsRoot);
+    }
+
+    private function sendRequest(#[\SensitiveParameter] string $key,string $model,array $input,int $maxOutput,array $tools,?callable $onDelta,bool $forceText): array
     {
         try { AiOutboundSafety::assertNoCredentials($input); }
         catch (AiProviderException $e) { throw new AiProviderException($e->getMessage(),$e->httpStatus,false); }

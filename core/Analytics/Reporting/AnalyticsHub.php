@@ -90,28 +90,30 @@ final readonly class AnalyticsHub
             $this->query('UPDATE analytics_connections SET last_attempt=? WHERE id=? AND lease_token=?',[gmdate(DATE_ATOM,$now),$id,$lease]);return true;
         });
         if(!$claimed)return;
+        $started=hrtime(true);$outcome='failure';
         try{
             $credential=json_decode($this->vault->open($this->context($id,$r['provider'],$r['resource_id']),$r['credential']),true,32,JSON_THROW_ON_ERROR);
             $this->hostPolicy($r['provider'],$credential);
             $report=$this->provider($r['provider'])->report($r['resource_id'],$credential,$from,$to,$r['goal_id']);
             $json=json_encode($report,JSON_THROW_ON_ERROR|JSON_INVALID_UTF8_SUBSTITUTE);
             if(strlen($json)>4194304)throw new \RuntimeException('Analytics report exceeds storage limit');
-            $this->db->transaction(function()use($id,$revision,$lease,$from,$to,$report,$json,$jobKey,$key){
-                $s=$this->query('UPDATE analytics_connections SET lease_until=0,lease_token=NULL,last_success=?,last_error=NULL,last_job_key=? WHERE id=? AND revision=? AND lease_token=?',[$report['fetched_at'],$jobKey,$id,$revision,$lease]);if($s->rowCount()!==1)return;
+            $committed=$this->db->transaction(function()use($id,$revision,$lease,$from,$to,$report,$json,$jobKey,$key):bool{
+                $s=$this->query('UPDATE analytics_connections SET lease_until=0,lease_token=NULL,last_success=?,last_error=NULL,last_job_key=? WHERE id=? AND revision=? AND lease_token=?',[$report['fetched_at'],$jobKey,$id,$revision,$lease]);if($s->rowCount()!==1)return false;
                 $this->query('DELETE FROM analytics_reports WHERE connection_id=? AND date_from=? AND date_to=?',[$id,$from,$to]);
                 $this->query('INSERT INTO analytics_reports (connection_id,date_from,date_to,fetched_at,report_json) VALUES (?,?,?,?,?)',[$id,$from,$to,$report['fetched_at'],$json]);
                 $this->query("UPDATE analytics_sync_runs SET status='success',finished_at=?,error=NULL WHERE connection_id=? AND revision=? AND job_key=?",[gmdate(DATE_ATOM),$id,$revision,$key]);
                 $rows=$this->query('SELECT date_from,date_to FROM analytics_reports WHERE connection_id=? ORDER BY fetched_at DESC,date_from DESC,date_to DESC',[$id])->fetchAll(PDO::FETCH_ASSOC);
                 foreach(array_slice($rows,20) as $row)$this->query('DELETE FROM analytics_reports WHERE connection_id=? AND date_from=? AND date_to=?',[$id,$row['date_from'],$row['date_to']]);
-                $this->trimRuns($id);
+                $this->trimRuns($id);return true;
             });
+            $outcome=$committed?'success':'skipped';
         }catch(\Throwable $e){
             $msg=preg_match('/^Analytics provider HTTP [0-9]{3}$/D',$e->getMessage())||in_array($e->getMessage(),['Analytics provider host not allowed','Analytics transport unavailable','Invalid analytics response','Invalid OAuth response','Cloudflare GraphQL query rejected','Cloudflare dataset unavailable','Analytics report exceeds storage limit'],true)?$e->getMessage():'Analytics synchronization failed';
             $this->db->transaction(function()use($id,$revision,$lease,$msg,$key){
                 $s=$this->query('UPDATE analytics_connections SET lease_until=0,lease_token=NULL,last_error=? WHERE id=? AND revision=? AND lease_token=?',[$msg,$id,$revision,$lease]);
                 if($s->rowCount()===1){$this->query("UPDATE analytics_sync_runs SET status='failed',finished_at=?,error=? WHERE connection_id=? AND revision=? AND job_key=?",[gmdate(DATE_ATOM),$msg,$id,$revision,$key]);$this->trimRuns($id);}
             });throw new \RuntimeException($msg);
-        }
+        }finally{\CajeerEngine\Observability\Operation::record('analytics','report.sync',$outcome,$started,$this->config->rootPath());}
     }
     private function trimRuns(string $id): void {
         $rows=$this->query('SELECT revision,job_key FROM analytics_sync_runs WHERE connection_id=? ORDER BY started_at DESC,revision DESC,job_key DESC',[$id])->fetchAll(PDO::FETCH_ASSOC);

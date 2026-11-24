@@ -15,7 +15,7 @@ final class ForumRuntimeCache
     private int $retryAfter=0;
     public function __construct(private readonly DatabaseManager $db,private readonly string $root) {}
     public static function enabled(): bool {return getenv('FORUM_CACHE_ENABLED')==='true';}
-    private function redis(): \Redis {return $this->redis??=RedisConnection::open();}
+    private function redis(): \Redis {return $this->redis??=RedisConnection::open($this->root);}
     public function response(Request $request,string $view,callable $load,?ForumSeoSettings $seo=null): Response
     {
         if(!self::enabled()||time()<$this->retryAfter||$request->getMethod()!=='GET'||$request->attributes->get('auth')!==null||(string)$request->headers->get('Authorization','')!==''||$request->headers->has('X-API-Token')||$request->cookies->count()>0)return $load();
@@ -41,7 +41,7 @@ final class ForumRuntimeCache
                 catch(\Throwable){$settings[]='assets-unavailable';}
             }
             $key=hash('sha256',json_encode(['v087',$generation,$view,$path,$variant,(string)($q['page']??1),$settings],JSON_THROW_ON_ERROR));
-            $store=new RedisCacheStore($redis,$prefix.'cache:');$lock=$prefix.'lock:'.$key;$token=bin2hex(random_bytes(16));$owner=false;
+            $store=new RedisCacheStore($redis,$prefix.'cache:',$this->root);$lock=$prefix.'lock:'.$key;$token=bin2hex(random_bytes(16));$owner=false;
             try{
                 $cached=$store->get($key);
                 if(is_array($cached)&&isset($cached['body'],$cached['headers'])&&is_string($cached['body'])&&is_array($cached['headers'])){

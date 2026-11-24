@@ -54,7 +54,7 @@ final readonly class WebhookDispatcher
     /** @param array<string, mixed> $webhook @param array<string, mixed> $payload @return array<string, mixed> */
     public function dispatchWebhook(array $webhook, string $event, array $payload, ?string $eventId = null): array
     {
-        $started = microtime(true);
+        $started = microtime(true); $metricStart=hrtime(true);
         $secret = (string) ($webhook['secret'] ?? '');
         $request = $this->buildSignedRequest($event, $payload, $secret, $eventId);
         $statusCode = 0;
@@ -87,6 +87,7 @@ final readonly class WebhookDispatcher
             'duration_ms' => round((microtime(true) - $started) * 1000, 2),
             'created_at' => (new \DateTimeImmutable())->format(DATE_ATOM),
         ];
+        \CajeerEngine\Observability\Operation::record('integration','webhook.deliver',$delivery['ok']?'success':($statusCode===429?'rate_limited':'failure'),$metricStart,$this->repository?->rootPath());
         $this->repository?->recordDelivery($delivery);
         return $delivery;
     }
@@ -102,6 +103,6 @@ final readonly class WebhookDispatcher
     /** @param array<string,string> $headers @return array{0:int,1:string} */
     private function send(string $url, array $headers, string $body): array
     {
-        return (new \CajeerEngine\Security\PublicHttpClient())->request($url, 'POST', $headers, $body, 1048576);
+        return (new \CajeerEngine\Security\PublicHttpClient(10,$this->repository?->rootPath()))->request($url, 'POST', $headers, $body, 1048576);
     }
 }

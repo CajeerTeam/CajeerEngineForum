@@ -25,7 +25,9 @@ def check():
         raise ValueError('Forum/engine version identity mismatch')
     if release.get('channel') != ('rc' if '-' in current else 'stable'):
         raise ValueError('Incorrect release channel')
-    if current == '1.4.5':
+    if current == '1.4.6':
+        baseline = 'refs/tags/v1.4.5'
+    elif current == '1.4.5':
         baseline = 'refs/tags/v1.4.4'
     elif current == '1.4.4':
         baseline = 'refs/tags/v1.4.3'

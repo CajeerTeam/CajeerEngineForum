@@ -124,11 +124,11 @@ jobs:
           python3 tools/certification-evidence.py verify "$ARTIFACT_ROOT" --trusted-key "$pub"
 
           cat > "$RUNNER_TEMP/forum-release-notes.md" <<'NOTES'
-          ## CajeerEngineForum 1.4.5 — Unified Queue & Scheduler
+          ## CajeerEngineForum 1.4.6 — Unified Observability & Diagnostics
 
-          Forum Edition 1.4.5 on CajeerEngine 2.1.0.
+          Forum Edition 1.4.6 on CajeerEngine 2.1.0.
 
-          - Unified durable forum background execution, coalesced wakeups, all-queue lease recovery and ACP operations.
+          - Unified runtime telemetry, rolling component metrics, passive dependency diagnostics and ACP operations.
           - Source revalidation after queue admission and strict streamed/final response reconciliation.
           - Signed ZIPs, detached signatures, SHA-256, manifests and artifact index are published together.
           - No new migration; mandatory real PDO and browser acceptance remains in place.

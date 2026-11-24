@@ -1,3 +1,9 @@
+## [1.4.6] - 2026-11-24
+
+- Unified runtime metrics for AI, analytics, integrations, Redis, SQL, HTTP and background processes.
+- Bounded recent operation windows, passive dependency checks, scheduler freshness and System ACP reporting.
+- No database migration. External CI and staging acceptance required.
+
 ## [1.4.5] - 2026-11-24
 
 ### Unified Queue & Scheduler

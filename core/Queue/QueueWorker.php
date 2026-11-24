@@ -53,7 +53,7 @@ final class QueueWorker
     public function stop(): void {$this->stopping=true;}
     public function work(?string $queue=null,int $limit=10): array
     {
-        $root=$this->webhooks->rootPath();$metrics=new \CajeerEngine\Observability\Metrics($root);\CajeerEngine\Observability\OperationsMonitor::marker($root,'worker','running');
+        $runStarted=hrtime(true);$root=$this->webhooks->rootPath();$metrics=new \CajeerEngine\Observability\Metrics($root);\CajeerEngine\Observability\OperationsMonitor::marker($root,'worker','running');
         $processed=0;$failed=0;$errors=[];$lost=0;$signals=PHP_SAPI==='cli'&&function_exists('pcntl_signal')&&function_exists('pcntl_alarm');
         if($signals){$async=pcntl_async_signals(true);$old=[];foreach([SIGTERM,SIGINT,SIGALRM]as $s)$old[$s]=pcntl_signal_get_handler($s);pcntl_signal(SIGTERM,fn()=> $this->stop());pcntl_signal(SIGINT,fn()=> $this->stop());pcntl_signal(SIGALRM,static function(){throw new \RuntimeException('Job execution timeout');});}
         $forumProcessed=0;$mediaStats=['image'=>'disabled','replica'=>'disabled'];$mailStats=['sent'=>0,'failed'=>0,'cancelled'=>0];
@@ -92,6 +92,8 @@ final class QueueWorker
         $stats=$this->forumJobs?->stats??[];$forumProcessed+=$stats['notifications']??0;foreach($stats['mail']??[] as $key=>$n)$mailStats[$key]+=$n;$mediaStats=array_replace($mediaStats,$stats['media']??[]);
         try{$diagnostics=$this->queue->diagnostics();if(($diagnostics['connected']??true)===false)$backendUnavailable=true;}catch(\Throwable){$backendUnavailable=true;$diagnostics=['connected'=>false,'error'=>'Queue unavailable'];}
         \CajeerEngine\Observability\OperationsMonitor::marker($root,'worker',($failed||$backendUnavailable)?'failure':'success');
+        \CajeerEngine\Observability\Operation::record('job','worker',($failed||$backendUnavailable)?'failure':'success',$runStarted,$root);
+        $metrics->flush();
         return ['ok'=>$failed===0&&!$backendUnavailable,'backend_unavailable'=>$backendUnavailable||!$forumDbReady,'recovered'=>$recovered,'processed'=>$processed,'forum_extensions'=>$stats['extensions']??[],'forum_notifications_processed'=>$forumProcessed,'forum_mail'=>$mailStats,'forum_attachments_cleaned'=>$stats['attachments']??0,'forum_drafts_cleaned'=>$stats['drafts']??0,'forum_spam_cleaned'=>$stats['spam']??0,'forum_recycle_purged'=>$stats['recycle']??0,'forum_media'=>$mediaStats,'platform_workflows_processed'=>$stats['workflows']??0,'failed'=>$failed,'lost_reservations'=>$lost,'stopping'=>$this->stopping,'errors'=>$errors,'diagnostics'=>$diagnostics];
     }
     private function logMessage(array $payload,JobContext $context): void

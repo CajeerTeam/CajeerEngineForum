@@ -6,7 +6,7 @@ namespace CajeerEngine\Security;
 /** Public-only outbound transport. DNS is validated and the selected address is pinned to the connection. */
 final class PublicHttpClient implements OutboundHttpTransport
 {
-    public function __construct(private readonly int $timeoutSeconds = 10) {}
+    public function __construct(private readonly int $timeoutSeconds = 10,private readonly ?string $metricsRoot=null) {}
 
     public static function isPublicIp(string $ip): bool
     {
@@ -51,6 +51,10 @@ final class PublicHttpClient implements OutboundHttpTransport
 
     /** Same pinned transport, with final response headers for pagination metadata. */
     public function requestWithHeaders(string $url,string $method,#[\SensitiveParameter] array $headers=[],#[\SensitiveParameter] string $body='',int $maxBytes=1048576):array
+    {
+        return \CajeerEngine\Observability\Operation::measure('integration','outbound.http',fn()=> $this->sendWithHeaders($url,$method,$headers,$body,$maxBytes),$this->metricsRoot,static fn(array $r)=>$r[0]>=200&&$r[0]<300?'success':($r[0]===429?'rate_limited':'failure'));
+    }
+    private function sendWithHeaders(string $url,string $method,#[\SensitiveParameter] array $headers,#[\SensitiveParameter] string $body,int $maxBytes):array
     {
         if (!in_array($method, ['GET', 'POST', 'PUT'], true) || ($method === 'GET' && $body !== '') || $maxBytes < 1 || $maxBytes > 8388608) {
             throw new \InvalidArgumentException('Unsafe outbound HTTP method or response limit');

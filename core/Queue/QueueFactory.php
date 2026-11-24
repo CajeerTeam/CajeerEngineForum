@@ -34,20 +34,8 @@ final readonly class QueueFactory
 
     private function redis(): RedisQueueDriver
     {
-        if (!class_exists(\Redis::class)) {
-            throw new \RuntimeException('QUEUE_DRIVER=redis требует PHP extension redis.');
-        }
-        $redis = new \Redis();
-        if(!$redis->connect($this->config->string('cache.redis.host', getenv('REDIS_HOST') ?: '127.0.0.1'), $this->config->int('cache.redis.port', (int) (getenv('REDIS_PORT') ?: 6379)), 2.5))throw new \RuntimeException('Redis connection failed');
-        $password = getenv('REDIS_PASSWORD') ?: '';
-        if ($password !== '') {
-            if(!$redis->auth($password))throw new \RuntimeException('Redis authentication failed');
-        }
-        $database = (int) (getenv('REDIS_DATABASE') ?: 0);
-        if ($database > 0) {
-            if(!$redis->select($database))throw new \RuntimeException('Redis database selection failed');
-        }
-        return new RedisQueueDriver($redis, $this->config->string('queue.connections.redis.prefix','ce:queue:'), $this->config->int('queue.workers.lease_seconds', 300));
+        $redis = \CajeerEngine\Cache\RedisConnection::open($this->rootPath);
+        return new RedisQueueDriver($redis, $this->config->string('queue.connections.redis.prefix','ce:queue:'), $this->config->int('queue.workers.lease_seconds', 300),$this->rootPath);
     }
 
     private function database(): DatabaseManager

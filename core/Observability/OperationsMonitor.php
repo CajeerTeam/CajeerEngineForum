@@ -47,7 +47,7 @@ final readonly class OperationsMonitor
         // intentionally denied. Otherwise post-update readiness misreports it.
         if($requiredRedis&&$checks['installed']){
             $redis=null;
-            try{$redis=\CajeerEngine\Cache\RedisConnection::open();$checks['redis_required']=(bool)$redis->ping();}
+            try{$redis=\CajeerEngine\Cache\RedisConnection::open($this->root);$checks['redis_required']=(bool)$redis->ping();}
             catch(\Throwable){$checks['redis_required']=false;}
             finally{if($redis!==null)try{$redis->close();}catch(\Throwable){}}
         }
@@ -191,7 +191,7 @@ final readonly class OperationsMonitor
             $requiredRedis = getenv('RATE_LIMIT_DRIVER') === 'redis'
                 || $this->config->string('queue.default') === 'redis';
             if ($requiredRedis) {
-                $redis = \CajeerEngine\Cache\RedisConnection::open();
+                $redis = \CajeerEngine\Cache\RedisConnection::open($this->root);
                 try { if (!$redis->ping()) return false; }
                 finally { $redis->close(); }
             }
@@ -208,16 +208,22 @@ final readonly class OperationsMonitor
     {
         $ready=$this->readiness();$checks=[];$alerts=[];
         $probe=function(string $name,callable $fn)use(&$checks,&$alerts){$start=hrtime(true);try{$data=$fn();$ok=(bool)($data['ok']??true);$checks[$name]=['ok'=>$ok,'latency_ms'=>round((hrtime(true)-$start)/1e6,3)]+$data;if(!$ok)$alerts[]=$name.'_unavailable';}catch(\Throwable){$checks[$name]=['ok'=>false,'latency_ms'=>round((hrtime(true)-$start)/1e6,3),'error'=>'probe_failed'];$alerts[]=$name.'_unavailable';}};
-        $lock=null;try{$lock=OperationLock::acquire($this->root,false);if(OperationLock::maintenance($this->root))throw new \RuntimeException('Maintenance');}catch(\Throwable){OperationLock::release($lock);return ['ok'=>false,'status'=>'not_ready','time'=>gmdate(DATE_ATOM),'readiness'=>$ready,'checks'=>[],'disk'=>['free_bytes'=>null,'total_bytes'=>null],'alerts'=>['maintenance_or_activity_lock']];}
+        $lock=null;try{$lock=OperationLock::acquire($this->root,false);if(OperationLock::maintenance($this->root))throw new \RuntimeException('Maintenance');}catch(\Throwable){OperationLock::release($lock);return ['recent'=>null,'telemetry_scope'=>'local_storage','ok'=>false,'status'=>'not_ready','time'=>gmdate(DATE_ATOM),'readiness'=>$ready,'checks'=>[],'disk'=>['free_bytes'=>null,'total_bytes'=>null],'alerts'=>['maintenance_or_activity_lock']];}
         try {
         $db=new DatabaseManager($this->config);
         $probe('database',function()use($db){$this->assertDatabasePresent();$h=$db->health();return ['ok'=>(bool)($h['ok']??false)&&(bool)($h['schema_ready']??false),'driver'=>$db->driver(),'schema_ready'=>(bool)($h['schema_ready']??false)];});
         $probe('forum_database',function()use($db){$this->assertDatabasePresent();return ForumMetrics::database($db);});
         $probe('forum_cache',fn()=>ForumMetrics::cache());
+        $platform=new PlatformProbes($this->root,$this->config,$db);
+        $probe('ai',fn()=> $platform->ai());
+        $probe('ai_admission',function()use($platform){$this->assertDatabasePresent();return $platform->aiAdmission();});
+        $probe('analytics',function()use($platform){$this->assertDatabasePresent();return $platform->analytics();});
+        $probe('integrations',fn()=> $platform->integrations());
+        $probe('redis',fn()=> $platform->redis());
         $probe('storage',function(){ $s=new StorageManager($this->root,$this->config);$d=$s->diagnostics();return ['ok'=>(bool)($d['local_probe_write']??false)&&(bool)($d['local_probe_delete']??false)&&(bool)($d['driver_probe']['ok']??false),'driver'=>$s->driver()];});
         $probe('queue',function()use($db){if($this->config->string('queue.default')==='pgsql')$this->assertDatabasePresent();$d=(new QueueFactory($this->root,$this->config,$db))->make()->diagnostics();$counts=array_fill_keys(['pending','reserved','processed','failed'],0);foreach($d['queues']??[] as $q)foreach($counts as $k=>$v)$counts[$k]+=(int)($q[$k]??0);return ['ok'=>($d['writable']??true)&&($d['connected']??true),'driver'=>$d['driver']??'unknown','counts'=>$counts,'oldest_ready_age_seconds'=>(int)($d['oldest_ready_age_seconds']??0),'expired_reservations'=>(int)($d['expired_reservations']??0)];});
-        $probe('scheduler',function()use($db){if($this->config->string('scheduler.driver')==='pgsql')$this->assertDatabasePresent();$store=TaskRunStore::fromConfig($this->root,$this->config,$db);$tasks=[];foreach(['tmp.cleanup'=>3600,'queue.cleanup_processed'=>86400,'search.index_published'=>60,'webhooks.dispatch_pending'=>60] as $name=>$interval){$s=$store->status($name);$last=strtotime((string)($s['last_success_at']??''))?:0;$tasks[$name]=['status'=>$s['status']??'never','last_success'=>$last,'stale'=>$last===0||time()-$last>max(180,$interval*2)];}return ['ok'=>!in_array(true,array_column($tasks,'stale'),true),'tasks'=>$tasks];});
-        $probe('cache',fn()=> $this->cache());
+        $probe('scheduler',function()use($db){if($this->config->string('scheduler.driver')==='pgsql')$this->assertDatabasePresent();$store=TaskRunStore::fromConfig($this->root,$this->config,$db);$tasks=[];foreach($this->schedulerIntervals() as $name=>$interval){$s=$store->status($name);$last=strtotime((string)($s['last_success_at']??''))?:0;$tasks[$name]=['status'=>$s['status']??'never','last_success'=>$last,'stale'=>$last===0||time()-$last>max(180,$interval*2)||($s['status']??'never')==='failed'];}return ['ok'=>!in_array(true,array_column($tasks,'stale'),true),'tasks'=>$tasks];});
+        $probe('cache',fn()=> $this->config->string('cache.default','file')==='redis'?['ok'=>$checks['redis']['ok']??false,'driver'=>'redis','probe'=>'shared_redis']:$this->cache());
         $probe('search',function()use($db){$this->assertDatabasePresent();$d=(new \CajeerEngine\Search\SearchFactory($this->root,$this->config,$db))->make()->diagnostics();return ['ok'=>(bool)($d['ok']??$d['writable']??true),'documents'=>(int)($d['documents']??0)];});
         $probe('backup',fn()=> $this->backup());
         if (is_file($this->root.'/storage/app/recovery-receipt.json')) $probe('cold_recovery',function(){
@@ -239,8 +245,18 @@ final readonly class OperationsMonitor
         if(($fq['imports']['oldest_age_seconds']??0)>3600)$alerts[]='forum_import_stalled';
         try{$http=(new Metrics($this->root))->httpSummary();}catch(\Throwable){$http=['requests'=>null,'errors_5xx'=>null,'average_ms'=>null,'p95_bucket_ms'=>null];$alerts[]='metrics_unavailable';}
         try{$forumHttp=(new Metrics($this->root))->forumSummary();}catch(\Throwable){$forumHttp=[];}
-        return ['ok'=>$ready['ok'],'status'=>!$ready['ok']?'not_ready':($alerts?'degraded':'ready'),'time'=>gmdate(DATE_ATOM),'readiness'=>$ready,'checks'=>$checks,'http'=>$http,'forum_http'=>$forumHttp,'disk'=>['free_bytes'=>$free===false?null:(int)$free,'total_bytes'=>$total===false?null:(int)$total],'alerts'=>$alerts];
+        $recent=null;
+        try{$recent=(new Metrics($this->root))->recentSummary();foreach($recent['components'] as $kind=>$c)if($c['count']>=5&&$c['failures']>=3&&$c['failure_percent']>=20)$alerts[]='recent_'.$kind.'_failures';}catch(\Throwable){$alerts[]='recent_metrics_unavailable';}
+        return ['recent'=>$recent,'telemetry_scope'=>'local_storage','ok'=>$ready['ok'],'status'=>!$ready['ok']?'not_ready':($alerts?'degraded':'ready'),'time'=>gmdate(DATE_ATOM),'readiness'=>$ready,'checks'=>$checks,'http'=>$http,'forum_http'=>$forumHttp,'disk'=>['free_bytes'=>$free===false?null:(int)$free,'total_bytes'=>$total===false?null:(int)$total],'alerts'=>$alerts];
         }finally{OperationLock::release($lock);}
+    }
+    private function schedulerIntervals(): array
+    {
+        $tasks=['tmp.cleanup'=>3600,'queue.cleanup_processed'=>86400,'search.index_published'=>60,'webhooks.dispatch_pending'=>60,'queue.recover'=>60,'forum.jobs.dispatch'=>60,'ai.automation.dispatch'=>60,'analytics.sync_reports'=>3600,'updates.notifications.dispatch'=>60];
+        $updates=new \CajeerEngine\Update\AutomaticReleaseDiscovery($this->config);
+        if($updates->enabled())$tasks['updates.discover_releases']=$updates->intervalSeconds();
+        if(TraceExporter::enabled())$tasks['observability.export_traces']=60;
+        return $tasks;
     }
     private function assertDatabasePresent(): void
     {
@@ -252,9 +268,7 @@ final readonly class OperationsMonitor
     private function minFree(): int{return max(0,$this->config->int('observability.min_free_bytes',104857600));}
     private function cache(): array
     {
-        $driver=$this->config->string('cache.default','file');if($driver!=='redis')return ['ok'=>in_array($driver,['file','array','none'],true),'driver'=>in_array($driver,['file','array','none'],true)?$driver:'unknown','probe'=>'not_required'];
-        if(!class_exists(\Redis::class))throw new \RuntimeException('Redis unavailable');
-        $r=new \Redis();try{if(!$r->connect($this->config->string('cache.stores.redis.host','127.0.0.1'),$this->config->int('cache.stores.redis.port',6379),1.0))throw new \RuntimeException('Redis unavailable');$r->setOption(\Redis::OPT_READ_TIMEOUT,1.0);$password=$this->config->string('cache.stores.redis.password');if($password!==''&&!$r->auth($password))throw new \RuntimeException('Redis auth failed');if(!$r->select($this->config->int('cache.stores.redis.database',0)))throw new \RuntimeException('Redis select failed');return ['ok'=>(bool)$r->ping(),'driver'=>'redis'];}finally{try{$r->close();}catch(\Throwable){}}
+        $driver=$this->config->string('cache.default','file');return ['ok'=>in_array($driver,['file','array','none'],true),'driver'=>in_array($driver,['file','array','none'],true)?$driver:'unknown','probe'=>'not_required'];
     }
     private function backup(): array
     {
@@ -287,6 +301,10 @@ final readonly class OperationsMonitor
             foreach (['last_local'=>'local_last_success_timestamp_seconds','last_offsite'=>'offsite_last_success_timestamp_seconds','pending'=>'offsite_pending','checked_at'=>'automation_last_check_timestamp_seconds'] as $field=>$metric) $out.="# TYPE cajeer_backup_$metric gauge\ncajeer_backup_$metric ".(int)($b[$field]??0)."\n";
         }
         if(isset($r['checks']['traces']['pending']))$out.="# TYPE cajeer_trace_spool_pending gauge\ncajeer_trace_spool_pending ".$r['checks']['traces']['pending']."\n";
+        $out.="# TYPE cajeer_recent_operations gauge\n# TYPE cajeer_recent_operation_failures gauge\n";
+        foreach($r['recent']['components']??[] as $kind=>$c){$out.='cajeer_recent_operations{component="'.$kind.'"} '.(int)$c['count']."\n";$out.='cajeer_recent_operation_failures{component="'.$kind.'"} '.(int)$c['failures']."\n";}
+        foreach(['native_pending','native_oldest_age_seconds','external_active','external_failed'] as $field)if(isset($r['checks']['analytics'][$field]))$out.="# TYPE cajeer_analytics_$field gauge\ncajeer_analytics_$field ".(int)$r['checks']['analytics'][$field]."\n";
+        foreach(['active','queued','expired','cooldown_seconds'] as $field)if(isset($r['checks']['ai_admission'][$field]))$out.="# TYPE cajeer_ai_admission_$field gauge\ncajeer_ai_admission_$field ".(int)$r['checks']['ai_admission'][$field]."\n";
         return $out.ForumMetrics::prometheus($r['checks']);
     }
     /** Scrapes reuse a short-lived sample; a concurrent scrape never queues expensive probes. */
@@ -296,12 +314,12 @@ final readonly class OperationsMonitor
         $file=new JsonFile($dir.'/report.json');$now=time();
         if(OperationLock::maintenance($this->root))return $this->report();
         try{$lease=OperationLock::acquire($this->root,false);OperationLock::release($lease);}catch(\Throwable){return $this->report();}
-        $saved=$file->readObject();if(($saved['sampled_at']??0)>=$now-15)return $saved['report'];
+        try{$saved=$file->readObject();}catch(\Throwable){$saved=[];}if(($saved['sampled_at']??0)>=$now-15&&($saved['sampled_at']??0)<=$now&&is_array($saved['report']??null)&&array_key_exists('recent',$saved['report']))return $saved['report'];
         $h=fopen($dir.'/report.lock','c+');if(!$h)throw new \RuntimeException('Cannot lock diagnostics');
         try{
-            if(!flock($h,LOCK_EX|LOCK_NB)){if(($saved['sampled_at']??0)>=$now-60&&isset($saved['report']))return $saved['report'];throw new \RuntimeException('Diagnostic sample in progress');}
-            $saved=$file->readObject();if(($saved['sampled_at']??0)>=$now-15)return $saved['report'];
-            $report=$this->report();$file->writeObject(['sampled_at'=>time(),'report'=>$report]);return $report;
+            if(!flock($h,LOCK_EX|LOCK_NB)){if(($saved['sampled_at']??0)>=$now-60&&($saved['sampled_at']??0)<=$now&&is_array($saved['report']??null)&&array_key_exists('recent',$saved['report']))return $saved['report'];throw new \RuntimeException('Diagnostic sample in progress');}
+            try{$saved=$file->readObject();}catch(\Throwable){$saved=[];}if(($saved['sampled_at']??0)>=$now-15&&($saved['sampled_at']??0)<=$now&&is_array($saved['report']??null)&&array_key_exists('recent',$saved['report']))return $saved['report'];
+            $report=$this->report();try{$file->writeObject(['sampled_at'=>time(),'report'=>$report]);}catch(\Throwable){}return $report;
         }finally{fclose($h);}
     }
 }

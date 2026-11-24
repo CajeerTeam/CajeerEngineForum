@@ -311,7 +311,7 @@ final class Application
             $c->get(SearchIndexer::class),
         ));
         $container->set(AiSettings::class, fn (): AiSettings => new AiSettings($rootPath));
-        $container->set(OpenAiClient::class, fn (): OpenAiClient => new OpenAiClient());
+        $container->set(OpenAiClient::class, fn (): OpenAiClient => new OpenAiClient($rootPath));
         $container->set(\CajeerEngine\AI\AiCostControl::class, fn (ServiceContainer $c): \CajeerEngine\AI\AiCostControl => new \CajeerEngine\AI\AiCostControl(
             $c->get(DatabaseManager::class), $c->get(AiSettings::class)
         ));

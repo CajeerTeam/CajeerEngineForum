@@ -41,6 +41,10 @@ final readonly class ForumAnalyticsRollup
     /** Atomically aggregate at most $limit unapplied events. Returns actual applied count. */
     public function aggregateBatch(int $limit=self::BATCH_SIZE, ?int $now=null): int
     {
+        return \CajeerEngine\Observability\Operation::measure('analytics','native.rollup',fn()=> $this->aggregate($limit,$now),$this->db->config()->rootPath());
+    }
+    private function aggregate(int $limit,?int $now): int
+    {
         if ($limit<1 || $limit>1000) throw new \InvalidArgumentException('Invalid analytics batch');
         $at=$now??time();
         return $this->db->transaction(function(PDO $pdo)use($limit,$at):int{

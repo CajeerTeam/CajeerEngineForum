@@ -44,7 +44,7 @@ final readonly class ForumAnalyticsEvents
         if (!in_array($name,self::READ_EVENTS,true)) throw new \InvalidArgumentException('Unsupported read analytics event');
         // DatabaseManager::transaction rolls back even on engines that mark a
         // statement error as transaction-aborting. Do not fail a user request.
-        try { $this->db->transaction(function()use($name){$this->insert($name);}); }
+        try { \CajeerEngine\Observability\Operation::measure('analytics','native.record',fn()=> $this->db->transaction(fn()=> $this->insert($name)),$this->db->config()->rootPath(),static fn($r)=>$r?'success':'skipped'); }
         catch (\Throwable) { /* Telemetry is non-critical; never expose a query or user data. */ }
     }
 
@@ -53,14 +53,15 @@ final readonly class ForumAnalyticsEvents
     {
         if (!in_array($name,ForumNativeAnalytics::PAGE_EVENTS,true) || !preg_match('/^[a-f0-9]{32}$/D',$receiptId))
             throw new \InvalidArgumentException('Invalid native page view');
+        $started=hrtime(true);$outcome='failure';
         try {
-            return $this->db->transaction(fn():bool=>$this->insert($name,$receiptId));
+            $result=$this->db->transaction(fn():bool=>$this->insert($name,$receiptId));$outcome=$result?'success':'skipped';return $result;
         } catch (\PDOException $e) {
             $sqlstate=(string)($e->errorInfo[0]??$e->getCode());
             $native=(int)($e->errorInfo[1]??0);
-            if ($sqlstate==='23505' || ($sqlstate==='23000'&&in_array($native,[19,1062,1555,2067],true)))return false;
+            if ($sqlstate==='23505' || ($sqlstate==='23000'&&in_array($native,[19,1062,1555,2067],true))){$outcome='skipped';return false;}
             throw $e;
-        }
+        }finally{\CajeerEngine\Observability\Operation::record('analytics','native.record',$outcome,$started,$this->db->config()->rootPath());}
     }
 
     private function insert(string $name,?string $receiptId=null): bool
