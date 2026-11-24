@@ -1,5 +1,5 @@
 const ADMIN_VERSION = '2.1.0'
-const FORUM_EDITION = '1.5.8'
+const FORUM_EDITION = '1.5.9'
 let oidcEnabled = false
 const API_BASE = '/api/v1'
 const TOKEN_KEY = 'cajeerengine.admin.token'
@@ -1497,6 +1497,24 @@ function bindExtensions() {
 
 let updatesWorking = false
 let updatesPolling = false
+function updatePolicyEditor(center) {
+  if (!center?.editable) return `<div class="card"><h2>Управление политикой</h2><p>${escapeHtml(center?.error || 'Настройки определяет владелец сервера. Для делегирования включите UPDATE_ACP_POLICY_ENABLED.')}</p></div>`
+  const settings=center.settings || {}, host=center.host || {}
+  const field=(key,label,type='text')=>`<label>${label}<input class="input" name="${key}" type="${type}" value="${escapeHtml(settings[key] || '')}"></label>`
+  const modes={legacy:'Legacy',disabled:'Отключено',notify_only:'Только уведомления',download_only:'Только загрузка',manual_approval:'Ручное подтверждение',automatic_security:'Автоматически: безопасность',automatic_patch:'Автоматически: Patch',automatic_minor:'Автоматически: Patch и Minor',fully_automatic:'Полностью автоматически'}
+  const options=(values,selected)=>Object.entries(values).map(([key,label])=>`<option value="${key}" ${key===selected?'selected':''}>${label}</option>`).join('')
+  const channels=Object.fromEntries(['stable','rc','beta','dev'].filter(c=>c==='stable'||c===host.channel||host.channel==='dev').map(c=>[c,c]))
+  return `<div class="card"><h2>Управление политикой</h2><p>Ревизия ${escapeHtml(center.revision)}. Доверенный ключ, права оператора и разрешение автономной установки определяются хостом.</p>${center.error?`<p class="notice error">${escapeHtml(center.error)}</p>`:''}
+  <details data-update-policy-editor><summary>Изменить настройки автообновления</summary><form class="form" data-update-policy-form>
+  <label>Режим<select name="mode" class="input">${options(modes,settings.mode)}</select></label>
+  <label>Канал<select name="channel" class="input">${options(channels,settings.channel)}</select></label>
+  <label><input type="checkbox" name="sequential" ${settings.sequential||host.sequential?'checked':''} ${host.sequential?'disabled':''}> Последовательные обновления</label>
+  <label><input type="checkbox" name="auto_apply" ${settings.auto_apply&&host.auto_apply?'checked':''} ${host.auto_apply?'':'disabled'}> Разрешить автономную установку</label>
+  ${field('timezone','Часовой пояс IANA')}${field('days','Дни недели (1–7 через запятую)')}${field('window_start','Начало окна (пусто — без ограничения)','time')}${field('window_end','Конец окна','time')}${field('defer_until','Отложить до (UTC: YYYY-MM-DDTHH:mm:ssZ)')}${field('blocked_versions','Заблокированные версии (через запятую)')}
+  <p>Обязательные блокировки хоста: ${escapeHtml(host.blocked_versions||'нет')}. Настройки вступят в силу при следующем запуске оператора. Пока редактор открыт, автообновление страницы приостановлено.</p>
+  <div class="toolbar"><button class="btn" type="submit">Сохранить политику</button><button class="btn secondary" type="button" data-update-policy-reset>Вернуть настройки хоста</button></div></form></details>
+  ${(center.history||[]).length?table(['Ревизия','Дата UTC','Инициатор','Действие','Режим'],center.history.map(r=>`<tr><td>${escapeHtml(r.revision)}</td><td>${escapeHtml(r.at)}</td><td>${escapeHtml(r.actor)}</td><td>${escapeHtml(r.action)}</td><td>${escapeHtml(r.mode)}</td></tr>`)):''}</div>`
+}
 function updatesView() {
   const raw = state.cache.updates
   if (raw?.error) return `<div class="notice error">${escapeHtml(raw.error.message || 'Не удалось получить состояние обновлений')}</div>`
@@ -1547,12 +1565,15 @@ function updatesView() {
       ${stage.ok ? `<p class="muted">SHA-256: <code>${escapeHtml(stage.sha256)}</code><br>Файлов: ${escapeHtml(stage.file_count)}</p>`:''}
       ${stage.runtime_compatibility && !stage.runtime_compatibility.legacy_policy ? `<p>Совместимость при подготовке: ${flag(stage.runtime_compatibility.ok && stage.extension_compatibility?.ok, "подтверждена", "ошибка")} · PHP ${escapeHtml(stage.runtime_compatibility.php_version)} · SQL ${escapeHtml(stage.runtime_compatibility.database_driver)} ${escapeHtml(stage.runtime_compatibility.database_version || "—")} · Redis ${escapeHtml(stage.runtime_compatibility.redis_enabled ? stage.runtime_compatibility.redis_version || "—" : "отключён")}</p>` : ""}
       ${pending && policy.window_open === false ? `<p>Одобренная установка ожидает окна обслуживания; загрузка и резервное копирование не ограничены окном.</p>` : ""}
+      ${w.active ? `<p>Активная транзакция: ${escapeHtml(w.active.id || '—')} · ${escapeHtml(w.active.state || '—')} · сервисы: ${escapeHtml(w.active.service_phase || '—')}</p>` : ''}
+      ${w.last_report ? `<p>Последний результат: ${escapeHtml(w.last_report.state || '—')} · ${escapeHtml(w.last_report.previous_version || '—')} → ${escapeHtml(w.last_report.target_version || '—')}</p>` : ''}
       <p>Оператор: ${escapeHtml(operator.status || 'нет данных')} ${operator.checked_at?('· '+fmtTime(operator.checked_at)):''}</p>
       ${operator.status==='recovery_required' ? '<div class="notice error">Требуется ручное восстановление. Новые задания автоматически не выполняются.</div>' : ''}
       <div class="toolbar"><button class="btn" data-update-install ${installReady?'':'disabled'}>Установить обновление</button><a class="btn secondary" href="/upgrade/">Мастер диагностики</a></div>
       <p class="muted">Установка требует свежего повторного подтверждения входа и явного согласия. Перед заменой файлов выполняется обязательный backup. После сбоя следуйте recovery runbook.</p>
     </div>
   </div>
+  ${updatePolicyEditor(u.center_policy)}
   <div class="card"><h2>Последние операции</h2>${table(['Запрос','Операция','Версия','Состояние','Создано'], rows)}
     <p class="muted">Задачи выполняются последовательно, одна за запуск таймера; страница обновляется каждые 5 секунд.</p></div>
   <div class="card"><h2>Уведомления об обновлениях · ${escapeHtml(unread)} непрочитанных</h2>
@@ -1581,6 +1602,19 @@ function bindUpdates() {
     } catch (error) { setNotice('error',error.message,error.payload) }
     finally {updatesWorking=false;render()}
   }
+  const form=document.querySelector('[data-update-policy-form]')
+  const center=dataOf(state.cache.updates,{})?.center_policy
+  const savePolicy=(settings)=>{
+    if(!center?.editable||!confirm(settings===null?'Вернуть настройки хоста?':'Сохранить политику обновлений? Автономный режим может устанавливать подписанные релизы без дополнительных подтверждений.')) return
+    submit('/updates/policy',{revision:center.revision,baseline_hash:center.baseline_hash,settings,confirm:true},'Политика обновлений сохранена.')
+  }
+  form?.addEventListener('submit',e=>{
+    e.preventDefault();const data=new FormData(form), settings={}
+    for(const key of ['mode','channel','timezone','days','window_start','window_end','defer_until','blocked_versions']) settings[key]=String(data.get(key)||'').trim()
+    settings.sequential=form.elements.sequential.checked;settings.auto_apply=form.elements.auto_apply.checked
+    savePolicy(settings)
+  })
+  document.querySelector('[data-update-policy-reset]')?.addEventListener('click',()=>savePolicy(null))
   document.querySelector('[data-update-notifications-read]')?.addEventListener('click',()=>submit('/updates/notifications/read',{},'Уведомления отмечены прочитанными.'))
   document.querySelector('[data-update-history-more]')?.addEventListener('click',async()=>{
     const cursor=state.cache.updateHistory?.meta?.next_cursor
@@ -1615,14 +1649,14 @@ function bindUpdates() {
   })
   document.querySelectorAll('[data-update-maintenance]').forEach(b=>b.addEventListener('click',()=>{
     const action=b.dataset.updateMaintenance
-    if(!confirm(action==='on'?'Включить режим обслуживания?':'Выключить режим обслуживания? Не делайте этого во время восстановления.'))return
+    if(!confirm(action==='on'?'Включить режим обслуживания? При внешнем Nginx gate для выхода может потребоваться CLI.':'Выключить режим обслуживания? Не делайте этого во время восстановления.'))return
     submit('/updates/maintenance/'+action,{},'Режим обслуживания обновлён.')
   }))
 }
 setInterval(async()=>{
-  if (state.route !== 'updates' || !state.token || updatesWorking || updatesPolling || document.hidden) return
+  if (state.route !== 'updates' || !state.token || updatesWorking || updatesPolling || document.hidden || document.querySelector('[data-update-policy-editor][open]')) return
   updatesPolling = true
-  try { await routeLoad('updates'); if(state.route==='updates')render() } finally { updatesPolling = false }
+  try { await routeLoad('updates'); if(state.route==='updates' && !document.querySelector('[data-update-policy-editor][open]') && !updatesWorking)render() } finally { updatesPolling = false }
 },5000)
 
 function searchView() {

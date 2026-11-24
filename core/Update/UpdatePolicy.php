@@ -64,6 +64,8 @@ final class UpdatePolicy
         return (int)$m[1]*60+(int)$m[2];
     }
 
+    public function valid(): bool { return $this->error===null; }
+
     public function discoveryEnabled(): bool
     {
         return $this->error===null && $this->mode!=='disabled' && $this->config->bool('updates.core.auto_check_enabled',true);

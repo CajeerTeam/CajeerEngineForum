@@ -6144,6 +6144,15 @@ final class Operations {
     ),
     'bodyRequired' => false,
   ),
+  'post_UpdatesPolicySave' => 
+  array (
+    'method' => 'POST',
+    'path' => '/updates/policy',
+    'parameters' => 
+    array (
+    ),
+    'bodyRequired' => true,
+  ),
   'post_UpdatesPrepare' => 
   array (
     'method' => 'POST',

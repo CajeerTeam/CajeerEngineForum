@@ -76185,6 +76185,236 @@
           }
         }
       }
+    },
+    "/updates/policy": {
+      "post": {
+        "tags": [
+          "Updates"
+        ],
+        "operationId": "post_UpdatesPolicySave",
+        "summary": "POST /updates/policy",
+        "x-cajeer-route": "api.v1.updates.policy.save",
+        "x-cajeer-required-scopes": [
+          "*"
+        ],
+        "security": [
+          {
+            "BrowserSession": [],
+            "CsrfToken": []
+          }
+        ],
+        "description": "Host-delegated policy update; requires a freshly reauthenticated administrator browser session and CSRF.",
+        "responses": {
+          "503": {
+            "description": "Maintenance / recovery in progress",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Требуется авторизация",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Недостаточно прав или CSRF",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Некорректный запрос",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Слишком большой запрос",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Неподдерживаемый Content-Type",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Ошибка валидации",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Внутренняя ошибка",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Saved policy and revision",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data"
+                  ],
+                  "properties": {
+                    "data": {
+                      "type": "object"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision conflict or active operator",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "revision",
+                  "baseline_hash",
+                  "settings",
+                  "confirm"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "revision": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "baseline_hash": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{64}$"
+                  },
+                  "settings": {
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "properties": {
+                      "mode": {
+                        "type": "string",
+                        "maxLength": 8192
+                      },
+                      "timezone": {
+                        "type": "string",
+                        "maxLength": 8192
+                      },
+                      "days": {
+                        "type": "string",
+                        "maxLength": 8192
+                      },
+                      "window_start": {
+                        "type": "string",
+                        "maxLength": 8192
+                      },
+                      "window_end": {
+                        "type": "string",
+                        "maxLength": 8192
+                      },
+                      "defer_until": {
+                        "type": "string",
+                        "maxLength": 8192
+                      },
+                      "blocked_versions": {
+                        "type": "string",
+                        "maxLength": 8192
+                      },
+                      "channel": {
+                        "type": "string",
+                        "maxLength": 8192
+                      },
+                      "sequential": {
+                        "type": "boolean"
+                      },
+                      "auto_apply": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "mode",
+                      "timezone",
+                      "days",
+                      "window_start",
+                      "window_end",
+                      "defer_until",
+                      "blocked_versions",
+                      "channel",
+                      "sequential",
+                      "auto_apply"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "confirm": {
+                    "type": "boolean",
+                    "const": true
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {

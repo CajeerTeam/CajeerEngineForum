@@ -142,6 +142,7 @@ final class RouteRegistry
             ['GET', '/api/v1/updates/history', 'api.v1.updates.history', 'updates', 'history', ['updates:read']],
             ['GET', '/api/v1/updates/notifications', 'api.v1.updates.notifications', 'updates', 'notifications', ['updates:read']],
             ['POST', '/api/v1/updates/notifications/read', 'api.v1.updates.notifications.read', 'updates', 'readNotifications', ['updates:read']],
+            ['POST', '/api/v1/updates/policy', 'api.v1.updates.policy.save', 'updates', 'savePolicy', ['*']],
             ['POST', '/api/v1/updates/check', 'api.v1.updates.check', 'updates', 'check', ['updates:read']],
             ['POST', '/api/v1/updates/plan', 'api.v1.updates.plan', 'updates', 'plan', ['updates:read']],
             ['POST', '/api/v1/updates/prepare', 'api.v1.updates.prepare', 'updates', 'prepare', ['*']],

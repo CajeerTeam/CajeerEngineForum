@@ -290,7 +290,9 @@ final class UpdateManager
         $report=is_file($last)?OperationFiles::read($last):null;
         $activePath=PHP_SAPI==='cli'?$this->path('active.json'):$this->requestDir().'/progress.json';
         $active=OperationLock::active($this->rootPath)&&is_file($activePath)?$this->publicJournal(OperationFiles::read($activePath)):null;
-        return ['ok'=>true,'operator_ready'=>($operator=UpdateOperator::health($this->rootPath,$this->config))['ready'],'operator_status'=>$operator,'staged_installable'=>$this->stageEligible($this->staged()),'current_version'=>$this->currentVersion(),'maintenance'=>$this->maintenanceState(),'active'=>$active,'last_report'=>$report===null?null:array_intersect_key($report,array_flip(['ok','id','state','previous_version','target_version','version'])),'installed'=>is_file($this->rootPath.'/storage/app/installed.lock'),'production_apply_enabled'=>$this->trustConfigured()];
+        $rollback=['available'=>false];
+        if (!$this->recoveryPending() && ($report['state']??null)==='committed' && ($report['target_version']??null)===$this->currentVersion() && is_string($report['id']??null) && preg_match('/^\d{8}-\d{6}-[a-f0-9]{16}$/D',$report['id'])) $rollback=['available'=>true,'transaction'=>$report['id'],'from_version'=>$report['target_version'],'to_version'=>$report['previous_version']??null];
+        return ['rollback'=>$rollback,'ok'=>true,'operator_ready'=>($operator=UpdateOperator::health($this->rootPath,$this->config))['ready'],'operator_status'=>$operator,'staged_installable'=>$this->stageEligible($this->staged()),'current_version'=>$this->currentVersion(),'maintenance'=>$this->maintenanceState(),'active'=>$active,'last_report'=>$report===null?null:array_intersect_key($report,array_flip(['ok','id','state','previous_version','target_version','version'])),'installed'=>is_file($this->rootPath.'/storage/app/installed.lock'),'production_apply_enabled'=>$this->trustConfigured()];
     }
     public function history(int $limit=20): array
     {
@@ -380,7 +382,7 @@ final class UpdateManager
                 UpdatePreflight::identity(['version'=>$version,'edition'=>'forum','mode'=>'dist'],$this->currentVersion(),$this->channel(),$version);
                 $data['version']=$version;
             } elseif ($action==='backup') { /* full backup, no arbitrary server path */ }
-            elseif ($action==='rollback') { $last=$this->wizardState()['last_report']; if (($last['state']??null)!=='committed') throw new \RuntimeException('No committed update'); $data['transaction']=$last['id']; }
+            elseif ($action==='rollback') { $candidate=$this->wizardState()['rollback']; if (!$candidate['available']||($payload['transaction']??null)!==$candidate['transaction']) throw new \RuntimeException('Select the exact current rollback transaction'); $data['transaction']=$candidate['transaction']; }
             else throw new \RuntimeException('Invalid operation');
             if (($reason=(new UpdatePolicy($this->config))->requestReason($action,$data['version']??null,time(),false))!==null) throw new \RuntimeException('Update policy: '.$reason);
             UpdateOperator::assertApproved($data,$id);

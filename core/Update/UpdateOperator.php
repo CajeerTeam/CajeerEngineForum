@@ -143,9 +143,16 @@ final class UpdateOperator
             fclose($handle);
             return ['ok' => true, 'status' => 'busy', 'processed' => 0];
         }
+        $policyLock=null;
         try {
+            if ($this->config->bool('updates.policy.acp_enabled')) {
+                try { $policyLock=(new UpdateCenterPolicy($this->rootPath))->lock(false); }
+                catch (OperationBusy) { return ['ok'=>true,'status'=>'busy','processed'=>0]; }
+                $this->config->refreshUpdatePolicy();
+            }
             return $this->consume();
         } finally {
+            OperationLock::release($policyLock);
             flock($handle, LOCK_UN);
             fclose($handle);
         }

@@ -9,10 +9,13 @@ final class ConfigRepository
     /** @var array<string, mixed> */
     private array $items = [];
     private array $platformBaseline = [];
+    private array $updatePolicyBaseline = [];
 
     public function __construct(private readonly string $rootPath)
     {
         $this->loadPhpConfigs();
+        $this->updatePolicyBaseline = \CajeerEngine\Update\UpdateCenterPolicy::baseline($this);
+        $this->refreshUpdatePolicy();
         $this->platformBaseline = [
             'integrations.enabled'=>$this->bool('integrations.enabled',true),
             'integrations.max_connections'=>$this->int('integrations.max_connections',200),
@@ -27,6 +30,13 @@ final class ConfigRepository
         $this->items['app']['version'] = $this->readVersion();
         $this->items['app']['edition_version'] = ($this->release()['edition'] ?? null) === 'forum' ? (new \CajeerEngine\Forum\ForumVersion($rootPath))->current() : $this->items['app']['version'];
         $this->items['app']['engine_api_version'] = (string) ($this->release()['engine_api_version'] ?? $this->get('app.engine_api_version', '1.0'));
+    }
+
+    public function updatePolicyBaseline(): array { return $this->updatePolicyBaseline; }
+    public function refreshUpdatePolicy(): void
+    {
+        $this->set('updates.policy.acp_error',false);
+        (new \CajeerEngine\Update\UpdateCenterPolicy($this->rootPath))->apply($this,$this->updatePolicyBaseline);
     }
 
     public function platformBaseline(): array { return $this->platformBaseline; }

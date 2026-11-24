@@ -4719,6 +4719,12 @@ export const operations = {
         "parameters": [],
         "bodyRequired": false
     },
+    "post_UpdatesPolicySave": {
+        "method": "POST",
+        "path": "/updates/policy",
+        "parameters": [],
+        "bodyRequired": true
+    },
     "post_UpdatesPrepare": {
         "method": "POST",
         "path": "/updates/prepare",

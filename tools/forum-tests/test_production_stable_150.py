@@ -41,9 +41,9 @@ class ProductionStable(unittest.TestCase):
             with self.assertRaises(ValueError):gate.validate_recovery(dict(row,**change),'drained',COMMIT,VERSION,DIGEST)
 
     def test_patch_keeps_signed_recovery_gate(self):
-        version='1.5.8'
-        self.assertEqual(gate.previous_version(version),'1.5.7')
-        row={'schema':1,'ok':True,'actual_operator_sigkill':True,'checkpoint':'drained','commit':COMMIT,'source_version':'1.5.7','target_version':version,'target_sha256':DIGEST,'source_sha256':'c'*64,'recovery_state':'rolled_back','recovery_seconds':3,'preserved_fixture':True,'recovered_version':'1.5.7','signed_deployment_verified':True,'deployment_identity':{'image':'sha256:'+'c'*64,'manifest_sha256':'d'*64}}
+        version='1.5.9'
+        self.assertEqual(gate.previous_version(version),'1.5.8')
+        row={'schema':1,'ok':True,'actual_operator_sigkill':True,'checkpoint':'drained','commit':COMMIT,'source_version':'1.5.8','target_version':version,'target_sha256':DIGEST,'source_sha256':'c'*64,'recovery_state':'rolled_back','recovery_seconds':3,'preserved_fixture':True,'recovered_version':'1.5.8','signed_deployment_verified':True,'deployment_identity':{'image':'sha256:'+'c'*64,'manifest_sha256':'d'*64}}
         gate.validate_recovery(row,'drained',COMMIT,version,DIGEST)
         with self.assertRaises(ValueError):gate.validate_recovery(dict(row,signed_deployment_verified=False),'drained',COMMIT,version,DIGEST)
         doc=fixture();doc['edition_version']=version

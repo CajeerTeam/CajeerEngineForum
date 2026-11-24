@@ -3,6 +3,12 @@
 - Independent recovery supervisor with bounded persistent retries, child lease checks and authenticated snapshot recovery.
 - Complete terminal journal cleanup without replaying a destructive restore; quarantine failed autonomous releases. No schema migration.
 
+## 1.5.9 — Unified Update Center
+
+- Revisioned host-delegated policy editing in ACP, with host authorization caps and serialized operator admission.
+- Exact committed rollback selection, policy audit history and protected POST with session reauthentication.
+- Full physical qualification remains required.
+
 ## [1.5.7] - 2026-11-24
 
 - Host systemd lifecycle: stop scheduler and worker before PHP-FPM, keep an exclusive lease through activation, verify local protected HTTP, and restart services on rollback.

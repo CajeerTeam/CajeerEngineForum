@@ -10,7 +10,7 @@ type UpdateState = {
   wizard?: { operator_ready?: boolean; production_apply_enabled?: boolean; installed?: boolean; staged_installable?: boolean
     operator_status?: { status?: string; checked_at?: string; reason?: string; age_seconds?: number }; maintenance?: { enabled?: boolean; update_active?: boolean };
     rollback?: { available: boolean; transaction?: string; from_version?: string; to_version?: string } }
-  policy?: {mode:string;valid:boolean;error?:string;timezone:string;days:number[];window_start?:string;window_end?:string;window_open:boolean;next_window_at?:number;defer_until?:string;blocked_versions:string[]};
+  policy?: {autonomous_apply_enabled?:boolean;mode:string;valid:boolean;error?:string;timezone:string;days:number[];window_start?:string;window_end?:string;window_open:boolean;next_window_at?:number;defer_until?:string;blocked_versions:string[]};
   auto_stage?: {enabled:boolean;state?:string;next_attempt_at?:number}; download_progress?: {version:string;state:string;received_bytes:number;total_bytes:number}
   requests?: UpdateRequest[]; backups?: RecoveryBackup[]; downloads?: Array<{version:string}>
 }
@@ -123,7 +123,7 @@ onUnmounted(() => {if(timer)clearInterval(timer)})
       <details v-if="state.last_check?.next?.notes"><summary>Описание релиза</summary><pre>{{ state.last_check.next.notes.slice(0,4000) }}</pre></details>
       <p>Подпись: {{ state.wizard?.production_apply_enabled ? 'ключ настроен' : 'отсутствует доверенный ключ' }}</p>
       <p>Оператор: {{ state.wizard?.operator_ready ? 'готов' : (state.wizard?.operator_status?.reason || 'недоступен') }} · {{ state.wizard?.operator_status?.checked_at || 'нет heartbeat' }}</p>
-      <p>Политика: {{ state.policy?.mode || 'legacy' }} · {{ state.policy?.valid === false ? state.policy.error : 'действует' }}. Автономная установка отключена.</p>
+      <p>Политика: {{ state.policy?.mode || 'legacy' }} · {{ state.policy?.valid === false ? state.policy.error : 'действует' }}. Автономная установка {{ state.policy?.autonomous_apply_enabled ? 'разрешена политикой' : 'отключена' }}.</p>
       <p>Окно обслуживания: {{ state.policy?.timezone }} · {{ state.policy?.days.join(', ') }} · {{ state.policy?.window_start || '00:00' }}–{{ state.policy?.window_end || '24:00' }} · {{ state.policy?.window_open === false ? 'закрыто' : 'открыто' }}</p>
       <p v-if="state.policy?.next_window_at && state.policy.window_open === false">Следующее окно: {{ new Date(state.policy.next_window_at * 1000).toLocaleString() }}</p>
       <p v-if="state.policy?.defer_until">Отложено до {{ state.policy.defer_until }}</p>

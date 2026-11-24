@@ -21,7 +21,18 @@ final readonly class UpdateController
     public function diagnostics(Request $request, array $parameters): JsonResponse
     {
         $resolver = new UpdateResolver($this->config->get('updates', []), $this->config->rootPath());
-        return new JsonResponse(['data' => $resolver->diagnostics($this->config->string('app.edition_version', '1.0.0')) + ['wizard'=>$this->manager()->wizardState(),'staged'=>$this->manager()->staged(),'requests'=>$this->manager()->recentRequests(),'backups'=>array_slice((new \CajeerEngine\Backup\BackupManager($this->config->rootPath(), $this->config))->list()['backups'],0,20),'downloads'=>$this->manager()->downloaded(),'download_progress'=>$this->manager()->downloadProgress(),'policy'=>(new \CajeerEngine\Update\UpdatePolicy($this->config))->snapshot(),'auto_stage'=>(new \CajeerEngine\Update\AutomaticReleaseStaging($this->config->rootPath(),$this->config))->state(),'web_upgrade_enabled'=>$this->config->bool('updates.web_upgrade.enabled')]]);
+        return new JsonResponse(['data' => $resolver->diagnostics($this->config->string('app.edition_version', '1.0.0')) + ['wizard'=>$this->manager()->wizardState(),'staged'=>$this->manager()->staged(),'requests'=>$this->manager()->recentRequests(),'backups'=>array_slice((new \CajeerEngine\Backup\BackupManager($this->config->rootPath(), $this->config))->list()['backups'],0,20),'downloads'=>$this->manager()->downloaded(),'download_progress'=>$this->manager()->downloadProgress(),'policy'=>(new \CajeerEngine\Update\UpdatePolicy($this->config))->snapshot(),'auto_stage'=>(new \CajeerEngine\Update\AutomaticReleaseStaging($this->config->rootPath(),$this->config))->state(),'center_policy'=>(new \CajeerEngine\Update\UpdateCenterPolicy($this->config->rootPath()))->overview($this->config),'web_upgrade_enabled'=>$this->config->bool('updates.web_upgrade.enabled')]],200,['Cache-Control'=>'no-store']);
+    }
+
+    public function savePolicy(Request $request, array $parameters): JsonResponse
+    {
+        if (!$this->config->bool('updates.policy.acp_enabled')) return new JsonResponse(['error'=>['code'=>'policy_host_locked','message'=>'Host has not delegated update policy management']],403);
+        $identity=$request->attributes->get('auth');
+        if (!is_array($identity)||empty($identity['user_id'])||($identity['cookie']??false)!==true||($identity['session']??false)!==true||empty($identity['token_id'])) return new JsonResponse(['error'=>['code'=>'browser_session_required','message'=>'Authenticated administrator session required']],403);
+        try { return new JsonResponse(['data'=>(new \CajeerEngine\Update\UpdateCenterPolicy($this->config->rootPath()))->save($this->config,$this->json($request),(string)$identity['user_id'])],200,['Cache-Control'=>'no-store']); }
+        catch (\CajeerEngine\Update\OperationBusy $e) { return new JsonResponse(['error'=>['code'=>'policy_conflict','message'=>$e->getMessage()]],409); }
+        catch (\InvalidArgumentException $e) { return new JsonResponse(['error'=>['code'=>'policy_invalid','message'=>$e->getMessage()]],422); }
+        catch (\Throwable) { return new JsonResponse(['error'=>['code'=>'policy_unavailable','message'=>'Update policy storage unavailable; inspect server configuration']],503); }
     }
 
     /** Paginated persistent update audit (not just the 20 latest queue records). */

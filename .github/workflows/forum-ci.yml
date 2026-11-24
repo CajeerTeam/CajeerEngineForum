@@ -6,7 +6,7 @@ on:
 permissions:
   contents: read
 env:
-  FORUM_CURRENT_VERSION: ${{ '1.5.8' }}
+  FORUM_CURRENT_VERSION: ${{ '1.5.9' }}
 concurrency:
   group: forum-ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -380,6 +380,7 @@ jobs:
       - run: php tools/update-backup-preflight-regression.php
       - run: php tools/update-service-lifecycle-regression.php
       - run: php tools/update-crash-recovery-regression.php
+      - run: php tools/update-center-policy-regression.php
       - run: php tools/automatic-release-discovery-regression.php
       - run: php tools/github-release-regression.php
       - run: php tools/github-release-sync-regression.php
@@ -708,6 +709,7 @@ jobs:
       - run: python tools/forum-unified-identity-browser-regression.py --browser ${{ matrix.browser }}
       - run: python tools/forum-platform-workflows-browser-regression.py --browser ${{ matrix.browser }}
       - run: python tools/forum-unified-admin-browser-regression.py --browser ${{ matrix.browser }}
+      - run: python tools/update-center-browser-regression.py --browser ${{ matrix.browser }}
       - run: python tools/forum-tests/test_platform_e2e_harness.py
       - name: Live cross-subsystem platform journey
         run: python tools/forum-tests/platform_e2e.py --browser ${{ matrix.browser }} --report storage/tmp/forum-ci/platform
@@ -1145,8 +1147,8 @@ jobs:
           if [ "$FORUM_CURRENT_VERSION" = 1.0.0-rc.1 ]; then
             ref=refs/tags/v0.9.9; baseline_version=0.9.9
           fi
-          if [ "$FORUM_CURRENT_VERSION" = 1.5.8 ]; then
-            ref=refs/tags/v1.5.7; baseline_version=1.5.7
+          if [ "$FORUM_CURRENT_VERSION" = 1.5.9 ]; then
+            ref=refs/tags/v1.5.8; baseline_version=1.5.8
           fi
           echo "FORUM_COMPOSE_BASELINE=$baseline_version" >> "$GITHUB_ENV"
           if [ "$ref" = v0.8.7 ]; then
