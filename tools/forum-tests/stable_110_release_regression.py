@@ -23,11 +23,11 @@ class ReleasePolicy(unittest.TestCase):
     def test_version_chain_is_current(self):
         metadata = json.loads((ROOT/'release.json').read_text())
         self.assertEqual(metadata['edition'], 'forum')
-        self.assertEqual(metadata['edition_version'], '1.4.11')
+        self.assertEqual(metadata['edition_version'], '1.5.0')
         self.assertEqual(metadata['upstream_version'], (ROOT/'VERSION').read_text().strip())
         self.assertEqual(metadata['version'], metadata['upstream_version'])
         self.assertEqual(metadata['channel'], 'stable')
-        self.assertEqual(metadata['distribution']['dist_artifact'], 'storage/releases/cajeerengine-1.4.11-dist.zip')
+        self.assertEqual(metadata['distribution']['dist_artifact'], 'storage/releases/cajeerengine-1.5.0-dist.zip')
 
     def test_publication_needs_external_trust_and_complete_certificate(self):
         # Verify these are executable constraints on the release job, not release.json claims.
@@ -40,7 +40,7 @@ class ReleasePolicy(unittest.TestCase):
                      'python3 tools/final-audit.py',
                      'python3 tools/certification-evidence.py verify'):
             self.assertIn(rule, publish, rule)
-        self.assertLess(publish.index('python3 tools/final-audit.py'), publish.index('gh release create'))
+        self.assertLess(publish.index('python3 tools/final-audit.py'), publish.index('python3 tools/publish-qualified-release.py'))
         self.assertIn('if [[ "$GITHUB_REF" == refs/heads/main || "$GITHUB_REF" == refs/tags/v* ]]; then', candidate)
         self.assertIn('Publishing refs require an external Ed25519 release signing key', candidate)
 

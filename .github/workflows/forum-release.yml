@@ -63,15 +63,17 @@ jobs:
             echo "should_publish=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "Release $tag already exists; no changes made."
-            echo "should_publish=false" >> "$GITHUB_OUTPUT"
-            exit 0
+          if existing=$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft' 2>/dev/null); then
+            if [[ "$existing" == false ]]; then
+              echo "Release $tag already exists; no changes made."
+              echo "should_publish=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            [[ "$existing" == true ]] || exit 1
           fi
-          # Never retarget or overwrite an existing tag.
+          # A prior interrupted draft may have created the tag. Never move it.
           if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" >/dev/null 2>&1; then
-            echo "Tag $tag already exists; refusing to move or reuse it automatically." >&2
-            exit 1
+            test "$(gh api "repos/$GITHUB_REPOSITORY/commits/$tag" --jq '.sha')" = "$RELEASE_SHA"
           fi
           echo "should_publish=true" >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"
@@ -173,14 +175,14 @@ jobs:
           python3 deploy/container/certify_load.py --release-dir "$ARTIFACT_ROOT" --trusted-public-key "$pub" --version "$VERSION" \
             --small "$physical/load/10k.json" --medium "$physical/load/100k.json" --soak "$physical/load/1m-soak.json" --output "$physical/verified.json"
           python3 tools/release-candidate-gate.py --repo "$GITHUB_REPOSITORY" --commit "$RELEASE_SHA" --version "$VERSION" \
-            --metadata "$physical/meta" --physical "$physical/verified.json" --drained "$physical/drained/recovery.json" \
+            --metadata "$physical/meta" --load-directory "$physical/load" --physical "$physical/verified.json" --drained "$physical/drained/recovery.json" \
             --activating "$physical/activating/recovery.json" --dist "$ARTIFACT_ROOT/cajeerengine-${VERSION}-dist.zip"
           test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')" = "$RELEASE_SHA"
 
           cat > "$RUNNER_TEMP/forum-release-notes.md" <<'NOTES'
-          ## CajeerEngineForum 1.4.11 — Production Qualification & Release Candidate
+          ## CajeerEngineForum 1.5.0 — Unified Platform & Production Stable
 
-          Forum Edition 1.4.11 on CajeerEngine 2.1.0.
+          Forum Edition 1.5.0 on CajeerEngine 2.1.0.
 
           - Physical 10k/100k/1M workload and 24-hour soak with fixed SLOs.
           - Dependency failures, durable queue replay, interrupted update recovery and post-fault workload.
@@ -188,38 +190,14 @@ jobs:
           - No new migration.
           NOTES
 
-          # A failure while uploading leaves a draft, not a partially public release.
-          gh release create "$TAG" "${files[@]}" \
-            --repo "$GITHUB_REPOSITORY" \
-            --target "$RELEASE_SHA" \
-            --title "CajeerEngineForum $VERSION" \
-            --notes-file "$RUNNER_TEMP/forum-release-notes.md" \
-            --draft
-
-          python3 - "$GITHUB_REPOSITORY" "$TAG" "${files[@]}" <<'PY'
-          import hashlib
-          import json
-          from pathlib import Path
-          import subprocess
-          import sys
-
-          repo, tag, *filenames = sys.argv[1:]
-          release = json.loads(subprocess.check_output(
-              ["gh", "release", "view", tag, "--repo", repo, "--json", "isDraft,databaseId"]))
-          if not release["isDraft"]:
-              raise SystemExit("Release unexpectedly published before verification")
-          remote = json.loads(subprocess.check_output(
-              ["gh", "api", f"repos/{repo}/releases/{release['databaseId']}"]))
-          assets = {asset["name"]: asset for asset in remote["assets"]}
-          for filename in filenames:
-              path = Path(filename)
-              asset = assets.get(path.name)
-              if not asset or asset["size"] != path.stat().st_size or asset["state"] != "uploaded":
-                  raise SystemExit(f"Missing/incomplete uploaded asset: {path.name}")
-              digest = "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
-              if asset.get("digest") != digest:
-                  raise SystemExit(f"GitHub digest does not match: {path.name}")
-          PY
-
+          # Attach the revalidated physical summary and CI certificate, without raw diagnostics.
+          files+=("$ARTIFACT_ROOT/certification.json")
+          cp "$physical/verified.json" "$physical/qualification.json"
+          files+=("$physical/qualification.json")
+          # Stage the exact verified candidate and resume only an identical draft.
+          python3 tools/publish-qualified-release.py --repo "$GITHUB_REPOSITORY" --tag "$TAG" --commit "$RELEASE_SHA" \
+            --notes "$RUNNER_TEMP/forum-release-notes.md" "${files[@]}"
+          test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')" = "$RELEASE_SHA"
+          test "$(gh api "repos/$GITHUB_REPOSITORY/commits/$TAG" --jq '.sha')" = "$RELEASE_SHA"
           gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --latest
           gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json url,tagName,isDraft

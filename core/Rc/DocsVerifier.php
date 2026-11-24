@@ -62,6 +62,11 @@ final readonly class DocsVerifier
             ? CheckResult::pass('docs', 'changelog.1.4.11', 'CHANGELOG содержит запись 1.4.11.')
             : CheckResult::fail('docs', 'changelog.1.4.11', 'CHANGELOG не содержит запись 1.4.11.');
 
+        $edition = (new \CajeerEngine\Forum\ForumVersion($this->rootPath))->current();
+        $checks[] = preg_match('/^## \[' . preg_quote($edition, '/') . '\]/m', $changelog) === 1
+            ? CheckResult::pass('docs', 'changelog.current', 'CHANGELOG содержит текущую версию ' . $edition . '.')
+            : CheckResult::fail('docs', 'changelog.current', 'CHANGELOG не содержит текущую версию ' . $edition . '.');
+
         return array_merge($checks, (new OperationsDocsVerifier($this->rootPath))->verify());
     }
 

@@ -8,6 +8,12 @@ tag=$2
 repo=$3
 version=$(php -r '$r=json_decode(file_get_contents($argv[1]."/release.json"),true,512,JSON_THROW_ON_ERROR); if (($r["edition"]??null)!=="forum" || ($r["upstream_version"]??null)!==trim(file_get_contents($argv[1]."/VERSION"))) exit(1); echo $r["edition_version"];' "$root")
 [[ "$tag" == "v$version" && "${repo,,}" == cajeerteam/cajeerengineforum ]] || { echo 'Tag or repository mismatch' >&2; exit 1; }
+# The protected forum-release workflow alone validates independent physical runs.
+# Do not allow the historical tag publisher to bypass that gate.
+if php -r 'exit(version_compare($argv[1], "1.4.11", ">=") ? 0 : 1);' "$version"; then
+  echo 'Use the protected forum-release.yml workflow with all four successful run IDs; direct publication is disabled.' >&2
+  exit 1
+fi
 # A CI-generated key is evidence of pipeline execution, not publisher trust.
 # The publisher MUST independently provision the authorized Ed25519 public key.
 [[ -n ${RELEASE_TRUSTED_PUBLIC_KEY_FILE:-} && -f "$RELEASE_TRUSTED_PUBLIC_KEY_FILE" ]] || { echo 'RELEASE_TRUSTED_PUBLIC_KEY_FILE is required' >&2; exit 1; }

@@ -67,6 +67,13 @@ def validate_report(path, name, commit, artifact_sha, version):
         validate_thresholds(name, doc['thresholds'])
         require(doc.get('queue_driver') == 'pgsql', prefix+'physical PostgreSQL queue required')
         require(doc.get('checks', {}).get('post_fault_workload') is True if name == '1m-soak' else True, prefix+'missing post-fault workload')
+    if version == '1.5.0':
+        identity=doc.get('deployment_identity',{})
+        require(doc.get('checks',{}).get('signed_deployment_identity') is True
+                and re.fullmatch(r'sha256:[a-f0-9]{64}',identity.get('image','')) is not None
+                and identity['image'].removeprefix('sha256:').startswith(doc['app_image'].removeprefix('sha256:'))
+                and re.fullmatch(r'[a-f0-9]{64}',identity.get('manifest_sha256','')) is not None,
+                prefix+'missing verified deployment identity')
     load = doc.get('load', {})
     require(number(load.get('elapsed_seconds')) and load['elapsed_seconds'] >= seconds, prefix+'short load')
     require(number(doc.get('finished_at')) and number(doc.get('started_at')) and doc['finished_at']-doc['started_at'] >= seconds, prefix+'short wall duration')
@@ -157,6 +164,12 @@ def seal(args):
         docs[name]=validate_report(path,name,commit,artifact_sha,args.version)
     require(len({row['hardware']['host_sha256'] for row in docs.values()})==1,'different test hosts')
     require(len({row['app_image'] for row in docs.values()})==1,'different running release images')
+    if args.version == '1.5.0':
+        import zipfile
+        with zipfile.ZipFile(artifact) as package:
+            manifest=json.loads(package.read('cajeerengine/release-manifest.json'))
+        expected=hashlib.sha256(json.dumps(manifest,sort_keys=True,separators=(',',':')).encode()).hexdigest()
+        require(all(row['deployment_identity']['manifest_sha256']==expected for row in docs.values()), 'installed manifest differs from signed distribution')
     if current_policy(args.version):
         require(len({row.get('run_id') for row in docs.values()}) == 3 and all(re.fullmatch(r'[a-f0-9-]{36}', row.get('run_id','')) for row in docs.values()), 'duplicate or missing physical run identity')
     report={'schema':1,'ok':True,'edition_version':args.version,'commit':commit,'dist_sha256':artifact_sha,

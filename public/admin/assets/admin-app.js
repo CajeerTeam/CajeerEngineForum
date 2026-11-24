@@ -1,5 +1,5 @@
 const ADMIN_VERSION = '2.1.0'
-const FORUM_EDITION = '1.4.11'
+const FORUM_EDITION = '1.5.0'
 let oidcEnabled = false
 const API_BASE = '/api/v1'
 const TOKEN_KEY = 'cajeerengine.admin.token'

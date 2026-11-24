@@ -128,6 +128,7 @@ final class ReleaseArtifactVerifier
         if (($manifest['edition']??null)==='forum' && version_compare($version,'0.9.8','>=') && $mode==='source') $required=array_merge($required,['tools/forum-tests/test_upgrade_098.py','docs/forum-upgrade-certification.md']);
         if (($manifest['edition']??null)==='forum' && version_compare($version,'0.9.9','>=') && $mode==='source') $required=array_merge($required,['tools/staging-gate.py','tools/final-audit.py','tools/final-audit-regression.py','tools/release-freeze.py','docs/forum-rc-final-audit.md']);
         if (($manifest['edition']??null)==='forum' && version_compare($version,'1.0.0','>=') && $mode==='source') $required=array_merge($required,['tools/stable-certification.py','tools/stable-certification-regression.py','docs/forum-1.0-production-operations.md','docs/forum-1.0-upgrade.md','docs/forum-1.0-compatibility.md']);
+        if ($mode==='source' && ($manifest['edition']??null)==='forum' && version_compare($version,'1.5.0','>=')) $required=array_merge($required,ReleaseFilePolicy::QUALIFICATION_SOURCE);
         foreach ($required as $file) if (!in_array($file, $files, true)) throw new \RuntimeException('Required ZIP entry missing: ' . $file);
         foreach (['pgsql', 'mysql', 'sqlite'] as $driver) {
             if (!array_filter($files, static fn ($file) => str_starts_with($file, 'migrations/' . $driver . '/') && str_ends_with($file, '.sql'))) throw new \RuntimeException('Missing migrations: ' . $driver);

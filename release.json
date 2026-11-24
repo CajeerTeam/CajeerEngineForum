@@ -17,10 +17,10 @@
     "docs": "GitHub repository docs/",
     "updates": "GitHub Releases",
     "release_builder": "tools/build-release.php",
-    "source_artifact": "storage/releases/cajeerengine-1.4.11-source.zip",
-    "dist_artifact": "storage/releases/cajeerengine-1.4.11-dist.zip",
+    "source_artifact": "storage/releases/cajeerengine-1.5.0-source.zip",
+    "dist_artifact": "storage/releases/cajeerengine-1.5.0-dist.zip",
     "checksums": "storage/releases/*.sha256",
-    "artifact_index": "storage/releases/cajeerengine-1.4.11-artifacts.json",
+    "artifact_index": "storage/releases/cajeerengine-1.5.0-artifacts.json",
     "support_bundle": "storage/app/support",
     "backup": "storage/app/backups/production",
     "server_reports": "storage/app/reports",
@@ -36,6 +36,7 @@
     "engine_api_version": "1.1"
   },
   "product_changes": [
+    "Forum Edition 1.5.0: exact signed candidate acquisition, verified deployment identity and independent run-attempt receipts, minor-version recovery, resumable verified draft publication and mandatory qualification. Certification pending real CI and physical evidence.",
     "Forum Edition 1.4.11: enforced physical load and soak thresholds, balanced route pacing, sustained writes, measured chaos recovery and publication gated on independent physical reports for the exact candidate. Physical qualification pending.",
     "Forum Edition 1.4.10: live browser-to-API-to-SQL-to-worker integration acceptance for support, workflow, analytics, ACL and operational diagnostics; strict evidence and corrected ACP version identity. Independent CI and staging remain required.",
     "Forum Edition 1.4.9: durable backup capture intents, authenticated recovery of missing catalog receipts, database size preflight, resumable Linux installation, Compose rollback activation checkpoint and optional automatic recovery; approved signed download/staging and durable request lifecycle. No schema migration; external CI required.",
@@ -204,10 +205,11 @@
     "1.4.8": "Platform Performance & Scalability: bounded SQL, cache and queue hot paths, batched analytics and telemetry.",
     "1.4.9": "Automated Deployment & Recovery: verified backup capture reconciliation, installation resume and safe rollback activation.",
     "1.4.10": "Full Platform Integration & E2E: real cross-subsystem browser and worker acceptance.",
-    "1.4.11": "Production Qualification & Release Candidate: strict physical evidence and recovery gates."
+    "1.4.11": "Production Qualification & Release Candidate: strict physical evidence and recovery gates.",
+    "1.5.0": "Unified Platform & Production Stable: verified deployment and protected release publication; physical certification required."
   },
   "stability": "production-stable-gated",
   "edition": "forum",
-  "edition_version": "1.4.11",
+  "edition_version": "1.5.0",
   "upstream_version": "2.1.0"
 }

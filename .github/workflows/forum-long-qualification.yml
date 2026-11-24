@@ -1,10 +1,16 @@
-name: Forum 1.4.11 physical load and 24-hour soak certification
+name: Forum 1.5.0 physical load and 24-hour soak certification
 on:
   workflow_dispatch:
+    inputs:
+      ci_run:
+        description: Successful main CI run ID for the exact signed candidate
+        type: string
+        required: true
 env:
-  FORUM_LONG_VERSION: ${{ '1.4.11' }}
+  FORUM_LONG_VERSION: ${{ '1.5.0' }}
 permissions:
   contents: read
+  actions: read
 concurrency:
   group: forum-physical-certification
   cancel-in-progress: false
@@ -25,12 +31,20 @@ jobs:
       CE_QUAL_EMAIL: ${{ vars.CE_QUAL_EMAIL }}
       CE_QUAL_PASSWORD_FILE: ${{ vars.CE_QUAL_PASSWORD_FILE }}
       CE_QUAL_STATE: ${{ vars.CE_QUAL_STATE }}
-      CE_QUAL_SIGNED_DIR: ${{ vars.CE_QUAL_SIGNED_DIR }}
+      CE_QUAL_SIGNED_DIR: ${{ runner.temp }}/forum-canonical-candidate
+      GH_TOKEN: ${{ github.token }}
+      QUALIFICATION_CI_RUN: ${{ inputs.ci_run }}
       CE_QUAL_TRUSTED_PUB: ${{ vars.CE_QUAL_TRUSTED_PUB }}
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+      - name: Fetch the exact successful signed CI candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$QUALIFICATION_CI_RUN" =~ ^[1-9][0-9]*$ ]]
+          python3 tools/qualification-run.py fetch --ci-run "$QUALIFICATION_CI_RUN" --directory "$CE_QUAL_SIGNED_DIR" --trusted-key "$CE_QUAL_TRUSTED_PUB" --version "$FORUM_LONG_VERSION"
       - name: Validate pre-provisioned disposable fixture and independent signed release
         shell: bash
         run: |
@@ -50,22 +64,24 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/forum-load"
-          python3 deploy/container/qualify.py --project "$CE_QUAL_PROJECT" --env "$CE_QUAL_ENV" --domain "$CE_QUAL_DOMAIN" --port "${CE_QUAL_PORT:-18443}" --ca "$CE_QUAL_CA" --email "$CE_QUAL_EMAIL" --password-file "$CE_QUAL_PASSWORD_FILE" --state "$CE_QUAL_STATE" --version "$FORUM_LONG_VERSION" --disposable destroy-test-services --profile 10k --seed-posts 10000 --clients 32 --seconds 300 --rate 30 --min-rps 20 --max-p95-ms 500 --max-error-rate .001 --max-growth-mib 512 --max-queue-p95-ms 30000 --report "$RUNNER_TEMP/forum-load/10k.json"
+          python3 deploy/container/qualify.py --project "$CE_QUAL_PROJECT" --env "$CE_QUAL_ENV" --domain "$CE_QUAL_DOMAIN" --port "${CE_QUAL_PORT:-18443}" --ca "$CE_QUAL_CA" --email "$CE_QUAL_EMAIL" --password-file "$CE_QUAL_PASSWORD_FILE" --state "$CE_QUAL_STATE" --version "$FORUM_LONG_VERSION" --signed-dist "$CE_QUAL_SIGNED_DIR/cajeerengine-${FORUM_LONG_VERSION}-dist.zip" --trusted-key "$CE_QUAL_TRUSTED_PUB" --disposable destroy-test-services --profile 10k --seed-posts 10000 --clients 32 --seconds 300 --rate 30 --min-rps 20 --max-p95-ms 500 --max-error-rate .001 --max-growth-mib 512 --max-queue-p95-ms 30000 --report "$RUNNER_TEMP/forum-load/10k.json"
       - name: Physical 100k PostgreSQL sustained load
         shell: bash
         run: |
           set -euo pipefail
-          python3 deploy/container/qualify.py --project "$CE_QUAL_PROJECT" --env "$CE_QUAL_ENV" --domain "$CE_QUAL_DOMAIN" --port "${CE_QUAL_PORT:-18443}" --ca "$CE_QUAL_CA" --email "$CE_QUAL_EMAIL" --password-file "$CE_QUAL_PASSWORD_FILE" --state "$CE_QUAL_STATE" --version "$FORUM_LONG_VERSION" --disposable destroy-test-services --profile 100k --seed-posts 100000 --clients 64 --seconds 1800 --rate 50 --min-rps 40 --max-p95-ms 500 --max-error-rate .001 --max-growth-mib 512 --max-queue-p95-ms 30000 --report "$RUNNER_TEMP/forum-load/100k.json"
+          python3 deploy/container/qualify.py --project "$CE_QUAL_PROJECT" --env "$CE_QUAL_ENV" --domain "$CE_QUAL_DOMAIN" --port "${CE_QUAL_PORT:-18443}" --ca "$CE_QUAL_CA" --email "$CE_QUAL_EMAIL" --password-file "$CE_QUAL_PASSWORD_FILE" --state "$CE_QUAL_STATE" --version "$FORUM_LONG_VERSION" --signed-dist "$CE_QUAL_SIGNED_DIR/cajeerengine-${FORUM_LONG_VERSION}-dist.zip" --trusted-key "$CE_QUAL_TRUSTED_PUB" --disposable destroy-test-services --profile 100k --seed-posts 100000 --clients 64 --seconds 1800 --rate 50 --min-rps 40 --max-p95-ms 500 --max-error-rate .001 --max-growth-mib 512 --max-queue-p95-ms 30000 --report "$RUNNER_TEMP/forum-load/100k.json"
       - name: Physical million-post 24-hour soak and dependency faults
         shell: bash
         run: |
           set -euo pipefail
-          python3 deploy/container/qualify.py --project "$CE_QUAL_PROJECT" --env "$CE_QUAL_ENV" --domain "$CE_QUAL_DOMAIN" --port "${CE_QUAL_PORT:-18443}" --ca "$CE_QUAL_CA" --email "$CE_QUAL_EMAIL" --password-file "$CE_QUAL_PASSWORD_FILE" --state "$CE_QUAL_STATE" --version "$FORUM_LONG_VERSION" --disposable destroy-test-services --profile 1m-soak --seed-posts 1000000 --clients 200 --seconds 86400 --rate 50 --min-rps 40 --max-p95-ms 500 --max-error-rate .001 --max-growth-mib 512 --max-queue-p95-ms 30000 --faults --chaos --report "$RUNNER_TEMP/forum-load/1m-soak.json"
+          python3 deploy/container/qualify.py --project "$CE_QUAL_PROJECT" --env "$CE_QUAL_ENV" --domain "$CE_QUAL_DOMAIN" --port "${CE_QUAL_PORT:-18443}" --ca "$CE_QUAL_CA" --email "$CE_QUAL_EMAIL" --password-file "$CE_QUAL_PASSWORD_FILE" --state "$CE_QUAL_STATE" --version "$FORUM_LONG_VERSION" --signed-dist "$CE_QUAL_SIGNED_DIR/cajeerengine-${FORUM_LONG_VERSION}-dist.zip" --trusted-key "$CE_QUAL_TRUSTED_PUB" --disposable destroy-test-services --profile 1m-soak --seed-posts 1000000 --clients 200 --seconds 86400 --rate 50 --min-rps 40 --max-p95-ms 500 --max-error-rate .001 --max-growth-mib 512 --max-queue-p95-ms 30000 --faults --chaos --report "$RUNNER_TEMP/forum-load/1m-soak.json"
       - name: Verify all profiles with signed artifact and Git identity
         shell: bash
         run: |
           set -euo pipefail
           python3 deploy/container/certify_load.py --release-dir "$CE_QUAL_SIGNED_DIR" --trusted-public-key "$CE_QUAL_TRUSTED_PUB" --version "$FORUM_LONG_VERSION" --small "$RUNNER_TEMP/forum-load/10k.json" --medium "$RUNNER_TEMP/forum-load/100k.json" --soak "$RUNNER_TEMP/forum-load/1m-soak.json" --output "$RUNNER_TEMP/forum-load/certified.json"
+      - name: Bind evidence to current GitHub run attempt and exact candidate
+        run: python3 tools/qualification-run.py receipt --kind physical --directory "$CE_QUAL_SIGNED_DIR" --version "$FORUM_LONG_VERSION" --reports "$RUNNER_TEMP/forum-load"
       - uses: actions/upload-artifact@v4
         if: always()
         with:

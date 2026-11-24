@@ -1,3 +1,11 @@
+## [1.5.0] - 2026-11-24
+
+- Bind physical tests to the same signed CI artifact and workflow attempt used for publication.
+- Verify live deployment manifests and app/worker/scheduler identity before qualifying.
+- Verify 1.4.11 → 1.5.0 interrupted update recovery, including the independently signed rollback baseline.
+- Resume an exact incomplete release draft without replacing assets; reject mismatched tags, assets or moving main.
+- Disable direct publication bypass; production certification remains pending until actual qualification passes. No schema migration.
+
 ## [1.4.11] - 2026-11-24
 
 - Enforce fixed physical qualification limits, balanced load, sustained writes, post-fault load and measured recovery.

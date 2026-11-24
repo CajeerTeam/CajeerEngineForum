@@ -202,6 +202,11 @@ def qualify(a):
             require(re.fullmatch(r'[a-f0-9]{64}', cid) is not None, 'unique running app required')
             actual = json.loads(subprocess.check_output(['docker','inspect',cid], text=True, timeout=30, env=dc.env))[0]
             require(actual['Config']['Image'] == f"cajeerengine-forum:{a.version}-{site['CE_RELEASE_SHA256']}" and actual['Image'].removeprefix('sha256:').startswith(image.removeprefix('sha256:')), 'running image differs from approved artifact')
+        if a.profile != 'smoke' and a.version == '1.5.0':
+            from release_identity import verify_running
+            report['deployment_identity'] = verify_running(dc,site,a.signed_dist,a.trusted_key)
+            require(report['deployment_identity']['image'].removeprefix('sha256:').startswith(image.removeprefix('sha256:')), 'qualified image differs from signed deployment')
+            check('signed_deployment_identity')
         assert_ready();require(json.loads(call('/api/v1/health')[1])['edition_version']==a.version,'edition mismatch')
         state=json.loads(a.state.read_text()); thread=str(uuid.UUID(state['thread'])); path='/api/v1/forum/threads/'+thread
         require(b'ContainerSmokeBody' in call('/forum/threads/'+thread)[1],'disposable fixture missing')
@@ -371,6 +376,7 @@ def main():
     for name in ('project','domain','email','version','disposable'):p.add_argument('--'+name,required=True)
     for name in ('env','ca','password-file','state','report'):p.add_argument('--'+name,type=Path,required=True)
     p.add_argument('--profile', choices=('smoke','10k','100k','1m-soak'),default='smoke')
+    p.add_argument('--signed-dist',type=Path);p.add_argument('--trusted-key',type=Path)
     p.add_argument('--sample-interval',type=int,default=30)
     p.add_argument('--max-queue-p95-ms',type=int,default=30000)
     p.add_argument('--port',type=int,default=18443);p.add_argument('--clients',type=int,default=8);p.add_argument('--seconds',type=int,default=60);p.add_argument('--rate',type=float,default=10);p.add_argument('--min-rps',type=float,default=5);p.add_argument('--max-p95-ms',type=int,default=1000);p.add_argument('--max-error-rate',type=float,default=.001);p.add_argument('--max-growth-mib',type=int,default=256);p.add_argument('--seed-posts',type=int,default=0);p.add_argument('--faults',action='store_true');p.add_argument('--chaos',action='store_true',help='destructive FPM/network/tmpfs/migration faults on named disposable projects only')
@@ -379,6 +385,8 @@ def main():
     minimum={'smoke':(0,5),'10k':(10000,300),'100k':(100000,1800),'1m-soak':(1000000,86400)}[a.profile]
     if a.profile!='smoke':
         require(a.seed_posts==minimum[0] and a.seconds>=minimum[1], 'certification profile corpus/duration mismatch')
+    if a.profile != 'smoke' and a.version == '1.5.0':
+        require(a.signed_dist is not None and a.trusted_key is not None, 'signed deployment verification required')
     if a.profile != 'smoke' and current_policy(a.version):
         validate_thresholds(a.profile, {'clients':a.clients,'target_rps':a.rate,'minimum_rps':a.min_rps,'max_p95_ms':a.max_p95_ms,'max_error_rate':a.max_error_rate,'max_memory_growth_mib':a.max_growth_mib,'max_queue_p95_ms':a.max_queue_p95_ms})
     if a.chaos:

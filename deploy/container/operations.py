@@ -99,8 +99,8 @@ class Operations:
             raise RuntimeError('One-shot installer did not complete successfully')
 
     def runtime(self):
-        for service, check in [('app', 'identity'), ('app', 'ready'), ('worker', 'loop-health'),
-                               ('scheduler', 'loop-health')]:
+        for service, check in [('app', 'identity'), ('worker', 'identity'), ('scheduler', 'identity'),
+                               ('app', 'ready'), ('worker', 'loop-health'), ('scheduler', 'loop-health')]:
             try:
                 self.compose('exec', '-T', service, 'php', '/opt/ce-container/runtime.php',
                              check, timeout=120 if check == 'identity' else 30)

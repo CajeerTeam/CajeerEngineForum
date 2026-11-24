@@ -25,7 +25,9 @@ def check():
         raise ValueError('Forum/engine version identity mismatch')
     if release.get('channel') != ('rc' if '-' in current else 'stable'):
         raise ValueError('Incorrect release channel')
-    if current == '1.4.11':
+    if current == '1.5.0':
+        baseline = 'refs/tags/v1.4.11'
+    elif current == '1.4.11':
         baseline = 'refs/tags/v1.4.10'
     elif current == '1.4.10':
         baseline = 'refs/tags/v1.4.9'
@@ -141,6 +143,11 @@ def check():
             raise ValueError('Publishing source requires an authentic historical baseline tag: ' + baseline)
         print('PASS development source identity; historical tag admission deferred:', baseline)
         return
+    if current == '1.5.0':
+        historic = json.loads(git('show', baseline+':release.json'))
+        if historic.get('edition') != 'forum' or historic.get('edition_version') != '1.4.11':
+            raise ValueError('Historical baseline tag does not identify Forum 1.4.11')
+        git('merge-base','--is-ancestor',baseline,'HEAD')
     modified = git('diff', '--name-only', '--no-renames', baseline, 'HEAD', '--').splitlines()
     if not modified:
         raise ValueError('No changes relative to historical tag')

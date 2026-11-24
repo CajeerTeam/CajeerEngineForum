@@ -266,6 +266,7 @@ final readonly class ReleaseBuilder
         if ($mode==='source' && version_compare($this->version(),'0.9.8','>=')) $required=array_merge($required,['tools/forum-tests/release_acceptance.py','tools/forum-tests/test_upgrade_098.py','docs/forum-upgrade-certification.md']);
         if ($mode==='source' && version_compare($this->version(),'0.9.9','>=')) $required=array_merge($required,['tools/staging-gate.py','tools/final-audit.py','tools/final-audit-regression.py','tools/release-freeze.py','docs/forum-rc-final-audit.md']);
         if ($mode==='source' && version_compare($this->version(),'1.0.0','>=')) $required=array_merge($required,['tools/stable-certification.py','tools/stable-certification-regression.py','docs/forum-1.0-production-operations.md','docs/forum-1.0-upgrade.md','docs/forum-1.0-compatibility.md']);
+        if ($mode==='source' && version_compare($this->version(),'1.5.0','>=')) $required=array_merge($required,ReleaseFilePolicy::QUALIFICATION_SOURCE);
         $checks = [];
         foreach ($required as $file) $checks[$file] = is_file($this->rootPath . '/' . $file) && !is_link($this->rootPath . '/' . $file);
         foreach (['pgsql', 'mysql', 'sqlite'] as $driver) $checks['migrations/' . $driver] = count(glob($this->rootPath . '/migrations/' . $driver . '/*.sql') ?: []) > 0;
