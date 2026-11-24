@@ -15,7 +15,7 @@ final readonly class AutomaticReleaseDiscovery
 
     public function enabled(): bool
     {
-        return $this->config->bool('updates.core.auto_check_enabled', true);
+        return (new UpdatePolicy($this->config))->discoveryEnabled();
     }
 
     public function intervalSeconds(): int

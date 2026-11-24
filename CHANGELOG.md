@@ -1,3 +1,9 @@
+## [1.5.4] - 2026-11-24
+
+- Host-owned update policies, version blocks and verified security-release classification.
+- Defer approved installations until a timezone-aware maintenance window opens; recheck admission before mutation. No autonomous apply.
+- Preserve legacy defaults and signed release gates. No database migration.
+
 ## [1.5.3] - 2026-11-24
 
 - Persist digest-bound partial ZIP downloads; validate exact HTTP ranges and restart when ranges are ignored.

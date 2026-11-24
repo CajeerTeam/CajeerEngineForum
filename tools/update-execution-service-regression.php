@@ -26,7 +26,7 @@ function removeOperatorTestTree(string $path): void
 function sampleRequest(string $id, string $date): array
 {
     return ['ok' => true, 'id' => $id, 'action' => 'apply', 'actor' => 'admin-test',
-        'requested_at' => $date, 'confirmed_at' => $date, 'state' => 'pending', 'stage' => str_repeat('b', 32), 'sha256' => str_repeat('c', 64)];
+        'requested_at' => $date, 'confirmed_at' => $date, 'state' => 'pending', 'version'=>'1.5.4', 'stage' => str_repeat('b', 32), 'sha256' => str_repeat('c', 64)];
 }
 
 $root = sys_get_temp_dir() . '/cajeer-operator-test-' . bin2hex(random_bytes(8));

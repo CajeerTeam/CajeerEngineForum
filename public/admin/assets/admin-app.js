@@ -1,5 +1,5 @@
 const ADMIN_VERSION = '2.1.0'
-const FORUM_EDITION = '1.5.3'
+const FORUM_EDITION = '1.5.4'
 let oidcEnabled = false
 const API_BASE = '/api/v1'
 const TOKEN_KEY = 'cajeerengine.admin.token'
@@ -1511,8 +1511,9 @@ function updatesView() {
   const enabled = u.web_upgrade_enabled === true && w.operator_ready === true && w.operator_status?.status !== 'recovery_required'
   const trust = w.production_apply_enabled === true
   const available = check.update_available === true && typeof latest.version === 'string'
-  const downloadReady = enabled && trust && available && ['fresh','not_modified'].includes(check.metadata_status) && !u.retry_at && !pending && !w.maintenance?.update_active && !updatesWorking
-  const installReady = enabled && trust && w.staged_installable === true && stage.ok === true && !!stage.id && !!stage.sha256 && !pending && !w.maintenance?.update_active && !updatesWorking && w.installed
+  const policy = u.policy || {}, policyAllows = v => policy.valid !== false && policy.mode !== 'disabled' && !(policy.blocked_versions || []).includes(v)
+  const downloadReady = policyAllows(latest.version) && enabled && trust && available && ['fresh','not_modified'].includes(check.metadata_status) && !u.retry_at && !pending && !w.maintenance?.update_active && !updatesWorking
+  const installReady = policyAllows(stage.version) && enabled && trust && w.staged_installable === true && stage.ok === true && !!stage.id && !!stage.sha256 && !pending && !w.maintenance?.update_active && !updatesWorking && w.installed
   const rollback = w.rollback || {}, backups = Array.isArray(u.backups) ? u.backups : []
   const safeRecovery = enabled && !pending && !w.maintenance?.update_active && !updatesWorking
   const operator = w.operator_status || {}, current = u.current_version || w.current_version || '—'
@@ -1532,6 +1533,10 @@ function updatesView() {
       <p class="muted">Синхронизировано страниц: ${escapeHtml(u.metadata_page_count ?? check.metadata_page_count ?? 0)} · Каталог: ${fmtTime(u.metadata_fetched_at || check.metadata_fetched_at)}${u.retry_at || check.retry_at ? ' · Повтор после: '+fmtTime(u.retry_at || check.retry_at) : ''}</p>
       ${latest.source && /^https:\/\/github\.com\/CajeerTeam\/CajeerEngineForum\/releases\//i.test(latest.source) ? `<p><a href="${escapeHtml(latest.source)}" target="_blank" rel="noopener noreferrer">Открыть релиз на GitHub</a></p>` : ''}
       ${typeof latest.notes === 'string' && latest.notes ? `<details><summary>Описание релиза</summary><pre class="json">${escapeHtml(latest.notes.slice(0,4000))}</pre></details>` : ''}
+      <p>Политика: ${escapeHtml(policy.mode || 'legacy')} · ${policy.valid === false ? 'ошибка: '+escapeHtml(policy.error) : 'действует'} · автономная установка отключена</p>
+      <p>Окно обслуживания: ${escapeHtml(policy.timezone || 'UTC')} · ${escapeHtml((policy.days || []).join(', ') || '—')} · ${escapeHtml(policy.window_start || '00:00')}–${escapeHtml(policy.window_end || '24:00')} · ${policy.window_open === false ? 'закрыто' : 'открыто'}${policy.next_window_at && policy.window_open === false ? ' · следующий запуск не ранее '+fmtTime(Number(policy.next_window_at)*1000) : ''}</p>
+      ${policy.defer_until ? `<p>Отложено до: ${fmtTime(policy.defer_until)}</p>` : ''}
+      ${policy.blocked_versions?.length ? `<p>Заблокированные версии: ${escapeHtml(policy.blocked_versions.join(', '))}</p>` : ''}
       <p>Автоподготовка: ${escapeHtml(u.auto_stage?.enabled ? (u.auto_stage.state || "ожидание") : "выключена")}${u.auto_stage?.next_attempt_at ? " · следующий запуск: "+fmtTime(Number(u.auto_stage.next_attempt_at)*1000) : ""}</p>
       ${u.download_progress?.total_bytes > 0 ? `<p>Загрузка ${escapeHtml(u.download_progress.version)}: ${escapeHtml(u.download_progress.state)} · ${escapeHtml(u.download_progress.received_bytes)} / ${escapeHtml(u.download_progress.total_bytes)} байт</p><progress max="${escapeHtml(u.download_progress.total_bytes)}" value="${escapeHtml(u.download_progress.received_bytes)}"></progress>` : ""}
       <div class="toolbar"><button class="btn secondary" data-update-check ${updatesWorking?'disabled':''}>Проверить сейчас</button><button class="btn" data-update-download ${downloadReady?'':'disabled'}>Скачать и подготовить ${escapeHtml(latest.version||'')}</button></div>
@@ -1540,6 +1545,7 @@ function updatesView() {
     <div class="card"><h2>Установка</h2><p>Подготовленный архив: <strong>${escapeHtml(stage.ok ? stage.version : 'нет')}</strong></p><p class="muted">Последние записи о скачанных релизах: ${escapeHtml(Array.isArray(u.downloads) ? u.downloads.length : 0)}</p>
       ${stage.ok ? `<p class="muted">SHA-256: <code>${escapeHtml(stage.sha256)}</code><br>Файлов: ${escapeHtml(stage.file_count)}</p>`:''}
       ${stage.runtime_compatibility && !stage.runtime_compatibility.legacy_policy ? `<p>Совместимость при подготовке: ${flag(stage.runtime_compatibility.ok && stage.extension_compatibility?.ok, "подтверждена", "ошибка")} · PHP ${escapeHtml(stage.runtime_compatibility.php_version)} · SQL ${escapeHtml(stage.runtime_compatibility.database_driver)} ${escapeHtml(stage.runtime_compatibility.database_version || "—")} · Redis ${escapeHtml(stage.runtime_compatibility.redis_enabled ? stage.runtime_compatibility.redis_version || "—" : "отключён")}</p>` : ""}
+      ${pending && policy.window_open === false ? `<p>Одобренная установка ожидает окна обслуживания; загрузка и резервное копирование не ограничены окном.</p>` : ""}
       <p>Оператор: ${escapeHtml(operator.status || 'нет данных')} ${operator.checked_at?('· '+fmtTime(operator.checked_at)):''}</p>
       ${operator.status==='recovery_required' ? '<div class="notice error">Требуется ручное восстановление. Новые задания автоматически не выполняются.</div>' : ''}
       <div class="toolbar"><button class="btn" data-update-install ${installReady?'':'disabled'}>Установить обновление</button><a class="btn secondary" href="/upgrade/">Мастер диагностики</a></div>

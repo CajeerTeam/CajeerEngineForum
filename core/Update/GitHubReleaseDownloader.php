@@ -56,6 +56,7 @@ final readonly class GitHubReleaseDownloader
             if (!is_string($version) || ($requestedVersion !== null && $requestedVersion !== $version)) {
                 throw new \RuntimeException('Requested release is not the next eligible GitHub release');
             }
+            if (($reason=(new UpdatePolicy($this->config))->requestReason('download',$version,time()))!==null) throw new \RuntimeException('Update policy: '.$reason);
             $asset = $release['artifacts']['dist'] ?? null;
             $name = 'cajeerengine-' . $version . '-dist.zip';
             if (!is_array($asset) || ($asset['name'] ?? null) !== $name
@@ -256,6 +257,7 @@ final readonly class GitHubReleaseDownloader
             'sha256' => $verified['sha256'],
             'key_id' => $verified['key_id'],
             'file_count' => $verified['file_count'],
+            'security_update' => ($verified['security_update'] ?? false) === true,
             'next_command' => 'php bin/cajeer update:apply --package=' . $path . ' --sha256=' . $verified['sha256'],
         ];
     }

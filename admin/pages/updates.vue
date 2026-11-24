@@ -10,6 +10,7 @@ type UpdateState = {
   wizard?: { operator_ready?: boolean; production_apply_enabled?: boolean; installed?: boolean; staged_installable?: boolean
     operator_status?: { status?: string; checked_at?: string; reason?: string; age_seconds?: number }; maintenance?: { enabled?: boolean; update_active?: boolean };
     rollback?: { available: boolean; transaction?: string; from_version?: string; to_version?: string } }
+  policy?: {mode:string;valid:boolean;error?:string;timezone:string;days:number[];window_start?:string;window_end?:string;window_open:boolean;next_window_at?:number;defer_until?:string;blocked_versions:string[]};
   auto_stage?: {enabled:boolean;state?:string;next_attempt_at?:number}; download_progress?: {version:string;state:string;received_bytes:number;total_bytes:number}
   requests?: UpdateRequest[]; backups?: RecoveryBackup[]; downloads?: Array<{version:string}>
 }
@@ -27,8 +28,9 @@ const pending = computed(() => (state.value.requests || []).some(r => ['pending'
 const ready = computed(() => state.value.web_upgrade_enabled === true && state.value.wizard?.operator_ready === true && state.value.wizard?.production_apply_enabled === true && state.value.wizard?.operator_status?.status !== 'recovery_required' && !pending.value && !state.value.wizard?.maintenance?.update_active && !loading.value)
 const canBackup = computed(() => ready.value)
 const canRollback = computed(() => ready.value && state.value.wizard?.rollback?.available === true && !!state.value.wizard?.rollback?.transaction)
-const canDownload = computed(() => ready.value && state.value.last_check?.update_available === true && !!latest.value && ['fresh','not_modified'].includes(state.value.last_check?.metadata_status || ''))
-const canInstall = computed(() => ready.value && state.value.wizard?.installed === true && state.value.wizard?.staged_installable === true && state.value.staged?.ok === true && !!state.value.staged?.id && !!state.value.staged?.sha256)
+const policyAllows = (version?: string) => state.value.policy?.valid !== false && state.value.policy?.mode !== 'disabled' && !(state.value.policy?.blocked_versions || []).includes(version || '')
+const canDownload = computed(() => policyAllows(latest.value) && ready.value && state.value.last_check?.update_available === true && !!latest.value && ['fresh','not_modified'].includes(state.value.last_check?.metadata_status || ''))
+const canInstall = computed(() => policyAllows(state.value.staged?.version) && ready.value && state.value.wizard?.installed === true && state.value.wizard?.staged_installable === true && state.value.staged?.ok === true && !!state.value.staged?.id && !!state.value.staged?.sha256)
 let timer: ReturnType<typeof setInterval> | undefined
 const load = async (quiet = false) => {
   if (!quiet) loading.value = true
@@ -121,6 +123,11 @@ onUnmounted(() => {if(timer)clearInterval(timer)})
       <details v-if="state.last_check?.next?.notes"><summary>Описание релиза</summary><pre>{{ state.last_check.next.notes.slice(0,4000) }}</pre></details>
       <p>Подпись: {{ state.wizard?.production_apply_enabled ? 'ключ настроен' : 'отсутствует доверенный ключ' }}</p>
       <p>Оператор: {{ state.wizard?.operator_ready ? 'готов' : (state.wizard?.operator_status?.reason || 'недоступен') }} · {{ state.wizard?.operator_status?.checked_at || 'нет heartbeat' }}</p>
+      <p>Политика: {{ state.policy?.mode || 'legacy' }} · {{ state.policy?.valid === false ? state.policy.error : 'действует' }}. Автономная установка отключена.</p>
+      <p>Окно обслуживания: {{ state.policy?.timezone }} · {{ state.policy?.days.join(', ') }} · {{ state.policy?.window_start || '00:00' }}–{{ state.policy?.window_end || '24:00' }} · {{ state.policy?.window_open === false ? 'закрыто' : 'открыто' }}</p>
+      <p v-if="state.policy?.next_window_at && state.policy.window_open === false">Следующее окно: {{ new Date(state.policy.next_window_at * 1000).toLocaleString() }}</p>
+      <p v-if="state.policy?.defer_until">Отложено до {{ state.policy.defer_until }}</p>
+      <p v-if="state.policy?.blocked_versions.length">Заблокированные версии: {{ state.policy.blocked_versions.join(', ') }}</p>
       <p>Автоподготовка: {{ state.auto_stage?.enabled ? (state.auto_stage.state || "ожидание") : "выключена" }}</p>
       <div v-if="state.download_progress?.total_bytes"><p>{{ state.download_progress.version }} · {{ state.download_progress.state }} · {{ state.download_progress.received_bytes }} / {{ state.download_progress.total_bytes }} байт</p><progress :max="state.download_progress.total_bytes" :value="state.download_progress.received_bytes" /></div>
       <button :disabled="loading" @click="check">Проверить сейчас</button>

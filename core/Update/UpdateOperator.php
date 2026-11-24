@@ -184,18 +184,24 @@ final class UpdateOperator
             if ($record['state'] !== 'pending') continue;
             try { self::assertApproved($record, $id); }
             catch (\Throwable) { return $this->status('recovery_required', $id, false, 'Invalid approved installation request'); }
-            $pending[] = ['id' => $id, 'at' => $record['requested_at']];
+            $pending[] = ['id' => $id, 'at' => $record['requested_at'], 'record'=>$record];
         }
         if ($pending === []) return $this->idle();
         usort($pending, static fn (array $a, array $b): int => ($a['at'] <=> $b['at']) ?: strcmp($a['id'], $b['id']));
         $id = $pending[0]['id'];
+        $reason=(new UpdateManager($this->rootPath,$this->config))->requestPolicyReason($pending[0]['record']);
+        if (in_array($reason,['outside_maintenance_window','invalid_policy'],true)) return $this->status('idle', $id, true, 'Update deferred: '.$reason);
         $this->status('running', $id, true);
         try {
-            $result = ($this->execute)($id);
+            // A policy rejection is persisted by the real request consumer, never by a custom executor.
+            $result = $reason===null ? ($this->execute)($id) : (new UpdateManager($this->rootPath,$this->config))->runRequest($id);
             // A return value is not a commit record. Verify the fsynced request
             // journal before reporting success to administrators.
             $requestPath = OperationFiles::path($this->rootPath, 'storage/app/update-requests/request-' . $id . '.json');
             $after = OperationFiles::read($requestPath);
+            if (($result['deferred']??false)===true && ($after['id']??null)===$id && ($after['state']??null)==='pending') {
+                return $this->status('idle',$id,true,'Update deferred: '.($result['reason']??'policy'));
+            }
             if (($after['id'] ?? null) !== $id || !in_array($after['state'] ?? null, ['completed', 'failed'], true) ||
                 (($result['ok'] ?? false) === true) !== ($after['state'] === 'completed')) {
                 // The executed operation may already have altered files/DB. Never

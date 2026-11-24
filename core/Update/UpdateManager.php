@@ -18,7 +18,7 @@ final class UpdateManager
     {
         $current=$this->currentVersion();
         $check=(new UpdateResolver($this->config->get('updates',[]),$this->rootPath))->check($current);
-        return $check+['ok'=>true,'current_version'=>$current,'latest_version'=>$check['latest']['version']??null,'maintenance'=>$this->maintenanceState(),'production_apply_enabled'=>$this->trustConfigured(),'safe_update_command'=>'php bin/cajeer update:apply --package=/path/release-dist.zip --version=APPROVED_VERSION --sha256=APPROVED_SHA256 --dry-run'];
+        return $check+['ok'=>true,'current_version'=>$current,'latest_version'=>$check['latest']['version']??null,'maintenance'=>$this->maintenanceState(),'production_apply_enabled'=>$this->trustConfigured(),'policy'=>(new UpdatePolicy($this->config))->snapshot(),'safe_update_command'=>'php bin/cajeer update:apply --package=/path/release-dist.zip --version=APPROVED_VERSION --sha256=APPROVED_SHA256 --dry-run'];
     }
     public function plan(array $options=[]): array
     {
@@ -63,13 +63,14 @@ final class UpdateManager
             $release=json_decode($zip['cajeerengine/release.json']->getContent(),true,512,JSON_THROW_ON_ERROR);
             if (($release['channel']??null)!==UpdatePreflight::channelOf($version)) throw new \RuntimeException('Signed release channel differs from version');
             if (!is_string($m['engine_api_version']??null)||!preg_match('/^\d+\.\d+(?:\.\d+)?$/D',$m['engine_api_version'])||($release['engine_api_version']??null)!==$m['engine_api_version']) throw new \RuntimeException('Invalid target Engine API identity');
+            if (array_key_exists('security_update',$release) && !is_bool($release['security_update'])) throw new \RuntimeException('Invalid signed security classification');
             if (array_key_exists('upgrade_compatibility',$release)) {
                 UpdateCompatibility::validate($release['upgrade_compatibility'],$version);
                 $m['upgrade_compatibility']=$release['upgrade_compatibility'];
             }
             foreach ($m['removed_files']??[] as $file) if (!is_string($file)||!$this->managed($file)||in_array($file,$m['files'],true)) throw new \RuntimeException('Invalid removed file');
             if (version_compare(PHP_VERSION,'8.4.1','<')||version_compare(PHP_VERSION,'9.0','>=')) throw new \RuntimeException('Unsupported PHP runtime');
-            return ['ok'=>true,'package'=>$packagePath,'version'=>$version,'mode'=>$mode,'manifest'=>$m,'file_count'=>count($m['files'])]+$sig;
+            return ['ok'=>true,'package'=>$packagePath,'version'=>$version,'mode'=>$mode,'manifest'=>$m,'security_update'=>($release['security_update']??false)===true,'file_count'=>count($m['files'])]+$sig;
         } catch (\Throwable $e) { return ['ok'=>false,'error'=>$e->getMessage()]; }
     }
     public function apply(array $options=[]): array
@@ -107,6 +108,7 @@ final class UpdateManager
             $plan=$this->stage($dir,$v['manifest']);
             $report=['ok'=>true,'id'=>$id,'previous_version'=>$previous,'target_version'=>$v['version'],'sha256'=>$v['sha256'],'copy_plan'=>$plan,'preflight'=>['space'=>$space,'runtime'=>$runtime,'extensions'=>$compatibility,'migration_history'=>'verified','recovery'=>'ready'],'dry_run'=>!empty($options['dry_run'])];
             if ($report['dry_run']) return $report;
+            if (!empty($options['scheduled_request']) && ($reason=(new UpdatePolicy($this->config))->requestReason('apply',$v['version'],time()))!==null) throw new \RuntimeException('Update policy: '.$reason);
             $journal=['id'=>$id,'state'=>'prepared','previous_version'=>$previous,'target_version'=>$v['version'],'sha256'=>$v['sha256'],'maintenance_was_enabled'=>$this->maintenanceState()['enabled'],'maintenance_before'=>is_file($this->rootPath.'/storage/app/maintenance.json')?OperationFiles::read($this->rootPath.'/storage/app/maintenance.json'):null,'backup'=>null,'child_lock'=>'child-'.bin2hex(random_bytes(8)).'.lock','at'=>gmdate(DATE_ATOM)];
             $journalled=true; $this->journal($journal);
             DatabaseBackup::useProcessLock($dir.'/'.$journal['child_lock']);
@@ -233,6 +235,8 @@ final class UpdateManager
         try {
             if ($this->recoveryPending()) throw new \RuntimeException('Recovery pending');
             if ($automatic) {
+                $policy=new UpdatePolicy($this->config);
+                if ($expectedVersion===null || $policy->stageReason($this->currentVersion(),$expectedVersion)!==null) throw new \RuntimeException('Automatic staging denied by policy');
                 $approval=OperationLock::openLockFile($this->requestDir().'/approval.lock',0660);
                 if (!flock($approval,LOCK_EX|LOCK_NB)) throw new \RuntimeException('Another approval is in progress');
                 foreach (glob($this->requestDir().'/request-*.json')?:[] as $file) {
@@ -242,6 +246,7 @@ final class UpdateManager
                 if ($this->stageEligible($prior) && ($prior['version']??null)===$expectedVersion && ($prior['sha256']??null)===$expectedSha) {
                     $v=$this->verifyPackage($this->path('inbox/'.$prior['id'].'/package.zip'),$expectedSha);
                     if ($v['ok'] && $v['version']===$expectedVersion) {
+                        if ($policy->stageReason($this->currentVersion(),$v['version'],$v['security_update'])!==null) throw new \RuntimeException('Automatic staging denied by signed release policy');
                         UpdatePreflight::identity($v['manifest'],$this->currentVersion(),$this->channel(),$expectedVersion);
                         UpdateCompatibility::requireRuntime($v['manifest'],$this->config);
                         if (!(new \CajeerEngine\Extension\ExtensionRegistry($this->rootPath,$this->config))->targetCompatibility($v['version'],$v['manifest']['engine_api_version'])['ok']) throw new \RuntimeException('Target release incompatible with enabled extensions');
@@ -256,6 +261,7 @@ final class UpdateManager
             $v=$this->verifyPackage($dir.'/package.zip',$expectedSha);
             if (!$v['ok']) throw new \RuntimeException($v['error']);
             UpdatePreflight::identity($v['manifest'],$this->currentVersion(),$this->channel(),$expectedVersion);
+            if ($automatic && $policy->stageReason($this->currentVersion(),$v['version'],$v['security_update'])!==null) throw new \RuntimeException('Automatic staging denied by signed release policy');
             $runtime=UpdateCompatibility::requireRuntime($v['manifest'],$this->config);
             $extensions=(new \CajeerEngine\Extension\ExtensionRegistry($this->rootPath,$this->config))->targetCompatibility($v['version'],$v['manifest']['engine_api_version']);
             if(isset($v['manifest']['upgrade_compatibility'])&&!$extensions['ok'])throw new \RuntimeException('Target release incompatible with enabled extensions');
@@ -290,6 +296,7 @@ final class UpdateManager
             } elseif ($action==='backup') { /* full backup, no arbitrary server path */ }
             elseif ($action==='rollback') { $last=$this->wizardState()['last_report']; if (($last['state']??null)!=='committed') throw new \RuntimeException('No committed update'); $data['transaction']=$last['id']; }
             else throw new \RuntimeException('Invalid operation');
+            if (($reason=(new UpdatePolicy($this->config))->requestReason($action,$data['version']??null,time(),false))!==null) throw new \RuntimeException('Update policy: '.$reason);
             UpdateOperator::assertApproved($data,$id);
             OperationFiles::json($this->requestDir().'/request-'.$id.'.json',$data,0640); return $data;
         } finally { OperationLock::release($guard); }
@@ -375,6 +382,11 @@ final class UpdateManager
             $path=$this->requestDir().'/request-'.$id.'.json'; $r=OperationFiles::read($path);
             UpdateOperator::assertApproved($r,$id);
             if ($this->recoveryPending()) throw new \RuntimeException('Recovery required before executing request');
+            if (($reason=$this->requestPolicyReason($r))!==null) {
+                if (in_array($reason,['outside_maintenance_window','invalid_policy'],true)) return ['ok'=>true,'deferred'=>true,'reason'=>$reason];
+                $r['state']='failed'; $r['failure']='Update policy: '.$reason; $r['finished_at']=gmdate(DATE_ATOM);
+                OperationFiles::json($path,$r,0640); return ['ok'=>false,'reason'=>$reason];
+            }
             // Persist admission before any mutating call. A process killed after
             // this point leaves a running record, never a replayable approval.
             $r['state']='running'; $r['started_at']=gmdate(DATE_ATOM); OperationFiles::json($path,$r,0640);
@@ -383,7 +395,7 @@ final class UpdateManager
                     $download=(new GitHubReleaseDownloader($this->rootPath,$this->config))->download($r['version']);
                     $result=$this->publish($download['package'],null,$download['sha256'],$r['version']);
                 } elseif ($r['action']==='apply') {
-                    $result=$this->apply(['package'=>$this->path('inbox/'.$r['stage'].'/package.zip'),'sha256'=>$r['sha256'],'version'=>$r['version']??null]);
+                    $result=$this->apply(['package'=>$this->path('inbox/'.$r['stage'].'/package.zip'),'sha256'=>$r['sha256'],'version'=>$r['version']??null,'scheduled_request'=>true]);
                 } elseif ($r['action']==='rollback') {
                     $result=$this->rollback(null,true,$r['transaction']);
                 } else $result=(new BackupManager($this->rootPath,$this->config))->create();
@@ -399,6 +411,16 @@ final class UpdateManager
             if (is_string($result['id']??null)) $r['result_id']=$result['id'];
             OperationFiles::json($path,$r,0640); return $result;
         } finally { OperationLock::release($guard); }
+    }
+    public function requestPolicyReason(array $record): ?string
+    {
+        $version=$record['version']??null;
+        if (($record['action']??null)==='apply' && !is_string($version)) {
+            $stage=$this->staged();
+            if (($stage['id']??null)!==($record['stage']??null) || !is_string($stage['version']??null)) return 'stage_identity_missing';
+            $version=$stage['version'];
+        }
+        return (new UpdatePolicy($this->config))->requestReason((string)($record['action']??''),is_string($version)?$version:null,time());
     }
     private function channel(): string { return $this->config->string('updates.core.channel','stable'); }
     private function discardAbandonedStages(): void

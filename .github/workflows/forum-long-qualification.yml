@@ -1,4 +1,4 @@
-name: Forum 1.5.3 physical load and 24-hour soak certification
+name: Forum 1.5.4 physical load and 24-hour soak certification
 on:
   workflow_dispatch:
     inputs:
@@ -7,7 +7,7 @@ on:
         type: string
         required: true
 env:
-  FORUM_LONG_VERSION: ${{ '1.5.3' }}
+  FORUM_LONG_VERSION: ${{ '1.5.4' }}
 permissions:
   contents: read
   actions: read

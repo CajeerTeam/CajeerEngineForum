@@ -17,6 +17,15 @@ return [
         'download_timeout_seconds' => (int) (getenv('UPDATE_DOWNLOAD_TIMEOUT_SECONDS') ?: 300),
         'download_max_bytes' => (int) (getenv('UPDATE_DOWNLOAD_MAX_BYTES') ?: 2147483648),
     ],
+    'policy' => [
+        'mode' => getenv('UPDATE_POLICY_MODE') === false ? 'legacy' : getenv('UPDATE_POLICY_MODE'),
+        'timezone' => getenv('UPDATE_MAINTENANCE_TIMEZONE') === false ? 'UTC' : getenv('UPDATE_MAINTENANCE_TIMEZONE'),
+        'days' => getenv('UPDATE_MAINTENANCE_DAYS') === false ? '1,2,3,4,5,6,7' : getenv('UPDATE_MAINTENANCE_DAYS'),
+        'window_start' => getenv('UPDATE_MAINTENANCE_START') === false ? '' : getenv('UPDATE_MAINTENANCE_START'),
+        'window_end' => getenv('UPDATE_MAINTENANCE_END') === false ? '' : getenv('UPDATE_MAINTENANCE_END'),
+        'defer_until' => getenv('UPDATE_DEFER_UNTIL') === false ? '' : getenv('UPDATE_DEFER_UNTIL'),
+        'blocked_versions' => getenv('UPDATE_BLOCKED_VERSIONS') === false ? '' : getenv('UPDATE_BLOCKED_VERSIONS'),
+    ],
     'operator' => [
         'enabled' => filter_var(getenv('UPDATE_OPERATOR_ENABLED') ?: false, FILTER_VALIDATE_BOOLEAN),
         'max_heartbeat_age_seconds' => (int) (getenv('UPDATE_OPERATOR_MAX_HEARTBEAT_AGE_SECONDS') ?: 180),
