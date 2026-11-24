@@ -17,11 +17,17 @@ local function finish(d,err,delay)
  if err=='' then d.status='processed'; d.processed_at=stamp; redis.call('ZADD',done,now,d.id)
  else d.last_error=err; if d.attempts<d.max_attempts then d.status='pending'; d.available_epoch=now+delay; redis.call('ZADD',ready,d.available_epoch,d.id) else d.status='failed'; d.failed_at=stamp; redis.call('SADD',failed,d.id) end end
  write(d)
+ if (d.status=='processed' or d.status=='failed') and type(d.coalesce)=='string' then local key=prefix..'coalesced:'..q; if redis.call('HGET',key,d.coalesce)==d.id then redis.call('HDEL',key,d.coalesce) end end
 end
 local function recover()
  local n=0; for _,i in ipairs(redis.call('ZRANGEBYSCORE',reserved,'-inf',now,'LIMIT',0,limit)) do local d=read(i); if d and d.status=='reserved' then finish(d,'Reservation expired',1); n=n+1 else redis.call('ZREM',reserved,i) end end; return n
 end
-if op=='push' then local d=cjson.decode(arg); local old=read(id); if old then if old.fingerprint~=d.fingerprint then return redis.error_reply('Idempotency key reused with different job') end; return id end; write(d); redis.call('ZADD',ready,d.available_epoch,id); return id end
+if op=='push' then
+ local d=cjson.decode(arg); local old=read(id); if old then if old.fingerprint~=d.fingerprint then return redis.error_reply('Idempotency key reused with different job') end; return id end
+ local key=prefix..'coalesced:'..q
+ if type(d.coalesce)=='string' then local active=redis.call('HGET',key,d.coalesce); if active then local prior=read(active); if prior and (prior.status=='pending' or prior.status=='reserved') then return active end end end
+ write(d); redis.call('ZADD',ready,d.available_epoch,id); if type(d.coalesce)=='string' then redis.call('HSET',key,d.coalesce,id) end; return id
+end
 if op=='recover' then return recover() end
 if op=='pop' then
  recover()
@@ -32,7 +38,7 @@ end
 if op=='cleanup' then local n=0; for _,i in ipairs(redis.call('ZRANGEBYSCORE',done,'-inf',now-tonumber(arg),'LIMIT',0,limit)) do local d=read(i); if d and d.status=='processed' then redis.call('DEL',prefix..'job:'..i); n=n+1 end; redis.call('ZREM',done,i) end; return n end
 local d=read(id); if not d or d.queue~=q then return 0 end
 if op=='legacy' then if d.status=='reserved' and type(d.lease_until)~='number' then finish(d,'Legacy reservation recovered',1); return 1 end; if d.status=='processed' then redis.call('ZADD',done,'NX',now,id) end; if d.status=='pending' then redis.call('ZADD',ready,'NX',d.available_epoch or now,id) end; redis.call('SADD',prefix..'queues',q); return 0 end
-if op=='retry' then if d.status~='failed' then return 0 end; d.status='pending'; d.attempts=0; d.failed_at=cjson.null; d.last_error=cjson.null; d.reserved_at=cjson.null; d.reservation_token=cjson.null; d.lease_until=cjson.null; d.available_epoch=now; d.updated_at=stamp; write(d); redis.call('SREM',failed,id); redis.call('ZADD',ready,now,id); return 1 end
+if op=='retry' then if d.status~='failed' then return 0 end; d.status='pending'; d.attempts=0; d.failed_at=cjson.null; d.last_error=cjson.null; d.reserved_at=cjson.null; d.reservation_token=cjson.null; d.lease_until=cjson.null; d.available_epoch=now; d.updated_at=stamp; write(d); redis.call('SREM',failed,id); redis.call('ZADD',ready,now,id); if type(d.coalesce)=='string' then redis.call('HSETNX',prefix..'coalesced:'..q,d.coalesce,id) end; return 1 end
 if d.status~='reserved' or d.reservation_token~=token or tonumber(d.lease_until)<=now then return 0 end
 if op=='heartbeat' then d.lease_until=now+lease; d.updated_at=stamp; write(d); redis.call('ZADD',reserved,d.lease_until,id); return 1 end
 if op=='complete' then finish(d,'',0); return 1 end
@@ -44,7 +50,7 @@ LUA;
         $this->redis->clearLastError();$r=$this->redis->eval(self::SCRIPT,[$this->prefix,$q,$op,$id,$token,(string)QueueOptions::lease($this->leaseSeconds),$arg,(string)max(1,min(1000,$limit)),gmdate(DATE_ATOM)],0);
         if($this->redis->getLastError())throw new \RuntimeException('Redis queue transition failed: '.$this->redis->getLastError());return $r;
     }
-    public function push(string $job,array $payload=[],?string $queue=null): string { $q=QueueOptions::queue($queue);$id=QueueOptions::id($q,$job,$payload);$d=['id'=>$id,'name'=>$job,'payload'=>$payload,'queue'=>$q,'attempts'=>0,'max_attempts'=>QueueOptions::maxAttempts($payload),'status'=>'pending','fingerprint'=>QueueOptions::fingerprint($job,$payload),'available_epoch'=>QueueOptions::available($payload),'created_at'=>gmdate(DATE_ATOM),'updated_at'=>gmdate(DATE_ATOM)];$result=$this->exec('push',$q,$id,'',json_encode($d,JSON_THROW_ON_ERROR));if($result!==$id)throw new \RuntimeException('Redis enqueue was not confirmed');return $id; }
+    public function push(string $job,array $payload=[],?string $queue=null): string { $q=QueueOptions::queue($queue);$id=QueueOptions::id($q,$job,$payload);$d=['id'=>$id,'name'=>$job,'payload'=>$payload,'queue'=>$q,'attempts'=>0,'max_attempts'=>QueueOptions::maxAttempts($payload),'status'=>'pending','fingerprint'=>QueueOptions::fingerprint($job,$payload),'coalesce'=>QueueOptions::coalesce($job,$payload),'available_epoch'=>QueueOptions::available($payload),'created_at'=>gmdate(DATE_ATOM),'updated_at'=>gmdate(DATE_ATOM)];$result=$this->exec('push',$q,$id,'',json_encode($d,JSON_THROW_ON_ERROR));if(!is_string($result)||($d['coalesce']===null&&$result!==$id))throw new \RuntimeException('Redis enqueue was not confirmed');QueueOptions::validateId($result);return $result; }
     public function pop(?string $queue=null): ?QueuedJob { $q=QueueOptions::queue($queue);$r=$this->exec('pop',$q,'',QueueOptions::token());if(!is_string($r))return null;$d=json_decode($r,true,512,JSON_THROW_ON_ERROR);return new QueuedJob($d['id'],$d['name'],$d['payload'],$q,$d['attempts'],$d['max_attempts'],gmdate(DATE_ATOM,$d['available_epoch']??time()),$d['reserved_at'],null,$d['reservation_token'],$d['lease_until']); }
     public function heartbeat(QueuedJob $job): bool {return $this->exec('heartbeat',$job->queue,$job->id,$job->reservationToken??'')===1;}
     public function complete(QueuedJob $job): void {if($this->exec('complete',$job->queue,$job->id,$job->reservationToken??'')!==1)throw new \RuntimeException('Queue reservation lost');}

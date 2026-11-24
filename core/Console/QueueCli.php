@@ -21,7 +21,7 @@ final class QueueCli
             for($i=2;$i<count($argv);$i++){
                 if(!str_starts_with($argv[$i],'--')){$args[]=$argv[$i];continue;}
                 $p=explode('=',substr($argv[$i],2),2);$key=$p[0];if(isset($o[$key]))throw new \InvalidArgumentException('Duplicate option --'.$key);
-                if(in_array($key,['json','once','yes'],true)){$o[$key]=true;continue;}
+                if(in_array($key,['json','once','yes','all'],true)){$o[$key]=true;continue;}
                 if(!in_array($key,['queue','limit','payload','id'],true))throw new \InvalidArgumentException('Unknown option --'.$key);
                 $v=$p[1]??($argv[++$i]??null);if($v===null||str_starts_with($v,'--'))throw new \InvalidArgumentException('Missing value for --'.$key);$o[$key]=$v;
             }
@@ -32,7 +32,7 @@ final class QueueCli
                 'queue:push'=>['ok'=>true,'id'=>$q->push($args[0]??throw new \InvalidArgumentException('Provide job name'),json_decode((string)($o['payload']??'{}'),true,512,JSON_THROW_ON_ERROR),$name)],
                 'queue:failed'=>['ok'=>true,'data'=>$q->failed($name)],
                 'queue:retry'=>['ok'=>$q->retry($args[0]??$o['id']??throw new \InvalidArgumentException('Provide job ID'),$name)],
-                'queue:recover'=>['ok'=>true,'recovered'=>$q instanceof LeaseQueueDriverInterface?$q->recover($name,(int)($o['limit']??100)):throw new \RuntimeException('Lease recovery unsupported')],
+                'queue:recover'=>isset($o['all'])?(new \CajeerEngine\Queue\QueueRecovery($q))->run((int)($o['limit']??100)):['ok'=>true,'recovered'=>$q instanceof LeaseQueueDriverInterface?$q->recover($name,(int)($o['limit']??100)):throw new \RuntimeException('Lease recovery unsupported')],
                 'queue:diagnostics'=>['ok'=>true,'data'=>$q->diagnostics()],
                 'queue:redis-migrate'=>['ok'=>true,'recovered'=>$q instanceof RedisQueueDriver&&isset($o['yes'])?$q->migrateLegacy():throw new \RuntimeException('Stop old workers and producers, then run with --yes on Redis')],
                 default=>self::runTasks($root,$cfg,$db,$q,$command,$name,$o),
@@ -52,7 +52,7 @@ final class QueueCli
             $hub=new \CajeerEngine\Analytics\Reporting\AnalyticsHub($db,\CajeerEngine\Integration\SecretVault::fromEnvironment(),$q,$cfg);
             // Source distributions also process AI translation jobs without Composer.
             $translation=new \CajeerEngine\AI\AiTranslationStudio($db,new \CajeerEngine\AI\AiSettings($root),new \CajeerEngine\AI\OpenAiClient(),new ContentEntryRepository($root,$db),new ContentTypeRepository($root,$db));
-            $worker=new QueueWorker($q,$index,$wh,$wd,$platform,null,$hub,$translation,null,null,$db);if($command==='queue:work')return $worker->work($name,isset($o['once'])?1:(int)($o['limit']??$cfg->int('queue.workers.default_limit',10)));$scheduler=new SchedulerRunner($root,$index,$wh,$q,$platform,\CajeerEngine\Scheduler\TaskRunStore::fromConfig($root,$cfg,$db), $hub, null, new \CajeerEngine\Update\AutomaticReleaseDiscovery($cfg), new \CajeerEngine\Update\UpdateNotificationPublisher($root,$wh));
+            $worker=new QueueWorker($q,$index,$wh,$wd,$platform,null,$hub,$translation,null,null,$db);if($command==='queue:work')return $worker->work($name,isset($o['once'])?1:(int)($o['limit']??$cfg->int('queue.workers.default_limit',10)));$scheduler=new SchedulerRunner($root,$index,$wh,$q,$platform,\CajeerEngine\Scheduler\TaskRunStore::fromConfig($root,$cfg,$db), $hub, null, new \CajeerEngine\Update\AutomaticReleaseDiscovery($cfg), new \CajeerEngine\Update\UpdateNotificationPublisher($root,$wh), new \CajeerEngine\Forum\Service\ForumRuntimeJobs($db,$q,$platform));
         }
         if(str_ends_with($command,':due'))return ['ok'=>true,'data'=>$scheduler->tasks()];
         return $scheduler->run();

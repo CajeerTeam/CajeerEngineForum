@@ -76,3 +76,7 @@ CE_QUEUE_REDIS_HOST=127.0.0.1 php tools/queue-regression.php --redis
 ```
 
 The local regression exercises eight competing processes, SIGKILL recovery, stale tokens, delayed retries, failed-job reset, crash-between-write-and-rename, persistent schedule slots, webhook handoff and receipt deduplication, SIGTERM drain and CLI timeouts. PostgreSQL and Redis integration tests use isolated test schema/prefix and are included in release CI. They require the corresponding PDO/Redis PHP extensions and services.
+
+## Forum Edition 1.4.5
+
+See [Unified Queue & Scheduler](forum-unified-queue-1.4.5.md) for recurring wakeup coalescing, all-queue recovery, the System ACP and upgrade instructions.

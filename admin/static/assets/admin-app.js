@@ -1,5 +1,5 @@
 const ADMIN_VERSION = '2.1.0'
-const FORUM_EDITION = '1.4.4'
+const FORUM_EDITION = '1.4.5'
 let oidcEnabled = false
 const API_BASE = '/api/v1'
 const TOKEN_KEY = 'cajeerengine.admin.token'
@@ -293,7 +293,7 @@ async function routeLoad(route) {
     if (route === 'search') await loadSilent('searchDiagnostics', '/search/diagnostics')
     if (route === 'migration') { await loadSilent('migrationProjects','/migration/projects'); await loadSilent('migrationCatalog','/migration/catalog') }
     if (route === 'import-export') await Promise.allSettled([loadSilent('exports', '/import-export/exports'),loadSilent('importRequests','/import-export/requests')])
-    if (route === 'system') await loadSilent('operations', '/system/operations')
+    if (route === 'system') await Promise.all([loadSilent('operations', '/system/operations'),loadSilent('unifiedQueues','/queue'),loadSilent('unifiedTasks','/scheduler/tasks')])
   } catch {}
 }
 
@@ -1649,10 +1649,39 @@ function bindImportExport() {
 let opsAuto=false, opsPending=false
 function systemView() {
   const r=state.cache.operations
-  if(!r || r.error)return `<section class="card"><h2>Эксплуатация</h2><p>${escapeHtml(r?.error?.message||'Загрузка диагностики...')}</p><button class="btn secondary" data-ops-refresh>Обновить</button></section>`
+  if(!r || r.error)return `<section class="card"><h2>Эксплуатация</h2><p>${escapeHtml(r?.error?.message||'Загрузка диагностики...')}</p><button class="btn secondary" data-ops-refresh>Обновить</button>${unifiedQueueView()}</section>`
   const rows=Object.entries(r.checks||{}).map(([name,c])=>`<tr><td>${escapeHtml(name)}</td><td><span class="badge ${c.ok?'success':'danger'}">${c.ok?'OK':'Проблема'}</span></td><td>${escapeHtml(String(c.latency_ms??'—'))} мс</td><td>${escapeHtml(JSON.stringify(Object.fromEntries(Object.entries(c).filter(([k])=>!['ok','latency_ms'].includes(k)))))}</td></tr>`).join('')
-  return `<section class="card"><h2>Эксплуатация · ${escapeHtml(r.status)}</h2><p>Проверено: ${escapeHtml(r.time||'')}</p><button class="btn secondary" data-ops-refresh>Обновить</button> <label><input type="checkbox" data-ops-auto ${opsAuto?'checked':''}> Автообновление (30 с)</label><div class="grid two"><div><h3>Диск</h3><p>${r.disk?.free_bytes==null?'Недоступно':(r.disk.free_bytes/1073741824).toFixed(2)+' ГиБ свободно'}</p></div><div><h3>Предупреждения</h3>${(r.alerts||[]).map(a=>`<p>${escapeHtml(a)}</p>`).join('')||'<p>Нет предупреждений</p>'}</div></div>${forumOperationsView(r)}<h3>HTTP · накопленные метрики</h3><p>Запросы: ${escapeHtml(String(r.http?.requests??0))} · 5xx: ${escapeHtml(String(r.http?.errors_5xx??0))} · среднее: ${escapeHtml(String(r.http?.average_ms??"—"))} мс · p95 bucket: ${escapeHtml(String(r.http?.p95_bucket_ms??"—"))} мс</p><h3>Readiness</h3>${Object.entries(r.readiness?.checks||{}).map(([k,v])=>`<p>${escapeHtml(k)}: ${v?'OK':'FAIL'}</p>`).join('')}<div class="table-wrap"><table><thead><tr><th>Компонент</th><th>Статус</th><th>Задержка</th><th>Детали</th></tr></thead><tbody>${rows}</tbody></table></div></section>`
+  return `<section class="card"><h2>Эксплуатация · ${escapeHtml(r.status)}</h2><p>Проверено: ${escapeHtml(r.time||'')}</p><button class="btn secondary" data-ops-refresh>Обновить</button> <label><input type="checkbox" data-ops-auto ${opsAuto?'checked':''}> Автообновление (30 с)</label><div class="grid two"><div><h3>Диск</h3><p>${r.disk?.free_bytes==null?'Недоступно':(r.disk.free_bytes/1073741824).toFixed(2)+' ГиБ свободно'}</p></div><div><h3>Предупреждения</h3>${(r.alerts||[]).map(a=>`<p>${escapeHtml(a)}</p>`).join('')||'<p>Нет предупреждений</p>'}</div></div>${forumOperationsView(r)}${unifiedQueueView()}<h3>HTTP · накопленные метрики</h3><p>Запросы: ${escapeHtml(String(r.http?.requests??0))} · 5xx: ${escapeHtml(String(r.http?.errors_5xx??0))} · среднее: ${escapeHtml(String(r.http?.average_ms??"—"))} мс · p95 bucket: ${escapeHtml(String(r.http?.p95_bucket_ms??"—"))} мс</p><h3>Readiness</h3>${Object.entries(r.readiness?.checks||{}).map(([k,v])=>`<p>${escapeHtml(k)}: ${v?'OK':'FAIL'}</p>`).join('')}<div class="table-wrap"><table><thead><tr><th>Компонент</th><th>Статус</th><th>Задержка</th><th>Детали</th></tr></thead><tbody>${rows}</tbody></table></div></section>`
 }
+function unifiedQueueView(){
+  const queue=dataOf(state.cache.unifiedQueues), tasks=dataOf(state.cache.unifiedTasks), canManage=integrationScope('*')
+  const names=[...new Set(['default',...Object.keys(queue?.queues||{})])]
+  const rows=Object.entries(queue?.queues||{}).map(([name,q])=>`<tr><td>${escapeHtml(name)}</td>${['pending','reserved','processed','failed'].map(k=>`<td>${escapeHtml(q[k]??0)}</td>`).join('')}</tr>`)
+  const schedules=Array.isArray(tasks)?tasks.map(t=>`<tr><td>${escapeHtml(t.name)}</td><td>${escapeHtml(t.interval)}</td><td>${escapeHtml(t.state?.status||'never')}</td><td>${escapeHtml(t.state?.last_success_at||'—')}</td></tr>`):[]
+  return `<h3>Unified Queue &amp; Scheduler</h3><p>${queue?.error?'Очередь недоступна':escapeHtml(queue?.driver||'—')} · возраст готового задания: ${escapeHtml(queue?.oldest_ready_age_seconds??'—')} с · lease: ${escapeHtml(queue?.lease_seconds??'—')} с</p>${table(['Очередь','Pending','Reserved','Processed','Failed'],rows)}<div class="toolbar"><label>Очередь <select class="input" data-unified-queue>${names.map(n=>`<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join('')}</select></label><button class="btn secondary" data-unified-failed>Показать failed</button>${canManage?'<button class="btn secondary" data-unified-scheduler>Запустить scheduler</button>':''}</div><div data-unified-results aria-live="polite"></div><h4>Планировщик</h4>${tasks?.error?'<p>Планировщик недоступен</p>':table(['Задача','Интервал','Статус','Последний успех'],schedules)}`
+}
+let unifiedBusy=false
+async function unifiedQueueAction(e){
+  const button=e.target.closest('[data-unified-failed],[data-unified-retry],[data-unified-scheduler]')
+  if(!button||unifiedBusy||state.route!=='system')return
+  const serial=navigationSerial, target=document.querySelector('[data-unified-results]'), queue=document.querySelector('[data-unified-queue]')?.value||'default'
+  if(!target)return
+  unifiedBusy=true;button.disabled=true
+  try{
+    if(button.hasAttribute('data-unified-scheduler')){
+      if(!integrationScope('*')||!confirm('Запустить наступившие задачи планировщика?'))return
+      await api('/scheduler/run',{method:'POST',body:'{}'});await refreshOperations();return
+    }
+    if(button.hasAttribute('data-unified-retry')){
+      if(!integrationScope('*')||!confirm('Повторить задание? Возможны повторные внешние эффекты.'))return
+      await api('/queue/failed/'+encodeURIComponent(button.dataset.unifiedRetry)+'/retry?queue='+encodeURIComponent(button.dataset.queue),{method:'POST',body:'{}'})
+    }
+    const result=dataOf(await api('/queue/failed?metadata_only=1&queue='+encodeURIComponent(queue)),[])
+    if(serial!==navigationSerial||!target.isConnected)return
+    target.innerHTML=table(['ID / задача','Попытки','Дата ошибки','Действие'],result.map(j=>`<tr><td>${escapeHtml(j.id)}<br>${escapeHtml(j.name)}</td><td>${escapeHtml(j.attempts)} / ${escapeHtml(j.max_attempts)}</td><td>${escapeHtml(j.failed_at||j.updated_at||'—')}</td><td>${integrationScope('*')?`<button class="btn small secondary" data-unified-retry="${escapeHtml(j.id)}" data-queue="${escapeHtml(queue)}">Повторить</button>`:'—'}</td></tr>`))
+  }catch(error){if(serial===navigationSerial&&target.isConnected)target.textContent=error.message}finally{unifiedBusy=false;button.disabled=false}
+}
+document.addEventListener('click',e=>{void unifiedQueueAction(e)})
 function forumOperationsView(r){
   const d=r.checks?.forum_database,c=r.checks?.forum_cache
   const val=x=>escapeHtml(x??'—')

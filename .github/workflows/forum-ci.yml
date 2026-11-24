@@ -6,7 +6,7 @@ on:
 permissions:
   contents: read
 env:
-  FORUM_CURRENT_VERSION: ${{ '1.4.4' }}
+  FORUM_CURRENT_VERSION: ${{ '1.4.5' }}
 concurrency:
   group: forum-ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -126,6 +126,9 @@ jobs:
       - run: node --check public/forum-assets/forum.js
       - run: php tools/forum-platform-config-regression.php
       - run: php tools/forum-platform-workflows-unit.php
+      - run: php tools/forum-unified-queue-regression.php
+      - run: php tools/runtime-queue-resilience-regression.php
+      - run: php tools/queue-regression.php
       - run: python tools/forum-tests/platform_workflows_sql_regression.py
       - run: php tools/forum-ai-writing-unit.php
       - run: php tools/forum-ai-moderation-unit.php

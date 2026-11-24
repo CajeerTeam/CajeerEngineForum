@@ -21,6 +21,7 @@ final readonly class SchedulerRunner
         private ?\CajeerEngine\AI\AiBackgroundAutomation $aiAutomations = null,
         private ?\CajeerEngine\Update\AutomaticReleaseDiscovery $releaseDiscovery = null,
         private ?\CajeerEngine\Update\UpdateNotificationPublisher $updateNotifications = null,
+        private ?\CajeerEngine\Forum\Service\ForumRuntimeJobs $forumJobs = null,
     ) {
     }
 
@@ -38,6 +39,8 @@ final readonly class SchedulerRunner
         $tasks = array_merge(
             [
                 ['name' => 'tmp.cleanup', 'description' => 'Удаление старых временных файлов.', 'interval' => 'hourly'],
+                ...($this->queue instanceof \CajeerEngine\Queue\LeaseQueueDriverInterface ? [['name' => 'queue.recover', 'description' => 'Recover expired reservations in all queues', 'interval' => 'every_minute']] : []),
+                ...($this->forumJobs !== null ? [['name' => 'forum.jobs.dispatch', 'description' => 'Dispatch durable forum background work', 'interval' => 'every_minute']] : []),
                 ['name' => 'queue.cleanup_processed', 'description' => 'Удаление старых обработанных file-queue задач.', 'interval' => 'daily'],
                 ['name' => 'search.index_published', 'description' => 'Проверка и восстановление актуальности поискового каталога.', 'interval' => 'every_minute'],
                 ['name' => 'webhooks.dispatch_pending', 'description' => 'Отправка pending-событий Event API.', 'interval' => 'every_minute'],
@@ -48,7 +51,7 @@ final readonly class SchedulerRunner
             $this->analyticsHub === null ? [] : [['name' => 'analytics.sync_reports', 'description' => 'Queue analytics report refresh', 'interval' => 'hourly']],
             array_map(static fn($name) => ['name' => $name, 'description' => 'Extension task', 'interval' => 'every_minute'], $extensionNames),
         );
-        $internal = ['tmp.cleanup', 'queue.cleanup_processed', 'search.index_published', 'webhooks.dispatch_pending', 'analytics.sync_reports', 'ai.automation.dispatch', 'updates.discover_releases', 'updates.notifications.dispatch'];
+        $internal = ['tmp.cleanup', 'queue.recover', 'forum.jobs.dispatch', 'queue.cleanup_processed', 'search.index_published', 'webhooks.dispatch_pending', 'analytics.sync_reports', 'ai.automation.dispatch', 'updates.discover_releases', 'updates.notifications.dispatch'];
         if ($extensionRegistryUnavailable) {
             $tasks[] = ['name' => 'extensions.registry', 'description' => 'Extension task registry unavailable', 'interval' => 'every_minute', 'state' => ['status' => 'unavailable']];
         }
@@ -73,6 +76,12 @@ final readonly class SchedulerRunner
         // Each task is isolated. A failing queue/backend cannot starve unrelated maintenance,
         // and a failed slot is never silently marked successful.
         $results['tmp.cleanup'] = $this->runTask($store, 'tmp.cleanup', 3600, fn() => ['removed' => $this->cleanupTmp()]);
+        if ($this->queue instanceof \CajeerEngine\Queue\LeaseQueueDriverInterface) {
+            $results['queue.recover'] = $this->runTask($store, 'queue.recover', 60, fn() => (new \CajeerEngine\Queue\QueueRecovery($this->queue))->run());
+        }
+        if ($this->forumJobs !== null) {
+            $results['forum.jobs.dispatch'] = $this->runTask($store, 'forum.jobs.dispatch', 60, fn() => $this->forumJobs->schedule());
+        }
         $results['queue.cleanup_processed'] = $this->runTask($store, 'queue.cleanup_processed', 86400, fn() => ['removed' => $this->queue->cleanupProcessed()]);
         $results['search.index_published'] = $this->runTask($store, 'search.index_published', 60, fn() => $this->searchIndexer->reconcile());
         $results['webhooks.dispatch_pending'] = $this->runTask($store, 'webhooks.dispatch_pending', 60, fn() => $this->webhooks->enqueuePending($this->queue, 50));

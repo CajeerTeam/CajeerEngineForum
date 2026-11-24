@@ -12,9 +12,13 @@ final readonly class FileQueueDriver implements LeaseQueueDriverInterface
 
     public function push(string $job, array $payload = [], ?string $queue = null): string
     {
-        $q=QueueOptions::queue($queue); $id=QueueOptions::id($q,$job,$payload); $available=QueueOptions::available($payload);
-        return $this->locked($q,function() use($q,$id,$job,$payload,$available) {
+        $q=QueueOptions::queue($queue); $id=QueueOptions::id($q,$job,$payload); $available=QueueOptions::available($payload);$coalesce=QueueOptions::coalesce($job,$payload);
+        return $this->locked($q,function() use($q,$id,$job,$payload,$available,$coalesce) {
             foreach(['pending','processed','failed'] as $bucket) if(is_file($p=$this->path($bucket,$q,$id))) { $old=$this->read($p);if(QueueOptions::fingerprint($old['name'],$old['payload'])!==QueueOptions::fingerprint($job,$payload))throw new \RuntimeException('Idempotency key reused with different job');return $id; }
+            if($coalesce!==null)foreach($this->files('pending',$q) as $path){
+                $old=$this->read($path);
+                if(in_array($old['status'],['pending','reserved'],true)&&$old['name']===$job&&($old['payload']['_coalesce_key']??null)===$payload['_coalesce_key'])return $old['id'];
+            }
             $now=gmdate(DATE_ATOM);
             $this->write($this->path('pending',$q,$id),['id'=>$id,'name'=>$job,'payload'=>$payload,'queue'=>$q,'status'=>'pending','attempts'=>0,'max_attempts'=>QueueOptions::maxAttempts($payload),'available_at'=>gmdate(DATE_ATOM,$available),'reserved_at'=>null,'reservation_token'=>null,'lease_until'=>null,'created_at'=>$now,'updated_at'=>$now,'last_error'=>null]);
             return $id;

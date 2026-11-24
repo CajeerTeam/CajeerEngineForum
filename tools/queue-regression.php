@@ -12,6 +12,19 @@ function check(bool $ok,string $name): void {if(!$ok)throw new RuntimeException(
 function reject(callable $f,string $name):void {try{$f();}catch(Throwable $e){check(true,$name);return;}throw new RuntimeException('Not rejected: '.$name);}
 function removeTree(string $p):void{if(!is_dir($p))return;foreach(new RecursiveIteratorIterator(new RecursiveDirectoryIterator($p,FilesystemIterator::SKIP_DOTS),RecursiveIteratorIterator::CHILD_FIRST)as $f)$f->isDir()?rmdir($f->getPathname()):unlink($f->getPathname());rmdir($p);}
 function exercise(LeaseQueueDriverInterface $q,string $name):void {
+    $slot=fn(int $i)=>['_idempotency_key'=>'wake:'.$i,'_coalesce_key'=>'wake','_max_attempts'=>2];
+    $wake=$q->push('wake',$slot(1),$name);
+    check($q->push('wake',$slot(2),$name)===$wake,'pending recurring slots coalesce');
+    $job=$q->pop($name);check($job?->id===$wake,'wake reservation');
+    check($q->push('wake',$slot(3),$name)===$wake,'reserved recurring slots coalesce');
+    $q->complete($job);
+    $next=$q->push('wake',$slot(4),$name);check($next!==$wake,'later slot after completion accepted');
+    $job=$q->pop($name);check($job?->id===$next,'next wake executes');$q->complete($job);
+    reject(fn()=>$q->push('wake',$slot(5)+['message'=>'business payload'],$name),'business payload cannot coalesce');
+    $other=$q->push('wake',$slot(6),'recover-other');$job=$q->pop('recover-other');
+    sleep(3);$recovery=(new \CajeerEngine\Queue\QueueRecovery($q))->run();
+    check($recovery['ok']&&($recovery['queues']['recover-other']??0)===1,'all-queue recovery reaches inactive named queue');
+    sleep(1);$job=$q->pop('recover-other');check($job?->id===$other&&$job->attempts===2,'named queue recovery preserves attempt budget');$q->complete($job);
     $id=$q->push('test',['_idempotency_key'=>'same','value'=>1],$name);check($q->push('test',['value'=>1,'_idempotency_key'=>'same'],$name)===$id,'enqueue dedup');reject(fn()=>$q->push('test',['_idempotency_key'=>'same','value'=>2],$name),'idempotency collision rejected');
     $j=$q->pop($name);check($j?->id===$id&&$j->attempts===1&&$j->reservationToken!==null,'reserve token and attempt');check($q->pop($name)===null,'active reservation cannot be claimed twice');check($q->heartbeat($j),'heartbeat extends lease');$q->complete($j);check($q->pop($name)===null,'complete removes from ready');check($q->push('test',['_idempotency_key'=>'same','value'=>1],$name)===$id,'completed job dedup');
     $id=$q->push('retry',['_max_attempts'=>2],$name);$j=$q->pop($name);$q->fail($j,'test failure',2);check($q->pop($name)===null,'retry backoff enforced');sleep(2);$j=$q->pop($name);check($j?->id===$id&&$j->attempts===2,'retry increases attempts');$q->fail($j,'test terminal');check(count($q->failed($name))===1,'dead letter after max attempts');check($q->retry($id,$name),'manual retry');$j=$q->pop($name);check($j?->attempts===1,'manual retry resets budget');$q->complete($j);

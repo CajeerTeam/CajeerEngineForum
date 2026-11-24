@@ -8,7 +8,7 @@ use CajeerEngine\Database\Repository\AuditLogRepository;
 use CajeerEngine\Forum\Repository\{NotificationRepository,WatchRepository,ThreadRepository,ForumMediaRepository};
 use CajeerEngine\Queue\{ManagedQueueDriverInterface,JobHandlerRegistry,JobContext};
 
-/** Redis jobs are wakeups for durable SQL outboxes, not the only copy of a publication or delivery. */
+/** Queue wakeups for durable SQL outboxes, independent of transport. */
 final class ForumRuntimeJobs
 {
     public array $stats=[];
@@ -17,6 +17,11 @@ final class ForumRuntimeJobs
     public function register(JobHandlerRegistry $registry): void
     {
         if($this->platform!==null)$registry->register('forum.extensions.dispatch',function(array $p,JobContext $ctx){$ctx->heartbeat();foreach((new ForumExtensionOutbox($this->db))->drain($this->platform,20) as $key=>$n)$this->stats['extensions'][$key]=($this->stats['extensions'][$key]??0)+$n;});
+        if($this->platform!==null)$registry->register('forum.extensions.cleanup',function(array $p,JobContext $ctx):void{$ctx->heartbeat();$this->stats['extension_cleanup']=(new ForumExtensionOutbox($this->db))->cleanup();});
+        foreach(['drafts'=>['drafts','drafts'], 'recycle'=>['recycle','recycle'], 'attachments'=>['attachments','attachments'], 'spam'=>['antiSpam','spam']] as $kind=>[$service,$stat]) {
+            $name=$kind==='recycle'?'forum.recycle.purge':'forum.'.$kind.'.cleanup';
+            $registry->register($name,function(array $p,JobContext $ctx)use($service,$stat):void{$ctx->heartbeat();$this->stats[$stat]=($this->stats[$stat]??0)+$this->tx()->$service()->cleanup();});
+        }
         // Old queued cleanup wakeups remain supported across rolling deployments.
         $analyticsJob=function(array $p,JobContext $ctx):void{
             $rollup=new ForumAnalyticsRollup($this->db);$count=0;$started=microtime(true);
@@ -42,7 +47,7 @@ final class ForumRuntimeJobs
         });
         $registry->register('platform.workflows.run',function(array $p,JobContext $ctx):void{
             if(!$this->db->tableExists('ce_platform_workflows'))return;
-            $ctx->heartbeat();$this->stats['workflows']=(new PlatformWorkflows($this->db))->drain();
+            $ctx->heartbeat();$this->stats['workflows']=($this->stats['workflows']??0)+(new PlatformWorkflows($this->db))->drain();
         });
         $registry->register('forum.analytics.rollup',$analyticsJob);
         $registry->register('forum.analytics.cleanup',$analyticsJob);
@@ -50,22 +55,33 @@ final class ForumRuntimeJobs
         $registry->register('forum.mail.dispatch',function(array $p,JobContext $ctx){$ctx->heartbeat();$stats=$this->tx()->watches()->dispatch(5);foreach($stats as $key=>$n)$this->stats['mail'][$key]=($this->stats['mail'][$key]??0)+$n;if($stats['failed'])throw new \RuntimeException('Forum mail delivery failed; SQL retry scheduled');});
         foreach(['image'=>'processImage','replica'=>'syncReplica'] as $kind=>$method)$registry->register('forum.media.'.$kind,function(array $p,JobContext $ctx)use($kind,$method){$ctx->heartbeat();$result=$this->tx()->media()->$method();$this->stats['media'][$kind]=$result;if($result==='failed')throw new \RuntimeException('Forum media processing failed; SQL retry scheduled');});
     }
-    /** Idempotent bounded wakeups. A lost Redis job is reconstructed from SQL on the next tick. */
-    public function schedule(): void
+    /** Stable UTC slots; a missed tick is reconstructed on the next invocation. */
+    public function schedule(?int $now=null): array
     {
-        $now=time();$tick=intdiv($now,10);$jobs=[];
-        if($this->db->tableExists('ce_platform_workflows')&&(new PlatformWorkflows($this->db))->pending($now))$jobs[]='platform.workflows.run';
-        if($this->db->tableExists('ce_forum_analytics_state') && intdiv($now,60)!==intdiv($now-10,60))$jobs[]='forum.analytics.rollup';
-        if($this->db->tableExists('ce_forum_ai_conversations') && intdiv($now,900)!==intdiv($now-10,900))$jobs[]='forum.ai.search.cleanup';
-        if($this->platform!==null&&$this->db->tableExists('ce_forum_extension_events')&&(new ForumExtensionOutbox($this->db))->pending())$jobs[]='forum.extensions.dispatch';
-        if($this->db->tableExists('ce_forum_notifications')&&(new NotificationRepository($this->db))->pending(1))$jobs[]='forum.notifications.dispatch';
-        if($this->db->tableExists('ce_forum_mail_delivery')&&(new WatchRepository($this->db))->candidate($now)!==null)$jobs[]='forum.mail.dispatch';
+        $now??=time();$jobs=[];
+        if($this->db->tableExists('ce_platform_workflows')&&(new PlatformWorkflows($this->db))->pending($now))$jobs['platform.workflows.run']=10;
+        if($this->db->tableExists('ce_forum_analytics_state'))$jobs['forum.analytics.rollup']=60;
+        if($this->db->tableExists('ce_forum_ai_conversations'))$jobs['forum.ai.search.cleanup']=900;
+        if($this->platform!==null&&$this->db->tableExists('ce_forum_extension_events')){
+            if((new ForumExtensionOutbox($this->db))->pending())$jobs['forum.extensions.dispatch']=10;
+            $jobs['forum.extensions.cleanup']=3600;
+        }
+        if($this->db->tableExists('ce_forum_notifications')&&(new NotificationRepository($this->db))->pending(1))$jobs['forum.notifications.dispatch']=10;
+        if($this->db->tableExists('ce_forum_mail_delivery')&&(new WatchRepository($this->db))->candidate($now)!==null)$jobs['forum.mail.dispatch']=10;
         if($this->db->tableExists('ce_forum_media_state')){
             $repo=new ForumMediaRepository($this->db);
-            if(\CajeerEngine\Forum\Content\ForumImageProcessor::available()&&$repo->nextImage($now)!==null)$jobs[]='forum.media.image';
-            // Replica discovery itself creates a durable SQL ledger; run at a slower cadence.
-            if(getenv('FORUM_MEDIA_S3_REPLICA')==='true')$jobs[]='forum.media.replica';
+            if(\CajeerEngine\Forum\Content\ForumImageProcessor::available()&&$repo->nextImage($now)!==null)$jobs['forum.media.image']=10;
+            if(getenv('FORUM_MEDIA_S3_REPLICA')==='true')$jobs['forum.media.replica']=30;
         }
-        foreach($jobs as $name){$slot=$name==='forum.ai.search.cleanup'?intdiv($now,900):($name==='forum.analytics.rollup'?intdiv($now,60):($name==='forum.media.replica'?intdiv($now,30):$tick));$this->queue->push($name,['_idempotency_key'=>$name.':'.$slot,'_max_attempts'=>3],'default');}
+        if($this->db->tableExists('ce_forum_drafts'))$jobs['forum.drafts.cleanup']=60;
+        if($this->db->columnExists('ce_forum_threads','deleted_at'))$jobs['forum.recycle.purge']=60;
+        if($this->db->tableExists('ce_forum_attachments'))$jobs['forum.attachments.cleanup']=60;
+        if($this->db->tableExists('ce_forum_spam_events'))$jobs['forum.spam.cleanup']=60;
+        $ids=[];$errors=[];
+        foreach($jobs as $name=>$interval){
+            try{$ids[$name]=$this->queue->push($name,['_idempotency_key'=>$name.':unified:'.intdiv($now,$interval),'_max_attempts'=>3,'_coalesce_key'=>$name],'default');}
+            catch(\Throwable){$errors[]=$name;}
+        }
+        return ['ok'=>$errors===[],'jobs'=>$ids,'failed_jobs'=>$errors];
     }
 }

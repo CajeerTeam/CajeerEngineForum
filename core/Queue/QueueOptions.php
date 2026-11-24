@@ -23,6 +23,14 @@ final class QueueOptions
         $h=hash('sha256', "cajeer-queue\0$queue\0$key");
         return substr($h,0,8).'-'.substr($h,8,4).'-5'.substr($h,13,3).'-8'.substr($h,17,3).'-'.substr($h,20,12);
     }
+    /** Optional coalescing for recurring wakeups, never for independent business events. */
+    public static function coalesce(string $name,array $payload): ?string
+    {
+        if(!array_key_exists('_coalesce_key',$payload))return null;
+        $key=$payload['_coalesce_key'];
+        if(!is_string($key)||$key===''||strlen($key)>256||!isset($payload['_idempotency_key'])||array_diff(array_keys($payload),['_coalesce_key','_idempotency_key','_max_attempts']))throw new \InvalidArgumentException('Invalid coalescing key');
+        return hash('sha256',$name."\0".$key);
+    }
     public static function validateId(string $id): void { if (!preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iD',$id)) throw new \InvalidArgumentException('Invalid job ID'); }
     public static function available(array $p): int { if (!isset($p['_available_at'])) return time(); $t=is_string($p['_available_at'])?strtotime($p['_available_at']):false; if($t===false)throw new \InvalidArgumentException('Invalid available_at'); return $t; }
     public static function maxAttempts(array $p): int { return max(1,min(100,(int)($p['_max_attempts']??3))); }

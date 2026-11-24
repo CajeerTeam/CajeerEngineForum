@@ -37,6 +37,7 @@ final readonly class QueueController
         // Validate request data outside the transport catch: client errors remain 422.
         QueueOptions::id($queue, $name, $payload);
         QueueOptions::available($payload);
+        QueueOptions::coalesce($name, $payload);
         try {
             $id = $this->queue->push($name, $payload, $queue);
         } catch (\RuntimeException $e) {
@@ -69,7 +70,10 @@ final readonly class QueueController
         } catch (\Throwable) {
             return $this->unavailable();
         }
-        return new JsonResponse(['data' => $items, 'meta' => ['total' => count($items)]]);
+        if ($request->query->get('metadata_only') === '1') {
+            $items = array_map(static fn(array $item): array => array_intersect_key($item, array_flip(['id','name','queue','status','attempts','max_attempts','failed_at','updated_at'])), $items);
+        }
+        return new JsonResponse(['data' => $items, 'meta' => ['total' => count($items)]], 200, ['Cache-Control'=>'no-store']);
     }
 
     /** @param array<string, mixed> $parameters */

@@ -1,3 +1,12 @@
+## [1.4.5] - 2026-11-24
+
+### Unified Queue & Scheduler
+- Real shared forum job registry and durable dispatch across file, PostgreSQL and Redis; all background handlers use lease-based worker execution and retry/dead-letter transitions.
+- Coalesce recurring wakeups across UTC slots to prevent scheduler-generated backlogs when a consumer is stopped; SQL domain outboxes remain authoritative.
+- Recover expired reservations in every discovered queue from the scheduler and CLI; separate handler failure from uncertain completion acknowledgement.
+- Unified System ACP shows queue counts, failed job metadata, manual retry and scheduler status/last success with existing permission gates.
+- No schema migration; stop previous workers before upgrade. External CI and staging qualification remain required.
+
 ## [1.4.4] - 2026-11-24
 
 ### Platform Automation & Workflows

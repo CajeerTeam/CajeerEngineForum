@@ -13,6 +13,22 @@ final class PostgresQueueDriver implements LeaseQueueDriverInterface
     public function push(string $job,array $payload=[],?string $queue=null): string
     {
         $q=QueueOptions::queue($queue);$id=QueueOptions::id($q,$job,$payload);
+        $coalesce=QueueOptions::coalesce($job,$payload);
+        if($coalesce===null)return $this->insert($q,$id,$job,$payload);
+        // Serialize producers for the same recurring wakeup. Reservation/ACK remains independent.
+        $own=!$this->pdo->inTransaction();if($own)$this->pdo->beginTransaction();
+        try {
+            $this->run("SELECT pg_advisory_xact_lock(hashtextextended(current_schema() || ':' || :key,0))",['key'=>'ce.queue:'.$q.':'.$coalesce])->closeCursor();
+            $active=false;$existing=$this->run('SELECT id FROM ce_jobs WHERE id=:id',['id'=>$id])->fetchColumn();
+            if(!$existing){
+                $active=$this->run("SELECT id FROM ce_jobs WHERE queue=:q AND name=:name AND status IN ('pending','reserved') AND payload->>'_coalesce_key'=:key ORDER BY created_at,id LIMIT 1",['q'=>$q,'name'=>$job,'key'=>$payload['_coalesce_key']])->fetchColumn();
+            }
+            $result=!empty($active)?(string)$active:$this->insert($q,$id,$job,$payload);
+            if($own)$this->pdo->commit();return $result;
+        }catch(\Throwable $e){if($own&&$this->pdo->inTransaction())$this->pdo->rollBack();throw $e;}
+    }
+    private function insert(string $q,string $id,string $job,array $payload): string
+    {
         $r=$this->run('INSERT INTO ce_jobs (id,queue,name,payload,available_at,max_attempts,created_at,updated_at) VALUES (:id,:q,:name,CAST(:payload AS jsonb),to_timestamp(:available),:max,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP) ON CONFLICT (id) DO UPDATE SET id=ce_jobs.id WHERE ce_jobs.name=EXCLUDED.name AND ce_jobs.payload=EXCLUDED.payload RETURNING id',['id'=>$id,'q'=>$q,'name'=>$job,'payload'=>json_encode($payload,JSON_THROW_ON_ERROR),'available'=>QueueOptions::available($payload),'max'=>QueueOptions::maxAttempts($payload)]);if(!$r->fetchColumn())throw new \RuntimeException('Idempotency key reused with different job');return $id;
     }
     public function pop(?string $queue=null): ?QueuedJob

@@ -389,6 +389,7 @@ final class Application
             $c->get(\CajeerEngine\AI\AiBackgroundAutomation::class),
             new \CajeerEngine\Update\AutomaticReleaseDiscovery($c->get(ConfigRepository::class)),
             new \CajeerEngine\Update\UpdateNotificationPublisher($rootPath, $c->get(WebhookRepository::class)),
+            new \CajeerEngine\Forum\Service\ForumRuntimeJobs($c->get(DatabaseManager::class), $c->get(ManagedQueueDriverInterface::class), $c->get(ExtensionRuntime::class)->platform()),
         ));
 
         $container->set('controller.health', fn (): HealthController => new HealthController($rootPath));
