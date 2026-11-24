@@ -1,3 +1,15 @@
+## [1.4.9] - 2026-11-24
+
+### Automated Deployment & Recovery
+
+- Persist a reserved backup capture ID before snapshot creation; reconcile authenticated snapshots after a lost catalog commit and resume encrypted transfer without recapture.
+- Implement missing database size estimation for SQLite, PostgreSQL and MySQL/MariaDB backup/update preflight.
+- Resume an authenticated published first install only when it has never initialized the database; refuse partial installs and validate finalized runtime settings.
+- Persist rollback activation selection before starting old workers; never repeat a destructive restore after old writes may have resumed.
+- Optional Compose automatic recovery before activation and resume of selected version after activation. Preserve journals and return failure on unsuccessful update.
+- Restore approved GitHub download/staging execution and durable single-request lifecycle, with exact approved digest and version verification.
+- No schema migration. Real SQL/Compose staging and independent signed release acceptance remain mandatory.
+
 ## [1.4.8] - 2026-11-24
 
 - Bound notification outbox merging to two indexed top-N inputs; remove redundant search ranking for unique single-source candidates; consolidate conversation unread counts.

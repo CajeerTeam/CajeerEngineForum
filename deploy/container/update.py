@@ -19,6 +19,7 @@ import time
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
 SERVICES = ('gateway', 'worker', 'scheduler', 'app')
+STATES = {'prepared','drained','applied','activating','committed','rolling_back','rollback_activating','rolled_back'}
 KEYS = {'CE_RELEASE_VERSION','CE_RELEASE_SHA256','CE_DOMAIN','CE_ADMIN_EMAIL','CE_NAMESPACE',
         'CE_SECRETS_DIR','CE_HTTPS_PORT','CE_BIND_ADDRESS','CE_QUEUE_DRIVER',
         'CE_LOOP_TIMEOUT_SECONDS','CE_RATE_LIMIT_GLOBAL','CE_RATE_LIMIT_FORUM_SEARCH'}
@@ -123,12 +124,17 @@ class Deployment:
         return subprocess.run(cmd,cwd=ROOT,env=self.env,check=True,text=True,stdout=subprocess.PIPE if capture else None).stdout
 
     def state(self):
+        if self.path.is_symlink(): raise ValueError('Unsafe deployment journal')
         if not self.path.exists(): return None
+        st=self.path.stat()
+        if not stat.S_ISREG(st.st_mode) or st.st_uid!=os.getuid() or st.st_mode&0o077: raise ValueError('Unsafe deployment journal')
         j=json.loads(self.path.read_text())
         if j.get('identity')!=self.identity: raise ValueError('Journal belongs to different release/site; use its original environment files')
+        if j.get('state') not in STATES: raise ValueError('Unknown deployment checkpoint; manual reconciliation required')
         return j['state']
 
     def record(self,state):
+        if state not in STATES: raise ValueError('Unknown deployment checkpoint')
         durable_json(self.path,{'identity':self.identity,'state':state,'updated_at':int(time.time())})
         # Dedicated *disposable* chaos certification: pause after a fsynced
         # checkpoint so an external runner can SIGKILL this host operator.
@@ -260,17 +266,36 @@ class Deployment:
         self.record('activating')
         self.activate(self.args.new_env,self.target,'committed')
 
+    def handle_failure(self,auto_recover=False):
+        # No changes occurred before the first durable checkpoint. Do not close
+        # a healthy gateway for a failed signature, configuration or build.
+        if self.state() in (None,'committed','rolled_back'): return
+        self.dc(self.args.new_env,'stop','gateway')
+        if auto_recover:
+            try: self.recover()
+            except BaseException:
+                # Recovery itself may have started the gateway before a failed
+                # public/deep health gate. Fail closed again.
+                self.dc(self.args.new_env,'stop','gateway')
+                raise
+
     def recover(self,rollback=False):
         state=self.state()
         if state is None: raise RuntimeError('No deployment journal')
         if state in ('committed','rolled_back') and not rollback: print('Deployment already '+state); return
         if rollback and not self.args.yes: raise RuntimeError('Explicit --yes required: rollback discards writes after the snapshot')
         if state=='rolled_back': return
-        if state=='prepared' and not rollback:
+        if state=='rollback_activating':
+            # The old snapshot is already restored. Writers may have run; never
+            # restore the database again, even after a second operator interruption.
+            self.stop(self.args.old_env)
+            self.activate(self.args.old_env,self.previous,'rolled_back'); return
+        if state=='prepared':
             # The snapshot has not yet been taken, but stopping old services
             # may have started before the checkpoint was interrupted. Restore
             # the unchanged old release; never invoke destructive DB rollback.
             self.stop(self.args.old_env)
+            self.record('rollback_activating')
             self.activate(self.args.old_env,self.previous,'rolled_back'); return
         if state=='activating' and not rollback:
             self.stop(self.args.new_env)
@@ -280,6 +305,7 @@ class Deployment:
         self.record('rolling_back')
         self.stop(self.args.new_env)
         self.operator('recover')
+        self.record('rollback_activating')
         self.activate(self.args.old_env,self.previous,'rolled_back')
 
 
@@ -287,6 +313,7 @@ def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('action',choices=['apply','recover','rollback','status'])
     p.add_argument('--project',required=True); p.add_argument('--old-env',required=True,type=Path); p.add_argument('--new-env',required=True,type=Path)
+    p.add_argument('--recover-on-failure',action='store_true',help='Recover before activation; resume selected release after activation')
     p.add_argument('--state-dir',required=True,type=Path); p.add_argument('--ca',type=Path); p.add_argument('--dry-run',action='store_true'); p.add_argument('--yes',action='store_true')
     a=p.parse_args()
     if not re.fullmatch(r'[a-z0-9][a-z0-9_-]{0,62}',a.project): p.error('Invalid project name')
@@ -302,12 +329,8 @@ def main():
         try:
             if a.action=='apply': d.apply()
             else: d.recover(a.action=='rollback')
-        except BaseException:
-            # Never leave new ingress open on a failed activation. A prepared
-            # preflight/build failure has not touched the running project.
-            if d.state() not in (None,'committed','rolled_back'):
-                try: d.dc(a.new_env,'stop','gateway')
-                except Exception: pass
+        except BaseException as exc:
+            d.handle_failure(a.action=='apply' and a.recover_on_failure and isinstance(exc,Exception))
             raise
 
 

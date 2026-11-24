@@ -23,6 +23,7 @@ try {
     F::dir($site.'/config'); F::dir($site.'/storage/database');
     foreach (['database','storage','queue'] as $config) F::copy($project.'/config/'.$config.'.php',$site.'/config/'.$config.'.php');
     F::write($site.'/VERSION',"1.8.7\n",0644);
+    F::json($site.'/release.json',['edition'=>'forum','version'=>'1.8.7','upstream_version'=>'1.8.7','edition_version'=>'1.8.7'],0644);
     F::write($site.'/.env',"APP_KEY=deployment-recovery-test\n",0600);
     F::write($site.'/storage/app/content/record.json','{"before":true}');
     putenv('DB_DRIVER=sqlite'); putenv('SQLITE_DATABASE=storage/database/cajeer.sqlite');

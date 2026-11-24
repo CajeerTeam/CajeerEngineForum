@@ -115,7 +115,7 @@ try {
         'https://user@github.com/cajeerteam/cajeerengine/releases/download/v1/x'] as $url) {
         productionReject(static fn () => GitHubAssetTransport::validateUrl($url), 'transport refuses untrusted URL ' . parse_url($url, PHP_URL_HOST));
     }
-    GitHubAssetTransport::validateUrl('https://github.com/cajeerteam/cajeerengine/releases/download/v2.0.7/cajeerengine-2.0.7-dist.zip');
+    GitHubAssetTransport::validateUrl(\CajeerEngine\Update\GitHubEndpoints::assetUrl('v2.0.7','cajeerengine-2.0.7-dist.zip'));
     productionCheck(true, 'canonical HTTPS production asset remains permitted');
 
     if (function_exists('posix_geteuid') && posix_geteuid() !== 0 && PHP_OS_FAMILY === 'Linux') {

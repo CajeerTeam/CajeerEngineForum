@@ -90,6 +90,19 @@ PY,$db,$source.'/migrations/sqlite']);
     $lease=OperationLock::acquire($root,true);try {$manager->restoreCaptured($id4);} finally {OperationLock::release($lease);}
     check(file_get_contents($root.'/storage/app/content/entry.json')==='before'&&file_get_contents($root.'/storage/queue/job.json')==='queued','restored actual file and queue payload');
     $marker=$root.'/storage/logs/observability/backup-automation.json';$m=F::read($marker);$m['checked_at']=time()-7200;F::json($marker,$m);check(!AutomatedBackup::status($root)['ok']&&AutomatedBackup::status($root)['stale'],'stopped timer becomes unhealthy');
+    // Kill window: the capture is authenticated but catalog registration never happened.
+    $orphan=gmdate('Ymd-His').'-'.bin2hex(random_bytes(8));
+    F::json($base.'/capture-intent.json',['id'=>$orphan,'destination'=>$p->identity()]);
+    $lease=OperationLock::acquire($root,true);try {$manager->capture($p->identity(),$orphan);} finally {OperationLock::release($lease);}
+    check(!isset(F::read($catalog)['records'][$orphan]),'simulated missing catalog receipt');
+    $report=$run();$records=F::read($catalog)['records'];
+    check($report['ok']&&$records[$orphan]['state']==='verified'&&!is_file($base.'/capture-intent.json'),'interrupted capture reconciled and original snapshot published');
+    // Replaying the intent after the catalog is durable cannot create a duplicate.
+    F::json($base.'/capture-intent.json',['id'=>$orphan,'destination'=>$p->identity()]);
+    $run();check(count(F::read($catalog)['records'])===count($records),'capture receipt replay is idempotent');
+    $partial=gmdate('Ymd-His').'-'.bin2hex(random_bytes(8));F::dir($manager->directory($partial));
+    F::json($base.'/capture-intent.json',['id'=>$partial,'destination'=>$p->identity()]);
+    $run();check(!isset(F::read($catalog)['records'][$partial])&&is_dir($manager->directory($partial))&&!is_file($base.'/capture-intent.json'),'partial capture preserved without publishing');
     // UTC calendar bucket selection and fixed two-copy floor independent of daily count.
     $history=[];foreach (['2025-01-01','2026-04-01','2026-09-01','2026-11-02','2026-11-14','2026-11-15','2026-11-16'] as $i=>$date) $history['id'.$i]=['state'=>'verified','created_at'=>strtotime($date.'T12:00:00Z')];
     $gfs=BackupPolicy::parse(array_replace($policyData,['daily'=>2,'weekly'=>4,'monthly'=>3]));$keep=$gfs->keep($history,strtotime('2026-11-16T13:00:00Z'));

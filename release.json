@@ -17,10 +17,10 @@
     "docs": "GitHub repository docs/",
     "updates": "GitHub Releases",
     "release_builder": "tools/build-release.php",
-    "source_artifact": "storage/releases/cajeerengine-1.4.8-source.zip",
-    "dist_artifact": "storage/releases/cajeerengine-1.4.8-dist.zip",
+    "source_artifact": "storage/releases/cajeerengine-1.4.9-source.zip",
+    "dist_artifact": "storage/releases/cajeerengine-1.4.9-dist.zip",
     "checksums": "storage/releases/*.sha256",
-    "artifact_index": "storage/releases/cajeerengine-1.4.8-artifacts.json",
+    "artifact_index": "storage/releases/cajeerengine-1.4.9-artifacts.json",
     "support_bundle": "storage/app/support",
     "backup": "storage/app/backups/production",
     "server_reports": "storage/app/reports",
@@ -36,6 +36,7 @@
     "engine_api_version": "1.1"
   },
   "product_changes": [
+    "Forum Edition 1.4.9: durable backup capture intents, authenticated recovery of missing catalog receipts, database size preflight, resumable Linux installation, Compose rollback activation checkpoint and optional automatic recovery; approved signed download/staging and durable request lifecycle. No schema migration; external CI required.",
     "Forum Edition 1.4.8: single-source search ranking, indexed bounded notification merge, one-pass unread counts, transactional bulk analytics upserts, single-pass file queue reservation, Redis cache lookup counters and TTL spreading, bounded batched telemetry. No schema migration; external CI required.",
     "Forum Edition 1.4.7: atomic shared Redis rate limits, account login admission, protected file-backed credentials, bounded audit redaction and network minimization, scheduled privacy cleanup and security telemetry. No schema migration; external CI required.",
     "Forum Edition 1.4.6: unified runtime observations, rolling component metrics, passive provider and analytics diagnostics, Redis probes, complete built-in scheduler status and ACP. No schema migration; external CI required.",
@@ -198,10 +199,11 @@
     "1.4.5": "Unified Queue & Scheduler: shared background dispatch, coalescing, retry, recovery and ACP operations.",
     "1.4.6": "Unified Observability & Diagnostics: live runtime instrumentation, recent metrics, passive dependency probes and ACP diagnostics.",
     "1.4.7": "Platform Security & Privacy: shared abuse controls, file-backed credentials, audit minimization and security diagnostics.",
-    "1.4.8": "Platform Performance & Scalability: bounded SQL, cache and queue hot paths, batched analytics and telemetry."
+    "1.4.8": "Platform Performance & Scalability: bounded SQL, cache and queue hot paths, batched analytics and telemetry.",
+    "1.4.9": "Automated Deployment & Recovery: verified backup capture reconciliation, installation resume and safe rollback activation."
   },
   "stability": "production-stable-gated",
   "edition": "forum",
-  "edition_version": "1.4.8",
+  "edition_version": "1.4.9",
   "upstream_version": "2.1.0"
 }

@@ -553,6 +553,34 @@ def activate(version, sha256, site):
     finally: os.close(fd)
 
 
+def install_options(c):
+    secret=json.loads(root_file(ETC/'install-secrets.json',True).read_text())
+    if not isinstance(secret,dict) or set(secret)!={'db_password','admin_password'} or not isinstance(secret['db_password'],str) or not isinstance(secret['admin_password'],str) or not re.fullmatch(r'[A-Za-z0-9_-]{24,128}',secret['db_password']): raise ValueError('Invalid install secrets')
+    options={k:v for k,v in c.items() if k!='domain'}
+    options.update(secret); options.update(db='pgsql',domain=c['domain'],app_url='https://'+c['domain'])
+    return options
+
+
+def resume_install(j,site):
+    """Resume only an authenticated, published but never initialized first install."""
+    if j.get("previous") is not None or j.get("state") not in ("deploying","installing","recovery_required"):
+        return
+    if not APP.is_dir() or APP.is_symlink():
+        raise RuntimeError("Release not published; rerun deploy with the same signed artifact")
+    verify_installed(j["version"],j["sha256"])
+    flags=json.loads(app_run("-r",'echo json_encode(["env"=>file_exists(".env")||is_link(".env"),"installed"=>file_exists("storage/app/installed.lock")||is_link("storage/app/installed.lock")]);',capture=True))
+    if flags=={"env":False,"installed":False}:
+        # install.php repeats the empty-database preflight. Never reseed a partial DB.
+        record("installing",version=j["version"],previous=None,sha256=j["sha256"],site=site)
+        app_run(TOOL/"install.php",input=json.dumps(install_options(site)))
+    elif flags=={"env":True,"installed":True}:
+        # The installer can have died after creating the install lock but before
+        # final runtime configuration. Verify that step rather than guessing.
+        app_run(TOOL/"install.php","--check-finalized")
+    else:
+        raise RuntimeError("Partial first installation; inspect installer state and recover explicitly")
+
+
 def deploy(args,c):
     for binary in ('psql','pg_dump','pg_restore','nginx','openssl','curl','systemctl','runuser','unzip'):
         if not shutil.which(binary): raise ValueError('Missing host tool: '+binary)
@@ -587,10 +615,7 @@ def deploy(args,c):
         app_run('bin/cajeer','forum:ecosystem:check','--target='+args.version,'--json',capture=True)
     options=None
     if not existing:
-        secret=json.loads(root_file(ETC/'install-secrets.json',True).read_text())
-        if not isinstance(secret,dict) or set(secret)!={'db_password','admin_password'} or not isinstance(secret['db_password'],str) or not isinstance(secret['admin_password'],str) or not re.fullmatch(r'[A-Za-z0-9_-]{24,128}',secret['db_password']): raise ValueError('Invalid install secrets')
-        options={k:v for k,v in c.items() if k!='domain'}
-        options.update(secret); options.update(db='pgsql',domain=c['domain'],app_url='https://'+c['domain'])
+        options=install_options(c)
         # Same real read-only PG preflight as the installer, but before any
         # application publication, gate or service change. Rechecked at install.
         run('runuser','-u',USER,'-g',GROUP,'--',PHP,TOOL/'install.php','--preflight',
@@ -614,6 +639,7 @@ def deploy(args,c):
                 stage=Path(tmp)/'app'; stage.mkdir()
                 extract(package,stage)
                 os.rename(stage,APP)
+            record('installing',version=args.version,previous=None,sha256=args.sha256,site=c)
             app_run(TOOL/'install.php',input=json.dumps(options))
         activate(args.version,args.sha256,c)
         print('Deployment ready:',args.version)
@@ -715,7 +741,9 @@ def main():
             if (args.version,args.sha256) not in ((j.get('version'),j.get('sha256')),(j.get('previous'),j.get('previous_sha256'))): raise ValueError('Unknown recovery identity')
             if j.get('site')!=c: raise ValueError('Site configuration changed')
             gate_on(); stop(); configure(c)
-            try: activate(args.version,args.sha256,c)
+            try:
+                if (args.version,args.sha256)==(j.get('version'),j.get('sha256')): resume_install(j,c)
+                activate(args.version,args.sha256,c)
             except BaseException:
                 gate_on(); stop(); raise
             return

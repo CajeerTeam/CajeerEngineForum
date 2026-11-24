@@ -25,6 +25,39 @@ final class DatabaseBackup
     {
         return ['driver'=>$this->driver,'database'=>$this->driver==='sqlite'?$this->sqlitePath():$this->name(),'host'=>$this->driver==='sqlite'?null:(string)($this->connection['host']??'127.0.0.1'),'port'=>$this->driver==='sqlite'?null:(int)($this->connection['port']??0)];
     }
+    /** Conservative disk-space estimate; use the same connection/identity as capture. */
+    public function estimatedBytes(): int
+    {
+        if ($this->driver==='sqlite') {
+            $path=$this->sqlitePath();
+            if (!is_file($path)||is_link($path)) throw new \RuntimeException('SQLite database missing');
+            $bytes=0;
+            foreach (['','-wal','-journal'] as $suffix) {
+                $file=$path.$suffix; clearstatcache(true,$file);
+                if (is_link($file)) throw new \RuntimeException('Unsafe SQLite database path');
+                if (!file_exists($file)) continue;
+                $size=filesize($file);
+                if (!is_file($file)||$size===false||$size>PHP_INT_MAX-$bytes) throw new \RuntimeException('Cannot estimate SQLite database size');
+                $bytes+=$size;
+            }
+            return max(4096,$bytes);
+        }
+        $tmp=tempnam(sys_get_temp_dir(),'ce-db-size-');
+        if ($tmp===false) throw new \RuntimeException('Cannot create DB size probe');
+        try {
+            if ($this->driver==='pgsql') self::run(['psql','--no-psqlrc','--no-password','--tuples-only','--no-align','--set=ON_ERROR_STOP=1','--dbname='.$this->name(),'--command=SELECT pg_database_size(current_database())'],$this->pgEnv(),$tmp,null,60);
+            else $this->mysql(['mysql','--batch','--skip-column-names','--database='.$this->name(),"--execute=SELECT COALESCE(SUM(COALESCE(DATA_LENGTH,0)+COALESCE(INDEX_LENGTH,0)),0) FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE()"],$tmp,null);
+            $raw=trim((string)file_get_contents($tmp));
+            if (!ctype_digit($raw)||filter_var($raw,FILTER_VALIDATE_INT,['options'=>['min_range'=>0]])===false) throw new \RuntimeException('Invalid database size estimate');
+            $bytes=(int)$raw;
+            // SQL text dumps can expand binary data to hex and include escaping.
+            if ($this->driver==='mysql') {
+                if ($bytes>intdiv(PHP_INT_MAX,4)) throw new \RuntimeException('Database size exceeds supported estimate');
+                $bytes*=4;
+            }
+            return max(4096,$bytes);
+        } finally { F::remove($tmp); }
+    }
     public function assertRecoveryReady(): void
     {
         if ($this->driver==='pgsql') {

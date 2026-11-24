@@ -51,14 +51,17 @@ final class BackupManager
         finally { OperationLock::release($lock); }
     }
     /** Caller holds exclusive operation lock. */
-    public function capture(?string $automation=null): array
+    public function capture(?string $automation=null, ?string $reservedId=null): array
     {
         if ($automation!==null&&!preg_match('/^[a-f0-9]{64}$/D',$automation)) throw new \RuntimeException('Invalid backup automation identity');
         $this->assertStorage();
         $key=$this->secretKey(); sodium_memzero($key);
         $this->privateBase();
-        $id=gmdate('Ymd-His').'-'.bin2hex(random_bytes(8));
-        $dir=$this->base.'/'.$id; F::dir($dir); chmod($dir,0700);
+        $id=$reservedId??gmdate('Ymd-His').'-'.bin2hex(random_bytes(8));
+        if ($reservedId!==null&&($automation===null||!preg_match('/^\d{8}-\d{6}-[a-f0-9]{16}$/D',$id))) throw new \RuntimeException('Invalid reserved backup ID');
+        $dir=$this->directory($id);
+        if (!mkdir($dir,0700)) throw new \RuntimeException('Cannot reserve new backup directory');
+        F::syncDir($this->base);
         $manifest=['format'=>'cajeerengine.backup.v2','id'=>$id,'version'=>$this->version(),'edition_version'=>(new \CajeerEngine\Support\ProjectInfo($this->root))->editionVersion(),'created_at'=>gmdate(DATE_ATOM),'database'=>$this->db->identity(),'database_permissions'=>$this->db->permissions(),'files'=>[],'dirs'=>[],'env'=>null,'env_permissions'=>null];
         if ($automation!==null) $manifest['automation']=$automation;
         try {
@@ -116,7 +119,7 @@ final class BackupManager
         $actual=F::files($dir,'files'); $expected=array_map(static fn($p)=>'files/'.$p,array_keys($m['files'])); sort($expected);
         if ($actual!==$expected) throw new \RuntimeException('Unexpected backup files');
         if (($m['env']??null)!==null) { if (!hash_equals((string)$m['env'],F::hash($dir.'/environment.enc'))) throw new \RuntimeException('Encrypted environment checksum mismatch'); $this->decryptEnv($dir); } elseif (file_exists($dir.'/environment.enc')) throw new \RuntimeException('Unexpected encrypted environment');
-        return ['ok'=>true,'id'=>$id,'version'=>$m['version'],'files'=>count($m['files']),'manifest_sha256'=>F::hash($dir.'/manifest.json'),'automation'=>$m['automation']??null];
+        return ['ok'=>true,'id'=>$id,'version'=>$m['version'],'files'=>count($m['files']),'manifest_sha256'=>F::hash($dir.'/manifest.json'),'automation'=>$m['automation']??null,'created_at'=>$m['created_at']??null,'edition_version'=>$m['edition_version']??null];
     }
     /** Offline recovery only: authenticate the snapshot independently of its old host/name. */
     public function portableSnapshot(string $directory): array

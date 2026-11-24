@@ -191,7 +191,7 @@ final class UpdateManager
         $report=is_file($last)?OperationFiles::read($last):null;
         $activePath=PHP_SAPI==='cli'?$this->path('active.json'):$this->requestDir().'/progress.json';
         $active=OperationLock::active($this->rootPath)&&is_file($activePath)?$this->publicJournal(OperationFiles::read($activePath)):null;
-        return ['ok'=>true,'current_version'=>$this->currentVersion(),'maintenance'=>$this->maintenanceState(),'active'=>$active,'last_report'=>$report===null?null:array_intersect_key($report,array_flip(['ok','id','state','previous_version','target_version','version'])),'installed'=>is_file($this->rootPath.'/storage/app/installed.lock'),'production_apply_enabled'=>$this->trustConfigured()];
+        return ['ok'=>true,'operator_ready'=>UpdateOperator::health($this->rootPath,$this->config)['ready'],'staged_installable'=>$this->stageEligible($this->staged()),'current_version'=>$this->currentVersion(),'maintenance'=>$this->maintenanceState(),'active'=>$active,'last_report'=>$report===null?null:array_intersect_key($report,array_flip(['ok','id','state','previous_version','target_version','version'])),'installed'=>is_file($this->rootPath.'/storage/app/installed.lock'),'production_apply_enabled'=>$this->trustConfigured()];
     }
     public function history(int $limit=20): array
     {
@@ -213,16 +213,16 @@ final class UpdateManager
         return is_file($file)?OperationFiles::read($file):[];
     }
     /** CLI places and verifies a signed artifact before a browser can request it. */
-    public function publish(string $package, ?string $signature=null): array
+    public function publish(string $package, ?string $signature=null, ?string $expectedSha=null, ?string $expectedVersion=null): array
     {
         $this->cliOnly(); $package=$this->resolvePackage($package); $lock=OperationLock::acquire($this->rootPath,true); $dir=null; $published=false;
         try {
             if (OperationLock::active($this->rootPath)||is_file($this->rootPath.'/storage/app/backup-restore.json')) throw new \RuntimeException('Recovery pending');
             $id=bin2hex(random_bytes(16)); $dir=$this->path('inbox/'.$id); OperationFiles::dir($dir); chmod($dir,0700);
             OperationFiles::copy($package,$dir.'/package.zip'); OperationFiles::copy($signature??$package.'.sig',$dir.'/package.zip.sig');
-            $v=$this->verifyPackage($dir.'/package.zip');
+            $v=$this->verifyPackage($dir.'/package.zip',$expectedSha);
             if (!$v['ok']) throw new \RuntimeException($v['error']);
-            UpdatePreflight::identity($v['manifest'],$this->currentVersion(),$this->channel(),null);
+            UpdatePreflight::identity($v['manifest'],$this->currentVersion(),$this->channel(),$expectedVersion);
             $data=['ok'=>true,'id'=>$id,'version'=>$v['version'],'sha256'=>$v['sha256'],'file_count'=>$v['file_count']];
             OperationFiles::json($this->requestDir().'/staged.json',$data,0644); $published=true; return $data;
         } finally { try { if (!$published&&$dir!==null) $this->discardStage($dir); } finally { OperationLock::release($lock); } }
@@ -230,15 +230,52 @@ final class UpdateManager
     public function request(string $action, array $payload, string $actor): array
     {
         if (($payload['confirm']??null)!==true) throw new \RuntimeException('Explicit confirmation required');
-        if (OperationLock::active($this->rootPath)||is_file($this->rootPath.'/storage/app/backup-restore.json')) throw new \RuntimeException('Recovery is required from CLI');
-        $id=bin2hex(random_bytes(16)); $data=['ok'=>true,'id'=>$id,'action'=>$action,'actor'=>$actor,'requested_at'=>gmdate(DATE_ATOM),'state'=>'pending'];
-        if ($action==='apply') {
-            $stage=$this->staged();
-            if (empty($stage['id'])||empty($stage['sha256'])||($stage['id']??null)!==($payload['package']??null)||($stage['sha256']??null)!==($payload['sha256']??null)) throw new \RuntimeException('Select the exact staged artifact and digest');
-            $data['stage']=$stage['id']; $data['sha256']=$stage['sha256'];
-        } elseif ($action==='backup') { /* full backup, no arbitrary server path */ } elseif ($action==='rollback') { $last=$this->wizardState()['last_report']; if (($last['state']??null)!=='committed') throw new \RuntimeException('No committed update'); $data['transaction']=$last['id']; }
-        else throw new \RuntimeException('Invalid operation');
-        OperationFiles::json($this->requestDir().'/request-'.$id.'.json',$data,0640); return $data;
+        $guard=OperationLock::openLockFile($this->requestDir().'/approval.lock',0660);
+        try {
+            if (!flock($guard,LOCK_EX|LOCK_NB)) throw new \RuntimeException('Another approval is in progress');
+            if ($this->recoveryPending()) throw new \RuntimeException('Recovery is required from CLI');
+            foreach (glob($this->requestDir().'/request-*.json')?:[] as $file) {
+                $prior=OperationFiles::read($file);
+                if (!in_array($prior['state']??null,['completed','failed'],true)) throw new \RuntimeException('Another approved request is unresolved');
+            }
+            $id=bin2hex(random_bytes(16)); $now=gmdate(DATE_ATOM);
+            $data=['ok'=>true,'id'=>$id,'action'=>$action,'actor'=>$actor,'requested_at'=>$now,'confirmed_at'=>$now,'state'=>'pending'];
+            if ($action==='apply') {
+                $stage=$this->staged();
+                if (!$this->stageEligible($stage)||($stage['id']??null)!==($payload['package']??null)||($stage['sha256']??null)!==($payload['sha256']??null)) throw new \RuntimeException('Select the exact newer staged artifact and digest');
+                $data['stage']=$stage['id']; $data['sha256']=$stage['sha256']; $data['version']=$stage['version'];
+            } elseif ($action==='download') {
+                $version=\CajeerEngine\Forum\ForumVersion::validate($payload['version']??null);
+                $check=OperationFiles::read($this->path('last-check.json'));
+                $when=strtotime((string)($check['checked_at']??''));
+                if ($when===false||$when<time()-3600||$when>time()+30||($check['update_available']??false)!==true||!in_array($check['metadata_status']??null,['fresh','not_modified'],true)||($check['metadata_source']??null)!==GitHubEndpoints::RELEASES_URL||($check['latest']['version']??null)!==$version) throw new \RuntimeException('Fresh eligible GitHub release check required');
+                UpdatePreflight::identity(['version'=>$version,'edition'=>'forum','mode'=>'dist'],$this->currentVersion(),$this->channel(),$version);
+                $data['version']=$version;
+            } elseif ($action==='backup') { /* full backup, no arbitrary server path */ }
+            elseif ($action==='rollback') { $last=$this->wizardState()['last_report']; if (($last['state']??null)!=='committed') throw new \RuntimeException('No committed update'); $data['transaction']=$last['id']; }
+            else throw new \RuntimeException('Invalid operation');
+            UpdateOperator::assertApproved($data,$id);
+            OperationFiles::json($this->requestDir().'/request-'.$id.'.json',$data,0640); return $data;
+        } finally { OperationLock::release($guard); }
+    }
+    private function recoveryPending(): bool
+    {
+        foreach (['storage/app/updates/active.json','storage/app/backup-restore.json','storage/app/extensions/deployment.json'] as $marker) if (file_exists(OperationFiles::path($this->rootPath,$marker))) return true;
+        return false;
+    }
+    private function stageEligible(array $stage): bool
+    {
+        try {
+            if (!is_string($stage['id']??null)||!preg_match('/^[a-f0-9]{32}$/D',$stage['id'])||!is_string($stage['sha256']??null)||!preg_match('/^[a-f0-9]{64}$/D',$stage['sha256'])) return false;
+            UpdatePreflight::identity(['version'=>$stage['version']??null,'edition'=>'forum','mode'=>'dist'],$this->currentVersion(),$this->channel(),null);
+            // The web UID only reads the operator's receipt. The privileged CLI
+            // independently checks exact bytes and signature before application.
+            if (PHP_SAPI==='cli') {
+                $file=$this->path('inbox/'.$stage['id'].'/package.zip');
+                if (!is_file($file)||!is_file($file.'.sig')||is_link($file.'.sig')) return false;
+            }
+            return true;
+        } catch (\Throwable) { return false; }
     }
     public function pending(): array
     {
@@ -289,22 +326,35 @@ final class UpdateManager
     public function runRequest(string $id): array
     {
         $this->cliOnly(); if (!preg_match('/^[a-f0-9]{32}$/D',$id)) throw new \RuntimeException('Invalid request ID');
-        // A request may be consumed only once, even by concurrent operators.
         $guardDir=$this->path('request-locks'); OperationFiles::dir($guardDir);
         $guard=OperationLock::childGuard($guardDir.'/'.$id.'.lock');
         try {
-        $path=$this->requestDir().'/request-'.$id.'.json'; $r=OperationFiles::read($path);
-        if (($r['id']??null)!==$id||($r['state']??null)!=='pending') throw new \RuntimeException('Request is not pending');
-        // Operator explicitly selects ID, not a privileged daemon consuming arbitrary web requests.
-        if ($r['action']==='apply') {
-            if (!preg_match('/^[a-f0-9]{32}$/D',(string)($r['stage']??''))) throw new \RuntimeException('Invalid staged ID');
-            $result=$this->apply(['package'=>$this->path('inbox/'.$r['stage'].'/package.zip'),'sha256'=>$r['sha256']]);
-        } elseif ($r['action']==='rollback') {
-            if (($this->wizardState()['last_report']['id']??null)!==($r['transaction']??null)) throw new \RuntimeException('Stale rollback request');
-            $result=$this->rollback(null,true,$r['transaction']);
-        } elseif ($r['action']==='backup') $result=(new BackupManager($this->rootPath,$this->config))->create();
-        else throw new \RuntimeException('Unknown request');
-        $r['state']=$result['ok']?'completed':'failed'; OperationFiles::json($path,$r,0640); return $result;
+            $path=$this->requestDir().'/request-'.$id.'.json'; $r=OperationFiles::read($path);
+            UpdateOperator::assertApproved($r,$id);
+            if ($this->recoveryPending()) throw new \RuntimeException('Recovery required before executing request');
+            // Persist admission before any mutating call. A process killed after
+            // this point leaves a running record, never a replayable approval.
+            $r['state']='running'; $r['started_at']=gmdate(DATE_ATOM); OperationFiles::json($path,$r,0640);
+            try {
+                if ($r['action']==='download') {
+                    $download=(new GitHubReleaseDownloader($this->rootPath,$this->config))->download($r['version']);
+                    $result=$this->publish($download['package'],null,$download['sha256'],$r['version']);
+                } elseif ($r['action']==='apply') {
+                    $result=$this->apply(['package'=>$this->path('inbox/'.$r['stage'].'/package.zip'),'sha256'=>$r['sha256'],'version'=>$r['version']??null]);
+                } elseif ($r['action']==='rollback') {
+                    $result=$this->rollback(null,true,$r['transaction']);
+                } else $result=(new BackupManager($this->rootPath,$this->config))->create();
+            } catch (\Throwable $e) {
+                // A recovery marker must remain a hard barrier; do not authorize
+                // another request after a partially executed update or restore.
+                if (!$this->recoveryPending()) {
+                    $r['state']='failed'; $r['failure']='Operation failed; inspect protected diagnostics'; $r['finished_at']=gmdate(DATE_ATOM); OperationFiles::json($path,$r,0640);
+                }
+                throw $e;
+            }
+            $r['state']=($result['ok']??false)===true?'completed':'failed'; $r['finished_at']=gmdate(DATE_ATOM);
+            if (is_string($result['id']??null)) $r['result_id']=$result['id'];
+            OperationFiles::json($path,$r,0640); return $result;
         } finally { OperationLock::release($guard); }
     }
     private function channel(): string { return $this->config->string('updates.core.channel','stable'); }

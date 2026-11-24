@@ -34,6 +34,7 @@ function refusesCenter(callable $fn, string $message): void
 $root = sys_get_temp_dir() . '/ce-center-' . bin2hex(random_bytes(8));
 mkdir($root . '/config', 0700, true);
 file_put_contents($root . '/VERSION', "2.0.3\n");
+file_put_contents($root . '/release.json', json_encode(['edition'=>'forum','version'=>'2.0.3','upstream_version'=>'2.0.3','edition_version'=>'2.0.3'],JSON_THROW_ON_ERROR));
 $config = new ConfigRepository($root);
 $config->set('updates', ['core'=> ['channel'=>'stable', 'releases_url'=>GitHubEndpoints::RELEASES_URL],
     'operator'=> ['enabled'=>true], 'web_upgrade'=> ['enabled'=>true]]);

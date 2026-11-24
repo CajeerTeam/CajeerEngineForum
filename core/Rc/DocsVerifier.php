@@ -58,9 +58,9 @@ final readonly class DocsVerifier
             ? CheckResult::pass('docs', 'changelog.1.4.5', 'CHANGELOG содержит запись 1.4.5.')
             : CheckResult::fail('docs', 'changelog.1.4.5', 'CHANGELOG не содержит запись 1.4.5.');
 
-        $checks[] = str_contains($changelog, '1.4.8')
-            ? CheckResult::pass('docs', 'changelog.1.4.8', 'CHANGELOG содержит запись 1.4.8.')
-            : CheckResult::fail('docs', 'changelog.1.4.8', 'CHANGELOG не содержит запись 1.4.8.');
+        $checks[] = str_contains($changelog, '1.4.9')
+            ? CheckResult::pass('docs', 'changelog.1.4.9', 'CHANGELOG содержит запись 1.4.9.')
+            : CheckResult::fail('docs', 'changelog.1.4.9', 'CHANGELOG не содержит запись 1.4.9.');
 
         return array_merge($checks, (new OperationsDocsVerifier($this->rootPath))->verify());
     }

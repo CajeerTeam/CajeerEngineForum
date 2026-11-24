@@ -379,6 +379,21 @@ class Safety(unittest.TestCase):
                     self.assertEqual(json.loads(output.call_args.args[0])['edition_version'],'0.8.1')
                 gate.assert_not_called(); self.assertFalse(p.APP.exists())
 
+    def test_resume_fresh_install_only_after_signature_and_empty_state(self):
+        with tempfile.TemporaryDirectory() as d, patch.object(p,'APP',Path(d)):
+            j={'state':'installing','version':'1.4.9','sha256':'a'*64,'previous':None}
+            for flags,action in [({'env':False,'installed':False},'install'),({'env':True,'installed':True},'check'),({'env':True,'installed':False},'reject')]:
+                with patch.object(p,'verify_installed') as verified,patch.object(p,'app_run',return_value=json.dumps(flags)) as runner,patch.object(p,'install_options',return_value={'db_password':'test'}),patch.object(p,'record'):
+                    if action=='reject':
+                        with self.assertRaises(RuntimeError): p.resume_install(j,SITE)
+                        self.assertEqual(runner.call_count,1)
+                    else:
+                        p.resume_install(j,SITE)
+                        self.assertEqual(runner.call_count,2)
+                        if action=='check': self.assertIn('--check-finalized',runner.call_args.args)
+                        else: self.assertIn('input',runner.call_args.kwargs)
+                    verified.assert_called_once_with('1.4.9','a'*64)
+
     def test_activation_failure_keeps_gate(self):
         with tempfile.TemporaryDirectory() as d, patch.object(p,'GATE',Path(d)/'maintenance'), patch.object(p,'STATE',Path(d)), patch.object(p,'JOURNAL',Path(d)/'journal'), patch.object(p,'WORKERS_ALLOWED',Path(d)/'workers'), patch.object(p,'FPM_ALLOWED',Path(d)/'fpm'):
             p.gate_on()

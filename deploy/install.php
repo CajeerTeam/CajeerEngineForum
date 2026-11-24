@@ -119,4 +119,21 @@ function deploymentInstall(bool $preflight=false): int
     }
 }
 
-if (PHP_SAPI==='cli' && realpath($_SERVER['SCRIPT_FILENAME']??'')===__FILE__) exit(deploymentInstall(($argv[1]??'')==='--preflight'));
+function deploymentCheckFinalized(): int
+{
+    try {
+        $root=getcwd();
+        require $root.'/vendor/autoload.php';
+        if (!is_file($root.'/storage/app/installed.lock')||is_link($root.'/storage/app/installed.lock')||!is_file($root.'/.env')||is_link($root.'/.env')||(fileperms($root.'/.env')&0077)!==0) throw new DeploymentInstallFailure('Installation not finalized');
+        (new \Symfony\Component\Dotenv\Dotenv())->usePutenv()->loadEnv($root.'/.env');
+        foreach (['SCHEDULER_DRIVER'=>'pgsql','UPDATE_TRUSTED_PUBLIC_KEY_FILE'=>'/etc/cajeerengine-deploy/release.pub','BACKUP_KEY_FILE'=>'/etc/cajeerengine-deploy/backup.key','UPDATE_WEB_UPGRADE_ENABLED'=>'false'] as $key=>$value) {
+            if (getenv($key)!==$value) throw new DeploymentInstallFailure('Runtime installation configuration incomplete');
+        }
+        if (!preg_match('/^[a-f0-9]{64}$/D',(string)getenv('OBSERVABILITY_METRICS_TOKEN'))) throw new DeploymentInstallFailure('Metrics credential not provisioned');
+        (new \CajeerEngine\Backup\DatabaseBackup($root,new \CajeerEngine\Runtime\ConfigRepository($root)))->assertRecoveryReady();
+        echo "Installation finalization verified\n";
+        return 0;
+    } catch (Throwable $e) { fwrite(STDERR,deploymentInstallDiagnostic('finalization-check',$e)); return 1; }
+}
+
+if (PHP_SAPI==='cli' && realpath($_SERVER['SCRIPT_FILENAME']??'')===__FILE__) exit(($argv[1]??'')==='--check-finalized'?deploymentCheckFinalized():deploymentInstall(($argv[1]??'')==='--preflight'));

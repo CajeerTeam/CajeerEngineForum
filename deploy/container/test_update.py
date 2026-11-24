@@ -79,7 +79,7 @@ class UpdateTests(unittest.TestCase):
         d.stop.assert_called_once_with(self.old)
         d.operator.assert_not_called()
         d.activate.assert_called_once_with(self.old,'0.8.2','rolled_back')
-        self.assertEqual(d.state(),'prepared')  # Not committed until activation passes.
+        self.assertEqual(d.state(),'rollback_activating')  # Restore is selected, not yet committed.
 
     def test_committed_rollback_requires_explicit_data_loss_ack(self):
         d=u.Deployment(self.args);d.record('committed')
@@ -90,13 +90,44 @@ class UpdateTests(unittest.TestCase):
 
     def test_recover_before_activation(self):
         d=u.Deployment(self.args); d.record('drained'); d.stop=Mock(); d.operator=Mock(); d.activate=Mock()
-        d.recover(); d.operator.assert_called_once_with('recover'); d.activate.assert_called_once_with(self.old,'0.8.2','rolled_back'); self.assertEqual(d.state(),'rolling_back')
+        d.recover(); d.operator.assert_called_once_with('recover'); d.activate.assert_called_once_with(self.old,'0.8.2','rolled_back'); self.assertEqual(d.state(),'rollback_activating')
     def test_resume_after_activation_and_explicit_rollback(self):
         d=u.Deployment(self.args); d.record('activating'); d.stop=Mock(); d.operator=Mock(); d.activate=Mock()
         d.recover(); d.operator.assert_not_called(); d.activate.assert_called_once_with(self.new,'0.8.3','committed')
         d.record('committed'); d.activate.reset_mock()
         with self.assertRaises(RuntimeError): d.recover(True)
         self.args.yes=True; d.recover(True); d.operator.assert_called_once_with('recover'); d.activate.assert_called_once_with(self.old,'0.8.2','rolled_back')
+    def test_recovery_of_old_activation_never_restores_again(self):
+        d=u.Deployment(self.args); d.record('rolling_back'); d.stop=Mock(); d.operator=Mock()
+        d.activate=Mock(side_effect=RuntimeError('old worker readiness failed'))
+        with self.assertRaises(RuntimeError): d.recover()
+        self.assertEqual(d.state(),'rollback_activating'); d.operator.assert_called_once_with('recover')
+        d.operator.reset_mock(); d.activate.reset_mock(side_effect=True)
+        d.recover(); d.operator.assert_not_called()
+        d.activate.assert_called_once_with(self.old,'0.8.2','rolled_back')
+
+    def test_prepared_explicit_rollback_does_not_restore_database(self):
+        self.args.yes=True; d=u.Deployment(self.args); d.record('prepared')
+        d.stop=Mock(); d.operator=Mock(); d.activate=Mock(); d.recover(True)
+        d.operator.assert_not_called(); self.assertEqual(d.state(),'rollback_activating')
+
+    def test_unknown_journal_state_fails_closed(self):
+        d=u.Deployment(self.args); u.durable_json(d.path,{'identity':d.identity,'state':'unknown'})
+        d.operator=Mock(); d.stop=Mock()
+        with self.assertRaises(ValueError): d.recover()
+        d.operator.assert_not_called(); d.stop.assert_not_called()
+
+    def test_optional_recovery_closes_gateway_and_resumes_selected_version(self):
+        d=u.Deployment(self.args); d.dc=Mock(); d.recover=Mock()
+        d.handle_failure(True); d.dc.assert_not_called(); d.recover.assert_not_called()
+        d.record('activating'); d.handle_failure(True)
+        d.dc.assert_called_once_with(self.new,'stop','gateway'); d.recover.assert_called_once_with()
+        d.dc.reset_mock(); d.recover.side_effect=RuntimeError('second health failure')
+        with self.assertRaises(RuntimeError): d.handle_failure(True)
+        self.assertEqual(d.dc.call_count,2)
+        d.dc.reset_mock(); d.recover.reset_mock(); d.handle_failure(False)
+        d.dc.assert_called_once(); d.recover.assert_not_called()
+
     def test_failed_apply_keeps_durable_checkpoint(self):
         d=u.Deployment(self.args); d.verify=Mock(); d.dc=Mock(); d.stop=Mock(); d.operator=Mock(side_effect=RuntimeError('injected failure')); d.activate=Mock()
         with self.assertRaises(RuntimeError): d.apply()

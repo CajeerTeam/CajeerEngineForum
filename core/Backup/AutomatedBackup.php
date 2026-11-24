@@ -62,11 +62,12 @@ final class AutomatedBackup
     public function run(bool $force=false): array
     {
         F::dir($this->base); if (!chmod($this->base,0700)) throw new \RuntimeException('Cannot protect backup automation catalog');
-        $lockPath=F::path($this->base,'automation.lock');$lock=fopen($lockPath,'c+');
+        $lockPath=F::path($this->base,'automation.lock');$lock=OperationLock::openLockFile($lockPath,0600);
         if (!$lock||!flock($lock,LOCK_EX|LOCK_NB)) { if (is_resource($lock)) fclose($lock); throw new \RuntimeException('Another automated backup cycle is running'); }
         $activity=null;
         try {
             $this->load();
+            $this->reconcileCapture();
             foreach (new \DirectoryIterator($this->base) as $entry) if (preg_match('/^\.(?:dr-[a-f0-9]{32}|tmp-[a-f0-9]{24})$/D',$entry->getFilename())) F::remove($entry->getPathname());
             // Validate a mounted destination before capture, but keep local protection working if it is down.
             $destination=null; $destinationFailure=null;
@@ -83,8 +84,11 @@ final class AutomatedBackup
                     $estimate=$this->manager->preflight();$free=disk_free_space($this->base);
                     // Local recovery set plus a streaming encrypted spool. Never prune to make room for a failed capture.
                     if ($free===false||$free<2*$estimate+$this->policy->data['min_free_bytes']) throw new \RuntimeException('Insufficient local capacity for recovery set and encrypted transfer');
-                    $created=$this->manager->capture($this->policy->identity()); $id=$created['id'];
-                    $this->state['records'][$id]=['state'=>'pending','created_at'=>strtotime($created['created_at']),'edition_version'=>$created['edition_version']];$this->save();
+                    $id=gmdate('Ymd-His').'-'.bin2hex(random_bytes(8));
+                    F::json($this->base.'/capture-intent.json',['id'=>$id,'destination'=>$this->policy->identity()]);
+                    $created=$this->manager->capture($this->policy->identity(),$id);
+                    $this->registerCapture($id,$created);
+                    F::remove($this->base.'/capture-intent.json');
                 } catch (\Throwable $e) { $captureFailure=$e; }
                 finally {OperationLock::release($activity);$activity=null;}
             }
@@ -110,6 +114,37 @@ final class AutomatedBackup
             else { $previous=self::status($this->root); $previous['ok']=false;$previous['status']='failed';$previous['phase']='catalog';$previous['checked_at']=time();F::json(F::path($this->root,'storage/logs/observability/backup-automation.json'),$previous,0640); }
             throw $e;
         } finally {OperationLock::release($activity);flock($lock,LOCK_UN);fclose($lock);}
+    }
+    /** A durable intent precedes capture, so a killed worker cannot orphan a verified set. */
+    private function reconcileCapture(): void
+    {
+        $path=F::path($this->base,'capture-intent.json');
+        if (!file_exists($path)) return;
+        $this->phase='capture_recovery';
+        $intent=F::read($path); $id=$intent['id']??null;
+        if (!is_string($id)||!preg_match('/^\d{8}-\d{6}-[a-f0-9]{16}$/D',$id)||($intent['destination']??null)!==$this->policy->identity()) throw new \RuntimeException('Invalid backup capture intent');
+        $lease=$this->captureLock();
+        try {
+            if (OperationLock::active($this->root)||is_file($this->root.'/storage/app/backup-restore.json')||is_file($this->root.'/storage/app/extensions/deployment.json')) throw new \RuntimeException('Recovery active; defer capture reconciliation');
+            if (!isset($this->state['records'][$id])) {
+                $dir=$this->manager->directory($id);
+                // An incomplete capture remains on disk for inspection. Only a fully
+                // authenticated snapshot with both manifest files can enter retention.
+                if (is_dir($dir)&&!is_file(F::path($dir,'incomplete.json'))&&is_file(F::path($dir,'manifest.json'))&&is_file(F::path($dir,'manifest.mac'))) {
+                    $verified=$this->manager->verify($id);
+                    if ($verified['automation']!==$this->policy->identity()) throw new \RuntimeException('Capture intent ownership mismatch');
+                    $this->registerCapture($id,$verified);
+                }
+            }
+            F::remove($path);
+        } finally { OperationLock::release($lease); }
+    }
+    private function registerCapture(string $id,array $created): void
+    {
+        $at=is_string($created['created_at']??null)?strtotime($created['created_at']):false;
+        if ($at===false||$at<1||$at>time()+30||!is_string($created['edition_version']??null)) throw new \RuntimeException('Invalid backup capture metadata');
+        $this->state['records'][$id]=['state'=>'pending','created_at'=>$at,'edition_version'=>$created['edition_version']];
+        $this->save();
     }
     private function captureLock(): mixed
     {
