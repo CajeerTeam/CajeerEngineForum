@@ -11,13 +11,12 @@ final class Metrics
     private const BUCKETS=[0.005,0.01,0.025,0.05,0.1,0.25,0.5,1,2.5,5,10,30];
     private const KINDS=['http','job','scheduler','database','ai','analytics','integration','redis','security'];
     private static array $pending=[];
-    private static array $pendingCount=[];
     private static bool $shutdownRegistered=false;
     private static ?int $pid=null;
     public function __construct(private readonly string $root) {}
     public function observe(string $kind,string $operation,string $outcome,float $seconds): void
     {
-        [$key,$row]=$this->sample($kind,$operation,$outcome,$seconds);$this->persist([$key=>$row]);
+        $this->buffered($kind,$operation,$outcome,$seconds);$this->flush();
     }
     /** High frequency SQL events coalesce; a killed process may lose the last batch of telemetry, never business data. */
     public function buffered(string $kind,string $operation,string $outcome,float $seconds): void
@@ -26,16 +25,16 @@ final class Metrics
         if(!self::$shutdownRegistered){register_shutdown_function(static function(){self::flushAll();});self::$shutdownRegistered=true;}
         [$key,$row]=$this->sample($kind,$operation,$outcome,$seconds);
         self::$pending[$this->root][$key]=self::combine(self::$pending[$this->root][$key]??null,$row);
-        self::$pendingCount[$this->root]=(self::$pendingCount[$this->root]??0)+1;
-        if(self::$pendingCount[$this->root]>=128)$this->flush();
+        // The label space is allowlisted and each histogram retains at most 12 slots.
+        // Do not perform filesystem I/O while a SQL publication transaction holds locks.
     }
     private static function checkProcess(): void
     {
-        $pid=getmypid();if(self::$pid!==null&&self::$pid!==$pid){self::$pending=[];self::$pendingCount=[];}self::$pid=$pid;
+        $pid=getmypid();if(self::$pid!==null&&self::$pid!==$pid){self::$pending=[];}self::$pid=$pid;
     }
     public function flush(): void
     {
-        self::checkProcess();$rows=self::$pending[$this->root]??[];unset(self::$pending[$this->root],self::$pendingCount[$this->root]);if($rows)$this->persist($rows);
+        self::checkProcess();$rows=self::$pending[$this->root]??[];unset(self::$pending[$this->root]);if($rows)$this->persist($rows);
     }
     public static function flushAll(): void{self::checkProcess();foreach(array_keys(self::$pending) as $root)(new self($root))->flush();}
     private function sample(string $kind,string $operation,string $outcome,float $seconds): array
@@ -58,13 +57,14 @@ final class Metrics
     {
         if(!is_dir($this->root.'/storage'))return;
         $groups=[];foreach($rows as $key=>$row)$groups[hexdec(substr(hash('sha256',$key),0,1))][$key]=$row;
+        // One contention budget for the entire flush, not one per shard.
+        $deadline=hrtime(true)+50_000_000;
         foreach($groups as $shard=>$updates)try {
             $dir=$this->root.'/storage/logs/observability'; OperationFiles::dir($dir,0770);
             $path=$dir.'/metrics-'.$shard.'.json'; $lock=fopen($path.'.lock','c+');
             if(!$lock)throw new \RuntimeException('Metrics lock unavailable');
             try {
                 // A stalled metrics writer must not stall publication or HTTP responses.
-                $deadline=hrtime(true)+250_000_000;
                 while(!flock($lock,LOCK_EX|LOCK_NB)){
                     if(hrtime(true)>=$deadline)throw new \RuntimeException('Metrics lock busy');
                     usleep(2000);

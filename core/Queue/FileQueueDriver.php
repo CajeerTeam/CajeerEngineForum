@@ -29,12 +29,18 @@ final readonly class FileQueueDriver implements LeaseQueueDriverInterface
     {
         $q=QueueOptions::queue($queue);
         return $this->locked($q,function() use($q) {
-            $this->recoverLocked($q,100);
-            $candidate=null; $candidatePath=null;
-            foreach($this->files('pending',$q) as $path) {
-                $d=$this->read($path);
-                if($d['status']!=='pending'||strtotime($d['available_at'])>time())continue;
+            $candidate=null; $candidatePath=null;$now=time();$nextReady=null;
+            $consider=static function(string $path,array $d)use(&$candidate,&$candidatePath,&$nextReady,&$now):void{
+                if($d['status']!=='pending')return;
+                $at=strtotime($d['available_at']);
+                if($at>$now){$nextReady=$nextReady===null?$at:min($nextReady,$at);return;}
                 if($candidate===null||[$d['available_at'],$d['created_at'],$d['id']]<[$candidate['available_at'],$candidate['created_at'],$candidate['id']]){$candidate=$d;$candidatePath=$path;}
+            };
+            $recovered=$this->recoverLocked($q,100,$consider);
+            // Recovery can move/rewrite records, or a delayed job can become ready during the scan.
+            if($recovered>0||($nextReady!==null&&$nextReady<=time())){
+                $candidate=null;$candidatePath=null;$now=time();
+                foreach($this->files('pending',$q) as $path)$consider($path,$this->read($path));
             }
             if($candidate===null)return null;
             $d=$candidate; $d['status']='reserved'; $d['attempts']=(int)$d['attempts']+1;
@@ -77,9 +83,10 @@ final readonly class FileQueueDriver implements LeaseQueueDriverInterface
         if($d['status']!=='pending')$this->move($path,$this->path($d['status'],$d['queue'],$d['id']));
     }
     public function recover(?string $queue=null,int $limit=100): int { $q=QueueOptions::queue($queue);return $this->locked($q,fn()=> $this->recoverLocked($q,$limit)); }
-    private function recoverLocked(string $q,int $limit): int
+    private function recoverLocked(string $q,int $limit,?callable $visit=null): int
     {
         $n=0;foreach($this->files('pending',$q) as $path){if($n>=max(1,$limit))break;$d=$this->read($path);
+            if($visit!==null)$visit($path,$d);
             // 1.2.1 copied the terminal record before unlinking the reservation. Reconcile only matching records.
             $duplicate=false;foreach(['processed','failed']as $bucket){$target=$this->path($bucket,$q,$d['id']);if(!is_file($target))continue;$terminal=$this->read($target);if(QueueOptions::fingerprint($terminal['name'],$terminal['payload'])!==QueueOptions::fingerprint($d['name'],$d['payload']))throw new \RuntimeException('Conflicting legacy queue records');
                 if($d['status']==='pending'&&$bucket==='failed'&&strcmp($d['updated_at']??'', $terminal['updated_at']??'')>=0){if(!unlink($target))throw new \RuntimeException('Cannot reconcile legacy retry');F::syncDir(dirname($target));$n++;continue;}

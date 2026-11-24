@@ -34,7 +34,7 @@ final readonly class QueueFactory
 
     private function redis(): RedisQueueDriver
     {
-        $redis = \CajeerEngine\Cache\RedisConnection::open($this->rootPath);
+        $redis = fn(): \Redis => \CajeerEngine\Cache\RedisConnection::open($this->rootPath);
         return new RedisQueueDriver($redis, $this->config->string('queue.connections.redis.prefix','ce:queue:'), $this->config->int('queue.workers.lease_seconds', 300),$this->rootPath);
     }
 

@@ -1,6 +1,8 @@
 # CajeerEngine Forum Edition
 
-**Forum Edition 1.4.7 — Platform Security & Privacy**, built on CajeerEngine 2.1.0. Publication requires a passing `forum-required` gate and verified signed CI certification tied to the exact commit and release artifacts.
+**Forum Edition 1.4.8 — Platform Performance & Scalability**, built on CajeerEngine 2.1.0. Publication requires a passing `forum-required` gate and verified signed CI certification tied to the exact commit and release artifacts.
+
+See [Platform Performance & Scalability](docs/forum-platform-performance-1.4.8.md) for the optimized runtime paths and acceptance procedure.
 
 See [Platform Security & Privacy](docs/forum-platform-security-1.4.7.md) for deployment, credential sources, abuse controls and retention.
 

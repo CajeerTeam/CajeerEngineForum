@@ -39,12 +39,12 @@ final readonly class ConversationService
     }
     public function inbox(ForumAccessPolicy $actor,int $offset,bool $archived,bool $notifications,mixed $search): array
     {
-        $q=V::text($search??'','q',100,0);return $this->read($actor,fn()=>['items'=>$this->repo->inbox($actor->userId,$offset,$archived,$notifications,$q),'unread'=>$this->repo->unread($actor->userId),'notification_unread'=>$this->repo->unread($actor->userId,true)]);
+        $q=V::text($search??'','q',100,0);return $this->read($actor,function()use($actor,$offset,$archived,$notifications,$q){$counts=$this->repo->unreadCounts($actor->userId);return ['items'=>$this->repo->inbox($actor->userId,$offset,$archived,$notifications,$q),'unread'=>$counts['conversation_total_unread'],'notification_unread'=>$counts['conversation_unread']];});
     }
     /** Conversation alerts are durable unread membership state, not copied private bodies. */
     public function alerts(ForumAccessPolicy $actor,bool $countOnly): array
     {
-        try{return $this->read($actor,function()use($actor,$countOnly){$result=['conversation_unread'=>$this->repo->unread($actor->userId,true),'conversation_total_unread'=>$this->repo->unread($actor->userId)];if(!$countOnly)$result['conversations']=$this->repo->inbox($actor->userId,0,false,true);return $result;});}
+        try{return $this->read($actor,function()use($actor,$countOnly){$result=$this->repo->unreadCounts($actor->userId);if(!$countOnly)$result['conversations']=$this->repo->inbox($actor->userId,0,false,true);return $result;});}
         catch(ForumException $e){if($e->status!==403)throw $e;return ['conversation_unread'=>0,'conversation_total_unread'=>0]+($countOnly?[]:['conversations'=>[]]);}
     }
     private function owner(array $conversation,array $members): ?string

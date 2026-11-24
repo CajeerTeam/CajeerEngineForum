@@ -74,6 +74,12 @@ final readonly class ConversationRepository extends Repository
     }
     public function unread(string $user,bool $notifications=false): int
     { return (int)$this->query('SELECT COUNT(*) FROM ce_forum_conversation_participants p JOIN ce_forum_conversation_messages m ON m.conversation_id=p.conversation_id WHERE p.user_id=? AND p.active=1 AND m.message_sequence>p.read_sequence AND m.message_sequence>=p.joined_sequence AND (m.author_id IS NULL OR m.author_id<>p.user_id)'.($notifications?' AND p.muted=0':''),[$user])->fetchColumn(); }
+    /** Both alert counts from one indexed membership/message join. */
+    public function unreadCounts(string $user): array
+    {
+        $row=$this->row('SELECT COUNT(*) AS total, COUNT(CASE WHEN p.muted=0 THEN 1 END) AS notified FROM ce_forum_conversation_participants p JOIN ce_forum_conversation_messages m ON m.conversation_id=p.conversation_id WHERE p.user_id=? AND p.active=1 AND m.message_sequence>p.read_sequence AND m.message_sequence>=p.joined_sequence AND (m.author_id IS NULL OR m.author_id<>p.user_id)',[$user]);
+        return ['conversation_unread'=>(int)$row['notified'],'conversation_total_unread'=>(int)$row['total']];
+    }
     public static function normalize(array $row): array { foreach(['last_sequence','joined_sequence','read_sequence','message_sequence','revision_number','created_at','updated_at','edited_at','resolved_at','archived','muted','unread'] as $k)if(isset($row[$k]))$row[$k]=(int)$row[$k];return $row; }
     public function messages(string $id,int $joined,int $offset): array
     { return array_map(static function(array $m): array { $content=\CajeerEngine\Forum\Content\ForumContentRenderer::render($m['body'],$m['body_format']);$m['body_html']=$content['html'];$m['renderer_version']=$content['renderer_version'];return self::normalize($m); },$this->rows('SELECT m.id,m.author_id,u.name AS author_name,m.message_sequence,m.body,m.body_format,m.created_at,m.edited_at,m.revision_number FROM ce_forum_conversation_messages m LEFT JOIN ce_users u ON u.id=m.author_id WHERE m.conversation_id=? AND m.message_sequence>=? ORDER BY m.message_sequence DESC LIMIT 25 OFFSET '.$offset,[$id,$joined])); }

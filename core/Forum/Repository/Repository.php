@@ -33,7 +33,8 @@ abstract readonly class Repository
     {
         if ($ids===null) return '1=1';
         if ($ids===[]) return '1=0';
-        return $column.' IN ('.implode(',',array_map(fn(string $id)=>$this->db->connection()->quote($id),$ids)).')';
+        $pdo=$this->db->connection();
+        return $column.' IN ('.implode(',',array_map(fn(string $id)=>$pdo->quote($id),array_unique($ids))).')';
     }
 
     // All lock calls are made inside a transaction. SQLite must obtain its writer

@@ -3,9 +3,29 @@ declare(strict_types=1);
 namespace CajeerEngine\Queue;
 
 /** Atomic Redis transitions. Standalone Redis, durable persistence required. */
-final readonly class RedisQueueDriver implements LeaseQueueDriverInterface
+final class RedisQueueDriver implements LeaseQueueDriverInterface
 {
-    public function __construct(private \Redis $redis,private string $prefix='ce:queue:',private int $leaseSeconds=300,private ?string $metricsRoot=null) {}
+    private ?\Redis $redis=null;
+    private readonly ?\Closure $connector;
+    public function __construct(\Redis|\Closure $redis,private readonly string $prefix='ce:queue:',private readonly int $leaseSeconds=300,private readonly ?string $metricsRoot=null)
+    {
+        $this->connector=$redis instanceof \Closure?$redis:null;
+        if($redis instanceof \Redis)$this->redis=$redis;
+    }
+    private function connection(): \Redis
+    {
+        if($this->redis!==null && ($this->connector===null||$this->redis->isConnected()))return $this->redis;
+        if($this->connector===null)throw new \RuntimeException('Redis queue connection unavailable');
+        $connection=($this->connector)();
+        if(!$connection instanceof \Redis||!$connection->isConnected())throw new \RuntimeException('Redis queue connection unavailable');
+        return $this->redis=$connection;
+    }
+    private function invalidateConnection(): void
+    {
+        if($this->connector===null)return;
+        if($this->redis!==null)try{$this->redis->close();}catch(\Throwable){}
+        $this->redis=null;
+    }
     private const SCRIPT=<<<'LUA'
 local prefix,q,op,id,token,lease,arg,limit=ARGV[1],ARGV[2],ARGV[3],ARGV[4],ARGV[5],tonumber(ARGV[6]),ARGV[7],tonumber(ARGV[8])
 local now=tonumber(redis.call('TIME')[1]); local stamp=ARGV[9]
@@ -51,8 +71,15 @@ LUA;
     }
     private function executeCommand(string $op,string $q,string $id,string $token,string $arg,int $limit): mixed
     {
-        $this->redis->clearLastError();$r=$this->redis->eval(self::SCRIPT,[$this->prefix,$q,$op,$id,$token,(string)QueueOptions::lease($this->leaseSeconds),$arg,(string)max(1,min(1000,$limit)),gmdate(DATE_ATOM)],0);
-        if($this->redis->getLastError())throw new \RuntimeException('Redis queue transition failed: '.$this->redis->getLastError());return $r;
+        try{
+            $redis=$this->connection();$redis->clearLastError();
+            $r=$redis->eval(self::SCRIPT,[$this->prefix,$q,$op,$id,$token,(string)QueueOptions::lease($this->leaseSeconds),$arg,(string)max(1,min(1000,$limit)),gmdate(DATE_ATOM)],0);
+            if($redis->getLastError()||!$redis->isConnected()||($op!=='pop'&&$r===false))throw new \RuntimeException('Redis queue transition not confirmed');
+            return $r;
+        }catch(\Throwable $e){
+            // Never replay an uncertain mutating command. Only the next independent operation reconnects.
+            $this->invalidateConnection();throw $e;
+        }
     }
     public function push(string $job,array $payload=[],?string $queue=null): string { $q=QueueOptions::queue($queue);$id=QueueOptions::id($q,$job,$payload);$d=['id'=>$id,'name'=>$job,'payload'=>$payload,'queue'=>$q,'attempts'=>0,'max_attempts'=>QueueOptions::maxAttempts($payload),'status'=>'pending','fingerprint'=>QueueOptions::fingerprint($job,$payload),'coalesce'=>QueueOptions::coalesce($job,$payload),'available_epoch'=>QueueOptions::available($payload),'created_at'=>gmdate(DATE_ATOM),'updated_at'=>gmdate(DATE_ATOM)];$result=$this->exec('push',$q,$id,'',json_encode($d,JSON_THROW_ON_ERROR));if(!is_string($result)||($d['coalesce']===null&&$result!==$id))throw new \RuntimeException('Redis enqueue was not confirmed');QueueOptions::validateId($result);return $result; }
     public function pop(?string $queue=null): ?QueuedJob { $q=QueueOptions::queue($queue);$r=$this->exec('pop',$q,'',QueueOptions::token());if(!is_string($r))return null;$d=json_decode($r,true,512,JSON_THROW_ON_ERROR);return new QueuedJob($d['id'],$d['name'],$d['payload'],$q,$d['attempts'],$d['max_attempts'],gmdate(DATE_ATOM,$d['available_epoch']??time()),$d['reserved_at'],null,$d['reservation_token'],$d['lease_until']); }
@@ -61,25 +88,42 @@ LUA;
     public function fail(QueuedJob $job,string $error,int $backoffSeconds=60): void {if($this->exec('fail',$job->queue,$job->id,$job->reservationToken??'',json_encode(['error'=>substr($error?:'Job failed',0,2000),'delay'=>max(1,$backoffSeconds)],JSON_THROW_ON_ERROR|JSON_INVALID_UTF8_SUBSTITUTE))!==1)throw new \RuntimeException('Queue reservation lost');}
     public function recover(?string $queue=null,int $limit=100): int {return (int)$this->exec('recover',QueueOptions::queue($queue),'','','',$limit);}
     public function retry(string $id,?string $queue=null): bool {QueueOptions::validateId($id);return $this->exec('retry',QueueOptions::queue($queue),$id)===1;}
-    public function failed(?string $queue=null): array {$q=QueueOptions::queue($queue);$items=[];foreach($this->redis->sMembers($this->prefix.'failed:'.$q)?:[]as $id){$r=$this->redis->hGet($this->prefix.'job:'.$id,'data');if(is_string($r)){$d=json_decode($r,true,512,JSON_THROW_ON_ERROR);if($d['status']==='failed')$items[]=$d;}}return $items;}
+    public function failed(?string $queue=null): array {$q=QueueOptions::queue($queue);$items=[];foreach($this->connection()->sMembers($this->prefix.'failed:'.$q)?:[]as $id){$r=$this->connection()->hGet($this->prefix.'job:'.$id,'data');if(is_string($r)){$d=json_decode($r,true,512,JSON_THROW_ON_ERROR);if($d['status']==='failed')$items[]=$d;}}return $items;}
     public function diagnostics(): array
     {
         return \CajeerEngine\Observability\Operation::measure('redis','queue.command',function(){
-            $now=$this->redis->time();if(!is_array($now))throw new \RuntimeException('Redis time unavailable');$epoch=(int)$now[0];
-            $queues=$this->redis->sMembers($this->prefix.'queues');if(!is_array($queues))throw new \RuntimeException('Redis queue registry unavailable');
-            $qs=[];$oldest=0;$expired=0;
-            foreach($queues as $q){
-                $first=$this->redis->zRange($this->prefix.'ready:'.$q,0,0,true);
-                $ready=$this->redis->zCard($this->prefix.'ready:'.$q);$legacy=$this->redis->lLen($this->prefix.'pending:'.$q);
-                $reserved=$this->redis->zCard($this->prefix.'reserved:'.$q);$processed=$this->redis->zCard($this->prefix.'processed:'.$q);$failed=$this->redis->sCard($this->prefix.'failed:'.$q);$overdue=$this->redis->zCount($this->prefix.'reserved:'.$q,'-inf',(string)$epoch);
-                if(!is_array($first)||in_array(false,[$ready,$legacy,$reserved,$processed,$failed,$overdue],true))throw new \RuntimeException('Redis queue diagnostics unavailable');
-                if($first)$oldest=max($oldest,$epoch-(int)reset($first));$expired+=$overdue;
-                $qs[$q]=['pending'=>$ready+$legacy,'reserved'=>$reserved,'processed'=>$processed,'failed'=>$failed];
+            try{
+                $redis=$this->connection();$redis->clearLastError();
+                $now=$redis->time();if(!is_array($now))throw new \RuntimeException('Redis time unavailable');$epoch=(int)$now[0];
+                $queues=$redis->sMembers($this->prefix.'queues');if(!is_array($queues))throw new \RuntimeException('Redis queue registry unavailable');
+                $qs=[];$oldest=0;$expired=0;
+                // Bounded read-only pipelines replace seven network round trips per queue.
+                foreach(array_chunk($queues,32) as $chunk){
+                    $pipe=$redis->multi(\Redis::PIPELINE);if(!$pipe instanceof \Redis)throw new \RuntimeException('Redis pipeline unavailable');
+                    foreach($chunk as $q){
+                        $pipe->zRange($this->prefix.'ready:'.$q,0,0,true);
+                        $pipe->zCard($this->prefix.'ready:'.$q);$pipe->lLen($this->prefix.'pending:'.$q);
+                        $pipe->zCard($this->prefix.'reserved:'.$q);$pipe->zCard($this->prefix.'processed:'.$q);
+                        $pipe->sCard($this->prefix.'failed:'.$q);$pipe->zCount($this->prefix.'reserved:'.$q,'-inf',(string)$epoch);
+                    }
+                    $rows=$pipe->exec();
+                    if(!is_array($rows)||count($rows)!==count($chunk)*7||$redis->getLastError())throw new \RuntimeException('Redis queue diagnostics unavailable');
+                    foreach($chunk as $i=>$q){
+                        [$first,$ready,$legacy,$reserved,$processed,$failed,$overdue]=array_slice($rows,$i*7,7);
+                        if(!is_array($first)||in_array(false,[$ready,$legacy,$reserved,$processed,$failed,$overdue],true))throw new \RuntimeException('Redis queue diagnostics unavailable');
+                        if($first)$oldest=max($oldest,$epoch-(int)reset($first));$expired+=$overdue;
+                        $qs[$q]=['pending'=>$ready+$legacy,'reserved'=>$reserved,'processed'=>$processed,'failed'=>$failed];
+                    }
+                }
+                return ['driver'=>'redis','oldest_ready_age_seconds'=>$oldest,'expired_reservations'=>$expired,'connected'=>$redis->isConnected(),'queues'=>$qs,'lease_seconds'=>QueueOptions::lease($this->leaseSeconds)];
+            }catch(\Throwable $e){
+                // Discard any unexecuted pipeline before the next independent call.
+                if(isset($redis))try{$redis->discard();}catch(\Throwable){}
+                $this->invalidateConnection();throw $e;
             }
-            return ['driver'=>'redis','oldest_ready_age_seconds'=>$oldest,'expired_reservations'=>$expired,'connected'=>$this->redis->isConnected(),'queues'=>$qs,'lease_seconds'=>QueueOptions::lease($this->leaseSeconds)];
         },$this->metricsRoot);
     }
-    public function cleanupProcessed(int $olderThanSeconds=604800): int {$n=0;foreach($this->redis->sMembers($this->prefix.'queues')?:[]as $q){for($i=0;$i<100;$i++){$count=(int)$this->exec('cleanup',$q,'','',(string)max(1,$olderThanSeconds),1000);$n+=$count;if($count<1000)break;}}return $n;}
+    public function cleanupProcessed(int $olderThanSeconds=604800): int {$n=0;foreach($this->connection()->sMembers($this->prefix.'queues')?:[]as $q){for($i=0;$i<100;$i++){$count=(int)$this->exec('cleanup',$q,'','',(string)max(1,$olderThanSeconds),1000);$n+=$count;if($count<1000)break;}}return $n;}
     /** Offline migration of 1.2.1 hashes, including orphaned reservations. Stop old workers first. */
-    public function migrateLegacy(): int {$cursor=null;$n=0;do{$keys=$this->redis->scan($cursor,$this->prefix.'job:*',200);foreach($keys?:[]as $key){$r=$this->redis->hGet($key,'data');if(!is_string($r))continue;$d=json_decode($r,true,512,JSON_THROW_ON_ERROR);$n+=(int)$this->exec('legacy',QueueOptions::queue($d['queue']),$d['id']);}}while($cursor!==0);return $n;}
+    public function migrateLegacy(): int {$cursor=null;$n=0;do{$keys=$this->connection()->scan($cursor,$this->prefix.'job:*',200);foreach($keys?:[]as $key){$r=$this->connection()->hGet($key,'data');if(!is_string($r))continue;$d=json_decode($r,true,512,JSON_THROW_ON_ERROR);$n+=(int)$this->exec('legacy',QueueOptions::queue($d['queue']),$d['id']);}}while($cursor!==0);return $n;}
 }

@@ -17,6 +17,12 @@ function check(bool $ok,string $label):void{if(!$ok)throw new RuntimeException($
 foreach(['APP_ENV=testing','APP_KEY='.base64_encode(random_bytes(32)),'APP_URL=https://forum.test','APP_NAME=Forum Redis Test','FORUM_SEO_INDEX=true','FORUM_SEO_EXCLUDED_BOARDS=','DB_DRIVER='.$driver,'SQLITE_DATABASE='.$tmp.'/forum.sqlite','DB_SQLITE_WAL=true','CACHE_DRIVER=file','STORAGE_DRIVER=local','CONTENT_STORAGE=database','CMS_STORAGE=database','QUEUE_DRIVER=redis','QUEUE_REDIS_PREFIX='.$queuePrefix,'FORUM_REDIS_NAMESPACE='.$ns,'FORUM_CACHE_ENABLED=true','FORUM_CACHE_TTL_SECONDS=60','RATE_LIMIT_DRIVER=file','RATE_LIMIT_GLOBAL=10000','RATE_LIMIT_AUTH=10000','FORUM_REGISTRATION=true','FORUM_REQUIRE_EMAIL_VERIFICATION=false','PASSWORD_ARGON2_MEMORY=8192','PASSWORD_ARGON2_TIME=2','FORUM_MEDIA_S3_REPLICA=false'] as $v)putenv($v);
 $r=RedisConnection::open();$prefix=RedisConnection::namespace();
 try{
+    $store=new \CajeerEngine\Cache\RedisCacheStore($r,$prefix.'perf:',$tmp);
+    $stat=$prefix.'perf-stats';$store->put('test',['body'=>'value'],60);
+    check($store->getCounted('test',$stat,'hit','miss')===['body'=>'value']&&(int)$r->hGet($stat,'hit')===1,'counted cache hit preserves value and increments counter');
+    check($store->getCounted('absent',$stat,'hit','miss')===null&&(int)$r->hGet($stat,'miss')===1,'counted cache miss increments counter');
+    $r->set($prefix.'wrong-stats','wrong type');
+    check($store->getCounted('test',$prefix.'wrong-stats','hit','miss')===['body'=>'value'],'broken statistics cannot suppress valid cache hit');
     $cfg=new ConfigRepository($root);$db=new DatabaseManager($cfg);
     if($driver==='pgsql'&&$db->tableExists('ce_users'))throw new RuntimeException('Expected empty forum_test_redis');
     (new MigrationRunner($db->connection(),$root.'/migrations'))->run($driver);

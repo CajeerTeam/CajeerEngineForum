@@ -6,7 +6,7 @@ on:
 permissions:
   contents: read
 env:
-  FORUM_CURRENT_VERSION: ${{ '1.4.7' }}
+  FORUM_CURRENT_VERSION: ${{ '1.4.8' }}
 concurrency:
   group: forum-ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -345,6 +345,8 @@ jobs:
       - run: python tools/forum-tests/stable_search_seo_sql_regression.py
       - run: python tools/forum-tests/cache_sql_regression.py
       - run: python tools/forum-tests/performance_sql_regression.py
+      - run: python tools/forum-tests/platform_performance_sql_regression.py
+      - run: php tools/forum-platform-performance-regression.php
       - name: Forum 1.0.0 database migration and query regression (SQLite)
         run: python tools/forum-tests/database_optimization_sql_regression.py
       - run: php tools/forum-reliability-regression.php

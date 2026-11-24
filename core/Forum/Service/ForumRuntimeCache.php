@@ -27,7 +27,7 @@ final class ForumRuntimeCache
         $path=$request->getPathInfo();
         $variant=self::pageVariant($view,$path,$q);
         if($view==='page'&&!preg_match('~\A(?:/|/forum/?|/forum/latest/?|/forum/(?:boards|threads)/[a-f0-9-]{36}/?)\z~D',$path))return $load();
-        if(!$this->db->tableExists('ce_forum_cache_generation'))return $load();
+        if($this->db->connection()->inTransaction()||!$this->db->tableExists('ce_forum_cache_generation'))return $load();
         try{$prefix=RedisConnection::namespace();$redis=$this->redis();}catch(\Throwable){$this->retryAfter=time()+5;$this->redis=null;return $load();}
         // Never catch and replay application exceptions or SQL failures. Only Redis operations degrade.
         return $this->db->readSnapshot(function()use($prefix,$redis,$view,$q,$path,$load,$seo,$variant){
@@ -43,17 +43,15 @@ final class ForumRuntimeCache
             $key=hash('sha256',json_encode(['v087',$generation,$view,$path,$variant,(string)($q['page']??1),$settings],JSON_THROW_ON_ERROR));
             $store=new RedisCacheStore($redis,$prefix.'cache:',$this->root);$lock=$prefix.'lock:'.$key;$token=bin2hex(random_bytes(16));$owner=false;
             try{
-                $cached=$store->get($key);
+                $cached=$store->getCounted($key,$prefix.'stats','hit','miss');
                 if(is_array($cached)&&isset($cached['body'],$cached['headers'])&&is_string($cached['body'])&&is_array($cached['headers'])){
-                    $this->metric($redis,$prefix,'hit');
                     $response=$view==='page'?new Response($cached['body'],200,$cached['headers']):JsonResponse::fromJsonString($cached['body'],200,$cached['headers']);
                     $response->headers->set('X-Forum-Cache','HIT');return $response;
                 }
-                $this->metric($redis,$prefix,'miss');
                  $owner=(bool)$redis->set($lock,$token,['nx','ex'=>10]);
                 // Bound waiting on a concurrent fill; never block a reader for the lock TTL.
-                if(!$owner){for($attempt=0;$attempt<3;$attempt++){usleep(20000);$cached=$store->get($key);if(is_array($cached)&&isset($cached['body'],$cached['headers'])&&is_string($cached['body'])&&is_array($cached['headers'])){
-                    $this->metric($redis,$prefix,'coalesced');$response=$view==='page'?new Response($cached['body'],200,$cached['headers']):JsonResponse::fromJsonString($cached['body'],200,$cached['headers']);$response->headers->set('X-Forum-Cache','HIT');return $response;
+                if(!$owner){for($attempt=0;$attempt<3;$attempt++){usleep(20000);$cached=$store->getCounted($key,$prefix.'stats','coalesced');if(is_array($cached)&&isset($cached['body'],$cached['headers'])&&is_string($cached['body'])&&is_array($cached['headers'])){
+                    $response=$view==='page'?new Response($cached['body'],200,$cached['headers']):JsonResponse::fromJsonString($cached['body'],200,$cached['headers']);$response->headers->set('X-Forum-Cache','HIT');return $response;
                 }}}
             }catch(\Throwable){$this->retryAfter=time()+5;$this->redis=null;return $load();}
             try{
@@ -61,7 +59,7 @@ final class ForumRuntimeCache
                 $body=$response->getContent();
                 if($owner&&$response->getStatusCode()===200&&is_string($body)&&strlen($body)<=524288&&!$response->headers->has('Set-Cookie')){
                     $headers=[];foreach(['Content-Type','Cache-Control','Vary','X-Robots-Tag','X-Forum-Analytics-Public'] as $h)if($response->headers->has($h))$headers[$h]=$response->headers->get($h);
-                    try{$store->put($key,['body'=>$body,'headers'=>$headers],max(5,min(300,(int)(getenv('FORUM_CACHE_TTL_SECONDS')?:60))));}catch(\Throwable){$this->retryAfter=time()+5;$this->redis=null;}
+                    try{$store->put($key,['body'=>$body,'headers'=>$headers],self::ttl());}catch(\Throwable){$this->retryAfter=time()+5;$this->redis=null;}
                 }
                 $response->headers->set('X-Forum-Cache','MISS');return $response;
             }finally{if($owner)try{$redis->eval("if redis.call('GET',KEYS[1])==ARGV[1] then return redis.call('DEL',KEYS[1]) end return 0",[$lock,$token],1);}catch(\Throwable){}}
@@ -73,7 +71,12 @@ final class ForumRuntimeCache
         if($view==='page'&&rtrim($path,'/')==='/forum/latest')return array_key_exists('page',$query)?'numbered':'cursor';
         return 'default';
     }
-    private function metric(\Redis $r,string $prefix,string $name): void {try{$r->hIncrBy($prefix.'stats',$name,1);}catch(\Throwable){}}
+    /** Spread simultaneous expirations, without extending the configured lifetime. */
+    public static function ttl(): int
+    {
+        $ttl=max(5,min(300,(int)(getenv('FORUM_CACHE_TTL_SECONDS')?:60)));
+        return random_int(max(5,(int)ceil($ttl*0.85)),$ttl);
+    }
     public static function diagnostics(): array
     {
         $result=['enabled'=>self::enabled(),'rate_limit_driver'=>getenv('RATE_LIMIT_DRIVER')?:'file','queue_driver'=>getenv('QUEUE_DRIVER')?:'file'];

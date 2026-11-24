@@ -1,3 +1,11 @@
+## [1.4.8] - 2026-11-24
+
+- Bound notification outbox merging to two indexed top-N inputs; remove redundant search ranking for unique single-source candidates; consolidate conversation unread counts.
+- Bulk upsert analytics groups and chunk ledger updates inside the existing atomic transaction.
+- Reuse decoded file-queue records during recovery and reservation; reduce Redis cache hit round trips and spread cache expirations.
+- Batch SQL/job telemetry at operation boundaries and cap shared metrics lock contention.
+- No schema migration or new dependencies. External CI and staging qualification remain required.
+
 ## [1.4.7] - 2026-11-24
 
 - Atomic Redis rate-limit backend, fail-closed admission, IPv6 network normalization and account/pair limits before password hashing.

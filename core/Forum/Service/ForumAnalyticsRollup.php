@@ -26,16 +26,19 @@ final readonly class ForumAnalyticsRollup
         if ($updated !== 1) throw new \RuntimeException('Forum analytics migration 0082 is missing');
     }
 
-    private function increment(PDO $pdo, int $day, string $name, int $total, int $now): void
+    private function increment(PDO $pdo, array $groups, int $now): void
     {
-        if ($this->db->driver() === 'mysql') {
-            $sql='INSERT INTO ce_forum_analytics_daily(day,event_name,total,updated_at) VALUES (?,?,?,?) '
-                .'ON DUPLICATE KEY UPDATE total=total+VALUES(total),updated_at=VALUES(updated_at)';
-        } else {
-            $sql='INSERT INTO ce_forum_analytics_daily(day,event_name,total,updated_at) VALUES (?,?,?,?) '
-                .'ON CONFLICT(day,event_name) DO UPDATE SET total=ce_forum_analytics_daily.total+excluded.total,updated_at=excluded.updated_at';
+        ksort($groups,SORT_STRING);
+        $suffix=$this->db->driver()==='mysql'
+            ? ' ON DUPLICATE KEY UPDATE total=total+VALUES(total),updated_at=VALUES(updated_at)'
+            : ' ON CONFLICT(day,event_name) DO UPDATE SET total=ce_forum_analytics_daily.total+excluded.total,updated_at=excluded.updated_at';
+        // <=400 bound parameters per upsert, including on SQLite with legacy limits.
+        foreach(array_chunk($groups,100) as $chunk){
+            $params=[];
+            foreach($chunk as [$day,$name,$total])array_push($params,$day,$name,$total,$now);
+            $sql='INSERT INTO ce_forum_analytics_daily(day,event_name,total,updated_at) VALUES '.implode(',',array_fill(0,count($chunk),'(?,?,?,?)')).$suffix;
+            $pdo->prepare($sql)->execute($params);
         }
-        $pdo->prepare($sql)->execute([$day,$name,$total,$now]);
     }
 
     /** Atomically aggregate at most $limit unapplied events. Returns actual applied count. */
@@ -62,11 +65,13 @@ final readonly class ForumAnalyticsRollup
                 $groups[$key][2]++;
                 $ids[]=$row['id'];
             }
-            foreach($groups as [$day,$name,$total]) $this->increment($pdo,$day,$name,$total,$at);
-            $sql='UPDATE ce_forum_analytics_events SET aggregated_at=? WHERE aggregated_at IS NULL AND id IN ('
-                .implode(',',array_fill(0,count($ids),'?')).')';
-            $update=$pdo->prepare($sql);$update->execute([$at,...$ids]);
-            if ($update->rowCount()!==count($ids)) throw new \RuntimeException('Forum analytics ledger changed during aggregation');
+            $this->increment($pdo,$groups,$at);
+            $applied=0;
+            foreach(array_chunk($ids,500) as $chunk){
+                $sql='UPDATE ce_forum_analytics_events SET aggregated_at=? WHERE aggregated_at IS NULL AND id IN ('.implode(',',array_fill(0,count($chunk),'?')).')';
+                $update=$pdo->prepare($sql);$update->execute([$at,...$chunk]);$applied+=$update->rowCount();
+            }
+            if ($applied!==count($ids)) throw new \RuntimeException('Forum analytics ledger changed during aggregation');
             $pdo->prepare('UPDATE ce_forum_analytics_state SET last_aggregated_at=? WHERE id=1')->execute([$at]);
             return count($ids);
         });

@@ -9,7 +9,6 @@ use CajeerEngine\Support\Uuid;
 final readonly class NotificationRepository extends Repository
 {
     public const KINDS=['reply','mention','quote','reaction','moderation','accepted'];
-    private const FEED="(SELECT event_id,recipient_id,actor_id,post_id,kind,moderation_action,subscription_kind,state,is_read,created_at FROM ce_forum_notifications UNION ALL SELECT event_id,recipient_id,actor_id,post_id,'accepted' AS kind,NULL AS moderation_action,NULL AS subscription_kind,state,is_read,created_at FROM ce_forum_answer_notifications)";
 
     public function enqueue(string $kind,string $actor,string $post,array $recipients,?string $action=null,?string $subscription=null): void
     {
@@ -62,7 +61,18 @@ final readonly class NotificationRepository extends Repository
         $this->query('INSERT INTO ce_forum_notification_preferences(user_id,reply,mention,quote,reaction,moderation,accepted) VALUES(?,?,?,?,?,?,?)'.$suffix,[$user,...array_map(static fn($k)=>(int)$values[$k],self::KINDS)]);
     }
     public function pending(int $limit): array
-    { return $this->rows('SELECT event_id,recipient_id,kind FROM '.self::FEED.' n WHERE state=0 ORDER BY created_at,event_id,recipient_id LIMIT '.max(1,min(1000,$limit))); }
+    {
+        [$sql,$params]=self::pendingQuery($limit);
+        return $this->rows($sql,$params);
+    }
+    /** Each branch uses its existing (state,created_at,event_id,recipient_id) index. */
+    public static function pendingQuery(int $limit): array
+    {
+        $limit=max(1,min(1000,$limit));
+        $order=' ORDER BY created_at,event_id,recipient_id';
+        $tail=' WHERE state=0'.$order.' LIMIT '.$limit;
+        return ['SELECT event_id,recipient_id,kind FROM (SELECT * FROM (SELECT event_id,recipient_id,kind,created_at FROM ce_forum_notifications'.$tail.') a UNION ALL SELECT * FROM (SELECT event_id,recipient_id,\'accepted\' AS kind,created_at FROM ce_forum_answer_notifications'.$tail.') b) n'.$order.' LIMIT '.$limit,[]];
+    }
     public function claim(string $event,string $user,string $kind): ?array
     {
         if (!$this->db->connection()->inTransaction()) throw new \LogicException('Notification claim requires transaction');

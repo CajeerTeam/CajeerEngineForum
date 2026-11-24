@@ -69,4 +69,16 @@ $pdo->prepare('INSERT INTO ce_forum_analytics_events(id,event_name,created_at) V
 $check($rollup->cleanup($now)['raw_deleted']===0,'backlogged records not lost to retention');
 $check($rollup->aggregateBatch(10,$now)===1,'backlogged event eventually applied');
 $check($rollup->report(365,$now)['totals']['forum_board_view']===2,'history includes safely processed backlog');
+// A single transaction crosses both the 100-group upsert and 500-ID marker boundaries.
+$insert=$pdo->prepare('INSERT INTO ce_forum_analytics_events(id,event_name,created_at) VALUES (?,?,?)');
+$db->transaction(function()use($insert,$today){for($i=0;$i<1000;$i++)$insert->execute([bin2hex(random_bytes(16)),'forum_thread_view',$today-($i%125)*86400]);});
+$pdo->exec("CREATE TRIGGER rollup_abort_chunk BEFORE UPDATE OF aggregated_at ON ce_forum_analytics_events WHEN NEW.created_at >= ".$today." BEGIN SELECT RAISE(ABORT,'second marker chunk failed'); END");
+$previous=(int)$pdo->query('SELECT SUM(total) FROM ce_forum_analytics_daily')->fetchColumn();
+try{$rollup->aggregateBatch(1000,$now);throw new RuntimeException('Expected marker failure');}catch(PDOException){}
+$check((int)$pdo->query('SELECT SUM(total) FROM ce_forum_analytics_daily')->fetchColumn()===$previous,'all bulk upserts roll back across chunk failure');
+$check((int)$pdo->query('SELECT COUNT(*) FROM ce_forum_analytics_events WHERE aggregated_at IS NULL')->fetchColumn()===1000,'all marker chunks roll back');
+$pdo->exec('DROP TRIGGER rollup_abort_chunk');
+$check($rollup->aggregateBatch(1000,$now)===1000,'1000 raw events and 125 groups aggregate atomically');
+$check((int)$pdo->query('SELECT SUM(total) FROM ce_forum_analytics_daily')->fetchColumn()===$previous+1000,'all bulk totals exact');
+$check($rollup->aggregateBatch(1000,$now)===0,'bulk retry is idempotent');
 echo "PASS {$checks} PHP SQLite aggregate/rebuild/retention assertions\n";

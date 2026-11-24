@@ -16,7 +16,7 @@ final readonly class ForumCounterCache
         $generation=$this->db->connection()->query('SELECT name,generation FROM ce_forum_cache_generation_effective ORDER BY name')->fetchAll(\PDO::FETCH_ASSOC);
         if(count($generation)!==27)return $load();
         sort($allowed,SORT_STRING);$key=hash('sha256',json_encode(['v087',$user,$allowed,$canWrite,$generation],JSON_THROW_ON_ERROR));
-        try{$r=RedisConnection::open();$prefix=RedisConnection::namespace();$store=new RedisCacheStore($r,$prefix.'counter:');$value=$store->get($key);if(is_array($value)&&isset($value['unread'],$value['conversation_unread'],$value['conversation_total_unread'])){try{$r->hIncrBy($prefix.'stats','counter_hit',1);}catch(\Throwable){}return $value;}}
+        try{$r=RedisConnection::open();$prefix=RedisConnection::namespace();$store=new RedisCacheStore($r,$prefix.'counter:',$this->db->config()->rootPath());$value=$store->getCounted($key,$prefix.'stats','counter_hit');if(is_array($value)&&isset($value['unread'],$value['conversation_unread'],$value['conversation_total_unread'])){return $value;}}
         catch(\Throwable){return $load();}
         $value=$load();
         try{$store->put($key,$value,30);$r->hIncrBy($prefix.'stats','counter_miss',1);}catch(\Throwable){}

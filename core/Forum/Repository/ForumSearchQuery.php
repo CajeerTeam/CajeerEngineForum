@@ -161,7 +161,8 @@ final class ForumSearchQuery
             array_push($params,...$filters);
         }
         $ctes[]='candidates AS ('.implode(' UNION ALL ',$parts).')';
-        $ctes[]='ranked AS (SELECT candidates.*, ROW_NUMBER() OVER (PARTITION BY '.($mode==='posts'?'post_id':($discover==='suggest'?'thread_id,matched_tag':'thread_id')).' ORDER BY weight DESC,relevance DESC,post_id,matched_tag) AS pick FROM candidates)';
+        if(count($sources)===1) $ctes[]='ranked AS (SELECT candidates.*, 1 AS pick FROM candidates)';
+        else $ctes[]='ranked AS (SELECT candidates.*, ROW_NUMBER() OVER (PARTITION BY '.($mode==='posts'?'post_id':($discover==='suggest'?'thread_id,matched_tag':'thread_id')).' ORDER BY weight DESC,relevance DESC,post_id,matched_tag) AS pick FROM candidates)';
         $order=match($sort){'newest'=>'match_date DESC,','oldest'=>'match_date ASC,','active'=>'updated_at DESC,','replies'=>'reply_count DESC,',default=>''};
         $order.='weight DESC,relevance DESC,updated_at DESC,id,post_id,matched_tag';
         $replyCount='(SELECT COUNT(*) FROM ce_forum_live_posts rp WHERE rp.thread_id=t.id AND rp.ordinal>1)';

@@ -124,11 +124,11 @@ jobs:
           python3 tools/certification-evidence.py verify "$ARTIFACT_ROOT" --trusted-key "$pub"
 
           cat > "$RUNNER_TEMP/forum-release-notes.md" <<'NOTES'
-          ## CajeerEngineForum 1.4.7 — Platform Security & Privacy
+          ## CajeerEngineForum 1.4.8 — Platform Performance & Scalability
 
-          Forum Edition 1.4.7 on CajeerEngine 2.1.0.
+          Forum Edition 1.4.8 on CajeerEngine 2.1.0.
 
-          - Atomic shared abuse limits, file-backed credentials, audit redaction and privacy maintenance.
+          - Bounded notification merge, single-source search, combined unread counts, bulk analytics upserts, cache and queue hot paths, batched telemetry.
           - Source revalidation after queue admission and strict streamed/final response reconciliation.
           - Signed ZIPs, detached signatures, SHA-256, manifests and artifact index are published together.
           - No new migration; mandatory real PDO and browser acceptance remains in place.
