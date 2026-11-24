@@ -145,6 +145,7 @@ final class Application
             new RateLimitMiddleware($config, $container->get(RateLimiter::class)),
             new JsonBodyMiddleware(),
             new AuthenticationMiddleware($authService, $router, $container->get(AuthenticationAssurance::class)),
+            new \CajeerEngine\Http\Middleware\LoginAbuseMiddleware($config, $container->get(RateLimiter::class)),
             new \CajeerEngine\Http\Middleware\ApiContractMiddleware(new \CajeerEngine\Api\ApiContract($rootPath)),
         ];
         $pipeline = new MiddlewarePipeline($middleware);
@@ -246,7 +247,7 @@ final class Application
             try {
                 if (!filter_var(getenv('SKIF4ER_ID_ENABLED') ?: 'false', FILTER_VALIDATE_BOOLEAN)) throw new \RuntimeException('Provider disabled.');
                 $clientId = trim((string)(getenv('SKIF4ER_ID_CLIENT_ID') ?: ''));
-                $clientSecret = (string)(getenv('SKIF4ER_ID_CLIENT_SECRET') ?: '');
+                $clientSecret = (string)(\CajeerEngine\Security\SecretEnvironment::get('SKIF4ER_ID_CLIENT_SECRET') ?: '');
                 $base = rtrim($c->get(ConfigRepository::class)->string('app.url'), '/');
                 $split = static fn (string $name): array => array_values(array_unique(array_filter(array_map('trim', explode(',', (string)(getenv($name) ?: ''))), static fn (string $s): bool => $s !== '')));
                 return new OidcApiAuthenticator(
@@ -413,7 +414,7 @@ final class Application
             $cfg = $c->get(ConfigRepository::class);
             $enabled = filter_var(getenv('SKIF4ER_ID_ENABLED') ?: 'false', FILTER_VALIDATE_BOOLEAN);
             $clientId = trim((string)(getenv('SKIF4ER_ID_CLIENT_ID') ?: ''));
-            $secret = (string)(getenv('SKIF4ER_ID_CLIENT_SECRET') ?: '');
+            $secret = (string)(\CajeerEngine\Security\SecretEnvironment::get('SKIF4ER_ID_CLIENT_SECRET') ?: '');
             if (!$enabled) return new OidcController($cfg, null, $c->get(AuthService::class));
             $base = rtrim($cfg->string('app.url'), '/');
             try {

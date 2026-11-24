@@ -49,6 +49,7 @@ final readonly class AuthenticationMiddleware implements MiddlewareInterface
 
     private function error(Request $request, string $code, int $status): JsonResponse
     {
+        \CajeerEngine\Observability\Operation::record('security','access_denied','rejected',hrtime(true));
         $response = new JsonResponse(['error' => ['code' => $code, 'message' => match ($code) {
             'unauthenticated' => 'Требуется авторизация.', 'csrf_failed' => 'Некорректный CSRF token.', 'step_up_required' => 'Повторно подтвердите вход для критической операции.', 'suspended' => 'Аккаунт заблокирован. /forum/sanctions', default => 'Недостаточно прав.',
         }, 'request_id' => (string) $request->attributes->get('request_id', '')]], $status);

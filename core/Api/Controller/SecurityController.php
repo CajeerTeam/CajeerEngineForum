@@ -23,6 +23,7 @@ final readonly class SecurityController
         $health = $this->database->health();
         return new JsonResponse([
             'data' => [
+                'platform' => (new \CajeerEngine\Security\SecurityHardener($this->config->rootPath(),$this->config))->diagnose(),
                 'security_core_ready' => $this->database->securityCoreReady(),
                 'api_auth_required' => $this->config->bool('security.api_auth_required', false),
                 'protect_content_writes' => $this->config->bool('security.protect_content_writes', true),

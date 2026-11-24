@@ -39,6 +39,7 @@ final readonly class SchedulerRunner
         $tasks = array_merge(
             [
                 ['name' => 'tmp.cleanup', 'description' => 'Удаление старых временных файлов.', 'interval' => 'hourly'],
+                ['name' => 'security.cleanup', 'description' => 'Expire abuse counters and minimize old audit metadata', 'interval' => 'hourly'],
                 ...($this->queue instanceof \CajeerEngine\Queue\LeaseQueueDriverInterface ? [['name' => 'queue.recover', 'description' => 'Recover expired reservations in all queues', 'interval' => 'every_minute']] : []),
                 ...($this->forumJobs !== null ? [['name' => 'forum.jobs.dispatch', 'description' => 'Dispatch durable forum background work', 'interval' => 'every_minute']] : []),
                 ['name' => 'queue.cleanup_processed', 'description' => 'Удаление старых обработанных file-queue задач.', 'interval' => 'daily'],
@@ -52,7 +53,7 @@ final readonly class SchedulerRunner
             $this->analyticsHub === null ? [] : [['name' => 'analytics.sync_reports', 'description' => 'Queue analytics report refresh', 'interval' => 'hourly']],
             array_map(static fn($name) => ['name' => $name, 'description' => 'Extension task', 'interval' => 'every_minute'], $extensionNames),
         );
-        $internal = ['tmp.cleanup', 'queue.recover', 'forum.jobs.dispatch', 'queue.cleanup_processed', 'search.index_published', 'webhooks.dispatch_pending', 'analytics.sync_reports', 'ai.automation.dispatch', 'updates.discover_releases', 'updates.notifications.dispatch','observability.export_traces'];
+        $internal = ['security.cleanup', 'tmp.cleanup', 'queue.recover', 'forum.jobs.dispatch', 'queue.cleanup_processed', 'search.index_published', 'webhooks.dispatch_pending', 'analytics.sync_reports', 'ai.automation.dispatch', 'updates.discover_releases', 'updates.notifications.dispatch','observability.export_traces'];
         if ($extensionRegistryUnavailable) {
             $tasks[] = ['name' => 'extensions.registry', 'description' => 'Extension task registry unavailable', 'interval' => 'every_minute', 'state' => ['status' => 'unavailable']];
         }
@@ -76,6 +77,7 @@ final readonly class SchedulerRunner
         $results = []; $started=hrtime(true);
         // Each task is isolated. A failing queue/backend cannot starve unrelated maintenance,
         // and a failed slot is never silently marked successful.
+        $results['security.cleanup'] = $this->runTask($store, 'security.cleanup', 3600, fn() => (new \CajeerEngine\Security\SecurityMaintenance($this->rootPath))->run());
         $results['tmp.cleanup'] = $this->runTask($store, 'tmp.cleanup', 3600, fn() => ['removed' => $this->cleanupTmp()]);
         if ($this->queue instanceof \CajeerEngine\Queue\LeaseQueueDriverInterface) {
             $results['queue.recover'] = $this->runTask($store, 'queue.recover', 60, fn() => (new \CajeerEngine\Queue\QueueRecovery($this->queue))->run());

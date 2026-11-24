@@ -72,12 +72,12 @@ final class TwoFactorTotp
     }
 
     /** @param list<string> $codes @return list<string> */
-    public function hashRecoveryCodes(array $codes): array
+    public function hashRecoveryCodes(#[\SensitiveParameter] array $codes): array
     {
         return array_map(static fn (string $code): string => password_hash($code, PASSWORD_DEFAULT), $codes);
     }
 
-    private function base32Decode(string $secret): string
+    private function base32Decode(#[\SensitiveParameter] string $secret): string
     {
         $secret = preg_replace('/[^A-Z2-7]/', '', strtoupper($secret)) ?? '';
         $bits = '';

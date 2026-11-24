@@ -135,7 +135,7 @@ final readonly class ForumAdminService
             if($view==='policy_history') {
                 $stmt=$this->db->connection()->query("SELECT id,event,actor_id,context,created_at FROM ce_audit_log WHERE event IN ('forum.acp.policy.update','forum.acp.maintenance','forum.acp.delegation.update','forum.acp.theme.draft','forum.acp.theme.activate','forum.acp.theme.restore','forum.acp.theme.delete') ORDER BY id DESC LIMIT 26 OFFSET ".(int)$page);
                 $rows=$stmt->fetchAll(\PDO::FETCH_ASSOC);$more=count($rows)>25;if($more)array_pop($rows);
-                foreach($rows as &$row)$row['context']=json_decode((string)$row['context'],true,512,JSON_THROW_ON_ERROR);unset($row);
+                foreach($rows as &$row)$row['context']=\CajeerEngine\Audit\AuditContext::sanitize(json_decode((string)$row['context'],true,512,JSON_THROW_ON_ERROR) ?: []);unset($row);
                 return ['items'=>$rows,'page'=>intdiv($page,25)+1,'has_more'=>$more];
             }
             // Delegated audit is limited to policy/maintenance history, not moderation metadata.

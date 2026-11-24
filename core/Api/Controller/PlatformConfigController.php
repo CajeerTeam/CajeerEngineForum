@@ -19,7 +19,10 @@ final readonly class PlatformConfigController
     public function index(Request $request): JsonResponse
     {
         $data=$this->store()->overview($this->config->platformBaseline());
-        $env=static fn(string $key): bool=>trim((string)getenv($key))!=='';
+        
+        $env=static function(string $key): bool {
+            try { return trim((string)(in_array($key,\CajeerEngine\Security\SecretEnvironment::NAMES,true)?\CajeerEngine\Security\SecretEnvironment::get($key):getenv($key)))!==''; } catch(\Throwable) { return false; }
+        };
         $oidc=filter_var(getenv('SKIF4ER_ID_ENABLED')?:'false',FILTER_VALIDATE_BOOLEAN);
         $ai=new AiSettings($this->config->rootPath());
         try { $status=$ai->status(); $aiReady=$status['configured']; } catch(\Throwable) { $aiReady=false; }
@@ -80,7 +83,7 @@ final readonly class PlatformConfigController
                 finally { sodium_memzero($key); }
             } elseif($provider==='skif4er') {
                 if(!filter_var(getenv('SKIF4ER_ID_ENABLED')?:'false',FILTER_VALIDATE_BOOLEAN)) throw new \RuntimeException('Disabled');
-                $client=new OidcClient(trim((string)getenv('SKIF4ER_ID_CLIENT_ID')),(string)getenv('SKIF4ER_ID_CLIENT_SECRET'),rtrim($this->config->string('app.url'),'/').'/auth/oidc/callback');
+                $client=new OidcClient(trim((string)getenv('SKIF4ER_ID_CLIENT_ID')),(string)\CajeerEngine\Security\SecretEnvironment::get('SKIF4ER_ID_CLIENT_SECRET'),rtrim($this->config->string('app.url'),'/').'/auth/oidc/callback');
                 $ok=$client->probeProvider()['usable_rs256_keys']>0;
             } elseif($provider==='smtp') {
                 $ok=(new \CajeerEngine\Forum\Security\IdentityMail())->probe();

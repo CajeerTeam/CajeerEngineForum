@@ -16,7 +16,7 @@ final readonly class PlatformProbes
     {
         // Atomic settings publication permits a read without taking a potentially busy writer lock.
         $settings=(new JsonFile($this->root.'/storage/app/ai/settings.json'))->readObject();
-        $configured=!empty($settings['key_ciphertext'])||trim((string)getenv('OPENAI_API_KEY'))!=='';
+        $configured=!empty($settings['key_ciphertext'])||trim((string)\CajeerEngine\Security\SecretEnvironment::get('OPENAI_API_KEY'))!=='';
         unset($settings);
         $transport=function_exists('curl_init');
         return ['ok'=>!$configured||$transport,'configured'=>$configured,'transport_available'=>$transport,'provider_probe'=>'passive'];

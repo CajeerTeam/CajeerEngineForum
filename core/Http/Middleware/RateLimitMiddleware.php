@@ -18,11 +18,12 @@ final readonly class RateLimitMiddleware implements MiddlewareInterface
 
     public function process(Request $request, callable $next): Response
     {
+        $started = hrtime(true);
         $path = rawurldecode($request->getPathInfo());
         $bucket = in_array($path,['/api/v1/public/analytics/events','/api/v1/forum/analytics/page-view'],true) ? 'analytics' : ((str_starts_with($path, '/api/v1/auth/') || $path === '/api/v1/forum/register' || str_starts_with($path, '/api/v1/identity/') || str_starts_with($path, '/auth/oidc/')) ? 'auth' : 'global');
         $limit = $this->config->int('security.rate_limits.' . $bucket, $bucket === 'auth' ? 20 : ($bucket === 'analytics' ? 60 : 120));
         $window = $this->config->int('security.rate_limits.window_seconds', 60);
-        $identity = ($request->getClientIp() ?: 'unknown');
+        $identity = \CajeerEngine\Security\AbuseIdentity::network($request->getClientIp());
         $hit = $this->limiter->hit($bucket, $identity, $limit, $window);
 
         if ($hit['allowed'] && (str_starts_with($path, '/api/v1/forum/ai/') || str_starts_with($path, '/api/v1/forum/support/') || str_starts_with($path, '/api/v1/forum/acp/support/'))) {
@@ -37,6 +38,7 @@ final readonly class RateLimitMiddleware implements MiddlewareInterface
             $probe = $this->limiter->hit('platform_config_probe', $identity, 6, 60);
             if (!$probe['allowed'] || $probe['remaining'] < $hit['remaining']) $hit = $probe;
         }
+        \CajeerEngine\Observability\Operation::record('security','http_admission',$hit['allowed']?'success':'rate_limited',$started,$this->config->rootPath());
         if (!$hit['allowed']) {
             $response = new JsonResponse([
                 'error' => [

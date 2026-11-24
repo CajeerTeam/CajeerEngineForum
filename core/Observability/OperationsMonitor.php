@@ -220,6 +220,7 @@ final readonly class OperationsMonitor
         $probe('analytics',function()use($platform){$this->assertDatabasePresent();return $platform->analytics();});
         $probe('integrations',fn()=> $platform->integrations());
         $probe('redis',fn()=> $platform->redis());
+        $probe('security',fn()=> (new \CajeerEngine\Security\SecurityHardener($this->root,$this->config))->diagnose());
         $probe('storage',function(){ $s=new StorageManager($this->root,$this->config);$d=$s->diagnostics();return ['ok'=>(bool)($d['local_probe_write']??false)&&(bool)($d['local_probe_delete']??false)&&(bool)($d['driver_probe']['ok']??false),'driver'=>$s->driver()];});
         $probe('queue',function()use($db){if($this->config->string('queue.default')==='pgsql')$this->assertDatabasePresent();$d=(new QueueFactory($this->root,$this->config,$db))->make()->diagnostics();$counts=array_fill_keys(['pending','reserved','processed','failed'],0);foreach($d['queues']??[] as $q)foreach($counts as $k=>$v)$counts[$k]+=(int)($q[$k]??0);return ['ok'=>($d['writable']??true)&&($d['connected']??true),'driver'=>$d['driver']??'unknown','counts'=>$counts,'oldest_ready_age_seconds'=>(int)($d['oldest_ready_age_seconds']??0),'expired_reservations'=>(int)($d['expired_reservations']??0)];});
         $probe('scheduler',function()use($db){if($this->config->string('scheduler.driver')==='pgsql')$this->assertDatabasePresent();$store=TaskRunStore::fromConfig($this->root,$this->config,$db);$tasks=[];foreach($this->schedulerIntervals() as $name=>$interval){$s=$store->status($name);$last=strtotime((string)($s['last_success_at']??''))?:0;$tasks[$name]=['status'=>$s['status']??'never','last_success'=>$last,'stale'=>$last===0||time()-$last>max(180,$interval*2)||($s['status']??'never')==='failed'];}return ['ok'=>!in_array(true,array_column($tasks,'stale'),true),'tasks'=>$tasks];});
@@ -252,7 +253,7 @@ final readonly class OperationsMonitor
     }
     private function schedulerIntervals(): array
     {
-        $tasks=['tmp.cleanup'=>3600,'queue.cleanup_processed'=>86400,'search.index_published'=>60,'webhooks.dispatch_pending'=>60,'queue.recover'=>60,'forum.jobs.dispatch'=>60,'ai.automation.dispatch'=>60,'analytics.sync_reports'=>3600,'updates.notifications.dispatch'=>60];
+        $tasks=['security.cleanup'=>3600,'tmp.cleanup'=>3600,'queue.cleanup_processed'=>86400,'search.index_published'=>60,'webhooks.dispatch_pending'=>60,'queue.recover'=>60,'forum.jobs.dispatch'=>60,'ai.automation.dispatch'=>60,'analytics.sync_reports'=>3600,'updates.notifications.dispatch'=>60];
         $updates=new \CajeerEngine\Update\AutomaticReleaseDiscovery($this->config);
         if($updates->enabled())$tasks['updates.discover_releases']=$updates->intervalSeconds();
         if(TraceExporter::enabled())$tasks['observability.export_traces']=60;

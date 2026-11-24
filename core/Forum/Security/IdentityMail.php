@@ -61,7 +61,7 @@ final class IdentityMail
                 if (@stream_socket_enable_crypto($socket,true,STREAM_CRYPTO_METHOD_TLS_CLIENT)!==true) throw new \RuntimeException('SMTP TLS failed');
                 $this->command($socket,'EHLO localhost',[250]);
             }
-            $username=(string)getenv('FORUM_SMTP_USERNAME'); $password=(string)getenv('FORUM_SMTP_PASSWORD');
+            $username=(string)getenv('FORUM_SMTP_USERNAME'); $password=(string)\CajeerEngine\Security\SecretEnvironment::get('FORUM_SMTP_PASSWORD');
             if ($username!=='' || $password!=='') {
                 if ($mode==='plain' || $username==='') throw new \RuntimeException('SMTP authentication requires TLS');
                 $this->command($socket,'AUTH PLAIN '.base64_encode("\0".$username."\0".$password),[235]);

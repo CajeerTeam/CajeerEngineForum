@@ -87,7 +87,7 @@ final readonly class UserRepository
     }
 
     /** @param list<string> $roles */
-    public function create(string $email, string $name, string $passwordHash, array $roles = ['viewer'], string $status = 'active'): string
+    public function create(string $email, string $name, #[\SensitiveParameter] string $passwordHash, array $roles = ['viewer'], string $status = 'active'): string
     {
         if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
             throw new \InvalidArgumentException('Некорректный email пользователя.');
@@ -109,7 +109,7 @@ final readonly class UserRepository
         return $userId;
     }
 
-    public function createAdmin(string $email, string $name, string $password): string
+    public function createAdmin(string $email, string $name, #[\SensitiveParameter] string $password): string
     {
         if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
             throw new \InvalidArgumentException('Некорректный email администратора.');
@@ -202,7 +202,7 @@ final readonly class UserRepository
     }
 
     /** @param list<string> $hashedRecoveryCodes */
-    public function enableTwoFactor(string $userId, string $secret, array $hashedRecoveryCodes): void
+    public function enableTwoFactor(string $userId, #[\SensitiveParameter] string $secret, #[\SensitiveParameter] array $hashedRecoveryCodes): void
     {
         $json = json_encode($hashedRecoveryCodes, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
         $sql = $this->database->driver() === 'pgsql'
@@ -223,7 +223,7 @@ final readonly class UserRepository
         $this->database->connection()->prepare($sql)->execute(['id' => $userId]);
     }
 
-    public function consumeRecoveryCode(string $userId, string $code): bool
+    public function consumeRecoveryCode(string $userId, #[\SensitiveParameter] string $code): bool
     {
         return $this->locked($userId, function () use ($userId, $code): bool {
         $record = $this->findByIdWithRecoveryCodes($userId);
@@ -289,7 +289,7 @@ final readonly class UserRepository
         return $user;
     }
 
-    private function fallbackPasswordHash(string $password): string
+    private function fallbackPasswordHash(#[\SensitiveParameter] string $password): string
     {
         if (mb_strlen($password) < 12) {
             throw new \InvalidArgumentException('Пароль администратора должен быть не короче 12 символов.');

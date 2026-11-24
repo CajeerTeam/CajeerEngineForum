@@ -6,7 +6,7 @@ on:
 permissions:
   contents: read
 env:
-  FORUM_CURRENT_VERSION: ${{ '1.4.6' }}
+  FORUM_CURRENT_VERSION: ${{ '1.4.7' }}
 concurrency:
   group: forum-ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -220,6 +220,8 @@ jobs:
       - run: php tools/forum-core-regression.php
       - run: php tools/observability-regression.php --database
       - run: php tools/unified-observability-regression.php --database
+      - run: php tools/platform-security-regression.php --database --redis
+      - run: php tools/rate-limit-concurrency.php
       - run: php tools/forum-observability-regression.php --database
       - run: php tools/forum-qualification-regression.php
       - run: python deploy/container/test_qualify.py

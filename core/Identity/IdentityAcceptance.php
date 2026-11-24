@@ -51,7 +51,7 @@ final readonly class IdentityAcceptance
                 }
                 $client = new OidcClient(
                     trim((string)(getenv('SKIF4ER_ID_CLIENT_ID') ?: '')),
-                    (string)(getenv('SKIF4ER_ID_CLIENT_SECRET') ?: ''),
+                    (string)(\CajeerEngine\Security\SecretEnvironment::get('SKIF4ER_ID_CLIENT_SECRET') ?: ''),
                     rtrim($this->config->string('app.url'),'/').'/auth/oidc/callback'
                 );
                 $vault = SecretVault::fromEnvironment('oidc');

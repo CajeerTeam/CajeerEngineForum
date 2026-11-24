@@ -20,8 +20,8 @@ final readonly class AuthController
     public function login(Request $request): JsonResponse
     {
         $payload = $this->json($request);
-        $email = trim((string) ($payload['email'] ?? ''));
-        $password = (string) ($payload['password'] ?? '');
+        $email = is_string($payload['email'] ?? null) ? trim($payload['email']) : '';
+        $password = is_string($payload['password'] ?? null) ? $payload['password'] : '';
         if ($email === '' || $password === '' || strlen($email) > 254 || strlen($password) > 1024
             || (isset($payload['two_factor_code']) && (!is_string($payload['two_factor_code']) || strlen($payload['two_factor_code']) > 64))) {
             return $this->error('validation_failed', 'Укажите email и password.', Response::HTTP_UNPROCESSABLE_ENTITY);
@@ -41,7 +41,7 @@ final readonly class AuthController
             $response->headers->setCookie(Cookie::create('ce_session', $token, new \DateTimeImmutable($session['expires_at']), '/api/v1', null, $request->isSecure(), true, false, Cookie::SAMESITE_STRICT));
             return $response;
         } catch (\RuntimeException $e) {
-            return $this->error('login_failed', $e->getMessage(), Response::HTTP_UNAUTHORIZED);
+            return $this->error('login_failed', 'Неверные учётные данные или код подтверждения.', Response::HTTP_UNAUTHORIZED);
         }
     }
 

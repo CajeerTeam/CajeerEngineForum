@@ -9,7 +9,7 @@ use CajeerEngine\Update\OperationFiles;
 final class Metrics
 {
     private const BUCKETS=[0.005,0.01,0.025,0.05,0.1,0.25,0.5,1,2.5,5,10,30];
-    private const KINDS=['http','job','scheduler','database','ai','analytics','integration','redis'];
+    private const KINDS=['http','job','scheduler','database','ai','analytics','integration','redis','security'];
     private static array $pending=[];
     private static array $pendingCount=[];
     private static bool $shutdownRegistered=false;
@@ -94,7 +94,7 @@ final class Metrics
             static $routes=null; $routes??=array_column(\CajeerEngine\Http\RouteRegistry::all(),2);
             return in_array($name,$routes,true)||in_array($name,['unmatched','bootstrap','maintenance','install','upgrade','health','metrics'],true)?$name:'other';
         }
-        $known=match($kind){'job'=>['log.message','search.index_all','webhook.dispatch','webhook.deliver','webhooks.dispatch_pending','forum.notifications.dispatch','forum.mail.dispatch','forum.media.image','forum.media.replica','forum.extensions.dispatch','forum.extensions.cleanup','forum.drafts.cleanup','forum.recycle.purge','forum.attachments.cleanup','forum.spam.cleanup','forum.ai.search.cleanup','forum.analytics.rollup','forum.analytics.cleanup','platform.workflows.run','ai.automation.execute','ai.support.reply','ai.translation.propose','analytics.report_sync','analytics.deliver','worker'], 'scheduler'=>['tmp.cleanup','queue.cleanup_processed','search.index_published','webhooks.dispatch_pending','runner','observability.export_traces','queue.recover','forum.jobs.dispatch','analytics.sync_reports','ai.automation.dispatch','updates.discover_releases','updates.notifications.dispatch'], 'database'=>['connect','transaction','query','health'], 'ai'=>['openai.responses'], 'analytics'=>['native.rollup','native.record','report.sync'], 'integration'=>['provider.execute','webhook.deliver','outbound.http'], 'redis'=>['connect','queue.command','cache.get','cache.put','cache.forget','ping'],default=>[]};
+        $known=match($kind){'job'=>['log.message','search.index_all','webhook.dispatch','webhook.deliver','webhooks.dispatch_pending','forum.notifications.dispatch','forum.mail.dispatch','forum.media.image','forum.media.replica','forum.extensions.dispatch','forum.extensions.cleanup','forum.drafts.cleanup','forum.recycle.purge','forum.attachments.cleanup','forum.spam.cleanup','forum.ai.search.cleanup','forum.analytics.rollup','forum.analytics.cleanup','platform.workflows.run','ai.automation.execute','ai.support.reply','ai.translation.propose','analytics.report_sync','analytics.deliver','worker'], 'scheduler'=>['security.cleanup','tmp.cleanup','queue.cleanup_processed','search.index_published','webhooks.dispatch_pending','runner','observability.export_traces','queue.recover','forum.jobs.dispatch','analytics.sync_reports','ai.automation.dispatch','updates.discover_releases','updates.notifications.dispatch'], 'database'=>['connect','transaction','query','health'], 'ai'=>['openai.responses'], 'analytics'=>['native.rollup','native.record','report.sync'], 'integration'=>['provider.execute','webhook.deliver','outbound.http'], 'redis'=>['connect','queue.command','cache.get','cache.put','cache.forget','ping'], 'security'=>['rate_limit','http_admission','login_admission','access_denied'],default=>[]};
         return in_array($name,$known,true)?$name:(str_starts_with($name,'extension.')?'extension':'other');
     }
     public function snapshot(): array

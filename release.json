@@ -17,10 +17,10 @@
     "docs": "GitHub repository docs/",
     "updates": "GitHub Releases",
     "release_builder": "tools/build-release.php",
-    "source_artifact": "storage/releases/cajeerengine-1.4.6-source.zip",
-    "dist_artifact": "storage/releases/cajeerengine-1.4.6-dist.zip",
+    "source_artifact": "storage/releases/cajeerengine-1.4.7-source.zip",
+    "dist_artifact": "storage/releases/cajeerengine-1.4.7-dist.zip",
     "checksums": "storage/releases/*.sha256",
-    "artifact_index": "storage/releases/cajeerengine-1.4.6-artifacts.json",
+    "artifact_index": "storage/releases/cajeerengine-1.4.7-artifacts.json",
     "support_bundle": "storage/app/support",
     "backup": "storage/app/backups/production",
     "server_reports": "storage/app/reports",
@@ -36,6 +36,7 @@
     "engine_api_version": "1.1"
   },
   "product_changes": [
+    "Forum Edition 1.4.7: atomic shared Redis rate limits, account login admission, protected file-backed credentials, bounded audit redaction and network minimization, scheduled privacy cleanup and security telemetry. No schema migration; external CI required.",
     "Forum Edition 1.4.6: unified runtime observations, rolling component metrics, passive provider and analytics diagnostics, Redis probes, complete built-in scheduler status and ACP. No schema migration; external CI required.",
     "Forum Edition 1.4.5: unified queue dispatch for file/PostgreSQL/Redis, coalesced recurring work, all-queue lease recovery, safe completion acknowledgement, operational queue and scheduler controls. No schema migration; external CI required.",
     "Forum Edition 1.4.4: SQL-backed platform workflows, scheduled analytics and event-based support routing, rule conditions, preview, revisions, live RBAC, transactional execution history and audit. Migration 0092; external CI required.",
@@ -194,10 +195,11 @@
     "1.4.3": "Unified Identity & Access Management: account roles, ACL inspection, delegation, MFA and browser sessions in one ACP card.",
     "1.4.4": "Platform Automation & Workflows: schedule and support events, controlled actions, condition editor, dry-run and execution history.",
     "1.4.5": "Unified Queue & Scheduler: shared background dispatch, coalescing, retry, recovery and ACP operations.",
-    "1.4.6": "Unified Observability & Diagnostics: live runtime instrumentation, recent metrics, passive dependency probes and ACP diagnostics."
+    "1.4.6": "Unified Observability & Diagnostics: live runtime instrumentation, recent metrics, passive dependency probes and ACP diagnostics.",
+    "1.4.7": "Platform Security & Privacy: shared abuse controls, file-backed credentials, audit minimization and security diagnostics."
   },
   "stability": "production-stable-gated",
   "edition": "forum",
-  "edition_version": "1.4.6",
+  "edition_version": "1.4.7",
   "upstream_version": "2.1.0"
 }

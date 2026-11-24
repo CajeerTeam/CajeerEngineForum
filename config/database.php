@@ -25,7 +25,7 @@ return [
             'port' => (int) (getenv('DB_PORT') ?: 5432),
             'database' => getenv('DB_DATABASE') ?: 'cajeerengine',
             'username' => getenv('DB_USERNAME') ?: 'cajeerengine',
-            'password' => getenv('DB_PASSWORD') ?: '',
+            'password' => \CajeerEngine\Security\SecretEnvironment::get('DB_PASSWORD') ?: '',
             'sslmode' => getenv('DB_SSLMODE') ?: 'prefer',
         ],
         'mysql' => [
@@ -36,7 +36,7 @@ return [
             'port' => (int) (getenv('DB_PORT') ?: 3306),
             'database' => getenv('DB_DATABASE') ?: 'cajeerengine',
             'username' => getenv('DB_USERNAME') ?: 'cajeerengine',
-            'password' => getenv('DB_PASSWORD') ?: '',
+            'password' => \CajeerEngine\Security\SecretEnvironment::get('DB_PASSWORD') ?: '',
             'charset' => getenv('MYSQL_CHARSET') ?: 'utf8mb4',
             'collation' => getenv('MYSQL_COLLATION') ?: 'utf8mb4_unicode_ci',
         ],

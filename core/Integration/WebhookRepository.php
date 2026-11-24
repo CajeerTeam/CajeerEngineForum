@@ -118,7 +118,7 @@ final readonly class WebhookRepository
     {
         $url = self::validateDestination($payload['url'] ?? null);
         $events = self::validateEvents($payload['events'] ?? ['*']);
-        $secret = $payload['secret'] ?? 'whsec_' . bin2hex(random_bytes(24));
+        $secret = $payload['secret'] ?? 'whsec_' . bin2hex(random_bytes(32));
         if (!is_string($secret) || strlen($secret) < 16 || strlen($secret) > 256 || preg_match('/[\x00-\x1f\x7f]/', $secret)) throw new \InvalidArgumentException('Invalid webhook signing secret.');
         $name = $payload['name'] ?? 'Webhook';
         if (!is_string($name) || trim($name) === '' || strlen($name) > 200 || preg_match('/[\x00-\x1f\x7f]/', $name)) throw new \InvalidArgumentException('Invalid webhook name.');
@@ -161,7 +161,7 @@ final readonly class WebhookRepository
             if (array_key_exists('url', $payload)) {
                 $url = self::validateDestination($payload['url']);
                 // Never carry a signing credential to another recipient.
-                if ($url !== $item['url'] && !array_key_exists('secret', $payload)) {
+                if ($url !== $item['url'] && (!is_string($payload['secret'] ?? null) || hash_equals((string)$item['secret'], $payload['secret']))) {
                     throw new \InvalidArgumentException('Changing a webhook destination requires rotating its signing secret.');
                 }
                 $item['url'] = $url;

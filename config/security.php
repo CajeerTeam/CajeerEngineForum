@@ -16,6 +16,7 @@ return [
             'threads' => (int) (getenv('PASSWORD_ARGON2_THREADS') ?: 2),
         ],
     ],
+    'audit_network_days' => (int)(getenv('AUDIT_NETWORK_RETENTION_DAYS') ?: 30),
     'sessions' => [
         'ttl_days' => (int) (getenv('SESSION_TTL_DAYS') ?: 14),
         'idle_minutes' => (int) (getenv('SESSION_IDLE_MINUTES') ?: 720),
@@ -26,6 +27,8 @@ return [
     ],
     'rate_limits' => [
         'global' => (int) (getenv('RATE_LIMIT_GLOBAL') ?: 120),
+        'login_pair' => (int)(getenv('RATE_LIMIT_LOGIN_PAIR') ?: 8),
+        'login_account' => (int)(getenv('RATE_LIMIT_LOGIN_ACCOUNT') ?: 30),
         'auth' => (int) (getenv('RATE_LIMIT_AUTH') ?: 20),
         'analytics' => (int) (getenv('RATE_LIMIT_ANALYTICS') ?: 60),
         'forum_search' => (int) (getenv('RATE_LIMIT_FORUM_SEARCH') ?: 60),

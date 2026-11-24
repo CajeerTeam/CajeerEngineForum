@@ -1656,7 +1656,7 @@ function systemView() {
 function recentOperationsView(r){
   const recent=r.recent
   if(!recent?.components)return '<h3>Единая наблюдаемость</h3><p>Метрики текущего окна недоступны.</p>'
-  const labels={http:'HTTP / форум',database:'SQL',ai:'AI',analytics:'Аналитика',integration:'Интеграции',redis:'Redis',job:'Worker / задания',scheduler:'Scheduler'}
+  const labels={http:'HTTP / форум',database:'SQL',ai:'AI',analytics:'Аналитика',integration:'Интеграции',redis:'Redis',security:'Безопасность',job:'Worker / задания',scheduler:'Scheduler'}
   const cell=v=>escapeHtml(String(v??'—'))
   const rows=Object.entries(recent.components).map(([kind,c])=>`<tr><td>${escapeHtml(labels[kind]||kind)}</td><td>${cell(c.count)}</td><td>${cell(c.failures)}</td><td>${cell(c.rejected)}</td><td>${cell(c.failure_percent)}</td><td>${cell(c.average_ms)}</td></tr>`)
   const details=Object.entries(recent.components).filter(([,c])=>Object.keys(c.operations||{}).length).map(([kind,c])=>`<details><summary>${escapeHtml(labels[kind]||kind)}</summary>${table(['Операция','Всего','Ошибки','Среднее, мс'],Object.entries(c.operations).map(([name,o])=>`<tr><td>${escapeHtml(name)}</td><td>${cell(o.count)}</td><td>${cell(o.failures)}</td><td>${cell(o.average_ms)}</td></tr>`))}</details>`).join('')

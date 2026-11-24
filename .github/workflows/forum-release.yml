@@ -124,11 +124,11 @@ jobs:
           python3 tools/certification-evidence.py verify "$ARTIFACT_ROOT" --trusted-key "$pub"
 
           cat > "$RUNNER_TEMP/forum-release-notes.md" <<'NOTES'
-          ## CajeerEngineForum 1.4.6 — Unified Observability & Diagnostics
+          ## CajeerEngineForum 1.4.7 — Platform Security & Privacy
 
-          Forum Edition 1.4.6 on CajeerEngine 2.1.0.
+          Forum Edition 1.4.7 on CajeerEngine 2.1.0.
 
-          - Unified runtime telemetry, rolling component metrics, passive dependency diagnostics and ACP operations.
+          - Atomic shared abuse limits, file-backed credentials, audit redaction and privacy maintenance.
           - Source revalidation after queue admission and strict streamed/final response reconciliation.
           - Signed ZIPs, detached signatures, SHA-256, manifests and artifact index are published together.
           - No new migration; mandatory real PDO and browser acceptance remains in place.

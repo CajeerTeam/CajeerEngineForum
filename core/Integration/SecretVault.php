@@ -17,14 +17,14 @@ final readonly class SecretVault
     public static function fromEnvironment(string $purpose = 'integrations'): self
     {
         if (!in_array($purpose, ['integrations', 'oidc'], true)) throw new \InvalidArgumentException('Unknown encryption domain.');
-        $key = (string)(getenv('INTEGRATIONS_KEY') ?: getenv('APP_KEY') ?: '');
-        $previous = self::parsePrevious((string)(getenv('INTEGRATIONS_PREVIOUS_KEYS') ?: ''));
-        if ($purpose === 'oidc' && (string)getenv('SKIF4ER_ID_TRANSACTION_KEY') !== '') {
-            $key = (string)getenv('SKIF4ER_ID_TRANSACTION_KEY');
+        $key = (string)(\CajeerEngine\Security\SecretEnvironment::get('INTEGRATIONS_KEY') ?: getenv('APP_KEY') ?: '');
+        $previous = self::parsePrevious((string)(\CajeerEngine\Security\SecretEnvironment::get('INTEGRATIONS_PREVIOUS_KEYS') ?: ''));
+        if ($purpose === 'oidc' && (string)\CajeerEngine\Security\SecretEnvironment::get('SKIF4ER_ID_TRANSACTION_KEY') !== '') {
+            $key = (string)\CajeerEngine\Security\SecretEnvironment::get('SKIF4ER_ID_TRANSACTION_KEY');
             // The independent OIDC key may have previously fallen back to the integration key.
-            $previous = array_merge(self::parsePrevious((string)(getenv('SKIF4ER_ID_TRANSACTION_PREVIOUS_KEYS') ?: '')), $previous);
+            $previous = array_merge(self::parsePrevious((string)(\CajeerEngine\Security\SecretEnvironment::get('SKIF4ER_ID_TRANSACTION_PREVIOUS_KEYS') ?: '')), $previous);
         } elseif ($purpose === 'oidc') {
-            $previous = array_merge(self::parsePrevious((string)(getenv('SKIF4ER_ID_TRANSACTION_PREVIOUS_KEYS') ?: '')), $previous);
+            $previous = array_merge(self::parsePrevious((string)(\CajeerEngine\Security\SecretEnvironment::get('SKIF4ER_ID_TRANSACTION_PREVIOUS_KEYS') ?: '')), $previous);
         }
         return new self($key, $previous);
     }

@@ -18,7 +18,7 @@ final class RedisConnection
             $timeout=max(0.05,min(5.0,(float)(getenv('REDIS_TIMEOUT_SECONDS')?:0.5)));
             if(!$r->connect(getenv('REDIS_HOST')?:'127.0.0.1',(int)(getenv('REDIS_PORT')?:6379),$timeout,null,0,$timeout))throw new \RuntimeException('Redis connection failed');
             $r->setOption(\Redis::OPT_READ_TIMEOUT,$timeout);
-            $password=getenv('REDIS_PASSWORD');$user=getenv('REDIS_USERNAME');
+            $password=\CajeerEngine\Security\SecretEnvironment::get('REDIS_PASSWORD');$user=getenv('REDIS_USERNAME');
             if($password!==false&&$password!==''&&!$r->auth($user?[$user,$password]:$password))throw new \RuntimeException('Redis authentication failed');
             if(!$r->select((int)(getenv('REDIS_DATABASE')?:0)))throw new \RuntimeException('Redis database selection failed');
             return $r;

@@ -80,7 +80,8 @@ final readonly class PersonalDataRepository extends Repository
         $this->query('DELETE FROM ce_forum_ai_request_buckets WHERE user_id=?',[$id]);
         $this->query('DELETE FROM ce_forum_ai_usage WHERE user_id=?',[$id]);
         $this->query('DELETE FROM ce_forum_ai_daily WHERE user_id=?',[$id]);
-        // Keep administrative decision/audit trails under normal retention policy.
+        // Keep decision history but remove historical network/device identifiers of the closed account.
+        $this->query('UPDATE ce_audit_log SET ip_address=NULL,user_agent=NULL WHERE actor_id=?',[$id]);
         $this->clearProfile($id);
         $moderation=new ModerationQueueRepository($this->db);
         foreach($this->rows("SELECT id,revision_number FROM ce_forum_review_submissions WHERE author_id=? AND status='pending' ORDER BY id",[$id]) as $row){

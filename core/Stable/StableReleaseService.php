@@ -173,10 +173,17 @@ final readonly class StableReleaseService
             if (is_file($path)) { $zip->addFile($path, 'project/' . $file); }
         }
         if ($includeLogs) {
-            foreach (['storage/logs/runtime.jsonl', 'storage/logs/audit.jsonl'] as $file) {
-                $path = $this->rootPath . '/' . $file;
-                if (is_file($path)) { $zip->addFile($path, 'logs/' . basename($file)); }
-            }
+            // Never copy historical raw logs into a portable support archive.
+            $audit=[];
+            try {
+                foreach ((new \CajeerEngine\Audit\AuditLogger($this->rootPath))->recent(200) as $entry) {
+                    $event=$entry['event']??'';
+                    if (!is_string($event)||!preg_match('/^[a-zA-Z0-9_.-]{1,128}$/D',$event)) continue;
+                    $audit[]=['event'=>$event,'created_at'=>$entry['created_at']??null];
+                }
+            } catch (\Throwable) { /* unavailable audit does not expose raw files */ }
+            $zip->addFromString('logs/audit-summary.json', $this->json($audit));
+            $zip->addFromString('logs/runtime-summary.json', $this->json((new \CajeerEngine\Observability\Metrics($this->rootPath))->recentSummary()));
         }
         $zip->close();
         return ['ok' => true, 'target' => $target, 'size' => filesize($target) ?: 0, 'sha256' => hash_file('sha256', $target) ?: '', 'include_logs' => $includeLogs, 'created_at' => $this->now()];
@@ -243,10 +250,12 @@ final readonly class StableReleaseService
     {
         $path = $this->rootPath . '/.env';
         if (!is_file($path)) { return "# .env отсутствует\n"; }
-        $lines = preg_split('/\R/', (string) file_get_contents($path)) ?: [];
-        $out = [];
-        foreach ($lines as $line) {
-            if (preg_match('/^([A-Z0-9_]*(KEY|SECRET|PASSWORD|TOKEN|DSN)[A-Z0-9_]*)=/i', $line, $m)) { $out[] = $m[1] . '=***redacted***'; } else { $out[] = $line; }
+        // Export names only: custom dotenv names, comments, multiline strings
+        // and credentialed URLs cannot leak through a heuristic value redactor.
+        if (is_link($path)) return "# .env unavailable\n";
+        $out=[];
+        foreach (preg_split('/\R/', (string) file_get_contents($path)) ?: [] as $line) {
+            if (preg_match('/^\s*(?:export\s+)?([A-Z_][A-Z0-9_]*)\s*=/D', $line, $m)) $out[$m[1]]=$m[1].'=***redacted***';
         }
         return implode(PHP_EOL, $out) . PHP_EOL;
     }

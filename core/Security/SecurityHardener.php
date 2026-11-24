@@ -18,7 +18,10 @@ final readonly class SecurityHardener
     {
         $env = $this->config->string('app.env', 'production');
         $productionLike = in_array(strtolower($env), ['production', 'prod', 'staging'], true);
+        $secrets = SecretEnvironment::status();
         $checks = [
+            'secret_sources_safe' => $secrets['ok'],
+            'rate_limit_driver_valid' => in_array(getenv('RATE_LIMIT_DRIVER') ?: 'file', ['file','redis'], true),
             'api_auth_required' => $this->config->bool('security.api_auth_required', true),
             'protect_content_writes' => $this->config->bool('security.protect_content_writes', true),
             'protect_system_routes' => $this->config->bool('security.protect_system_routes', true),
@@ -40,6 +43,8 @@ final readonly class SecurityHardener
             'environment' => $env,
             'production_like' => $productionLike,
             'checks' => $checks,
+            'secret_sources' => $secrets['items'],
+            'rate_limit_driver' => in_array(getenv('RATE_LIMIT_DRIVER') ?: 'file',['file','redis'],true) ? (getenv('RATE_LIMIT_DRIVER') ?: 'file') : 'invalid',
             'failures' => $failures,
         ];
     }

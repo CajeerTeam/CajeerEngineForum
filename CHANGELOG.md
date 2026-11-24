@@ -1,3 +1,10 @@
+## [1.4.7] - 2026-11-24
+
+- Atomic Redis rate-limit backend, fail-closed admission, IPv6 network normalization and account/pair limits before password hashing.
+- Operator-mounted secret files for integration/OIDC, OpenAI, SQL, Redis, SMTP and observability credentials.
+- Shared audit sanitization, owner-private file audit, bounded recent reads, masked network metadata and scheduled minimization of old SQL audit metadata.
+- Security checks and metrics in existing operational reports; no schema migration. CI and staging required.
+
 ## [1.4.6] - 2026-11-24
 
 - Unified runtime metrics for AI, analytics, integrations, Redis, SQL, HTTP and background processes.

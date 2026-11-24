@@ -35,8 +35,8 @@ final readonly class AiSettings
     {
         return $this->locked(function (array $data): array {
             return [
-                'configured' => !empty($data['key_ciphertext']) || trim((string)(getenv('OPENAI_API_KEY') ?: '')) !== '',
-                'credential_source' => !empty($data['key_ciphertext']) ? 'vault' : ((string)getenv('OPENAI_API_KEY') !== '' ? 'environment' : 'none'),
+                'configured' => !empty($data['key_ciphertext']) || trim((string)(\CajeerEngine\Security\SecretEnvironment::get('OPENAI_API_KEY') ?: '')) !== '',
+                'credential_source' => !empty($data['key_ciphertext']) ? 'vault' : ((string)\CajeerEngine\Security\SecretEnvironment::get('OPENAI_API_KEY') !== '' ? 'environment' : 'none'),
                 'model' => (string)($data['model'] ?? 'gpt-4.1-mini'),
                 'max_output_tokens' => (int)($data['max_output_tokens'] ?? 1024),
                 'monthly_token_limit' => (int)($data['monthly_token_limit'] ?? 250000),
@@ -80,7 +80,7 @@ final readonly class AiSettings
             if (!empty($data['key_ciphertext'])) {
                 return SecretVault::fromEnvironment()->open('cajeerengine:ai:openai:key', $data['key_ciphertext']);
             }
-            $key = trim((string)(getenv('OPENAI_API_KEY') ?: ''));
+            $key = trim((string)(\CajeerEngine\Security\SecretEnvironment::get('OPENAI_API_KEY') ?: ''));
             if ($key === '') throw new \DomainException('OpenAI API key is not configured.');
             return $key;
         });
