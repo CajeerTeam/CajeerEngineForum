@@ -31,7 +31,7 @@ $fail=null;$l->stop();$events=[];$fail='start:'.$fpm;rejects(fn()=>$l->start('1.
 $fail=null;$version='1.5.6';$events=[];rejects(fn()=>$l->start('1.5.7'),'wrong edition fails HTTP gate');check(!in_array('start:'.$workers[0],$events,true),'wrong version cannot start writers');
 $version='1.5.7';$ready=200;$events=[];rejects(fn()=>$l->start('1.5.7'),'public readiness during maintenance fails closed');
 $ready=503;$l->stop();$version='1.5.6';$l->start('1.5.6');check($states[$fpm]==='active'&&$states[$timer]==='active','previous version services can be reactivated');
-$root=dirname(__DIR__);[$code,,$raw]=ProbeEndpoint::response($root,'/health/live','GET',null);check($code===200&&json_decode($raw,true)['edition_version']==='1.5.9','real liveness endpoint exposes release identity');
+$root=dirname(__DIR__);[$code,,$raw]=ProbeEndpoint::response($root,'/health/live','GET',null);check($code===200&&json_decode($raw,true)['edition_version']==='1.5.10','real liveness endpoint exposes release identity');
 putenv('UPDATE_SERVICE_POLICY_FILE=/tmp/unsafe.json');rejects(fn()=>ServiceLifecycle::configured(),'external policy must be canonical root-owned /etc path');putenv('UPDATE_SERVICE_POLICY_FILE');check(ServiceLifecycle::configured()===null,'legacy manual deployment remains available without service policy');
 // Real flock across independent PHP processes: a running job cannot be replaced.
 $dir=sys_get_temp_dir().'/ce-lifecycle-'.bin2hex(random_bytes(8));OperationFiles::dir($dir.'/storage/app');

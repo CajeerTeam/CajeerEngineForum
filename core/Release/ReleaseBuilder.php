@@ -303,7 +303,7 @@ final readonly class ReleaseBuilder
             'removed_files' => [],
             'dist_requirements' => $plan['mode'] === 'dist' ? $plan['dist_requirements'] : [],
             'github' => $plan['github'],
-        ];
+        ] + (version_compare(explode('-', $plan['version'], 2)[0],'1.5.10','>=') ? ['dependency_sbom'=>ReleaseDependencyInventory::sbom((string)file_get_contents($this->rootPath.'/composer.lock'),$plan['version'])] : []);
     }
 
     /** @param list<string> $files @return array<string, string> */

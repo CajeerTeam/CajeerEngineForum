@@ -43,22 +43,24 @@ final class UpdateManager
         return $plan+['plan_file'=>$path];
     }
     /** Authenticate the announced digest before allocating a large partial download. */
-    public function verifyReleaseDigest(string $digest, string $signature): array
+    public function verifyReleaseDigest(string $digest, string $signature, ?string $version=null): array
     {
-        return ReleaseSignature::verifyDigest($digest,$signature,$this->trustedKey());
+        return ReleaseTrust::configured($this->rootPath)->verify($digest,$signature,$version,$version===null?null:'dist');
     }
     public function verifyPackage(string $packagePath, ?string $expectedSha=null, ?string $signature=null): array
     {
         try {
             if (!is_file($packagePath)||is_link($packagePath)||filesize($packagePath)>2*1024*1024*1024) throw new \RuntimeException('Invalid or oversized ZIP');
-            $trust=$this->trustedKey();
-            $sig=ReleaseSignature::verify($packagePath,$signature??$packagePath.'.sig',$trust,$expectedSha);
+            $digest=OperationFiles::hash($packagePath);
+            if ($expectedSha!==null&&!hash_equals($digest,strtolower($expectedSha))) throw new \RuntimeException('Release signature or SHA256 mismatch');
+            $sig=ReleaseTrust::configured($this->rootPath)->verify($digest,$signature??$packagePath.'.sig');
             $zip=new \PharData($packagePath); $name='cajeerengine/release-manifest.json';
             if (!isset($zip[$name])||$zip[$name]->getSize()>16*1024*1024) throw new \RuntimeException('Missing manifest');
             $m=json_decode($zip[$name]->getContent(),true,512,JSON_THROW_ON_ERROR);
             if (($m['edition'] ?? '') !== 'forum' || !isset($m['upstream_version'])) throw new \RuntimeException('Forum Edition release required; CMS packages cannot be applied.');
             $version=$m['version']??''; $mode=$m['mode']??'';
             if (!is_string($version)||!preg_match('/^\d+\.\d+\.\d+(?:-[a-zA-Z0-9.-]+)?$/D',$version)||!in_array($mode,['source','dist'],true)) throw new \RuntimeException('Invalid release identity');
+            ReleaseTrust::identity($sig,$version,$mode);
             $m=(new ReleaseArtifactVerifier())->verify($packagePath,$mode,$version);
             $release=json_decode($zip['cajeerengine/release.json']->getContent(),true,512,JSON_THROW_ON_ERROR);
             if (($release['channel']??null)!==UpdatePreflight::channelOf($version)) throw new \RuntimeException('Signed release channel differs from version');
@@ -72,6 +74,32 @@ final class UpdateManager
             if (version_compare(PHP_VERSION,'8.4.1','<')||version_compare(PHP_VERSION,'9.0','>=')) throw new \RuntimeException('Unsupported PHP runtime');
             return ['ok'=>true,'package'=>$packagePath,'version'=>$version,'mode'=>$mode,'manifest'=>$m,'security_update'=>($release['security_update']??false)===true,'file_count'=>count($m['files'])]+$sig;
         } catch (\Throwable $e) { return ['ok'=>false,'error'=>$e->getMessage()]; }
+    }
+    /** Compare installed managed files to an independently authenticated release ZIP. */
+    public function integrity(string $package,?string $expectedSha=null,?string $signature=null): array
+    {
+        $this->cliOnly();
+        $lock=OperationLock::acquire($this->rootPath,false);
+        try {
+            if ($this->recoveryPending()) throw new \RuntimeException('Recovery pending');
+            $v=$this->verifyPackage($this->resolvePackage($package),$expectedSha,$signature);
+            if (!$v['ok']) throw new \RuntimeException($v['error']);
+            if ($v['mode']!=='dist'||$v['version']!==$this->currentVersion()) throw new \RuntimeException('Provide the signed distribution of the installed version');
+            ReleaseTrust::pin($this->rootPath,$v);
+            $bad=[]; $checked=0; $count=0;
+            foreach ($v['manifest']['checksums'] as $relative=>$sha) {
+                if (!$this->managed($relative)) continue;
+                ++$checked;
+                try { $matches=hash_equals($sha,OperationFiles::hash(OperationFiles::path($this->rootPath,$relative))); }
+                catch (\Throwable) { $matches=false; }
+                if (!$matches) { ++$count; if (count($bad)<100) $bad[]=$relative; }
+            }
+            // Report extra loadable files in the core and vendor trees. Custom extensions are outside this attestation.
+            foreach (['core','vendor'] as $tree) foreach (OperationFiles::files($this->rootPath,$tree) as $relative) {
+                if (!isset($v['manifest']['checksums'][$relative])) { ++$count; if (count($bad)<100) $bad[]=$relative; }
+            }
+            return ['ok'=>$count===0,'version'=>$v['version'],'sha256'=>$v['sha256'],'key_id'=>$v['key_id'],'checked'=>$checked,'mismatch_count'=>$count,'mismatches'=>$bad];
+        } finally { OperationLock::release($lock); }
     }
     public function apply(array $options=[]): array
     {
@@ -118,12 +146,13 @@ final class UpdateManager
             if ($autonomous) UpdatePreflight::writablePlan($this->rootPath,$plan);
             $report=['ok'=>true,'id'=>$id,'previous_version'=>$previous,'target_version'=>$v['version'],'sha256'=>$v['sha256'],'copy_plan'=>$plan,'preflight'=>['space'=>$space,'runtime'=>$runtime,'extensions'=>$compatibility,'migration_history'=>'verified','recovery'=>'ready'],'dry_run'=>!empty($options['dry_run'])];
             if ($report['dry_run']) return $report;
+            ReleaseTrust::pin($this->rootPath,$v);
             if (!empty($options['autonomous'])) {
                 if (!$this->config->bool('updates.operator.enabled') || !$this->config->bool('updates.web_upgrade.enabled') || ($options['from_version']??null)!==$previous || OperationLock::maintenance($this->rootPath)) return ['ok'=>false,'deferred'=>true,'reason'=>'admission_changed'];
                 if (($reason=(new UpdatePolicy($this->config))->autonomousReason($previous,$v['version'],$v['security_update'],time()))!==null) return ['ok'=>false,'deferred'=>true,'reason'=>$reason];
             }
             if (!empty($options['scheduled_request']) && ($reason=(new UpdatePolicy($this->config))->requestReason('apply',$v['version'],time()))!==null) throw new \RuntimeException('Update policy: '.$reason);
-            $journal=['id'=>$id,'state'=>'prepared','recovery_protocol'=>2,'previous_version'=>$previous,'target_version'=>$v['version'],'sha256'=>$v['sha256'],'maintenance_was_enabled'=>$this->maintenanceState()['enabled'],'maintenance_before'=>is_file($this->rootPath.'/storage/app/maintenance.json')?OperationFiles::read($this->rootPath.'/storage/app/maintenance.json'):null,'backup'=>null,'child_lock'=>'child-'.bin2hex(random_bytes(8)).'.lock','at'=>gmdate(DATE_ATOM)];
+            $journal=['id'=>$id,'state'=>'prepared','recovery_protocol'=>2,'previous_version'=>$previous,'target_version'=>$v['version'],'sha256'=>$v['sha256'],'release_key_id'=>$v['key_id'],'release_authorization_expires'=>$v['authorization']['expires_at']??null,'maintenance_was_enabled'=>$this->maintenanceState()['enabled'],'maintenance_before'=>is_file($this->rootPath.'/storage/app/maintenance.json')?OperationFiles::read($this->rootPath.'/storage/app/maintenance.json'):null,'backup'=>null,'child_lock'=>'child-'.bin2hex(random_bytes(8)).'.lock','at'=>gmdate(DATE_ATOM)];
             if ($lifecycle!==null) $journal['service_lifecycle']=$lifecycle->identity();
             $journal['mutation_started']=false;
             if (!empty($options['autonomous'])) $journal['authorization']=['type'=>'host_policy','mode'=>(new UpdatePolicy($this->config))->snapshot()['mode']];
@@ -154,6 +183,9 @@ final class UpdateManager
                 $journal['state']='backed_up'; $this->journal($journal);
                 // Recovery code is copied from the old release before any replacement.
                 $this->recoveryLauncher($dir,$backup->directory($journal['backup']));
+                // Recheck host trust/revocation and expiry after potentially lengthy backup rehearsal.
+                $fresh=ReleaseTrust::configured($this->rootPath)->verify($v['sha256'],$dir.'/package.zip.sig',$v['version'],$v['mode']);
+                if ($fresh['key_id']!==$v['key_id']) throw new \RuntimeException('Release signer changed during update');
                 $journal['state']='applying'; $journal['mutation_started']=true; $this->journal($journal);
                 foreach ($plan['files'] as $relative) {
                     $dest=OperationFiles::path($this->rootPath,$relative);
@@ -307,7 +339,7 @@ final class UpdateManager
         }
         return ['ok'=>true,'items'=>array_values($items)];
     }
-    private function publicJournal(array $j): array { return array_intersect_key($j,array_flip(['id','state','previous_version','target_version','sha256','updated_at','service_phase'])); }
+    private function publicJournal(array $j): array { return array_intersect_key($j,array_flip(['id','state','previous_version','target_version','sha256','release_key_id','release_authorization_expires','updated_at','service_phase'])); }
     public function staged(): array
     {
         $dir=$this->requestDir(); $file=$dir.'/staged.json';
@@ -335,6 +367,7 @@ final class UpdateManager
                         UpdatePreflight::identity($v['manifest'],$this->currentVersion(),$this->channel(),$expectedVersion);
                         UpdateCompatibility::requireRuntime($v['manifest'],$this->config);
                         if (!(new \CajeerEngine\Extension\ExtensionRegistry($this->rootPath,$this->config))->targetCompatibility($v['version'],$v['manifest']['engine_api_version'])['ok']) throw new \RuntimeException('Target release incompatible with enabled extensions');
+                        ReleaseTrust::pin($this->rootPath,$v);
                         (new AutonomousUpdate($this->rootPath,$this->config))->rememberStage($prior);
                         return $prior+['cached'=>true];
                     }
@@ -351,6 +384,7 @@ final class UpdateManager
             $runtime=UpdateCompatibility::requireRuntime($v['manifest'],$this->config);
             $extensions=(new \CajeerEngine\Extension\ExtensionRegistry($this->rootPath,$this->config))->targetCompatibility($v['version'],$v['manifest']['engine_api_version']);
             if(($automatic||isset($v['manifest']['upgrade_compatibility']))&&!$extensions['ok'])throw new \RuntimeException('Target release incompatible with enabled extensions');
+            ReleaseTrust::pin($this->rootPath,$v);
             $data=['ok'=>true,'id'=>$id,'from_version'=>$this->currentVersion(),'runtime_compatibility'=>$runtime,'extension_compatibility'=>$extensions,'version'=>$v['version'],'sha256'=>$v['sha256'],'file_count'=>$v['file_count']];
             OperationFiles::json($this->requestDir().'/staged.json',$data,0644); $published=true;
             if ($automatic) (new AutonomousUpdate($this->rootPath,$this->config))->rememberStage($data);
@@ -578,8 +612,7 @@ final class UpdateManager
     private function transactionDir(string $id): string { if (!preg_match('/^\d{8}-\d{6}-[a-f0-9]{16}$/D',$id)) throw new \RuntimeException('Invalid transaction ID'); return $this->path('transactions/'.$id); }
     private function path(string $p): string { return OperationFiles::path($this->rootPath,'storage/app/updates/'.$p); }
     private function requestDir(): string { $p=OperationFiles::path($this->rootPath,'storage/app/update-requests'); if (!is_dir($p)) { OperationFiles::dir($p,0770); chmod($p,02770); } return $p; }
-    private function trustConfigured(): bool { try { $this->trustedKey(); return true; } catch (\Throwable) { return false; } }
-    private function trustedKey(): string { $p=(string)getenv('UPDATE_TRUSTED_PUBLIC_KEY_FILE'); if ($p===''||!str_starts_with($p,'/')||!is_file($p)||is_link($p)||(fileperms($p)&0022)!==0||str_starts_with(realpath($p)?:$p,rtrim($this->rootPath,'/').'/')) throw new \RuntimeException('Provision UPDATE_TRUSTED_PUBLIC_KEY_FILE'); return $p; }
+    private function trustConfigured(): bool { try { ReleaseTrust::configured($this->rootPath); return true; } catch (\Throwable) { return false; } }
     private function option(array $o,string $k): ?string { $v=$o[$k]??null; return is_string($v)&&trim($v)!==''?trim($v):null; }
     private function resolvePackage(string $p): string { if (str_contains($p,'://')||str_contains($p,"\0")) throw new \RuntimeException('Use local ZIP'); return str_starts_with($p,'/')?$p:$this->rootPath.'/'.$p; }
     private function currentVersion(): string { return (new \CajeerEngine\Forum\ForumVersion($this->rootPath))->current(); }

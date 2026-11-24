@@ -55,7 +55,8 @@ try {
         if (!is_array($entry) || ($entry['name'] ?? null) !== $name || ($entry['sha256'] ?? null) !== $sha || ($entry['size'] ?? null) !== filesize($zip)) {
             throw new RuntimeException('Artifact index mismatch: ' . $name);
         }
-        \CajeerEngine\Update\ReleaseSignature::verify($zip, $zip . '.sig', $key, $sha);
+        $signed=\CajeerEngine\Update\ReleaseSignature::verify($zip, $zip . '.sig', $key, $sha);
+        \CajeerEngine\Update\ReleaseTrust::identity($signed,$version,$mode);
     }
     echo "PASS exact Forum Edition $version source/dist manifests, SHA256 and Ed25519 signatures\n";
 } catch (Throwable $error) {

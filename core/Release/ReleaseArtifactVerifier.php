@@ -159,6 +159,11 @@ final class ReleaseArtifactVerifier
             $required[]='core/Update/UpdateCenterPolicy.php';
             if ($mode==='source') $required=array_merge($required,['tools/update-center-policy-regression.php','tools/update-center-browser-regression.py']);
         }
+        if (($manifest['edition']??null)==='forum' && version_compare(explode('-', $version, 2)[0],'1.5.10','>=')) {
+            $required[]='core/Update/ReleaseTrust.php';
+            if ($mode==='source') $required[]='tools/update-supply-chain-regression.php';
+            if (!isset($zip[$prefix.'composer.lock']) || ($manifest['dependency_sbom']??null)!==ReleaseDependencyInventory::sbom($zip[$prefix.'composer.lock']->getContent(),$version)) throw new \RuntimeException('Signed dependency SBOM differs from lock inventory');
+        }
         foreach ($required as $file) if (!in_array($file, $files, true)) throw new \RuntimeException('Required ZIP entry missing: ' . $file);
         foreach (['pgsql', 'mysql', 'sqlite'] as $driver) {
             if (!array_filter($files, static fn ($file) => str_starts_with($file, 'migrations/' . $driver . '/') && str_ends_with($file, '.sql'))) throw new \RuntimeException('Missing migrations: ' . $driver);

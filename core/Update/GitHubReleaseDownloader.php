@@ -105,6 +105,7 @@ final readonly class GitHubReleaseDownloader
                         if (($verified['ok'] ?? false) && ($verified['version'] ?? '') === $version && ($verified['mode'] ?? '') === 'dist'
                             && $this->checksumMatches($published . '.sha256', $name, $digest)) {
                             UpdatePreflight::identity($verified['manifest'],$current,$resolver->channel(),$version);
+                            ReleaseTrust::pin($this->rootPath,$verified);
                             $this->progress($version, 'verified', $declaredSize, $declaredSize);
                             return $this->result($version, $published, $verified, true);
                         }
@@ -137,12 +138,13 @@ final readonly class GitHubReleaseDownloader
                         $text = file_get_contents($parts['checksum']);
                         if (!is_string($text) || !preg_match('/^([a-f0-9]{64})  ' . preg_quote($name, '/') . '\r?\n?$/D', $text, $match)) throw new \RuntimeException('Invalid GitHub checksum sidecar');
                         if (isset($asset['sha256']) && !hash_equals($asset['sha256'], $match[1])) throw new \RuntimeException('GitHub release SHA-256 checksum mismatch');
-                        (new UpdateManager($this->rootPath,$this->config))->verifyReleaseDigest($match[1],$parts['signature']);
+                        (new UpdateManager($this->rootPath,$this->config))->verifyReleaseDigest($match[1],$parts['signature'],$version);
                         // GitHub may omit the asset digest. Authenticate freshly fetched sidecars before reusing bytes.
                         if (is_file($published) && !is_link($published) && filesize($published)===$declaredSize) {
                             $existing=(new UpdateManager($this->rootPath,$this->config))->verifyPackage($published,$match[1],$parts['signature']);
                             if (($existing['ok']??false) && $existing['version']===$version && $existing['mode']==='dist') {
                                 UpdatePreflight::identity($existing['manifest'],$current,$resolver->channel(),$version);
+                                ReleaseTrust::pin($this->rootPath,$existing);
                                 OperationFiles::copy($parts['checksum'],$published.'.sha256');
                                 OperationFiles::copy($parts['signature'],$published.'.sig');
                                 $this->receipt($receipt,$version,$check['channel'],$existing,$declaredSize,$tag);
@@ -196,6 +198,7 @@ final readonly class GitHubReleaseDownloader
                     throw new \RuntimeException('Signed ZIP release verification failed: ' . ($verified['error'] ?? 'wrong version or mode'));
                 }
                 UpdatePreflight::identity($verified['manifest'],$current,$resolver->channel(),$version);
+                ReleaseTrust::pin($this->rootPath,$verified);
                 // Write sidecars first. Receipt is the final publication commit marker.
                 OperationFiles::copy($parts['checksum'], $published . '.sha256');
                 OperationFiles::copy($parts['signature'], $published . '.sig');

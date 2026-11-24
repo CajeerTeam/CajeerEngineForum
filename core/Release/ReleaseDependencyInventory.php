@@ -8,6 +8,25 @@ final class ReleaseDependencyInventory
 {
     public const AUTOLOAD_FILES = ['vendor/autoload.php', 'vendor/composer/installed.json', 'vendor/composer/installed.php', 'vendor/composer/autoload_real.php', 'vendor/composer/autoload_psr4.php', 'vendor/composer/autoload_static.php', 'vendor/composer/autoload_classmap.php', 'vendor/composer/platform_check.php'];
 
+    /** Deterministic CycloneDX inventory of the locked runtime Composer dependencies. */
+    public static function sbom(string $lockJson,string $version): array
+    {
+        $lock=json_decode($lockJson,true,512,JSON_THROW_ON_ERROR);
+        if (!is_array($lock['packages']??null)||$lock['packages']===[]) throw new \RuntimeException('Missing runtime lock inventory');
+        $components=[];
+        foreach ($lock['packages'] as $package) {
+            $name=$package['name']??null; $v=$package['version']??null;
+            if (!is_string($name)||!preg_match('~^[a-z0-9_.-]+/[a-z0-9_.-]+$~D',$name)||!is_string($v)||$v===''||isset($components[$name])) throw new \RuntimeException('Invalid SBOM package');
+            $purl='pkg:composer/'.$name.'@'.rawurlencode($v);
+            $component=['type'=>'library','name'=>$name,'version'=>$v,'bom-ref'=>$purl,'purl'=>$purl];
+            $ref=$package['dist']['reference']??$package['source']['reference']??null;
+            if (is_string($ref)&&$ref!=='') $component['properties']=[['name'=>'cajeerengine:composer:reference','value'=>$ref]];
+            $components[$name]=$component;
+        }
+        ksort($components,SORT_STRING);
+        return ['bomFormat'=>'CycloneDX','specVersion'=>'1.5','version'=>1,'metadata'=>['component'=>['type'=>'application','name'=>'CajeerEngineForum','version'=>$version]],'components'=>array_values($components)];
+    }
+
     /** @return list<string> Runtime packages that must be present in vendor. */
     public static function validate(string $lockJson, string $installedJson, bool $allowDevelopment = false): array
     {

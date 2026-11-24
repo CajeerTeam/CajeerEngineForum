@@ -157,6 +157,8 @@ class Deployment:
                            # The installed 0.8.x image may not recognize files introduced by 1.0.
                            # Supply the local trusted operator's updated verifier; it is
                            # invoked only AFTER the old pinned publisher key validates the ZIP.
+                           (ROOT/'core/Update/ReleaseSignature.php','/opt/ce-update/ReleaseSignature.php'),
+                           (ROOT/'core/Update/ReleaseTrust.php','/opt/ce-update/ReleaseTrust.php'),
                            (ROOT/'core/Release/ReleaseFilePolicy.php','/opt/ce-update/ReleaseFilePolicy.php'),
                            (ROOT/'core/Release/ReleaseDependencyInventory.php','/opt/ce-update/ReleaseDependencyInventory.php'),
                            (ROOT/'core/Release/ReleaseArtifactVerifier.php','/opt/ce-update/ReleaseArtifactVerifier.php'),

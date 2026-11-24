@@ -26,7 +26,13 @@ try {
         identity($previous);
         DatabaseBackup::run([PHP_BINARY,'/opt/ce-container/runtime.php','identity']);
         if(\CajeerEngine\Update\OperationLock::maintenance($root))throw new RuntimeException('Resolve existing maintenance/recovery first');
-        ReleaseSignature::verify($package,$package.'.sig','/opt/ce-release.pub',$sha);
+        foreach (['ReleaseSignature','ReleaseTrust'] as $validator) {
+            $file='/opt/ce-update/'.$validator.'.php';
+            if(!is_file($file)||is_link($file))throw new RuntimeException('Trusted signature verifier unavailable');
+            require_once $file;
+        }
+        $signature=ReleaseSignature::verify($package,$package.'.sig','/opt/ce-release.pub',$sha);
+        \CajeerEngine\Update\ReleaseTrust::identity($signature,$target,'dist');
         // Only after the immutable old publisher key verifies the signed ZIP
         // may the trusted, locally provisioned operator validator be loaded.
         // The installed 0.8.x verifier rejects legitimate newer release paths.

@@ -1,3 +1,8 @@
+## [1.5.10] — Update Security & Supply Chain
+
+- Host-owned rotating Ed25519 trust policy, key revocation, signed version and expiry authorization, persistent distribution digest pins and final pre-mutation revalidation.
+- Verified runtime Composer CycloneDX inventory embedded in signed manifest. Existing audit and physical qualification remain mandatory.
+
 ## [1.5.8] - 2026-11-24
 
 - Independent recovery supervisor with bounded persistent retries, child lease checks and authenticated snapshot recovery.
