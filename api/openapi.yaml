@@ -26291,25 +26291,12 @@
         ],
         "description": "Reauthenticate and revoke every login session including current.",
         "requestBody": {
-          "required": true,
+          "required": false,
           "content": {
             "application/json": {
               "schema": {
                 "type": "object",
-                "properties": {
-                  "password": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 1024
-                  },
-                  "two_factor_code": {
-                    "type": "string",
-                    "maxLength": 32
-                  }
-                },
-                "required": [
-                  "password"
-                ],
+                "properties": {},
                 "additionalProperties": false
               }
             }
@@ -26326,12 +26313,13 @@
                     "data": {
                       "type": "object",
                       "properties": {
-                        "revoked": {
-                          "type": "boolean"
+                        "revoked_count": {
+                          "type": "integer",
+                          "minimum": 0
                         }
                       },
                       "required": [
-                        "revoked"
+                        "revoked_count"
                       ],
                       "additionalProperties": false
                     }

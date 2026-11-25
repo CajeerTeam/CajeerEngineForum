@@ -57,7 +57,7 @@ try {
     $pdo->prepare('INSERT INTO ce_forum_analytics_daily(day,event_name,total,updated_at) VALUES(?,?,?,?)')
         ->execute([$now-10*86400,'forum_thread_view',5,time()]);
     $pdo->prepare('INSERT INTO ce_forum_analytics_events(id,event_name,created_at,aggregated_at) VALUES(?,?,?,NULL)')
-        ->execute(['103a57d9-4b1b-41ef-9e1b-642d065f3891','forum_thread_view',$now-2*86400]);
+        ->execute(['103a57d94b1b41ef9e1b642d065f3891','forum_thread_view',$now-2*86400]);
     $provider=new InsightsStubProvider();$ai=new AiSettings($tmp);$chat=new ForumAiChat($db,$ai,$provider);
     $settings=$chat->administrator();$chat->configure(['enabled'=>true,'model'=>'gpt-4.1-mini','max_output_tokens'=>384,
         'daily_request_limit'=>20,'monthly_token_limit'=>150000,'revision'=>$settings['revision']]);

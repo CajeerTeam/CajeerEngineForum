@@ -46,8 +46,10 @@ class Compose:
     def __init__(self, project, env):
         self.env = {k:v for k,v in os.environ.items() if not k.startswith(('CE_', 'COMPOSE_'))}
         self.prefix = ['docker','compose','--project-name',project,'--env-file',str(env),'-f',str(HERE/'compose.yaml')]
+    def execute(self, *args, stdin=None, timeout=180):
+        return subprocess.run(self.prefix+list(args), input=stdin, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout, env=self.env)
     def run(self, *args, stdin=None, timeout=180):
-        result = subprocess.run(self.prefix+list(args), input=stdin, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout, env=self.env)
+        result = self.execute(*args, stdin=stdin, timeout=timeout)
         require(result.returncode == 0, 'Compose command failed: '+args[0])
         return result.stdout
     def memory(self):
@@ -369,7 +371,21 @@ def qualify(a):
         require(b'ContainerSmokeBody' in call('/forum/threads/'+thread)[1],'SSR cache not revalidated after ACL restore')
         require(any(x['id']==thread for x in data(call('/api/v1/forum/search?q=ContainerSmokeMarker')[1])),'FTS cache not revalidated after ACL restore')
         check('cache_invalidation')
-        dc.run('exec','-T','app','php','bin/cajeer','forum:ecosystem:check','--deep','--json',timeout=600);check('ecosystem_integrity')
+        ecosystem=dc.execute('exec','-T','app','php','bin/cajeer','forum:ecosystem:check','--deep','--json',timeout=600)
+        # Persist only allowlisted check names and booleans; never dump stdout/stderr
+        # (operator diagnostics may contain paths or extension metadata).
+        try:
+            result=json.loads(ecosystem.stdout)
+        except (ValueError, TypeError):
+            result={}
+        names=('extensions','community_policy','theme','delegation','migration_idle','schema','integrity','search')
+        values=result.get('checks',{}) if isinstance(result,dict) else {}
+        checks={name: values.get(name) is True for name in names} if isinstance(values,dict) else dict.fromkeys(names,False)
+        report['ecosystem_checks']={'exit_code':ecosystem.returncode,'checks':checks}
+        save()
+        require(ecosystem.returncode==0 and isinstance(result,dict) and result.get('ok') is True and all(checks.values()),
+                'Ecosystem integrity failed: '+', '.join(name for name,ok in checks.items() if not ok))
+        check('ecosystem_integrity')
         report['ok']=True;report['finished_at']=int(time.time());save()
     except BaseException as exc:
         if 'resources' in locals() and resources._thread is not None and resources._thread.is_alive():

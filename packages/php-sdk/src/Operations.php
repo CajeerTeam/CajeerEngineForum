@@ -4924,7 +4924,7 @@ final class Operations {
     'parameters' => 
     array (
     ),
-    'bodyRequired' => true,
+    'bodyRequired' => false,
   ),
   'post_CmsBootstrap' => 
   array (

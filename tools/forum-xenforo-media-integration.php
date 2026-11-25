@@ -103,7 +103,7 @@ try{
     $unreviewed=$accept->check($job);
     $check(!$unreviewed['ok'] && in_array('skipped_rows_not_approved',$unreviewed['blockers'],true),'unapproved skipped records block cutover');
     $approved=$accept->check($job,$unreviewed['checks']['skip_sha256']);
-    $check($approved['ok'] && $approved['checks']['target_rows_examined']>0,'full source-to-target reconciliation accepts explicitly reviewed skips');
+    $check($approved['ok'] && $approved['checks']['target_rows_examined']>0,'full source-to-target reconciliation accepts explicitly reviewed skips: '.implode(', ', $approved['blockers']));
     $breakHash=$target->prepare('UPDATE ce_forum_attachments SET sha256=? WHERE id=?');
     $breakHash->execute([str_repeat('0',64),$attachment]);
     $corrupted=$accept->check($job,$unreviewed['checks']['skip_sha256']);

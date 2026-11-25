@@ -169,8 +169,8 @@ final class XenForoAcceptance
                             $srcText=$kind==='posts'?$sourceRow['post_text']:$sourceRow['body'];
                             $rewritten=$this->one($db,'SELECT outcome FROM ce_forum_import_map WHERE job_id=? AND kind=? AND source_id=?',[$jobId,$kind==='posts'?'content_links':'conversation_content',$sourceId]);
                             $format=($rewritten['outcome']??null)==='imported'?'bbcode':'plain';
-                            $expected=$this->expectedBody($db,$jobId,$kind,is_string($srcText)?$srcText:'',$format);
-                            if($format!==$stored['body_format']||$expected!==$stored['body'])$block('source_content_mismatch:'.$kind.':'.$sourceId);
+                            $expectedBody=$this->expectedBody($db,$jobId,$kind,is_string($srcText)?$srcText:'',$format);
+                            if($format!==$stored['body_format']||$expectedBody!==$stored['body'])$block('source_content_mismatch:'.$kind.':'.$sourceId);
                             $author=$this->mappedId($db,$jobId,'users',(int)$sourceRow[$kind==='posts'?'poster_id':'author_source_id']);
                             if($stored['author_id']!==$author)$block('source_author_mismatch:'.$kind.':'.$sourceId);
                             $parent=$this->mappedId($db,$jobId,$kind==='posts'?'topics':'conversations',(int)$sourceRow[$kind==='posts'?'topic_id':'conversation_id']);

@@ -6,11 +6,11 @@ use CajeerEngine\Database\DatabaseManager;
 use CajeerEngine\Database\Repository\{UserRepository, ApiTokenRepository, AuditLogRepository};
 use CajeerEngine\Forum\ForumException;
 use CajeerEngine\Forum\Security\IdentityMail;
-use CajeerEngine\Security\{AuthService, PasswordHasher, TwoFactorTotp};
+use CajeerEngine\Security\{AuthService, PasswordHasher, TwoFactorTotp, AuthenticationAssurance};
 
 final readonly class IdentityService
 {
-    public function __construct(private DatabaseManager $db, private UserRepository $users, private ApiTokenRepository $tokens, private AuditLogRepository $audit, private PasswordHasher $passwords, private TwoFactorTotp $totp, private AuthService $auth, private IdentityMail $mail) {}
+    public function __construct(private DatabaseManager $db, private UserRepository $users, private ApiTokenRepository $tokens, private AuditLogRepository $audit, private PasswordHasher $passwords, private TwoFactorTotp $totp, private AuthService $auth, private IdentityMail $mail, private ?AuthenticationAssurance $assurance = null) {}
 
     /** Mail is sent only after commit; a failed delivery leaves a recoverable account. */
     public function requestMail(string $email, string $purpose): void
@@ -78,6 +78,7 @@ final readonly class IdentityService
     /** Start enrollment without changing active credentials. */
     public function beginTwoFactor(array $identity,string $password): array
     {
+        $this->requireLocalBrowser($identity);
         return $this->sensitive($identity,$password,null,function($id,$user) {
             if (filter_var($user['two_factor_enabled'],FILTER_VALIDATE_BOOLEAN)) throw new ForumException('2FA уже включена.',409);
             $secret=$this->totp->generateSecret();
@@ -88,6 +89,7 @@ final readonly class IdentityService
     }
     public function confirmTwoFactor(array $identity,string $password,string $token,string $code): array
     {
+        $this->requireLocalBrowser($identity);
         return $this->sensitive($identity,$password,null,function($id,$user) use($token,$code) {
             $row=$this->challenge($id,'totp');
             if (filter_var($user['two_factor_enabled'],FILTER_VALIDATE_BOOLEAN) || !$row || (int)$row['expires_at']<=time() || !hash_equals($row['token_hash'],hash('sha256',$token))) throw new ForumException('Настройка 2FA истекла.',422);
@@ -103,6 +105,7 @@ final readonly class IdentityService
     }
     public function disableTwoFactor(array $identity,string $password,?string $code): void
     {
+        $this->requireLocalBrowser($identity);
         $this->sensitive($identity,$password,$code,function($id) {
             $this->users->disableTwoFactor($id); $this->remove($id,'totp'); $this->tokens->revokeForUser($id);
             $this->audit->record('auth.2fa_disabled',$id,[]);
@@ -152,6 +155,21 @@ final readonly class IdentityService
                 return ['closed'=>true];
             });
         });
+    }
+
+    /** Local TOTP is managed only from a live local/legacy browser session.
+     * An external session must manage its authentication at its identity provider.
+     */
+    private function requireLocalBrowser(array $identity): void
+    {
+        if (($identity['cookie'] ?? false) !== true || ($identity['session'] ?? false) !== true || $this->assurance === null) {
+            throw new ForumException('Требуется локальная браузерная сессия.',403);
+        }
+        try { $status=$this->assurance->status($identity); }
+        catch (\Throwable) { throw new ForumException('Требуется действующая браузерная сессия.',403); }
+        if (!in_array($status['provider'] ?? null,['local','legacy'],true)) {
+            throw new ForumException('Управляйте двухфакторной защитой у поставщика входа или войдите локально.',403);
+        }
     }
 
     private function sensitive(array $identity,string $password,?string $code,callable $fn): mixed

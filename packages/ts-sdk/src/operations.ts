@@ -3806,7 +3806,7 @@ export const operations = {
         "method": "POST",
         "path": "/auth/sessions/revoke-all",
         "parameters": [],
-        "bodyRequired": true
+        "bodyRequired": false
     },
     "post_CmsBootstrap": {
         "method": "POST",

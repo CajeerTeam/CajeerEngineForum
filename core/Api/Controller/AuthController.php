@@ -68,7 +68,8 @@ final readonly class AuthController
             $identity = (array)$request->attributes->get('auth', []);
             $id = (string)($parameters['id'] ?? '');
             $ok = $this->auth->revokeSession($identity, $id);
-            $response = new JsonResponse(['data'=>['revoked'=>$ok]], $ok ? 200 : 404, ['Cache-Control'=>'no-store']);
+            if (!$ok) return $this->error('session_not_found','Сессия не найдена.',404);
+            $response = new JsonResponse(['data'=>['revoked'=>true]], 200, ['Cache-Control'=>'no-store']);
             if ($ok && $id === (string)($identity['token_id'] ?? '')) $this->clearSessionCookie($response, $request);
             return $response;
         } catch (\RuntimeException) { return $this->error('session_required','Требуется браузерная сессия.',403); }

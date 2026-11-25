@@ -658,7 +658,7 @@ final class Application
         $forumDb = $container->get(DatabaseManager::class);
         $forumTx = new \CajeerEngine\Forum\Service\ForumTransaction($forumDb, new \CajeerEngine\Database\Repository\AuditLogRepository($forumDb), $container->get(ExtensionRuntime::class)->platform());
         $forumThreads = new \CajeerEngine\Forum\Repository\ThreadRepository($forumDb);
-        $identityService = new \CajeerEngine\Forum\Service\IdentityService($forumDb, $container->get(UserRepository::class), $container->get(ApiTokenRepository::class), $container->get(AuditLogRepository::class), $container->get(PasswordHasher::class), $container->get(TwoFactorTotp::class), $container->get(AuthService::class), new \CajeerEngine\Forum\Security\IdentityMail());
+        $identityService = new \CajeerEngine\Forum\Service\IdentityService($forumDb, $container->get(UserRepository::class), $container->get(ApiTokenRepository::class), $container->get(AuditLogRepository::class), $container->get(PasswordHasher::class), $container->get(TwoFactorTotp::class), $container->get(AuthService::class), new \CajeerEngine\Forum\Security\IdentityMail(), $container->get(AuthenticationAssurance::class));
         $identity = new \CajeerEngine\Forum\IdentityController($identityService);
         $forum = new \CajeerEngine\Forum\ForumController(
             new \CajeerEngine\Forum\Service\DiscussionService($forumDb, $forumTx,

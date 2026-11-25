@@ -273,13 +273,25 @@ class NetworkTests(unittest.TestCase):
 
     def test_01_identity_and_session_security(self):
         c = Client(self.base)
-        email, _, token = self.activated(c)
+        email, _, bearer = self.activated(c)
         other = Client(self.base)
-        _, _, foreign = self.activated(other)
+        other_email, _, foreign_bearer = self.activated(other)
+        def browser_session(address, password=PASSWORD, code=None):
+            client = Client(self.base)
+            response, headers = client.login(address, password, code, browser=True)
+            cookie = headers.get('Set-Cookie', '').split(';', 1)[0]
+            self.assertTrue(cookie.startswith('ce_session='))
+            self.assertNotIn('access_token', response['data'])
+            return AssuredSession(cookie, response['data']['csrf_token'])
+        c.call('GET', '/auth/sessions', 403, token=bearer)
+        c.call('POST', '/auth/logout', 200, token=bearer)
+        other.call('POST', '/auth/logout', 200, token=foreign_bearer)
+        token = browser_session(email)
+        foreign = browser_session(other_email)
         foreign_id = other.call('GET', '/auth/sessions', token=foreign)[0]['id']
-        self.assertFalse(c.call('DELETE', '/auth/sessions/' + foreign_id, token=token)['revoked'])
+        c.call('DELETE', '/auth/sessions/' + foreign_id, 404, token=token)
         other.call('GET', '/auth/me', token=foreign)
-        second = c.login(email)[0]['data']['access_token']
+        second = browser_session(email)
         self.assertEqual(2, len(c.call('GET', '/auth/sessions', token=token)))
         for session in c.call('GET', '/auth/sessions', token=token):
             if not session['current']:
@@ -292,7 +304,7 @@ class NetworkTests(unittest.TestCase):
         c.call('POST', '/auth/password/reset', 422, {'token': reset, 'password': PASSWORD})
         c.call('GET', '/auth/me', 401, token=token)
         c.login(email, status=401)
-        token = c.login(email, NEW_PASSWORD)[0]['data']['access_token']
+        token = browser_session(email, NEW_PASSWORD)
         setup = c.call('POST', '/auth/2fa/enable', 201, {'password': NEW_PASSWORD}, token=token)
         self.assertFalse(c.call('GET', '/auth/me', token=token)['user']['two_factor_enabled'])
         code = totp(setup['secret'])
@@ -302,7 +314,7 @@ class NetworkTests(unittest.TestCase):
         c.login(email, NEW_PASSWORD, status=401)
         c.login(email, NEW_PASSWORD, code, status=401)
         recovery = confirm['recovery_codes'][0]
-        token = c.login(email, NEW_PASSWORD, recovery)[0]['data']['access_token']
+        token = browser_session(email, NEW_PASSWORD, recovery)
         c.login(email, NEW_PASSWORD, recovery, status=401)
         c.call('POST', '/auth/2fa/disable', 403, {'password': NEW_PASSWORD}, token=token)
         c.call('POST', '/auth/2fa/disable', 200, {'password': NEW_PASSWORD, 'two_factor_code': confirm['recovery_codes'][1]}, token=token)
@@ -1329,8 +1341,9 @@ class NetworkTests(unittest.TestCase):
         c=Client(self.base)
         admin=c.assured_login(ADMIN, ADMIN_PASSWORD)
         stranger=Client(self.base)
-        _, _, foreign=self.activated(stranger)
-        session=stranger.call('GET','/auth/sessions',token=foreign)[0]['id']
+        foreign_email, _, foreign=self.activated(stranger)
+        foreign_browser=stranger.assured_login(foreign_email)
+        session=next(item['id'] for item in stranger.call('GET','/auth/sessions',token=foreign_browser) if item['current'])
         # Even a privileged caller cannot revoke someone else's personal session through /api-tokens.
         bearer=c.login(ADMIN,ADMIN_PASSWORD)[0]['data']['access_token']
         c.call('DELETE','/api-tokens/'+session,403,token=bearer)
@@ -1554,11 +1567,10 @@ class BrowserTests(unittest.TestCase):
                 codes = page.locator('#app pre').inner_text().splitlines()
                 self.assertEqual(8, len(set(codes)))
                 login(email, NEW_PASSWORD, codes[0])
-                page.goto(self.base + '/forum/account/sessions'); heading('Настройки аккаунта')
-                expect(page.locator('#app')).to_contain_text('Текущая сессия')
-                page.get_by_role('button', name='Завершить все сессии', exact=True).locator('..').locator('[name=password]').fill(NEW_PASSWORD)
-                page.get_by_role('button', name='Завершить все сессии', exact=True).locator('..').locator('[name=two_factor_code]').fill(codes[1])
-                click('Завершить все сессии'); expect(page).to_have_url(self.base + '/forum/login')
+                page.goto(self.base + '/forum/account/sessions'); heading('Активные сессии')
+                expect(page.locator('#app')).to_contain_text('Это устройство')
+                page.once('dialog', lambda dialog: dialog.accept())
+                click('Завершить все сессии, включая текущую'); expect(page).to_have_url(self.base + '/forum/login')
                 # Admin browser session in a fresh context, no mocked requests.
                 admin_context = browser.new_context()
                 try:
@@ -1568,6 +1580,12 @@ class BrowserTests(unittest.TestCase):
                     admin_page.locator('[name=password]').fill(ADMIN_PASSWORD)
                     admin_page.get_by_role('button', name='Войти', exact=True).click()
                     expect(admin_page).to_have_url(self.base + '/forum')
+                    assurance = admin_page.evaluate('''async password => {
+                        const me = await (await fetch('/api/v1/auth/me', {credentials:'same-origin'})).json();
+                        const response = await fetch('/api/v1/auth/assurance/confirm', {method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-CSRF-Token':me.data.csrf_token},body:JSON.stringify({password,two_factor_code:''})});
+                        return {status:response.status,fresh:(await response.json()).data?.fresh};
+                    }''', ADMIN_PASSWORD)
+                    self.assertEqual({'status':200,'fresh':True}, assurance)
                     admin_page.goto(thread)
                     admin_page.get_by_role('button', name='Закрыть', exact=True).click()
                     expect(admin_page.get_by_role('button', name='Открыть', exact=True)).to_be_visible()
