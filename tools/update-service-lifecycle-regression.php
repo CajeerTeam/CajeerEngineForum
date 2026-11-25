@@ -40,4 +40,27 @@ $native=$root.'/core/Console/NativeCli.php';$script='require $argv[1]; $l=Cajeer
 $process=proc_open([PHP_BINARY,'-r',$script,$native,$dir],[0=>['file','/dev/null','r'],1=>['pipe','w'],2=>['pipe','w']],$pipes);
 try {stream_set_blocking($pipes[1],false);usleep(150000);check(stream_get_contents($pipes[1])===''&&proc_get_status($process)['running'],'new worker waits behind exclusive update lease');OperationLock::release($lease);$lease=null;stream_set_blocking($pipes[1],true);stream_set_timeout($pipes[1],3);check(stream_get_contents($pipes[1])==='admitted','worker admitted after activation releases lock');}
 finally{OperationLock::release($lease);foreach($pipes as $pipe)fclose($pipe);proc_terminate($process);proc_close($process);unlink($dir.'/storage/app/operations.lock');rmdir($dir.'/storage/app');rmdir($dir.'/storage');rmdir($dir);}
+// Maintenance must wait for a short-lived request, but reject a stuck operation.
+$dir=sys_get_temp_dir().'/ce-maintenance-drain-'.bin2hex(random_bytes(8));OperationFiles::dir($dir.'/storage/app');
+$lease=OperationLock::acquire($dir,false);
+$process=null;$pipes=[];
+try {
+    $started=hrtime(true);
+    try { $unexpected=OperationLock::acquireExclusiveAfterDrain($dir,0.15); OperationLock::release($unexpected); throw new LogicException('Concurrent exclusive operation admitted'); }
+    catch (\CajeerEngine\Update\OperationBusy) { check((hrtime(true)-$started)/1e9>=0.14,'stuck lease blocks maintenance until bounded drain timeout'); }
+    $script='require $argv[1]; echo "waiting\\n"; $l=CajeerEngine\\Update\\OperationLock::acquireExclusiveAfterDrain($argv[2],3.0); echo "exclusive\\n"; CajeerEngine\\Update\\OperationLock::release($l);';
+    $process=proc_open([PHP_BINARY,'-r',$script,$native,$dir],[0=>['file','/dev/null','r'],1=>['pipe','w'],2=>['pipe','w']],$pipes);
+    if (!is_resource($process)) throw new RuntimeException('Cannot start drain probe');
+    stream_set_timeout($pipes[1],4);
+    check(fgets($pipes[1])==="waiting\n",'maintenance drain probe started');
+    stream_set_blocking($pipes[1],false);usleep(150000);
+    check(stream_get_contents($pipes[1])===''&&proc_get_status($process)['running'],'maintenance cannot enter during shared activity');
+    OperationLock::release($lease);$lease=null;
+    stream_set_blocking($pipes[1],true);stream_set_timeout($pipes[1],4);
+    check(fgets($pipes[1])==="exclusive\n",'maintenance obtains exclusive lease after request drains');
+} finally {
+    OperationLock::release($lease);foreach($pipes as $pipe)fclose($pipe);
+    if(is_resource($process)){proc_terminate($process);proc_close($process);}
+    unlink($dir.'/storage/app/operations.lock');rmdir($dir.'/storage/app');rmdir($dir.'/storage');rmdir($dir);
+}
 echo "Service lifecycle: $count PASS\n";

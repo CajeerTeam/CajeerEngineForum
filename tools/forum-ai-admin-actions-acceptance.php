@@ -26,8 +26,9 @@ if($driver==='sqlite'){
     (new MigrationRunner($pdo,$root.'/migrations'))->run($driver);
 }
 final class AdminActionStubProvider extends OpenAiClient {
-    public int $calls=0;public array $input=[];public string $text='';
+    public int $calls=0;public array $input=[];public string $text='';public ?PDO $pdo=null;
     public function complete(#[\SensitiveParameter] string $key,string $model,array $input,int $maxOutput,?callable $delta=null):array {
+        if($this->pdo?->inTransaction())throw new RuntimeException('Provider called while a database transaction holds locks');
         if($key!=='sk-forum-admin-actions-acceptance-key')throw new RuntimeException('Provider key mismatch');
         $this->calls++;$this->input=$input;
         return ['text'=>$this->text,'usage'=>['input_tokens'=>60,'cached_input_tokens'=>0,'output_tokens'=>35],'response_id'=>'resp_admin_stub'];
@@ -48,7 +49,7 @@ try{
         if(!is_string($role)||$role==='')throw new RuntimeException('Missing test role '.$handle);
         $pdo->prepare('INSERT INTO ce_user_roles(user_id,role_id) VALUES(?,?)')->execute([$admin,$role]);
     }
-    $provider=new AdminActionStubProvider();$ai=new AiSettings($tmp);$chat=new ForumAiChat($db,$ai,$provider);
+    $provider=new AdminActionStubProvider();$provider->pdo=$pdo;$ai=new AiSettings($tmp);$chat=new ForumAiChat($db,$ai,$provider);
     $settings=$chat->administrator();$chat->configure(['enabled'=>true,'model'=>'gpt-4.1-mini','max_output_tokens'=>384,
         'daily_request_limit'=>80,'monthly_token_limit'=>150000,'revision'=>$settings['revision']]);
     $tx=new ForumTransaction($db,new AuditLogRepository($db));
@@ -62,6 +63,8 @@ try{
     $provider->text=json_encode(['value'=>'Тестовый форум сообщества','reason'=>'Более ясное имя'],JSON_UNESCAPED_UNICODE);
     $proposal=$svc->propose($actor,'policy_name','Измените название',null,true);
     $check($provider->calls===1&&$proposal['state']==='pending','generation prepares only');
+    $check($svc->get($actor,$proposal['id'])===$proposal,'standalone proposal read uses live transactional ACL');
+    $check(count($svc->list($actor))===1&&!$pdo->inTransaction(),'standalone listing releases transaction');
     $check($tx->settings()->snapshot()['values']['name']===$old,'no write before approval');
     $check(str_contains($provider->input[0]['content'],'подготовки изменений'),'safe system role');
     $check(!str_contains($provider->input[0]['content'],$admin),'no actor ID in provider prompt');
@@ -94,6 +97,9 @@ try{
     $check($suggested['state']==='pending','published FAQ edit proposed');
     $pdo->prepare('DELETE FROM ce_user_roles WHERE user_id=?')->execute([$admin]);
     $reject(fn()=> $svc->decide($actor,$suggested['id'],$suggested['digest'],'approve'),403,'live permission revocation');
+    $reject(fn()=> $svc->get($actor,$suggested['id']),403,'revoked actor cannot read proposal');
+    $reject(fn()=> $svc->list($actor),403,'revoked actor cannot list proposals');
+    $check(!$pdo->inTransaction(),'denials release transactions');
     $pdo->prepare('INSERT INTO ce_user_roles(user_id,role_id) SELECT ?,id FROM ce_roles WHERE handle IN (?,?)')
         ->execute([$admin,'forum-acp-settings','forum-acp-members']);
     $updated=$svc->decide($actor,$suggested['id'],$suggested['digest'],'approve');

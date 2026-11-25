@@ -57,6 +57,24 @@ final class OperationLock
         if ($exclusive) self::$exclusive[realpath($root)?:$root]=$handle;
         return $handle;
     }
+    /** Wait briefly for in-flight shared leases to drain; never bypass the exclusive lock. */
+    public static function acquireExclusiveAfterDrain(string $root, float $timeoutSeconds = 10.0): mixed
+    {
+        if (!is_finite($timeoutSeconds) || $timeoutSeconds < 0 || $timeoutSeconds > 60) {
+            throw new \InvalidArgumentException('Invalid operation drain timeout');
+        }
+        $deadline = hrtime(true) + (int)($timeoutSeconds * 1_000_000_000);
+        do {
+            try {
+                return self::acquire($root, true);
+            } catch (OperationBusy $e) {
+                $remaining = $deadline - hrtime(true);
+                if ($remaining <= 0) throw $e;
+                usleep((int) min(100_000, max(1, intdiv($remaining, 1000))));
+            }
+        } while (true);
+    }
+
     /** Retain the old child lease through recovery. An orphaned subprocess holds it via util-linux flock. */
     public static function childGuard(string $path): mixed
     {

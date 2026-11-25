@@ -23,7 +23,7 @@ try{
  $source->beginTransaction();$t=$source->prepare("INSERT INTO xf_thread VALUES(?,15,1,?,1600000000,1600000001,'discussion',1,0,'visible')");$p=$source->prepare("INSERT INTO xf_post VALUES(?,?,1,?,1600000000,0,'visible')");
  for($i=0;$i<$size;$i++){ $id=1000+$i;$t->execute([$id,'Bulk needle '.$id]);$p->execute([10000+2*$i,$id,'Bulk searchable '.$id]);$p->execute([10001+2*$i,$id,'Second reply '.$id]); }
  // First large subscription set crosses several batch boundaries, followed by sparse/empty topics.
- $u=$source->prepare("INSERT INTO xf_user VALUES(?,? ,?,1600000000,2,'','secret')");$w=$source->prepare('INSERT INTO xf_thread_watch VALUES(?,?)');
+ $u=$source->prepare("INSERT INTO xf_user(user_id,username,email,register_date,user_group_id,secondary_group_ids,password) VALUES(?,?,?,1600000000,2,'','secret')");$w=$source->prepare('INSERT INTO xf_thread_watch VALUES(?,?)');
  for($i=10;$i<30;$i++){$u->execute([$i,'Member '.$i,'member'.$i.'@example.test']);$w->execute([20,$i]);}
  $w->execute([1000,1]);$w->execute([1000+$size-1,2]);$source->commit();unset($source);
  mkdir($tmp.'/1');file_put_contents($tmp.'/1/1001-'.str_repeat('b',32).'.data','hello world!');

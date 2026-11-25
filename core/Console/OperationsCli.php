@@ -90,7 +90,7 @@ final class OperationsCli
     }
     private static function maintenance(string $root,UpdateManager $m,string $c,array $o): array
     {
-        $lock=OperationLock::acquire($root,true);
+        $lock=OperationLock::acquireExclusiveAfterDrain($root);
         try { if ($c==='maintenance:off' && is_file($root.'/storage/app/extensions/deployment.json')) throw new \RuntimeException('Recover extension deployment first'); return $c==='maintenance:on'?$m->enableMaintenance($o['message']??'Maintenance'):$m->disableMaintenance(); }
         finally { OperationLock::release($lock); }
     }
