@@ -171,6 +171,7 @@ jobs:
       - run: php tools/forum-xenforo-media-unit.php
       - run: php tools/forum-xenforo-media-integration.php
       - run: php tools/forum-migration-pipeline-regression.php
+      - run: php tools/forum-cli-dispatch-regression.php
       - run: php tools/forum-migration-upgrade-regression.php
       - run: php tools/forum-xenforo-schema-unit.php
       - run: php tools/forum-xenforo-schema-regression.php

@@ -15,7 +15,9 @@ final readonly class ForumAiInsights
 
     private function authorize(ForumAccessPolicy $actor): void
     {
-        $this->tx->permissions()->requireCurrent($actor, 'forum:acp:settings', true);
+        // Live ACL checks take row locks on PostgreSQL/MySQL. Keep the lock
+        // inside a short transaction, never across the external provider call.
+        $this->tx->write(fn() => $this->tx->permissions()->requireCurrent($actor, 'forum:acp:settings', true));
     }
 
     /** Computations here remain authoritative even when the model is unavailable. */

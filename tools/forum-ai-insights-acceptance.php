@@ -28,7 +28,9 @@ if($driver==='sqlite'){
 }
 final class InsightsStubProvider extends OpenAiClient {
     public int $calls=0;public array $input=[];
+    public ?PDO $connection=null;
     public function complete(#[\SensitiveParameter] string $key,string $model,array $input,int $maxOutput,?callable $delta=null):array {
+        if($this->connection===null||$this->connection->inTransaction())throw new RuntimeException('Provider called while holding a database transaction');
         if($key!=='sk-forum-insights-acceptance-key')throw new RuntimeException('Provider key mismatch');
         $this->calls++;$this->input=$input;
         return ['text'=>json_encode(['headline'=>'Активность форума увеличилась','observations'=>[
@@ -58,14 +60,16 @@ try {
         ->execute([$now-10*86400,'forum_thread_view',5,time()]);
     $pdo->prepare('INSERT INTO ce_forum_analytics_events(id,event_name,created_at,aggregated_at) VALUES(?,?,?,NULL)')
         ->execute(['103a57d94b1b41ef9e1b642d065f3891','forum_thread_view',$now-2*86400]);
-    $provider=new InsightsStubProvider();$ai=new AiSettings($tmp);$chat=new ForumAiChat($db,$ai,$provider);
+    $provider=new InsightsStubProvider();$provider->connection=$pdo;$ai=new AiSettings($tmp);$chat=new ForumAiChat($db,$ai,$provider);
     $settings=$chat->administrator();$chat->configure(['enabled'=>true,'model'=>'gpt-4.1-mini','max_output_tokens'=>384,
         'daily_request_limit'=>20,'monthly_token_limit'=>150000,'revision'=>$settings['revision']]);
     $service=new ForumAiInsights($db,new ForumTransaction($db,new AuditLogRepository($db)),$chat);
     $admin=new ForumAccessPolicy($user,['forum:acp:settings']);$guest=new ForumAccessPolicy($outsider,['forum:acp:settings']);
     $from=gmdate('Y-m-d',$now-5*86400);$until=gmdate('Y-m-d',$now);
     $reject(fn()=> $service->preview($guest,$from,$until),403,'role denied by live DB');
+    $check(!$pdo->inTransaction(),'denied preview releases transaction');
     $report=$service->preview($admin,$from,$until);
+    $check(!$pdo->inTransaction(),'successful preview releases transaction');
     $map=array_column($report['facts'],'value','id');
     $check($map['events.views']===21,'rollup plus live pending without loss');
     $check($map['previous.views']===5,'previous retained period');

@@ -41,6 +41,10 @@ $assert($engine->matchesRecordedPlan($old)&&$engine->matchesRecordedPlan($legacy
 $wrong=$new;$wrong['reactions']['high']=31;
 $assert(!$engine->matchesRecordedPlan($wrong),'changed source bounds block resume');
 $wrong=$new;$wrong['pipeline_version']=5;
+try{$method->invoke($engine,$wrong);throw new LogicException('Incompatible source accepted');}catch(RuntimeException $e){
+    $assert(str_contains($e->getMessage(),'Community phases require a XenForo source'),'known v5 rejects a source without community/media capabilities');
+}
+$wrong=$new;$wrong['pipeline_version']=999;
 try{$method->invoke($engine,$wrong);throw new LogicException('Unknown version accepted');}catch(RuntimeException $e){
     $assert(str_contains($e->getMessage(),'Unsupported import pipeline'),'unsupported pipeline fails closed');
 }
