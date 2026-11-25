@@ -145,6 +145,44 @@ final class DatabaseBackup
             self::run(['pg_restore','--exit-on-error','--clean','--if-exists','--create','--no-password','--dbname=postgres',$file],$this->pgEnv());
         } else $this->mysql(['mysql','--binary-mode'],null,$file);
     }
+    /** Materialize a new-host snapshot without overwriting any existing database. */
+    public function restoreFresh(string $file): void
+    {
+        if ($this->driver === 'sqlite') {
+            $path = $this->sqlitePath();
+            foreach (['', '-wal', '-shm', '-journal'] as $suffix) {
+                if (file_exists($path.$suffix) || is_link($path.$suffix)) throw new \RuntimeException('Fresh SQLite destination already exists');
+            }
+            $this->verify($file);
+            // Stage on the same filesystem, then publish with link(), which unlike
+            // rename() cannot replace an existing destination, even under a race.
+            $tmp = dirname($path).'/.fresh-'.bin2hex(random_bytes(16));
+            try {
+                F::copy($file, $tmp, 0600);
+                if (!hash_equals(F::hash($file), F::hash($tmp))) throw new \RuntimeException('Fresh SQLite copy checksum mismatch');
+                $this->verify($tmp);
+                if (!@link($tmp, $path)) throw new \RuntimeException('Cannot publish fresh SQLite database without overwrite');
+                F::syncDir(dirname($path));
+            } finally {
+                foreach (['', '-wal', '-shm', '-journal'] as $suffix) F::remove($tmp.$suffix);
+            }
+            return;
+        }
+        if ($this->driver !== 'pgsql') throw new \RuntimeException('Fresh recovery supports SQLite and PostgreSQL only');
+        $name = $this->name();
+        if (!preg_match('/^ce_dr_[a-f0-9]{24}$/D', $name)) throw new \RuntimeException('Fresh PostgreSQL recovery requires a generated recovery database name');
+        $this->verify($file);
+        // Cold recovery must use the destination profile, never the source's
+        // BACKUP_DB_* credentials, even if they are still exported by the operator.
+        $env = $this->pgEnv();
+        $env['PGUSER'] = (string)($this->connection['username'] ?? '');
+        $env['PGPASSWORD'] = (string)($this->connection['password'] ?? '');
+        // createdb fails atomically if the name exists. No --clean, --create,
+        // or DROP: even a failed recovery leaves only its new DB for explicit cleanup.
+        self::run(['createdb','--no-password','--maintenance-db=postgres','--template=template0',$name], $env);
+        self::run(['pg_restore','--exit-on-error','--single-transaction','--no-owner','--no-privileges','--no-tablespaces','--no-password','--dbname='.$name,$file], $env);
+        self::run(['psql','--no-password','--no-psqlrc','--set=ON_ERROR_STOP=1','--dbname='.$name,'--command=SELECT 1'], $env);
+    }
     /** Verify the live target after a destructive restore, before clearing the restore journal. */
     public function verifyRestored(): void
     {

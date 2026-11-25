@@ -98,7 +98,10 @@ try {
     assertRuntime($store->status('queue.cleanup_processed')['status'] === 'failed', 'failed scheduled slot persisted');
     $notRetried = $store->run('queue.cleanup_processed', 86400, fn() => throw new RuntimeException('should not rerun'));
     assertRuntime(($notRetried['skipped'] ?? '') === 'already run' && ($notRetried['ok'] ?? true) === false, 'failed slot remains failed on same-slot rescan');
-    $store->run('sensitive', 60, fn() => throw new RuntimeException('password=SECRET'), 60);
+    $sensitive=$store->run('sensitive', 60, fn() => throw new RuntimeException('password=SECRET'), 60);
+    assertRuntime(($sensitive['error_type']??null)==='RuntimeException' && !str_contains(json_encode($sensitive, JSON_THROW_ON_ERROR),'SECRET'),'scheduler response exposes only safe failure type');
+    $sensitiveRetry=$store->run('sensitive',60,fn()=>[],60);
+    assertRuntime(($sensitiveRetry['error_type']??null)==='RuntimeException' && ($sensitiveRetry['ok']??true)===false,'same-slot failure retains diagnostic type without replay');
     assertRuntime(!str_contains(json_encode($store->status('sensitive'), JSON_THROW_ON_ERROR), 'SECRET'), 'scheduler state and response redact failure details');
 
     $path = $root . '/storage/app/scheduler/' . hash('sha256', 'tmp.cleanup') . '.json';

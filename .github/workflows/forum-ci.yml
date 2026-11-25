@@ -1046,6 +1046,28 @@ jobs:
           dc down
           dc up -d gateway
           smoke --verify-only
+      - name: Capture failed container startup evidence
+        if: failure()
+        run: |
+          # Capture only the public container state, not inspect Config/Env or
+          # health command output (which may include sensitive diagnostics).
+          python3 - <<'PYTHON'
+          import json, os, subprocess
+          from pathlib import Path
+          prefix = ['docker','compose','--project-name','forum-container-ci','--env-file','deploy/container/site.env','-f','deploy/container/compose.yaml']
+          states = {}
+          for service in ('postgres','redis','init','app','scheduler','worker','gateway'):
+              try:
+                  ids = subprocess.check_output(prefix+['ps','-aq',service], text=True, stderr=subprocess.DEVNULL, timeout=15).split()
+                  states[service] = []
+                  for cid in ids:
+                      value = subprocess.check_output(['docker','inspect','--format','{{.State.Status}} {{.State.ExitCode}} {{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}',cid],text=True,stderr=subprocess.DEVNULL,timeout=15).strip().split()
+                      if len(value) == 3:
+                          states[service].append(dict(status=value[0],exit_code=int(value[1]),health=value[2]))
+              except (OSError, subprocess.SubprocessError, ValueError):
+                  states[service] = None
+          Path(os.environ['RUNNER_TEMP'],'forum-container-failure.json').write_text(json.dumps({'ok':False,'containers':states},indent=2)+'\n')
+          PYTHON
       - name: Make operator evidence readable by the artifact uploader
         if: always()
         run: |
@@ -1064,6 +1086,7 @@ jobs:
           path: |
             ${{ runner.temp }}/forum-qualification.json
             ${{ runner.temp }}/forum-operations*.json
+            ${{ runner.temp }}/forum-container-failure.json
           if-no-files-found: error
       - name: Stop disposable container project
         if: always()

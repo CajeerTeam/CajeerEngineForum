@@ -59,7 +59,21 @@ with sqlite3.connect(sys.argv[1]) as c:
     assert c.execute("SELECT count(*) FROM ce_forum_fts_posts WHERE ce_forum_fts_posts MATCH 'recovered'").fetchone()[0]==1
 PY,$restored]);
     check(true,'actual SQLite forum tables, FTS and foreign keys restored at a different path');
+    $restoredHash=F::hash($restored);
     reject(fn()=>$dest->restoreFresh($stage.'/database.dump'),'fresh restore refuses existing DB');
+    check(F::hash($restored)===$restoredHash&&(fileperms($restored)&0777)===0600,'fresh recovery preserves existing database and private mode');
+    $alternate=$work.'/sidecar-target'; F::dir($alternate.'/storage/database');
+    $alternateDb=$alternate.'/storage/database/cajeer.sqlite';
+    F::write($alternateDb.'-wal','unrelated sidecar');
+    reject(fn()=>(new DatabaseBackup($alternate,$config))->restoreFresh($stage.'/database.dump'),'fresh restore refuses pre-existing WAL');
+    check(!file_exists($alternateDb)&&file_get_contents($alternateDb.'-wal')==='unrelated sidecar','pre-existing SQLite sidecar never overwritten');
+    F::remove($alternateDb.'-wal');
+    F::write($work.'/invalid-database.dump','not a SQLite database');
+    reject(fn()=>(new DatabaseBackup($alternate,$config))->restoreFresh($work.'/invalid-database.dump'),'invalid SQLite dump rejected before publication');
+    check(!file_exists($alternateDb),'invalid fresh database not published');
+    $pgConfig=new ConfigRepository($tool); $pgConfig->set('database.default','pgsql');
+    $pgConfig->set('database.connections.pgsql.database','existing_production');
+    reject(fn()=>(new DatabaseBackup($alternate,$pgConfig))->restoreFresh($stage.'/database.dump'),'fresh PostgreSQL restore rejects arbitrary database name','generated recovery database name');
     F::write($stage.'/files/public/uploads/original.bin','changed'); reject(fn()=>$portable->portableSnapshot($stage),'authenticated file inventory detects corruption');
     F::json($work.'/profile.json',['APP_URL'=>'https://recovered.example.invalid']);
     $recovery=new ColdRecovery($tool); $target=$work.'/new-forum';

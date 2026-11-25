@@ -127,6 +127,8 @@ services:
     mem_limit: 512m
     depends_on:
       app: {condition: service_healthy}
+      # Complete the initial scheduler batch before a consumer claims its jobs.
+      scheduler: {condition: service_healthy}
     healthcheck:
       test: [CMD, php, /opt/ce-container/runtime.php, loop-health]
       interval: 15s

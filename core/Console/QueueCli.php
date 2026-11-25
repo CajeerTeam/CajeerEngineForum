@@ -37,6 +37,20 @@ final class QueueCli
                 'queue:redis-migrate'=>['ok'=>true,'recovered'=>$q instanceof RedisQueueDriver&&isset($o['yes'])?$q->migrateLegacy():throw new \RuntimeException('Stop old workers and producers, then run with --yes on Redis')],
                 default=>self::runTasks($root,$cfg,$db,$q,$command,$name,$o),
             };
+            if (in_array($command,['scheduler:run','schedule:run'],true) && ($result['ok']??true)===false) {
+                // The container supervisor captures JSON privately. Emit only fixed
+                // task names and safe exception classes, never payloads or messages.
+                foreach (['security.cleanup','tmp.cleanup','queue.recover','forum.jobs.dispatch','queue.cleanup_processed','search.index_published','webhooks.dispatch_pending','updates.discover_releases','updates.notifications.dispatch','observability.export_traces','ai.automation.dispatch','analytics.sync_reports'] as $task) {
+                    $entry=$result['tasks'][$task]??[];
+                    if (($entry['ok']??true)!==false) continue;
+                    $type=$entry['error_type']??'unknown';
+                    if (!is_string($type)||!preg_match('/^[A-Za-z_][A-Za-z0-9_]{0,79}$/D',$type)) $type='unknown';
+                    fwrite(STDERR,'[FAIL] Scheduler task '.$task.' type='.$type.PHP_EOL);
+                }
+                foreach ($result['tasks']['extensions']??[] as $entry) if (($entry['ok']??true)===false) {
+                    fwrite(STDERR,'[FAIL] Extension scheduler task'.PHP_EOL); break;
+                }
+            }
             echo json_encode($result,JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR).PHP_EOL;
             return (($result['ok']??true)===false||($result['failed']??0)>0)?1:0;
         }catch(\Throwable $e){fwrite(STDERR,'[FAIL] '.$e->getMessage().PHP_EOL);return 1;}

@@ -209,14 +209,15 @@ class Deployment:
                 self.dc(site,'exec','-T','app','php','/opt/ce-container/runtime.php','ready'); break
             except subprocess.CalledProcessError: time.sleep(2)
         else: raise RuntimeError('Selected PHP-FPM image not ready')
-        self.dc(site,'up','-d','--no-deps','--force-recreate','worker','scheduler')
-        for _ in range(90):
-            try:
-                for service in ('worker','scheduler'):
+        # Explicit --no-deps activation must honor the same startup order as Compose.
+        for service in ('scheduler','worker'):
+            self.dc(site,'up','-d','--no-deps','--force-recreate',service)
+            for _ in range(90):
+                try:
                     self.dc(site,'exec','-T',service,'php','/opt/ce-container/runtime.php','loop-health')
-                break
-            except subprocess.CalledProcessError: time.sleep(2)
-        else: raise RuntimeError('Background services not ready')
+                    break
+                except subprocess.CalledProcessError: time.sleep(2)
+            else: raise RuntimeError('Background service not ready: '+service)
         self.dc(site,'up','-d','--no-deps','--force-recreate','gateway')
         self.http_check(site,expected)
         # A successful HTTPS response alone cannot prove that workers, image

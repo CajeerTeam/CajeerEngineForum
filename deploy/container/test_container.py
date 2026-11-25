@@ -35,6 +35,8 @@ class ContainerTests(unittest.TestCase):
             self.assertIn('storage:/srv/forum/storage',s[n]['volumes'])
             self.assertNotIn('secrets',s[n]); self.assertIn('healthcheck',s[n])
         self.assertEqual(s['app']['depends_on']['init']['condition'],'service_completed_successfully')
+        self.assertEqual(s['scheduler']['depends_on'],{'app':{'condition':'service_healthy'}})
+        self.assertEqual(s['worker']['depends_on']['scheduler']['condition'],'service_healthy')
         self.assertTrue(all(s['gateway']['depends_on'][n]['condition']=='service_healthy' for n in ('app','worker','scheduler')))
         self.assertEqual(s['init']['environment']['CE_QUEUE_DRIVER'],'${CE_QUEUE_DRIVER:-pgsql}')
         self.assertIn('POSTGRES_PASSWORD_FILE', (HERE/'postgres-start.sh').read_text())

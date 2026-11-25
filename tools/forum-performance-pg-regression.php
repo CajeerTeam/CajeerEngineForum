@@ -43,7 +43,12 @@ $before=$p->query("SELECT (SELECT COUNT(*) FROM ce_forum_threads) AS threads,
  (SELECT SUM(read_sequence) FROM ce_forum_posts) AS total_sequence")->fetch(PDO::FETCH_ASSOC);
 verify((int)$before['threads']===25000&&(int)$before['posts']===100000,'large pre-upgrade dataset actually populated');
 $upgrade=(new MigrationRunner($p,$root.'/migrations'))->run('pgsql');
-verify($upgrade['applied']===1&&($upgrade['migrations'][0]['migration']??'')==='0049_forum_database_optimization.sql','only 0049 executed against existing 100k posts');
+// The current release has more migrations than 0.9.3. Require the exact
+// ordered suffix, not just the first historical migration or a loose count.
+$expected=array_values(array_filter(array_map('basename',glob($root.'/migrations/pgsql/*.sql')?:[]),static fn(string $name):bool=>$name>='0049_forum_database_optimization.sql'));
+sort($expected,SORT_STRING);
+verify(($expected[0]??'')==='0049_forum_database_optimization.sql'&&$upgrade['applied']===count($expected)&&array_column($upgrade['migrations'],'migration')===$expected,'every pending migration from 0049 executed against existing 100k posts');
+foreach($upgrade['migrations'] as $applied)verify($applied['status']==='applied'&&hash_equals(hash_file('sha256',$root.'/migrations/pgsql/'.$applied['migration']),$applied['checksum']),'applied migration checksum '.$applied['migration']);
 $after=$p->query("SELECT (SELECT COUNT(*) FROM ce_forum_threads) AS threads,
  (SELECT COUNT(*) FROM ce_forum_posts) AS posts,
  (SELECT SUM(read_sequence) FROM ce_forum_posts) AS total_sequence")->fetch(PDO::FETCH_ASSOC);
@@ -80,7 +85,7 @@ $realSearch->execute($searchParams);
 $plans['actual-acl-search']=json_decode((string)$realSearch->fetchColumn(),true,512,JSON_THROW_ON_ERROR);
 verify(isset($plans['actual-acl-search'][0]['Plan']['Actual Total Time']),'actual production FTS/ACL SQL executed with measured plan');
 file_put_contents($evidence.'/forum-database-093-plans.json',json_encode([
- 'baseline_topics'=>$before['threads'],'baseline_posts'=>$before['posts'],'migration'=>$upgrade['migrations'][0]['migration'],
+ 'baseline_topics'=>$before['threads'],'baseline_posts'=>$before['posts'],'migration'=>$upgrade['migrations'][0]['migration'],'applied_migrations'=>$expected,
  'postgres_version'=>$p->query('SHOW server_version')->fetchColumn(),'plans'=>$plans
  ],JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR));
 $p->exec("INSERT INTO ce_forum_threads(id,board_id,title,updated_at) SELECT md5('perf-'||n)::uuid,'$board','Performance '||n, TIMESTAMPTZ '2025-01-01 00:00:00+00'+(n/40)*interval '1 second' FROM generate_series(1,12000) n");
